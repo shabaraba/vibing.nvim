@@ -174,6 +174,28 @@ that no longer existed, and `cleanup_stale_sessions` reads that table as "still 
 the session entry alive forever. So `duplex_pool.forget` carries the notification itself, once per
 process, on every route.
 
+**What the routes mean is not the same thing, so the notification carries that too.** They are all
+"the process is gone"; only some are also "and no turn is coming", which is what separates a chat
+merely between messages from one left holding unfinished work. Each `Pool.stop` caller names a
+`Vibing.DuplexReclaimReason`, and `QUIET_RECLAIM` names the four that mean nothing needs saying —
+`restart` (a turn is starting on the replacement in that same call), `shutdown` and `chat_closed`
+(nowhere to say it), and `cancelled` (a human stopped this chat). The default is therefore to report,
+so a route added later is heard from rather than silently dropped, which is the shape of the hole #840
+closed. Three of the seven reasons sit outside the four routes above because they are the `Pool.stop`
+callers outside the pool: `unresponsive`, `cancelled`, `chat_closed`.
+
+**The vocabulary stays inside the pool.** `forget` resolves the reason to a single boolean before
+announcing it, so `_on_gone` receives "is anything still coming for this chat" and not the reason
+string — the pool owns the routes, `duplex_routing` owns what to do with a dead process, and
+`Vibing.DuplexReclaimReason` appears in no signature beyond `M.stop` and `forget`. #840 is the first
+consumer: a background subagent runs inside the CLI, so a reclaim takes it down and somebody has to
+tell the chat. `handbook/features/chat-ui.md` → "The same question under the duplex transport".
+
+The `_gone` guard is what makes the route's decision stick. Every deliberate reclaim runs `forget`
+before the kill, so the job's real `on_exit` — which would arrive a tick later as `exited`, the reason
+that always reports — finds the process already forgotten and says nothing. Without it, `:VibingCancel`
+would wake the chat it had just stopped.
+
 ### 3b. A dying process must be identified, never looked up
 
 Three callbacks reach a process rather than a turn — stdout, stderr, exit — and all three were

@@ -20,6 +20,9 @@ local M = {}
 --- @field pid number
 --- @field argv_key string The argv this process was started with, minus the resume pair. A turn
 ---   whose argv no longer matches this cannot be served here (`duplex_pool.lua`).
+--- @field cwd string Where it was spawned. A process fact, not a turn fact: the reuse key does not
+---   include the cwd, so a later turn's may differ from the one this CLI has actually been writing
+---   under — and anything read back off disk about what it wrote has to use this one.
 --- @field decoder_state table Parse state that belongs to the *process*, not to any one turn: the
 ---   session id the decoder has already reported. A fresh table per turn would re-announce the
 ---   session on the first line of every turn.
@@ -99,6 +102,7 @@ function M.start(opts)
   local record = {
     process_id = opts.process_id,
     argv_key = opts.argv_key,
+    cwd = opts.cwd,
     decoder_state = {},
     on_line = opts.on_line,
     on_stderr = opts.on_stderr,

@@ -846,18 +846,19 @@ describe("send_message", function()
       return buf
     end
 
-    it("records the turn for staleness and the process for cancelling, from one stream() call", function()
-      -- `stream()` returns `(turn_id, process_id)`. Dropping the second value leaves
-      -- `_current_process_id` nil, and `ChatBuffer:cancel_request()` then returns false without
-      -- killing anything — a zombie CLI that no test would notice, because the guard is silent.
-      local buf = chat_buffer()
-      local recorded = {}
-      local callbacks = {
+    --- The minimum `SendMessage.execute` needs, so an example states only what it is about.
+    ---
+    --- Hand-rolled per example, this table is where a new required callback breaks three tests at once
+    --- and each of them reads as a failure of the feature under test rather than of its fixture.
+    --- @param buf number
+    --- @param overrides table? the one or two callbacks this example actually cares about
+    local function execute_callbacks(buf, overrides)
+      return vim.tbl_extend("force", {
         get_bufnr = function()
           return buf
         end,
         get_session_id = function()
-          return "sess"
+          return nil
         end,
         parse_frontmatter = function()
           return {}
@@ -874,13 +875,28 @@ describe("send_message", function()
           return {}
         end,
         add_user_section = function() end,
+        set_turn_id = function(_) end,
+        set_process_id = function(_) end,
+      }, overrides or {})
+    end
+
+    it("records the turn for staleness and the process for cancelling, from one stream() call", function()
+      -- `stream()` returns `(turn_id, process_id)`. Dropping the second value leaves
+      -- `_current_process_id` nil, and `ChatBuffer:cancel_request()` then returns false without
+      -- killing anything — a zombie CLI that no test would notice, because the guard is silent.
+      local buf = chat_buffer()
+      local recorded = {}
+      local callbacks = execute_callbacks(buf, {
+        get_session_id = function()
+          return "sess"
+        end,
         set_turn_id = function(id)
           recorded.turn_id = id
         end,
         set_process_id = function(id)
           recorded.process_id = id
         end,
-      }
+      })
       local adapter = {
         supports = function(_, feature)
           return feature == "streaming"
@@ -894,6 +910,45 @@ describe("send_message", function()
 
       assert.equals("turn-1", recorded.turn_id)
       assert.equals("process-1", recorded.process_id)
+
+      vim.api.nvim_buf_delete(buf, { force = true })
+    end)
+
+    it("hands the adapter a way to wake this chat after its resident process is gone", function()
+      -- #840's wire, and the one join between two halves that each pass on their own: the transport
+      -- reports orphaned background subagents through this callback, and `outstanding_subagents`
+      -- knows what to do with them, but with nothing installed here the feature is inert and both
+      -- sides still go green. It is also the only callback on the opts that outlives its turn -- the
+      -- process does -- so it has to name the chat by closure rather than by anything per turn.
+      local buf = chat_buffer()
+      local Outstanding = require("vibing.application.chat.outstanding_subagents")
+      local original = Outstanding.wake_orphaned
+      local woken = {}
+      Outstanding.wake_orphaned = function(bufnr, unreported, recovered, subagents_lost)
+        table.insert(woken, { bufnr = bufnr, unreported = unreported, recovered = recovered, lost = subagents_lost })
+      end
+
+      local callbacks = execute_callbacks(buf)
+      local captured
+      local adapter = {
+        supports = function(_, feature)
+          return feature == "streaming"
+        end,
+        stream = function(_, _prompt, opts)
+          captured = opts
+          return "turn-1", "process-1"
+        end,
+      }
+
+      SendMessage.execute(adapter, callbacks, "hello", {})
+
+      assert.is_function(captured.on_subagents_orphaned, "the adapter was given no way to report them")
+      -- The fourth argument travels too: it is what decides whether the chat is told its subagents are
+      -- gone or still worth collecting, and dropping it silently picks the second on every route.
+      captured.on_subagents_orphaned({ { task_id = "a1" } }, {}, true)
+
+      Outstanding.wake_orphaned = original
+      assert.same({ { bufnr = buf, unreported = { { task_id = "a1" } }, recovered = {}, lost = true } }, woken)
 
       vim.api.nvim_buf_delete(buf, { force = true })
     end)

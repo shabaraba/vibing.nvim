@@ -45,6 +45,7 @@
 ---@field cwd string? Effective working directory used for project-local configuration
 ---@field on_tool_use fun(tool: string, file_path: string?)?
 ---@field on_tool_use_full fun(tool: string, input: table)? 表示用に間引かない生のツール入力（eval用）
+---@field on_subagents_orphaned fun(unreported: Vibing.BackgroundTask[], recovered: Vibing.RecoveredSubagent[])? 常駐プロセス（duplex）が回収され、まだ報告していないbackground subagentを連れていった（#840）。**ターンではなくプロセスの寿命に属する唯一のコールバック** — 呼ばれるのはこれを渡したターンの中ではなく、そのプロセスの最後のターンより後
 ---@field _session_id string?
 ---@field _session_id_explicit boolean?
 ---@field lightweight boolean? タイトル生成・要約等の軽量ユーティリティ呼び出し用フラグ。各アダプタは「ツールを使わせない・プロジェクト設定とユーザー MCP サーバーを読ませない・フックを登録しない・utility_model を使う」、かつ「これらが CLI 側のスキーマ変更で黙って外れないこと」を果たす責務を負う（claude は --tools ""、codex は read-only サンドボックス + --ignore-user-config、copilot は --available-tools にダミー名、grok は --tools todo_write + 空のスクラッチ作業ディレクトリ + GROK_*_ENABLED 環境変数）。grok だけは MCP ツールの「提示」を止める手段が CLI 側になく、--deny "MCPTool(*)" で実行のみ拒否している（プロジェクト指示とフックは #588 で塞いだ。詳細は handbook/architecture/lightweight-calls.md）

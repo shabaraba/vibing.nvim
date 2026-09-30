@@ -235,6 +235,19 @@ function M.execute(adapter, callbacks, message, config)
         callbacks.show_pending_prompts()
       end
     end,
+    -- 常駐プロセス（duplex）が回収され、まだ報告していない background subagent を連れていった
+    -- ときの起床（#840）。`adapter/` から `application/` を require しないための経路 —
+    -- 「このチャットにターンが必要か」はアダプタの問いではない（`outstanding_subagents.lua`）。
+    -- ここだけ `on_insert_choices` などと違ってターンをまたいで生き残る: プロセスはターンより
+    -- 長生きするので、これを呼ぶのは「これを渡したターン」ではなく、そのプロセスの最後のターン
+    on_subagents_orphaned = function(unreported, recovered, subagents_lost)
+      require("vibing.application.chat.outstanding_subagents").wake_orphaned(
+        bufnr,
+        unreported,
+        recovered,
+        subagents_lost
+      )
+    end,
     on_approval_required = function(tool, input, options, hook_request_id, waiting)
       -- permission.lua の vim.schedule 内から呼ばれるためすでにメインスレッド上
       -- 二重 vim.schedule を避けることで _pending_approval が add_user_section より確実に先に設定される

@@ -22,6 +22,51 @@ local M = {}
 --- chat left open over lunch does not.
 M.IDLE_TIMEOUT_MS = 5 * 60 * 1000
 
+--- @alias Vibing.DuplexReclaimReason
+--- | "exited"        # the CLI died on its own; the only route that arrives as `on_exit`
+--- | "idle"          # `IDLE_TIMEOUT_MS` passed with no turn
+--- | "unresponsive"  # the CLI could not be talked to, or never answered
+--- | "restart"       # replaced, because a turn cannot honestly be served by it
+--- | "shutdown"      # Neovim is exiting
+--- | "cancelled"     # killed to stop the turn it was running
+--- | "chat_closed"   # the chat it served is gone
+
+--- The reclaim routes after which a turn **is** coming, or there is nobody to tell — so a chat holding
+--- unfinished work is left alone (#840). Named as the exemptions rather than as a list of the routes
+--- that do report: a reason added later reports by default, and choosing to stay quiet is then a
+--- decision somebody wrote down. The opposite default is a reclaim route that silently drops the
+--- wake, which is exactly the shape of the hole this closes.
+---
+--- * `restart` — a turn is being started on the replacement right now, in this same call.
+--- * `shutdown` / `chat_closed` — there is nowhere to wake: no event loop left, or no buffer.
+--- * `cancelled` — a human stopped this chat on purpose. The same judgement `_cancelled` makes in
+---   `application/chat/outstanding_subagents.lua`, made here because on this route there is no
+---   response to carry the flag.
+---
+--- What is left is a process that stopped serving turns while its chat was not looking: the CLI
+--- dying, the idle timer, and a CLI that could not be talked to. Whether the work it was holding is
+--- also *lost* is a second question, answered differently on one of those three — see
+--- `Vibing.DuplexReclaimVerdict`.
+--- @type table<Vibing.DuplexReclaimReason, true>
+local QUIET_RECLAIM = { restart = true, shutdown = true, cancelled = true, chat_closed = true }
+
+--- @class Vibing.DuplexReclaimVerdict what a reclaim means downstream, resolved from the route here so
+--- the vocabulary above reaches no other signature.
+--- @field reports boolean whether anybody still needs telling — false on `QUIET_RECLAIM`'s four
+--- @field subagents_lost boolean whether the CLI's own children went down with it
+---
+--- **The two are not the same question, and one route answers them differently.** Every reclaim that
+--- goes through `M.stop` kills the tree (`DuplexProcess.stop` → `kill_tree`), so a background subagent
+--- running inside that CLI is gone. `exited` does not: the CLI ended on its own, which leaves exactly
+--- the state the oneshot transport's ordinary exit leaves — the work may have finished and had its
+--- notification dropped, with a transcript on disk to show for it. Collapsing both into one flag is
+--- what would have the notice tell the model not to wait for output it could still collect.
+--- @param reason Vibing.DuplexReclaimReason|nil
+--- @return Vibing.DuplexReclaimVerdict
+local function verdict_for(reason)
+  return { reports = not QUIET_RECLAIM[reason], subagents_lost = reason ~= "exited" }
+end
+
 --- @type table<number|string, Vibing.DuplexProcess>
 local records = {}
 
@@ -51,15 +96,19 @@ end
 
 --- Forget a process, whether it exited on its own or was stopped.
 ---
---- **One exit notification per process, on every route out.** There are four — the CLI dying, the
---- idle timer, an argv change, and `VimLeavePre` — and only the first of them arrives as an
---- `on_exit` callback. Leaving the other three unannounced left the adapter's `_processes` table
---- holding a handle to a process that no longer exists, which `cleanup_stale_sessions` then reads
---- as "still running" and keeps its session entry alive forever.
+--- **One exit notification per process, on every route out.** Only the CLI dying arrives as an
+--- `on_exit` callback; every other route (`Vibing.DuplexReclaimReason`) comes through `M.stop`.
+--- Leaving those unannounced left the adapter's `_processes` table holding a handle to a process that
+--- no longer exists, which `cleanup_stale_sessions` then reads as "still running" and keeps its
+--- session entry alive forever.
+--- **What the route meant travels with the notification**, because the routes do not mean the same
+--- thing to whoever is told: they are all "the process is gone", and they differ on whether anyone
+--- still needs telling and on whether the CLI's children went with it (`Vibing.DuplexReclaimVerdict`).
 --- @param chat_key number|string
 --- @param record Vibing.DuplexProcess
 --- @param code number
-local function forget(chat_key, record, code)
+--- @param reason Vibing.DuplexReclaimReason
+local function forget(chat_key, record, code, reason)
   cancel_idle_timer(record)
   if records[chat_key] == record then
     records[chat_key] = nil
@@ -67,7 +116,10 @@ local function forget(chat_key, record, code)
   ProcessRegistry.unregister(record.process_id)
   if not record._gone then
     record._gone = true
-    record._on_gone(record, code)
+    -- Resolved here rather than passed on, because the vocabulary is this module's: handing the
+    -- string over would put `Vibing.DuplexReclaimReason` in every downstream signature and let each
+    -- consumer re-decide what a route means.
+    record._on_gone(record, code, verdict_for(reason))
   end
 end
 
@@ -82,7 +134,8 @@ end
 --- @field process_entry Vibing.ProcessEntry registered when the spawn succeeds
 --- @field on_line fun(line: string, record: Vibing.DuplexProcess)
 --- @field on_stderr fun(text: string, record: Vibing.DuplexProcess)
---- @field on_exit fun(record: Vibing.DuplexProcess, code: number)
+--- @field on_exit fun(record: Vibing.DuplexProcess, code: number, verdict: Vibing.DuplexReclaimVerdict)
+---   the third argument is what the reclaim route meant, not the route itself
 
 --- The process that will serve this turn: the live one when its argv still matches, a new one
 --- otherwise.
@@ -109,7 +162,7 @@ function M.acquire(chat_key, spec)
       cancel_idle_timer(existing)
       return existing, nil
     end
-    M.stop(chat_key)
+    M.stop(chat_key, "restart")
   end
 
   --- Declared before `start` so the exit callback can close over the record it belongs to.
@@ -133,7 +186,10 @@ function M.acquire(chat_key, spec)
     on_stderr = spec.on_stderr,
     on_exit = function(code)
       if record then
-        forget(chat_key, record, code)
+        -- Reached only by a process no route here reclaimed first: every deliberate one runs
+        -- `forget` before the kill, so `_gone` is already set by the time Neovim flushes the job
+        -- and fires this. So this really is "the CLI died on its own".
+        forget(chat_key, record, code, "exited")
       end
     end,
   })
@@ -182,14 +238,23 @@ function M.release(chat_key)
   cancel_idle_timer(record)
   record._idle_timer = vim.fn.timer_start(M.IDLE_TIMEOUT_MS, function()
     if records[chat_key] == record then
-      M.stop(chat_key)
+      -- **"Idle" is about turns, not about work.** A background subagent keeps running outside every
+      -- turn, so this fires on a process that still has one in flight — and killing it is what makes
+      -- that subagent's answer unreachable. The reclaim is still right (a process nobody is talking
+      -- to for five minutes is not worth 200MB, and the CLI's own notification has had that long to
+      -- arrive), so the resolution is not to hold off but to say so: `idle` orphans, and whoever is
+      -- owed a report gets one.
+      M.stop(chat_key, "idle")
     end
   end)
 end
 
 --- Stop one chat's process now.
 --- @param chat_key number|string|nil
-function M.stop(chat_key)
+--- @param reason Vibing.DuplexReclaimReason every caller names one. Omitting it reports, which is the
+---   fail-safe direction rather than a supported call: a reclaim nobody classified is one nobody has
+---   decided to keep quiet about.
+function M.stop(chat_key, reason)
   local record = chat_key ~= nil and records[chat_key] or nil
   if not record then
     return
@@ -201,14 +266,17 @@ function M.stop(chat_key)
   -- Forgotten before it is killed, so the real `on_exit` (which Neovim fires only after flushing
   -- the job's streams, and which `kill_tree` may beat by milliseconds) finds nothing to report
   -- twice. `forget` carries the notification itself for exactly this reason.
-  forget(chat_key, record, 0)
+  forget(chat_key, record, 0, reason)
   DuplexProcess.stop(record)
 end
 
 --- Over a snapshot of the keys, because `stop` removes from the table it would otherwise iterate.
+---
+--- Always `shutdown`: every caller is Neovim going away, and a reclaim with nowhere to report to is
+--- the whole of what that reason means.
 function M.stop_all()
   for _, chat_key in ipairs(vim.tbl_keys(records)) do
-    M.stop(chat_key)
+    M.stop(chat_key, "shutdown")
   end
 end
 

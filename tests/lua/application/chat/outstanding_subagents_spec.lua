@@ -237,6 +237,72 @@ describe("outstanding background subagents", function()
     assert.is_true(require("vibing.application.chat.message_queue").has_pending(bufnr))
   end)
 
+  -- #840: the duplex route. There is no response, because no turn ended — a resident process was
+  -- reclaimed between turns, and the background subagents that were running inside it went with it.
+  describe("a reclaimed process's orphaned subagents", function()
+    it("wakes the chat, the same as a turn that ended would", function()
+      local bufnr = make_chat()
+
+      assert.is_true(Outstanding.wake_orphaned(bufnr, { { task_id = "a1", description = "review reuse" } }, {}, true))
+      assert.equals(bufnr, sends[1].bufnr)
+      mentions(sent_body(), "a1")
+    end)
+
+    -- What the notice says turns on whether the reclaim killed the CLI the subagents were running
+    -- inside, not on which producer called. Telling the model to go and collect them would be telling
+    -- it to wait for something that cannot arrive.
+    it("says the subagents are gone rather than that they may still be running", function()
+      local bufnr = make_chat()
+      Outstanding.wake_orphaned(bufnr, { { task_id = "a1", description = "review reuse" } }, {}, true)
+
+      local body = sent_body()
+      mentions(body, "will never report")
+      mentions(body, "Do not wait for them")
+      omits(body, "may still be running")
+      omits(body, "TaskOutput")
+    end)
+
+    -- The route that reclaims a process it did not kill: the CLI exited on its own, which leaves the
+    -- subagents exactly as the oneshot transport's ordinary end of turn does. Saying "they are gone"
+    -- here would tell the model not to collect output that its transcript may still hold.
+    it("does not claim they are gone when the CLI merely exited on its own", function()
+      local bufnr = make_chat()
+      Outstanding.wake_orphaned(bufnr, { { task_id = "a1", description = "review reuse" } }, {}, false)
+
+      local body = sent_body()
+      mentions(body, "may still be running")
+      mentions(body, "TaskOutput")
+      omits(body, "Do not wait for them")
+    end)
+
+    -- Recovery is worth more here than at the end of a turn: minutes passed while the process sat
+    -- idle, so a subagent that finished in them has written its transcript by now.
+    it("still carries what was recovered, and asks only about the rest", function()
+      local bufnr = make_chat()
+      Outstanding.wake_orphaned(
+        bufnr,
+        { { task_id = "a1", description = "review reuse" }, { task_id = "a2", description = "review efficiency" } },
+        { { task_id = "a1", text = "no duplication found" } },
+        true
+      )
+
+      local body = sent_body()
+      mentions(body, "no duplication found")
+      mentions(body, "will never report")
+      omits(body:sub(body:find("will never report", 1, true)), "a1")
+    end)
+
+    -- Reclaiming a process is the ordinary end of every duplex chat's day, so this path is reached on
+    -- processes that backgrounded nothing far more often than on ones that did.
+    it("stays quiet when the process owed nothing", function()
+      local bufnr = make_chat()
+
+      assert.is_false(Outstanding.wake_orphaned(bufnr, {}, {}, true))
+      assert.equals(0, #sends)
+      assert.equals(0, #warnings)
+    end)
+  end)
+
   describe("the notice body", function()
     -- A task launched without a brief is named by its id alone; formatting `nil` into the line
     -- would put the string "nil" in front of the model.
