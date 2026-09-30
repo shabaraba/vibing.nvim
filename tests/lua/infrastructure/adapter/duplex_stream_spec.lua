@@ -188,6 +188,28 @@ describe("duplex transport", function()
         assert.equals("a subagent finished and here is the answer", turn.responses[1].content)
       end)
 
+      it("does not fail the user's turn when the CLI's own turn ended in error", function()
+        -- A background turn's own failure is just as foreign as its success. Without gating
+        -- `resultErrors` the same way `ends_this_turn` gates completion, this `result.is_error`
+        -- would survive into the turn the user is actually waiting on, reporting a failure nobody
+        -- saw for a turn that in fact succeeded.
+        local turn = send("how is it going")
+        local call = jobs.only_call()
+        local uuid = DuplexStream.prompt_uuid(turn.turn_id)
+
+        jobs.emit(call, { ack_line(uuid) })
+        jobs.emit(call, { init_line("sess-1"), result_line("sess-1", "error") })
+        assert.equals(0, #turn.responses)
+
+        jobs.emit(call, {
+          init_line("sess-1"),
+          text_line("sess-1", "here is the answer"),
+          result_line("sess-1", "success", uuid),
+        })
+        assert.equals(1, #turn.responses)
+        assert.is_nil(turn.responses[1].error)
+      end)
+
       it("still ends a turn whose prompt the CLI never named back", function()
         -- No ack, so nothing has shown that this CLI echoes anything. Rejecting a `result` with no
         -- uuid on that evidence would leave the turn open until the watchdog killed the process.

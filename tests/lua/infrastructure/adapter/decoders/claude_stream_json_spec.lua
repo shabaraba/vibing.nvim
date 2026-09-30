@@ -96,6 +96,17 @@ describe("decoders.claude_stream_json", function()
     )
   end)
 
+  it("carries the same prompt_uuid on a fatal error as on the turn_end it precedes", function()
+    -- Both are cut from the same `result`, so `event_renderer.handlers.error` can tell a foreign
+    -- turn's failure apart from this one's the same way `duplex_turn.ends_this_turn` does for the
+    -- `turn_end` -- otherwise an unrelated background turn's failure would land in `resultErrors`
+    -- and a turn that actually succeeded would complete reporting an error nobody saw.
+    assert.same({
+      { kind = "error", message = "boom", fatal = true, prompt_uuid = "vibing-abc" },
+      { kind = "turn_end", subtype = nil, prompt_uuid = "vibing-abc" },
+    }, decode({}, { type = "result", is_error = true, result = "boom", user_message_uuid = "vibing-abc" }))
+  end)
+
   it("ends the turn on a successful result too", function()
     -- The only event that says a turn is over. Under the oneshot transport the process exit says
     -- it instead, so a success used to produce no event at all -- which a resident process, which
