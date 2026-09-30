@@ -31,17 +31,12 @@ const serverDir = process.env.VIBING_MCP_SERVER_DIR
 const vitest = join(serverDir, 'node_modules', '.bin', 'vitest');
 
 if (!existsSync(vitest)) {
-  // The suite also imports `zod`, which only the repository root declares, so name both trees
-  // when both are missing -- installing one and re-running to find the other is the same walk
-  // twice.
-  const rootMissing = !existsSync(join(repoRoot, 'node_modules'));
   process.stderr.write(
     [
       `MCP server tests cannot run: ${vitest} does not exist.`,
       '',
       'Install the dependencies and re-run. With pnpm, from the repository root:',
       '',
-      ...(rootMissing ? ['    pnpm install'] : []),
       '    pnpm install --ignore-workspace --dir claude-plugin/mcp-server',
       '',
       '--ignore-workspace is required. claude-plugin/mcp-server has its own package.json but is',

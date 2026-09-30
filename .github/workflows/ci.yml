@@ -32,10 +32,9 @@ jobs:
 
       # claude-plugin/mcp-server is a second, independent dependency tree with its own
       # package.json and lockfile, and its 193 vitest tests were in no gate at all until #790.
-      # This install belongs in *this* job rather than a separate one: the suite resolves `zod`
-      # from the root tree installed above, and tests/mcp-server-test-gate.test.mjs -- which runs
-      # inside `npm run test:node`, here -- drives the real suite. A separate job would still
-      # leave this one needing the install.
+      # This install belongs in *this* job rather than a separate one: the suite is driven by
+      # tests/mcp-server-test-gate.test.mjs, which runs inside `npm run test:node`, here. A
+      # separate job would still leave this one needing the install.
       - name: Install MCP server dependencies
         working-directory: claude-plugin/mcp-server
         run: npm ci
@@ -85,6 +84,14 @@ jobs:
       # fails here instead of quietly running nothing.
       - name: Run MCP server tests
         run: npm run test:mcp
+
+      # Reads claude-plugin/mcp-server/src as text and checks every non-relative import against
+      # package.json's own `dependencies` (#792). No install is required -- that is the point:
+      # the failure this catches is a value import resolved only by whatever happens to already be
+      # on disk (the repository root's node_modules, in `zod`'s case), which an install that
+      # brings its own copy along cannot reproduce.
+      - name: Audit MCP server imports against declared dependencies
+        run: npm run audit:mcp-imports
 
       - name: Run validation suite
         run: npm run validate
