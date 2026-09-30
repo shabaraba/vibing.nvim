@@ -1,5 +1,7 @@
 ---@class Vibing.StreamHandler
 ---Manages stdout/stderr buffering and line-by-line processing for streaming responses.
+local TurnOutcome = require("vibing.infrastructure.adapter.modules.turn_outcome")
+
 local M = {}
 
 ---stdoutコールバックを作成
@@ -127,22 +129,18 @@ function M.create_exit_handler(ids, processes, output, errorOutput, onDone, get_
         if error_msg == "" then
           error_msg = "Process exited with code " .. tostring(obj.code)
         end
-        onDone({
-          content = table.concat(output, ""),
-          error = error_msg,
-          _turn_id = ids.turn_id,
-          _process_id = ids.process_id,
-        })
+        onDone(TurnOutcome.ended(ids, table.concat(output, ""), error_msg))
       else
         -- 終了コードが0でも、CLIがresultイベントでエラーを宣言していればそれは失敗。
         -- stderrと違い警告混じりではないので握り潰さない
         local result_errors = get_result_errors and get_result_errors() or nil
-        onDone({
-          content = table.concat(output, ""),
-          error = result_errors and #result_errors > 0 and table.concat(result_errors, "\n") or nil,
-          _turn_id = ids.turn_id,
-          _process_id = ids.process_id,
-        })
+        onDone(
+          TurnOutcome.ended(
+            ids,
+            table.concat(output, ""),
+            result_errors and #result_errors > 0 and table.concat(result_errors, "\n") or nil
+          )
+        )
       end
     end)
   end

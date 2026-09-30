@@ -13,17 +13,9 @@
 --- @module vibing.infrastructure.adapter.modules.cli_runtime
 
 local SessionManagerModule = require("vibing.infrastructure.adapter.modules.session_manager")
+local TurnOutcome = require("vibing.infrastructure.adapter.modules.turn_outcome")
 
 local M = {}
-
---- How long `execute()` waits for a blocking call to finish, and how long the oneshot transport
---- gives a resumed session to produce its first event.
----
---- **Keep this equal to `duplex_turn.FIRST_RESPONSE_TIMEOUT_MS`.** The two answer the same
---- question — how long to wait for the CLI's first byte — and changing one alone would leave the
---- two transports silently waiting different amounts of time for the same thing. Merging them
---- (and fixing this name, which is narrower than what it does) is #782.
-M.INITIAL_RESPONSE_TIMEOUT_MS = 120000
 
 --- @class Vibing.RequestIds The two identities one `stream()` call mints.
 --- @field process_id string The OS process. Keys `adapter._processes`, the SessionManager, and the
@@ -113,16 +105,12 @@ end
 
 --- Hand a failure that happened before the process existed back to the caller.
 ---
---- Both ids are attached even though no process was ever started: `_turn_id` is what the chat
---- buffer's staleness check compares, and `_process_id` is what the session read-back uses, so a
---- response missing either one is indistinguishable from a response belonging to someone else.
----
 --- @param ids Vibing.RequestIds
 --- @param message string
 --- @param on_done fun(response: Vibing.Response)
 local function report(ids, message, on_done)
   vim.schedule(function()
-    on_done({ content = "", error = message, _turn_id = ids.turn_id, _process_id = ids.process_id })
+    on_done(TurnOutcome.ended(ids, "", message))
   end)
 end
 
@@ -191,13 +179,7 @@ function M.spawn(processes, ids, cmd, sys_opts, on_exit, on_done)
   end
 
   processes[ids.process_id] = stream_handle(handle_or_err, function()
-    on_done({
-      content = "",
-      error = "Cancelled",
-      _turn_id = ids.turn_id,
-      _process_id = ids.process_id,
-      _cancelled = true,
-    })
+    on_done(TurnOutcome.cancelled(ids, ""))
   end)
   return true
 end
@@ -228,7 +210,10 @@ function M.install(Class, features)
       done = true
     end)
 
-    vim.wait(M.INITIAL_RESPONSE_TIMEOUT_MS, function()
+    -- The first-byte budget, spent here on the whole call rather than on the first event, which
+    -- `turn_outcome.lua` spells out: `execute()` is only ever reached by a lightweight call, so
+    -- there is nothing in it but waiting for the CLI to answer.
+    vim.wait(TurnOutcome.FIRST_RESPONSE_TIMEOUT_MS, function()
       return done
     end, 100)
 

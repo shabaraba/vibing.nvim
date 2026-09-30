@@ -12,18 +12,10 @@
 local Pool = require("vibing.infrastructure.adapter.modules.duplex_pool")
 local Routing = require("vibing.infrastructure.adapter.modules.duplex_routing")
 local ProcessRegistry = require("vibing.infrastructure.adapter.modules.process_registry")
+local TurnOutcome = require("vibing.infrastructure.adapter.modules.turn_outcome")
 local TurnRegistry = require("vibing.infrastructure.adapter.modules.turn_registry")
 
 local M = {}
-
---- A resident process that answers nothing at all is indistinguishable from a hung one, and unlike
---- the oneshot transport there is no exit to notice. Armed on every turn, not only a resumed one.
----
---- **Keep this equal to `cli_runtime.INITIAL_RESPONSE_TIMEOUT_MS`.** The two answer the same
---- question — how long to wait for the CLI's first byte — and changing one alone would leave the
---- two transports silently waiting different amounts of time for the same thing. Merging them is
---- #782.
-M.FIRST_RESPONSE_TIMEOUT_MS = 120000
 
 --- Whether a `result` is the end of *this* turn, or of one the CLI started for itself.
 ---
@@ -173,39 +165,36 @@ function M.open(params, record, chat_key)
     end
   end
 
+  -- The process a response names is the one that actually served the turn, which on a reused
+  -- process is not the id this turn was minted with. `duplex_stream` has already written it back
+  -- onto `ids`; naming `record` here says so without depending on that order.
+  local turn_ids = Routing.ids_of(record, record._turn)
+
   context.onTurnEnd = function(event)
     if not M.ends_this_turn(context, event) then
       return
     end
     local errors = context.resultErrors
-    complete({
-      content = table.concat(context.output, ""),
-      error = errors and #errors > 0 and table.concat(errors, "\n") or nil,
-      _turn_id = ids.turn_id,
-      _process_id = record.process_id,
-    })
+    complete(
+      TurnOutcome.ended(
+        turn_ids,
+        table.concat(context.output, ""),
+        errors and #errors > 0 and table.concat(errors, "\n") or nil
+      )
+    )
   end
 
-  first_response_timer = vim.fn.timer_start(M.FIRST_RESPONSE_TIMEOUT_MS, function()
+  -- A resident process that answers nothing at all is indistinguishable from a hung one, and
+  -- unlike the oneshot transport there is no exit to notice. Armed on every turn, not only a
+  -- resumed one — which is the one thing this watchdog does not share with the oneshot path.
+  first_response_timer = vim.fn.timer_start(TurnOutcome.FIRST_RESPONSE_TIMEOUT_MS, function()
     vim.schedule(function()
       if completed then
         return
       end
       vim.notify(string.format("%s The resident CLI process did not answer; restarting it.", params.tag), vim.log.levels.WARN)
-      -- `complete` first, then the kill. `Pool.stop` announces the death, which reaches this turn
-      -- through `duplex_routing.exit_handler` and completes it as a plain "Cancelled" — and since
-      -- `complete` is idempotent, the first one through wins. Killing first therefore threw away
-      -- the response built below, taking `_session_corrupted` with it: the session was never
-      -- reset, no notice was written, and `_cancelled` suppressed the error line too, so a hung
-      -- process ended the turn with an empty assistant section and no message at all.
-      complete({
-        content = "",
-        error = "Session resume timeout",
-        _session_corrupted = true,
-        _old_session_id = params.opts._session_id,
-        _turn_id = ids.turn_id,
-        _process_id = record.process_id,
-      })
+      -- Reported before the kill, for the reason `turn_outcome.first_response_timeout` states.
+      complete(TurnOutcome.first_response_timeout(turn_ids, params.opts._session_id))
       Pool.stop(chat_key)
     end)
   end)

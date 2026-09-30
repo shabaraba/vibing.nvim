@@ -25,6 +25,7 @@ local DuplexTurn = require("vibing.infrastructure.adapter.modules.duplex_turn")
 local Pool = require("vibing.infrastructure.adapter.modules.duplex_pool")
 local RequestBuilder = require("vibing.infrastructure.adapter.modules.request_builder")
 local Routing = require("vibing.infrastructure.adapter.modules.duplex_routing")
+local TurnOutcome = require("vibing.infrastructure.adapter.modules.turn_outcome")
 
 local M = {}
 
@@ -80,7 +81,7 @@ function M.run(params)
 
   local function fail(message)
     vim.schedule(function()
-      params.finish({ content = "", error = message, _turn_id = ids.turn_id, _process_id = ids.process_id })
+      params.finish(TurnOutcome.ended(ids, "", message))
     end)
     return ids.turn_id, ids.process_id
   end
@@ -131,15 +132,11 @@ function M.run(params)
   local prompt =
     RequestBuilder.prompt_text(descriptor.request, params.prompt, params.opts, params.opts._session_id, params.config)
   if not DuplexProcess.send_prompt(record, prompt or params.prompt, params.event_context.promptUuid) then
-    -- Reported before the kill, for the reason spelled out in `duplex_turn`'s watchdog: `Pool.stop`
-    -- completes this turn as "Cancelled" on its way out, and `complete` is idempotent, so killing
-    -- first would replace this message with one that says nothing about what went wrong.
-    complete({
-      content = "",
-      error = "Could not write the prompt to the resident CLI process.",
-      _turn_id = ids.turn_id,
-      _process_id = record.process_id,
-    })
+    -- Reported before the kill, for the reason `turn_outcome.first_response_timeout` states:
+    -- `Pool.stop` completes this turn as "Cancelled" on its way out, and `complete` is idempotent,
+    -- so killing first would replace this message with one that says nothing about what went wrong.
+    -- `ids` already names the process that was acquired, per the assignment above.
+    complete(TurnOutcome.ended(ids, "", "Could not write the prompt to the resident CLI process."))
     Pool.stop(chat_key)
   end
 

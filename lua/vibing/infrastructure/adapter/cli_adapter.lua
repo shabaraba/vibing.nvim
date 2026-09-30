@@ -18,6 +18,7 @@ local RpcEnvironment = require("vibing.infrastructure.adapter.modules.rpc_enviro
 local StreamHandler = require("vibing.infrastructure.adapter.modules.stream_handler")
 local SessionManagerModule = require("vibing.infrastructure.adapter.modules.session_manager")
 local ProcessRegistry = require("vibing.infrastructure.adapter.modules.process_registry")
+local TurnOutcome = require("vibing.infrastructure.adapter.modules.turn_outcome")
 local TurnRegistry = require("vibing.infrastructure.adapter.modules.turn_registry")
 local RateLimitDetector = require("vibing.infrastructure.adapter.modules.rate_limit_detector")
 local BackgroundTasks = require("vibing.infrastructure.adapter.modules.background_tasks")
@@ -77,9 +78,6 @@ local PluginScaffold = require("vibing.infrastructure.plugins.scaffold")
 ---  rather than `transport` because `Vibing.HookSpec.transport` already owns that word.
 
 local M = {}
-
---- Shared with execute()'s own wait, so the two cannot drift apart.
-local INITIAL_RESPONSE_TIMEOUT_MS = CliRuntime.INITIAL_RESPONSE_TIMEOUT_MS
 
 --- One adapter class per descriptor id, so the compatibility shims (`claude_cli.lua` etc.) and
 --- `factory.create` hand out the same class.
@@ -414,8 +412,11 @@ function M.define(descriptor)
     end
 
     -- Session corruption detection: a resumed session that never answers is killed and reset.
+    -- Armed only when there is a session to resume, which is the one way this differs from the
+    -- resident transport's watchdog (`duplex_turn.lua`) — there, a process outliving its turns has
+    -- no exit for anyone to notice, so every turn is watched.
     if session_id then
-      timeout_timer = vim.fn.timer_start(INITIAL_RESPONSE_TIMEOUT_MS, function()
+      timeout_timer = vim.fn.timer_start(TurnOutcome.FIRST_RESPONSE_TIMEOUT_MS, function()
         if not received_first_response and not completed and self._processes[ids.process_id] then
           vim.schedule(function()
             if not completed then
@@ -423,17 +424,11 @@ function M.define(descriptor)
                 "[vibing] Session resume timeout - killing hung process and resetting session",
                 vim.log.levels.WARN
               )
+              -- Reported before the kill, for the reason `turn_outcome.first_response_timeout`
+              -- states: `cancel` completes this same turn as a plain "Cancelled" on its way out,
+              -- and `finish` is idempotent, so killing first threw this response away entirely.
+              finish(TurnOutcome.first_response_timeout(ids, session_id))
               self:cancel(ids.process_id)
-              finish({
-                error = "Session resume timeout",
-                _session_corrupted = true,
-                _old_session_id = session_id,
-                -- Without this, send_message's staleness check is skipped entirely: a timeout that
-                -- fires after the user cancelled and sent something new would be treated as the
-                -- new request's result and reset its session id.
-                _turn_id = ids.turn_id,
-                _process_id = ids.process_id,
-              })
             end
           end)
         end
