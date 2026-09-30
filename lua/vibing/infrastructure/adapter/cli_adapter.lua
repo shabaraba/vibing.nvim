@@ -427,7 +427,7 @@ function M.define(descriptor)
               -- Reported before the kill, for the reason `turn_outcome.first_response_timeout`
               -- states: `cancel` completes this same turn as a plain "Cancelled" on its way out,
               -- and `finish` is idempotent, so killing first threw this response away entirely.
-              finish(TurnOutcome.first_response_timeout(ids, session_id))
+              finish(TurnOutcome.first_response_timeout(ids))
               self:cancel(ids.process_id)
             end
           end)
