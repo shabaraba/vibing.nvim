@@ -532,52 +532,26 @@ function M._handle_response(response, callbacks, adapter, config, modified_file_
     require("vibing.application.chat.worktree_binding").resolve(turn_id_for_diff, bufnr)
   end)
 
-  -- 通知の取りこぼし（upstream #87675）の回収。**差分の確定より後**に置くのは、これが
-  -- `## Notice` として新しいターンを始める送信であり、このターンの成果を書き終える前に
-  -- 次を始めると両者が同じバッファ末尾を取り合うため
-  pcall(M._recover_unreported_tasks, response, bufnr)
+  -- バックグラウンド subagent を残して閉じたターンの起床（#820）。**差分の確定より後**に置くのは、
+  -- これが `## Notice` として新しいターンを始める送信であり、このターンの成果を書き終える前に
+  -- 次を始めると両者が同じバッファ末尾を取り合うため。
+  --
+  -- **`vim.schedule` に包むのも同じ理由から。** スナップショット/リクエスト差分経路の
+  -- `add_user_section`（＝`_finish_turn`。`self._assistant_header_line` の終了時刻スタンプと、
+  -- このターン自身の未送信 `## User` セクションを書く）は `vim.schedule` 越しに走る
+  -- （`_emit_diff_output`）。ここを同期のまま呼ぶと、起床が同じtick内に新しいターンを送信し、
+  -- `send_message()` → `start_response()` が `_assistant_header_line` を新しいターンの行番号で
+  -- 上書きしてしまう — その後で走る現ターンの `_finish_turn` は自分の終了時刻を新しいターンの
+  -- ヘッダーに書き込み、しかも `_assistant_header_line` を nil に戻すので、新しいターン自身の
+  -- 完了時にはもう何も書けない。`vim.schedule` で後ろに並べれば、既にスケジュール済みの
+  -- `_finish_turn` が先に走ってから起床するので、この取り合いにならない
+  -- （変更なしの分岐は既に同期で閉じているので、ここを遅らせても害はない）
+  vim.schedule(function()
+    pcall(require("vibing.application.chat.outstanding_subagents").wake, response, bufnr)
+  end)
 
   -- NOTE: clear_turn_id() は呼ばない
   -- 次のsend_message()時にkillすることで、ゾンビプロセス対策になる
-end
-
----完了通知が届かなかったバックグラウンド subagent の出力を `## Notice` として配達する。
----
----回収そのものはアダプタ側の仕事で、ここに届くのは既に読み出されたテキストだけ。CLI が通知を
----配れていれば **ここは何もしない** — 通常経路は CLI 自身が次のターンを開始するので、こちらが
----動くのは upstream のレースを踏んだときだけ
----@param response table
----@param bufnr number|nil
-function M._recover_unreported_tasks(response, bufnr)
-  local recovered = response and response._recovered_subagents
-  if not recovered or #recovered == 0 or not bufnr then
-    return
-  end
-
-  local blocks = {}
-  for _, item in ipairs(recovered) do
-    table.insert(blocks, string.format("### %s\n\n%s", item.label, item.text))
-  end
-  local body = table.concat({
-    string.format(
-      "%d background subagent(s) finished without the CLI delivering a completion notification "
-        .. "(anthropics/claude-code#87675). Their output was recovered from their own transcripts:",
-      #blocks
-    ),
-    "",
-    table.concat(blocks, "\n\n"),
-  }, "\n")
-
-  local Queue = require("vibing.application.chat.message_queue")
-  local ok, err = Queue.enqueue_notice(bufnr, body, false)
-  if not ok then
-    require("vibing.core.utils.notify").warn(
-      string.format("Could not deliver recovered subagent output: %s", err or "unknown"),
-      "Subagent"
-    )
-    return
-  end
-  Queue.flush(bufnr)
 end
 
 ---バッファ末尾から直近のCodex累計マーカーを読む

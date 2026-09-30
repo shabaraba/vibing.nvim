@@ -90,17 +90,55 @@ Only the completion is drawn (`subagent_display.format_completion`), and only it
 already on screen as the `Agent(...)` tool line, and the subagent's answer reaches the model through
 the notification — printing the summary here would show every report twice.
 
-### Recovering a dropped notification
+### A turn that ends with subagents outstanding
 
 Upstream drops a notification that arrives while the parent is mid-turn
 (anthropics/claude-code#87675: 19 subagents launched, 15 notified, the parent idle for hours). That
-one is not vibing's to fix, so at the end of the turn the started-minus-notified set is read back
-out of each subagent's own transcript and delivered as a `## Notice`.
+one is not vibing's to fix. What is vibing's is the consequence: **a turn whose started-minus-notified
+set is non-empty has nothing left that will ever start another turn on that chat**, and per
+`architecture.md` starting a turn is the only way to deliver anything to one. The chat sits dead
+until a human types into it, and what the human sees is "the response just stopped" (#820). Observed
+on a `/simplify` run: four `Agent(...)` lines, "I'll report once all four come back", then nothing
+until the user asked what had happened.
 
-This path must do nothing on the ordinary route, and it reports only what it actually found: a
-notice saying a subagent finished with no content attached is worse than staying quiet. The
-transcript location is derived rather than remembered, because a task that was never notified never
-told us its `output_file`.
+So the end of every turn asks `BackgroundTasks.report()` for two things, and they are not the same
+thing:
+
+- **the outstanding set** — everything launched with `is_backgrounded` that never reported. This is
+  the wake signal.
+- **what could be recovered** — each outstanding subagent's own transcript, read back off disk.
+  This is content for the notice, and it is empty in the case that matters most.
+
+**Keying the wake on recovery was the defect.** Recovery only yields text for a subagent that has
+already _finished_ and written its answer; the subagent that is still _running_ has nothing on disk
+yet, so empty recovery meant silence in exactly the state that leaves the chat unreachable. The
+partial case was the same hole one step in: four outstanding and one recoverable reported that one
+and silently abandoned the other three. The notice is therefore built by walking the outstanding set
+and splitting it on whether a recovered answer exists for that `task_id` — which is why
+`Vibing.RecoveredSubagent` is `{ task_id, text }` and carries no display label of its own. The launch's
+`description` is already on the `Vibing.BackgroundTask` the answer belongs to, so naming the block
+stays with the chat layer that renders it, and both groups name a task the same way.
+
+This does **not** reverse the older rule that recovery reports only what it found. "A subagent
+finished and here is nothing" is still worse than staying quiet; "these two are still running, go
+collect them" is a different sentence and an actionable one. The first describes a subagent, the
+second describes the chat's own predicament.
+
+Two things bound it. It is **not** behind `agent.chat_notifications.enabled` — the same
+"cannot leave this stop on its own" class as `asked_question` / `waiting_approval` / `error`, and an
+opt-in would leave the silent stall as the default behaviour. And it **does not wake a `_cancelled`
+turn**: that flag covers both `:VibingCancel` and the kill that draws a question or an approval, and
+neither is an abandoned chat — the first was stopped on purpose, the second has a prompt on screen
+whose answer starts the next turn.
+
+The loop this could have been is closed structurally rather than with a budget: the ledger lives on
+`event_context._background_tasks`, which `cli_adapter.stream()` builds fresh per turn. A
+`task_notification` arriving in turn N+1 finds no entry from turn N, so turn N+1's outstanding set is
+empty and the wake happens at most once per turn that actually left work behind. No counterpart to
+`completion_notifier`'s `max_wakes` is needed, and adding one would be state with nothing to protect.
+
+The transcript location is derived rather than remembered, because a task that was never notified
+never told us its `output_file`.
 
 ## Message Timestamps
 
