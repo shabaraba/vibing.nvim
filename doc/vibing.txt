@@ -325,6 +325,21 @@ section is not kept in sync field by field.
 :VibingCancel
     Cancel the request in flight.
 
+                                                             *:VibingReserve*
+:VibingReserve [{text}]
+    Reserve {text} for this chat, to be sent when its current response
+    finishes. With no argument, asks for the text. Applies to the current
+    chat buffer only. See |vibing-reserved-messages|.
+
+                                                        *:VibingReservations*
+:VibingReservations
+    List the messages reserved for this chat, in the order they will be
+    joined.
+
+                                                  *:VibingCancelReservations*
+:VibingCancelReservations
+    Drop every message reserved for this chat without sending it.
+
                                                     *:VibingOrchestrationTree*
 :VibingOrchestrationTree [{path}]
     Draw the orchestration tree this chat belongs to, read from the
@@ -452,7 +467,9 @@ Ask for them in plain language — they are backed by the bundled
 
 In a chat buffer:~
 
-    <CR>        Send the message (normal mode)
+    <CR>        Send the message (normal mode). While the chat is
+                responding, open an input to reserve a message instead
+                (|vibing-reserved-messages|)
     <C-c>       Cancel the current request
     <C-a>       Add a file to the context
     gd          Open the definition of the `/name` under the cursor, or show
@@ -463,6 +480,26 @@ In a chat buffer:~
     ]v          Next value for the frontmatter field under the cursor
     [v          Previous value for the frontmatter field under the cursor
     q           Close the chat window
+
+Reserved messages~
+                                                    *vibing-reserved-messages*
+While a chat is responding, `<CR>` (or |:VibingReserve|) takes a message to
+send once the response finishes. Reserve as many as you like; when the turn
+ends they are joined with newlines, in the order you reserved them, and sent
+as one `## User` message. Each chat buffer keeps its own reservations, only in
+memory: closing Neovim or wiping the buffer drops them.
+
+They are not sent on their own in three cases:
+
+- The turn was cancelled or ended in an error. The joined text is written
+  into the unsent `## User` section instead, for you to edit and send.
+- A prompt (a tool approval or a question) is waiting in the unsent section.
+  The reservations wait until the turn that answers it finishes.
+- The unsent section already holds text you wrote. They wait until the turn
+  that sends it finishes.
+
+When a prompt is holding the turn open, `<CR>` answers the prompt as usual and
+does not reserve.
 
 Cycling a frontmatter value~
 

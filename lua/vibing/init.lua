@@ -151,6 +151,13 @@ function M.setup(opts)
     end)
   end)
 
+  -- 予約送信の完了待ち受け。予約が無ければ1ターンにつき空振り1回
+  vim.schedule(function()
+    pcall(function()
+      require("vibing.application.chat.reservations").setup()
+    end)
+  end)
+
   -- 自動 `/compact` の完了待ち受け。completion_notifier と同じく設定に関わらず張る
   -- （理由は auto_compact.setup() のコメント参照）
   vim.schedule(function()
@@ -416,6 +423,55 @@ function M._register_commands()
       M.adapter:cancel()
     end
   end, { desc = "Cancel current Vibing request" })
+
+  -- 予約送信。対象はカレントのチャットバッファだけ: 応答中のチャットは複数ありうるので、
+  -- `:VibingCancel` のような「直近のチャット」へのフォールバックは別のチャットに予約を積みうる
+  vim.api.nvim_create_user_command("VibingReserve", function(opts)
+    local chat_buffer = require("vibing.presentation.chat.view").get_current()
+    if not chat_buffer then
+      notify.warn("Not in a chat buffer")
+      return
+    end
+    if opts.args == "" then
+      chat_buffer:prompt_reservation()
+      return
+    end
+    local ok, err = require("vibing.application.chat.reservations").add(chat_buffer:get_buffer(), opts.args)
+    if not ok then
+      notify.warn(err)
+    end
+  end, {
+    nargs = "?",
+    desc = "Reserve a message to send when this chat's current response finishes",
+  })
+
+  vim.api.nvim_create_user_command("VibingReservations", function()
+    local chat_buffer = require("vibing.presentation.chat.view").get_current()
+    if not chat_buffer then
+      notify.warn("Not in a chat buffer")
+      return
+    end
+    local items = require("vibing.application.chat.reservations").list(chat_buffer:get_buffer())
+    if #items == 0 then
+      notify.info("No reserved messages")
+      return
+    end
+    local lines = { string.format("%d reserved message(s):", #items) }
+    for i, item in ipairs(items) do
+      table.insert(lines, string.format("%d. %s", i, item))
+    end
+    notify.info(table.concat(lines, "\n"))
+  end, { desc = "List the messages reserved for this chat" })
+
+  vim.api.nvim_create_user_command("VibingCancelReservations", function()
+    local chat_buffer = require("vibing.presentation.chat.view").get_current()
+    if not chat_buffer then
+      notify.warn("Not in a chat buffer")
+      return
+    end
+    local cleared = require("vibing.application.chat.reservations").clear(chat_buffer:get_buffer())
+    notify.info(string.format("Cancelled %d reserved message(s)", cleared))
+  end, { desc = "Cancel every message reserved for this chat" })
 
   vim.api.nvim_create_user_command("VibingOrchestrationTree", function(opts)
     require("vibing.presentation.chat.orchestration_controller").handle_tree(opts.args)
