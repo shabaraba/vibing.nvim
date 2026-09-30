@@ -139,7 +139,7 @@ function M.open(params, record, chat_key)
   -- The process a response names is the one that actually served the turn, which on a reused
   -- process is not the id this turn was minted with. `duplex_stream` has already written it back
   -- onto `ids`; naming `record` here says so without depending on that order.
-  local turn_ids = { turn_id = ids.turn_id, process_id = record.process_id }
+  local turn_ids = Routing.ids_of(record, record._turn)
 
   context.onTurnEnd = function()
     local errors = context.resultErrors
