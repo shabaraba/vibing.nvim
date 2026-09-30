@@ -12,8 +12,17 @@
 local DuplexProcess = require("vibing.infrastructure.adapter.modules.duplex_process")
 local Pool = require("vibing.infrastructure.adapter.modules.duplex_pool")
 local StreamHandler = require("vibing.infrastructure.adapter.modules.stream_handler")
+local TurnOutcome = require("vibing.infrastructure.adapter.modules.turn_outcome")
 
 local M = {}
+
+--- The ids a response built for an open turn carries: the turn's own, and the process serving it.
+--- @param record Vibing.DuplexProcess
+--- @param turn table
+--- @return Vibing.RequestIds
+local function ids_of(record, turn)
+  return { turn_id = turn.turn_id, process_id = record.process_id }
+end
 
 --- The turn a record currently has open, or nil while it is idle.
 --- @param record Vibing.DuplexProcess|nil
@@ -106,15 +115,13 @@ end
 --- @param code number
 --- @return Vibing.Response
 local function ended_by_process(record, turn, code)
-  return {
-    content = table.concat(turn.context.output, ""),
-    -- `stopping` is set by `duplex_pool.stop` *before* it announces the death, so a turn the user
-    -- cancelled says so rather than reporting the exit code of the kill that stopped it.
-    error = record.stopping and "Cancelled" or ("The CLI exited with code " .. tostring(code)),
-    _cancelled = record.stopping or nil,
-    _turn_id = turn.turn_id,
-    _process_id = record.process_id,
-  }
+  local content = table.concat(turn.context.output, "")
+  -- `stopping` is set by `duplex_pool.stop` *before* it announces the death, so a turn the user
+  -- cancelled says so rather than reporting the exit code of the kill that stopped it.
+  if record.stopping then
+    return TurnOutcome.cancelled(ids_of(record, turn), content)
+  end
+  return TurnOutcome.ended(ids_of(record, turn), content, "The CLI exited with code " .. tostring(code))
 end
 
 --- The process is gone, by any of the four routes `duplex_pool` reclaims one through.
@@ -149,13 +156,7 @@ function M.cancellable_handle(record, chat_key)
     on_cancel = function()
       local turn = take_turn(record)
       if turn then
-        turn.complete({
-          content = table.concat(turn.context.output, ""),
-          error = "Cancelled",
-          _cancelled = true,
-          _turn_id = turn.turn_id,
-          _process_id = record.process_id,
-        })
+        turn.complete(TurnOutcome.cancelled(ids_of(record, turn), table.concat(turn.context.output, "")))
       end
     end,
   }

@@ -86,6 +86,7 @@ on each `assistant` message, and `claude_stream_json`'s `result` arm emits only 
 | `duplex_stream.lua`  | The duplex tail of `stream()`: the reuse key, acquire, send                  |
 | `duplex_turn.lua`    | One turn's lifetime on a process that outlives it                            |
 | `duplex_routing.lua` | The four things that reach a process, not a turn, and how they find the turn |
+| `turn_outcome.lua`   | Shared with the oneshot path: the first-byte budget and every response shape |
 
 ## What had to move
 
@@ -218,6 +219,44 @@ anything was actually asked to stop, and `ChatBuffer:cancel_turn` folds the chat
 `_finish_turn` when the answer is no. `cancel_request` keeps the old meaning, because
 `send_message`'s zombie reap calls it while `_is_sending` may legitimately be set for a prompt being
 answered in place (#788).
+
+## One answer to the first-byte question
+
+The resident transport shipped (#781) with its own first-response watchdog and its own copy of every
+response shape, and left a comment on each half telling the next person to keep them equal. #782
+merged them into `turn_outcome.lua`. Three things came out of doing it that are worth keeping.
+
+**The "keep these equal" comments could not have been honoured, and no test could have noticed.**
+`cli_adapter.lua` read the oneshot budget into a `local` at **module load**
+(`local INITIAL_RESPONSE_TIMEOUT_MS = CliRuntime.INITIAL_RESPONSE_TIMEOUT_MS`), so the value one
+transport actually armed was unobservable from outside: assigning a different number to either
+module's constant at runtime changed nothing. The merged constant is read at the moment each
+watchdog arms, which is what makes the one assertion that matters possible —
+`first_response_watchdog_spec.lua` sets the shared value to 60ms and requires **both** transports to
+fire on it. A transport that kept a copy produces no response at all inside the test's patience and
+fails; comparing the two numbers to each other, which is what the comments asked for, would have
+passed against two independent constants that happened to agree.
+
+**There were eleven response literals, not the three the issue counted.** Four pairs were the same
+response written twice — a failure before any process existed (`cli_runtime.report` /
+`duplex_stream.fail`), a cancellation (`cli_runtime.spawn`'s handle /
+`duplex_routing.cancellable_handle`), a turn that ended on its own terms
+(`stream_handler.create_exit_handler` / `duplex_turn.onTurnEnd`), and the watchdog. The count is why
+the spec ends with a repository scan rather than with call-site assertions: this repository's
+recurring failure is following a new discipline at the call sites the author had in mind and missing
+one, after which nothing fails. `[^%w_]_turn_id%s*=` over `lua/vibing/infrastructure/adapter/` must
+match only `turn_outcome.lua`.
+
+**Merging found a real defect on the oneshot side.** Its watchdog killed the process and _then_
+reported, and `cancel()` completes the same turn as a plain `Cancelled` on its way out. Completion
+is idempotent, so the first response through wins: the `_session_corrupted` response was constructed
+and discarded on every firing. The session was never reset, the "Session Timeout" notice was never
+written, and the `_cancelled` on the response that replaced it suppressed the `**Error:**` line too
+— a hung resumed session ended the turn with an empty assistant section and no message of any kind,
+leaving only a `vim.notify`. duplex had the same ordering during #781's development, found it, and
+fixed only its own half; the oneshot half stayed as it was because #777 was scoped not to touch it.
+The fix is one statement, stated once, on `turn_outcome.first_response_timeout`: hand the response
+back before killing anything.
 
 ## What is deliberately not here
 

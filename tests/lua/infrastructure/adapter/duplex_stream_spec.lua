@@ -16,7 +16,7 @@ local CHAT_BUFNR = 4242
 ---
 --- The real value is 5s, and two tests waiting it out really is 12 seconds added to `npm test` for
 --- nothing — the fallback's behaviour has no relationship to its length. Overridden the way
---- `cli_runtime_spec` overrides `INITIAL_RESPONSE_TIMEOUT_MS`, and restored in `after_each` rather
+--- `cli_runtime_spec` overrides `FIRST_RESPONSE_TIMEOUT_MS`, and restored in `after_each` rather
 --- than inline so a failing assertion cannot leave every later spec on a 100ms budget.
 local GRACE_MS = 100
 

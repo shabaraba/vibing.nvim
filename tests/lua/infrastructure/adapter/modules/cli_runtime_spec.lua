@@ -1,5 +1,6 @@
 local CliRuntime = require("vibing.infrastructure.adapter.modules.cli_runtime")
 local helper = require("tests.helpers.adapter_stream")
+local TurnOutcome = require("vibing.infrastructure.adapter.modules.turn_outcome")
 local TurnRegistry = require("vibing.infrastructure.adapter.modules.turn_registry")
 
 -- Deliberately distinct, so a site that uses one where it means the other misses instead of
@@ -328,7 +329,7 @@ for _, backend in ipairs(helper.adapters()) do
     it("execute cancels a run that never finishes rather than leaving it alive", function()
       -- The timeout is module-level state, so it is restored before the assertions rather than
       -- after: a failing assertion here would otherwise leave every later spec on a 50ms budget.
-      local original_timeout = CliRuntime.INITIAL_RESPONSE_TIMEOUT_MS
+      local original_timeout = TurnOutcome.FIRST_RESPONSE_TIMEOUT_MS
       local original_cancel = adapter.cancel
 
       local cancelled_with = false
@@ -337,10 +338,10 @@ for _, backend in ipairs(helper.adapters()) do
         return original_cancel(self, process_id)
       end
 
-      CliRuntime.INITIAL_RESPONSE_TIMEOUT_MS = 50
+      TurnOutcome.FIRST_RESPONSE_TIMEOUT_MS = 50
       -- stub_system never invokes on_exit, so on_done never fires: the timeout path.
       local ok, result = pcall(adapter.execute, adapter, "hi", {})
-      CliRuntime.INITIAL_RESPONSE_TIMEOUT_MS = original_timeout
+      TurnOutcome.FIRST_RESPONSE_TIMEOUT_MS = original_timeout
       adapter.cancel = original_cancel
 
       assert.is_true(ok, tostring(result))

@@ -58,6 +58,10 @@ One adapter, driven by a descriptor per backend (ADR 009). Adding a backend is
 - `modules/turn_registry.lua` - Open turns, keyed by **turn**, each holding a reference to its
   process entry. Requires `process_registry` and is the only writer of `active_turn_id`; the
   dependency never runs the other way
+- `modules/turn_outcome.lua` - The only place a `Vibing.Response` is built, and the only definition
+  of how long the CLI gets to produce its first byte. Shared by both transports; a spec scan fails
+  the build on a response literal written anywhere else under `adapter/`
+  (`handbook/architecture/duplex-transport.md` → "One answer to the first-byte question")
 - `../hooks/transports.lua` - The four hook transports a descriptor can name, over the four
   settings generators beside it
 
