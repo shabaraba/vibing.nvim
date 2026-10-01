@@ -6,6 +6,7 @@ local tools_constants = require("vibing.core.constants.tools")
 local M = {}
 
 local Agents = require("vibing.core.constants.agents")
+local ModelCatalog = require("vibing.infrastructure.adapter.models.catalog")
 
 ---Agent enum and per-agent model candidates both come from the backend registry, so adding a
 ---backend needs no edit here.
@@ -81,10 +82,13 @@ function M.get_enum_values(field)
 end
 
 ---Get model candidates for the given agent backend
----@param agent string? "claude" | "codex" | "copilot" (defaults to "claude")
+---
+---Through the catalogue rather than `Agents.models_for`: a backend whose CLI can be asked which
+---models it has answers for itself, and the constant is what is offered until it does.
+---@param agent string? "claude" | "codex" | "copilot" | "grok" (defaults to "claude")
 ---@return Vibing.CompletionItem[]
 function M.get_model_values(agent)
-  local models = Agents.models_for(agent)
+  local models = ModelCatalog.candidates_for(agent)
   local items = {}
   for _, m in ipairs(models) do
     table.insert(items, {

@@ -49,6 +49,13 @@ One adapter, driven by a descriptor per backend (ADR 009). Adding a backend is
   (`handbook/architecture/processes-and-turns.md`)
 - `modules/non_claude_model.lua`, `modules/reasoning_effort.lua` - The shared value rules the
   request builder applies
+- `models/catalog.lua` - What the `model:` completion and `/model` offer: each backend's own CLI
+  asked once for its model list (cached, 30s cooldown on failure, dropped by
+  `:VibingReloadCommands`), with `agents.lua`'s `models` as the fallback. `/model` **validates**
+  against it, so a stale list refuses a model the CLI accepts
+- `models/<id>.lua` - One backend's `command(config)` and `parse(stdout)`. Only codex
+  (`codex debug models`) and grok (`grok models`) have one: claude's `--model` takes an alias the
+  CLI resolves to the latest model itself, and the copilot CLI cannot list its models at all
 - `modules/ask_user_question_instructions.lua` - Shared Claude/Codex choice-list tool instruction
   and stable chat-buffer identity line
 - `modules/session_manager.lua` - CLI sessions, keyed by the **process** that holds one open

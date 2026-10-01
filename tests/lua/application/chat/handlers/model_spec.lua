@@ -1,6 +1,7 @@
 describe("model handler", function()
   local handler
   local original_notify
+  local restore_clis
 
   before_each(function()
     original_notify = package.loaded["vibing.core.utils.notify"]
@@ -11,9 +12,13 @@ describe("model handler", function()
       info = function() end,
     }
     handler = require("vibing.application.chat.handlers.model")
+    -- Validation goes through ModelCatalog.all_values(), which asks a real codex/grok CLI on
+    -- PATH -- see tests/helpers/model_catalog.lua.
+    restore_clis = require("tests.helpers.model_catalog").without_clis()
   end)
 
   after_each(function()
+    restore_clis()
     package.loaded["vibing.application.chat.handlers.model"] = nil
     package.loaded["vibing.core.utils.notify"] = original_notify
   end)

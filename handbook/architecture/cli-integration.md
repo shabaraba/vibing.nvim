@@ -331,3 +331,40 @@ and dialect from `hooks/transports.lua`; the four generators described below are
   `codex_tool_vocabulary.lua` can only restore the one prefix it anchors on — and must keep doing
   so, because `can_use_tool.is_vibing_nvim_mcp_tool` matches the hyphenated spelling directly
   rather than going through `matchers.lua`.
+
+## Asking a CLI Which Models It Has
+
+`agents.lua`'s per-backend `models` lists were hand-written, so they went stale on every CLI
+release — the pair that triggered this were two codex models that no longer existed alongside a
+missing `gpt-6-sol`, and a grok model that was gone. Two of the four CLIs can simply be asked, and
+`infrastructure/adapter/models/` does, keeping the constants as the fallback.
+
+**What each CLI costs to ask, measured.**
+
+| Backend | Command              | Measured                                                                                                                                                                                                          |
+| ------- | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| codex   | `codex debug models` | codex-cli 0.157.1: 9 entries, 515,228 bytes of JSON, **20ms**. Read from the binary's own catalogue — no network round trip, no API call, and it answers logged out. `vim.json.decode` on that payload is 1.12ms. |
+| grok    | `grok models`        | grok 1.0.34: **660ms**, exit 0, all of it on **stdout** with stderr empty. Answers while logged out: "You are not authenticated." is printed above the list rather than instead of it.                            |
+| claude  | —                    | Nothing to ask. `--model` takes an alias (`opus` / `sonnet` / `fable` / `haiku`) that the CLI itself resolves to the latest model of that family, so the aliases are the whole answer and do not age.             |
+| copilot | —                    | No equivalent exists; the model list is reachable only from `/model` inside the TUI.                                                                                                                              |
+
+Neither command spends a token: no inference request is made, which is what makes asking on the
+completion path acceptable at all.
+
+**Two things that are easy to get wrong here.**
+
+- **`grok models 2>&1 >/dev/null` reads the opposite way round.** That redirects stderr to the
+  terminal and stdout to `/dev/null`, so the list appears to be on stderr. Redirect the two streams
+  to separate files before concluding anything about which one a CLI answers on; the wrong reading
+  makes discovery fail in complete silence, since an empty parse is indistinguishable from a CLI
+  that has nothing to say.
+- **codex resolves no short name.** `-m luna` is treated as an unknown model (`warning: Model
+metadata for 'luna' not found`, then HTTP 400 `The 'luna' model is not supported`), so the
+  candidates are full slugs — the opposite of claude's aliases, and the reason the two backends are
+  handled differently rather than uniformly.
+
+**A discovery module must not reuse its backend's request binary resolver.** `grok_command_builder`'s
+`BINARY.resolve` raises when the CLI is absent and sniffs the binary for officialness with two
+blocking `vim.fn.system` calls; paying that per keystroke is what the module's own comments warn
+about. `BINARY.configured` + `BINARY.name` is the non-raising half, and is the one interpretation of
+the `backends.grok.executable` `auto` sentinel.

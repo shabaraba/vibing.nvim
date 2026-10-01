@@ -109,9 +109,13 @@ describe("frontmatter_cycler", function()
     end)
 
     it("offers the models of the agent this chat is using", function()
+      -- model_candidates() reads the static fallback; the field under test goes through
+      -- ModelCatalog, which asks a real codex CLI on PATH -- see tests/helpers/model_catalog.lua.
+      local restore_clis = require("tests.helpers.model_catalog").without_clis()
       open({ "---", "agent: codex", "model: gpt-5", "---", "" })
 
       assert.same(model_candidates("codex"), cycler.enum_at(buf, 3).values)
+      restore_clis()
     end)
   end)
 

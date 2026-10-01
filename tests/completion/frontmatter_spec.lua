@@ -1,7 +1,20 @@
 local frontmatter_source = require("vibing.application.completion.sources.frontmatter")
 local frontmatter_provider = require("vibing.infrastructure.completion.providers.frontmatter")
+local catalog_helper = require("tests.helpers.model_catalog")
 
 describe("Frontmatter completion", function()
+  -- These assertions are about the constants the catalogue falls back to. The catalogue's own
+  -- behaviour is covered by `tests/lua/infrastructure/adapter/models/catalog_spec.lua`.
+  local restore_clis
+
+  before_each(function()
+    restore_clis = catalog_helper.without_clis()
+  end)
+
+  after_each(function()
+    restore_clis()
+  end)
+
   describe("Enum fields", function()
     it("should detect mode field trigger", function()
       local ctx = frontmatter_source.get_trigger_context("mode: ", 6)
@@ -81,8 +94,8 @@ describe("Frontmatter completion", function()
       end, items)
 
       assert.is_true(vim.tbl_contains(values, "gpt-6-astra"))
+      assert.is_true(vim.tbl_contains(values, "gpt-6-sol"))
       assert.is_true(vim.tbl_contains(values, "gpt-5.6-terra"))
-      assert.is_true(vim.tbl_contains(values, "gpt-5-codex"))
     end)
 
     it("should fall back to claude models for an unknown agent", function()
