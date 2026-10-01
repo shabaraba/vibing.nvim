@@ -158,7 +158,11 @@ describe("vibing.application.chat.commands", function()
     end)
 
     it("should offer model completions for every registered backend", function()
+      -- Asserts the fallback list, so a real codex/grok CLI on PATH must not be allowed to
+      -- answer first -- see tests/helpers/model_catalog.lua.
+      local restore_clis = require("tests.helpers.model_catalog").without_clis()
       local completions = Commands.get_argument_completions("model")
+      restore_clis()
 
       assert.is_true(vim.tbl_contains(completions, "sonnet"))
       assert.is_true(vim.tbl_contains(completions, "gpt-6-astra"))

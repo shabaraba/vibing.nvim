@@ -21,19 +21,23 @@ local M = {}
 --- @field command fun(config: Vibing.Config|nil): string[] the argv that lists the CLI's models
 --- @field parse fun(stdout: string): Vibing.AgentModelCandidate[] empty when unrecognised
 
---- @type table<string, Vibing.AgentModelCandidate[]>
-local discovered = {}
+--- One backend's probe state: what it discovered, whether a probe is in flight, and the cooldown
+--- after a failed one. A single table per id rather than three tables keyed by id, so `clear_cache`
+--- swaps each backend onto a fresh table instead of resetting three in lockstep -- a probe already
+--- in flight keeps writing into the table it closed over, which nothing reads anymore, instead of
+--- into whatever `state[id]` is by the time it lands.
+--- @class Vibing.ModelProbeState
+--- @field candidates Vibing.AgentModelCandidate[]|nil
+--- @field in_flight boolean|nil
+--- @field retry_after number|nil
+
+--- @type table<string, Vibing.ModelProbeState>
+local state = {}
 
 --- Loop time (ms) before which a backend must not be probed again. Nothing is cached when a probe
 --- fails, and `candidates_for` is on the completion path, so without this a CLI that answers
 --- wrongly would have one process spawned per keystroke. Same shape and reason as
 --- `completion/providers/skills.lua`'s cooldown.
---- @type table<string, number>
-local retry_after = {}
-
---- @type table<string, boolean>
-local in_flight = {}
-
 --- @type integer
 local FAILURE_COOLDOWN_MS = 30000
 
@@ -51,7 +55,13 @@ end
 
 --- @param id string
 local function probe(id)
-  if discovered[id] or in_flight[id] or vim.uv.now() < (retry_after[id] or 0) then
+  local record = state[id]
+  if not record then
+    record = {}
+    state[id] = record
+  end
+
+  if record.candidates or record.in_flight or vim.uv.now() < (record.retry_after or 0) then
     return
   end
 
@@ -61,32 +71,40 @@ local function probe(id)
   end
 
   local argv = spec.command(require("vibing.config").get())
-  -- A backend whose CLI is not installed is the ordinary case, not a failure to report: it is
-  -- also the case `vim.system` raises on rather than reporting through the callback.
+  -- A backend whose CLI is not installed is the ordinary case, not a failure to report.
   if vim.fn.executable(argv[1]) ~= 1 then
-    retry_after[id] = vim.uv.now() + FAILURE_COOLDOWN_MS
+    record.retry_after = vim.uv.now() + FAILURE_COOLDOWN_MS
     return
   end
 
-  in_flight[id] = true
-  vim.system(
+  record.in_flight = true
+  -- `vim.system` can raise synchronously on a spawn failure (e.g. the binary was removed between
+  -- the `executable` check above and this call) rather than reporting it through the callback, so
+  -- a bare call here would leave `record.in_flight` stuck forever and this backend never probed
+  -- again for the rest of the session.
+  local ok = pcall(
+    vim.system,
     argv,
     { text = true, timeout = TIMEOUT_MS },
     vim.schedule_wrap(function(result)
-      in_flight[id] = nil
+      record.in_flight = nil
 
       local candidates = spec.parse(result.stdout or "")
       if result.code ~= 0 or #candidates == 0 then
         -- An empty answer is a failed one -- which is also how a parser reports output it did not
         -- recognise. Caching it would replace the fallback list with nothing, which reads in the
         -- popup as "this backend has no models".
-        retry_after[id] = vim.uv.now() + FAILURE_COOLDOWN_MS
+        record.retry_after = vim.uv.now() + FAILURE_COOLDOWN_MS
         return
       end
 
-      discovered[id] = candidates
+      record.candidates = candidates
     end)
   )
+  if not ok then
+    record.in_flight = nil
+    record.retry_after = vim.uv.now() + FAILURE_COOLDOWN_MS
+  end
 end
 
 --- The model candidates to offer for a backend.
@@ -100,7 +118,8 @@ end
 function M.candidates_for(agent)
   local id = Agents.get(agent).id
   probe(id)
-  return discovered[id] or Agents.models_for(id)
+  local record = state[id]
+  return (record and record.candidates) or Agents.models_for(id)
 end
 
 --- Every backend's candidates, in backend order, de-duplicated.
@@ -128,9 +147,7 @@ end
 --- Forget every probed list, so the next call asks the CLIs again. `:VibingReloadCommands`, which
 --- is the user asking for a refresh now, cooldown or not.
 function M.clear_cache()
-  discovered = {}
-  retry_after = {}
-  in_flight = {}
+  state = {}
 end
 
 return M
