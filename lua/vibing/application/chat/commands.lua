@@ -238,10 +238,10 @@ end
 ---@return string[]?
 function M.get_argument_completions(command_name)
   local Modes = require("vibing.core.constants.modes")
-  local Agents = require("vibing.core.constants.agents")
+  local ModelCatalog = require("vibing.infrastructure.adapter.models.catalog")
   local completions = {
     permission = Modes.PERMISSION_MODES,
-    model = Agents.all_model_values(),
+    model = ModelCatalog.all_values(),
     effort = Modes.EFFORT_VALUES,
   }
   return completions[command_name]

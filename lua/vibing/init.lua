@@ -684,6 +684,10 @@ function M._register_commands()
       end
     end
 
+    -- The model lists each CLI was asked for are a completion cache like the others, and a CLI
+    -- update between two of these is exactly when they go stale.
+    require("vibing.infrastructure.adapter.models.catalog").clear_cache()
+
     completion.clear_cache()
     skills.preload()
 

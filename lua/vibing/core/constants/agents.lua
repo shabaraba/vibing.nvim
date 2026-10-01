@@ -34,7 +34,12 @@ local M = {}
 ---@field export_name string `infrastructure/init.lua` でのエクスポート名
 ---@field description string frontmatter 補完の agent enum に出す説明
 ---@field models Vibing.AgentModelCandidate[] 補完候補。妥当性検証ではない（自由入力を許す
----  バックエンドもある）ので、ここに無いモデルを弾く用途には使わないこと
+---  バックエンドもある）ので、ここに無いモデルを弾く用途には使わないこと。
+---  `discovery_module` があるバックエンドでは、CLIに訊けなかったときのフォールバック
+---@field discovery_module string? モデル候補をCLI自身に問い合わせるモジュールの require パス
+---  （`command(config)` と `parse(stdout)` を持つ）。無いバックエンドは `models` のまま使う
+---  ——claude は `opus` のようなエイリアスをCLIが最新モデルへ解決するので訊く対象が無く、
+---  copilot のCLIには一覧を出す手段が無い
 ---@field config_fields table<string, Vibing.AgentConfigField>? `setup().backends.<id>` の項目
 
 ---@type table<string, Vibing.AgentDefinition>
@@ -114,14 +119,17 @@ M.AGENTS = {
         legacy = { "agent", "codex_provider_notice", "enabled" },
       },
     },
+    discovery_module = "vibing.infrastructure.adapter.models.codex",
+    -- `codex debug models` に訊けなかったとき（CLI未インストール等）だけ使う。codex は短縮名を
+    -- 解決しないので、値は必ずカタログどおりのスラッグで書く
     models = {
       { value = "gpt-6-astra", description = "GPT-6 Astra (strongest Codex work)" },
-      { value = "gpt-5.6-sol", description = "GPT-5.6 Sol (deep reasoning)" },
-      { value = "gpt-5.6-terra", description = "GPT-5.6 Terra (everyday Codex work)" },
-      { value = "gpt-5.6-luna", description = "GPT-5.6 Luna (fast, narrow tasks)" },
+      { value = "gpt-6-sol", description = "GPT-6 Sol (deep reasoning)" },
+      { value = "gpt-6-luna", description = "GPT-6 Luna (fast, narrow tasks)" },
+      { value = "gpt-5.6-sol", description = "GPT-5.6 Sol (previous generation, deep reasoning)" },
+      { value = "gpt-5.6-terra", description = "GPT-5.6 Terra (previous generation, everyday work)" },
+      { value = "gpt-5.6-luna", description = "GPT-5.6 Luna (previous generation, fast)" },
       { value = "gpt-5.5", description = "GPT-5.5 (previous generation)" },
-      { value = "gpt-5-codex", description = "GPT-5 Codex (API-key auth / Responses API)" },
-      { value = "gpt-5.3-codex-spark", description = "GPT-5.3 Codex Spark (preview, when available)" },
     },
   },
   copilot = {
@@ -160,9 +168,11 @@ M.AGENTS = {
         legacy = { "grok", "executable" },
       },
     },
+    discovery_module = "vibing.infrastructure.adapter.models.grok",
+    -- `grok models` に訊けなかったときだけ使う
     models = {
+      { value = "grok-4.6", description = "Grok 4.6 (default)" },
       { value = "grok-4.5", description = "Grok 4.5" },
-      { value = "grok-composer-2.5-fast", description = "Grok Composer 2.5 Fast" },
     },
   },
 }
@@ -206,21 +216,6 @@ end
 ---@return table<string, Vibing.AgentConfigField>
 function M.config_fields(id)
   return (M.AGENTS[id] and M.AGENTS[id].config_fields) or {}
-end
-
----@return string[] all known model candidate values, keeping backend order and removing duplicates
-function M.all_model_values()
-  local values = {}
-  local seen = {}
-  for _, def in ipairs(M.list()) do
-    for _, model in ipairs(def.models) do
-      if not seen[model.value] then
-        seen[model.value] = true
-        table.insert(values, model.value)
-      end
-    end
-  end
-  return values
 end
 
 return M

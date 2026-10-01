@@ -1,7 +1,27 @@
 local frontmatter_source = require("vibing.application.completion.sources.frontmatter")
 local frontmatter_provider = require("vibing.infrastructure.completion.providers.frontmatter")
+local ModelCatalog = require("vibing.infrastructure.adapter.models.catalog")
 
 describe("Frontmatter completion", function()
+  local original_executable
+
+  -- `model:` candidates come from the catalogue, which asks the backend's CLI. These assertions
+  -- are about the constants it falls back to, and a machine with codex installed would otherwise
+  -- race a real answer into the middle of them. The catalogue's own behaviour is covered by
+  -- `tests/lua/infrastructure/adapter/models/catalog_spec.lua`.
+  before_each(function()
+    original_executable = vim.fn.executable
+    vim.fn.executable = function()
+      return 0
+    end
+    ModelCatalog.clear_cache()
+  end)
+
+  after_each(function()
+    vim.fn.executable = original_executable
+    ModelCatalog.clear_cache()
+  end)
+
   describe("Enum fields", function()
     it("should detect mode field trigger", function()
       local ctx = frontmatter_source.get_trigger_context("mode: ", 6)
@@ -81,8 +101,8 @@ describe("Frontmatter completion", function()
       end, items)
 
       assert.is_true(vim.tbl_contains(values, "gpt-6-astra"))
+      assert.is_true(vim.tbl_contains(values, "gpt-6-sol"))
       assert.is_true(vim.tbl_contains(values, "gpt-5.6-terra"))
-      assert.is_true(vim.tbl_contains(values, "gpt-5-codex"))
     end)
 
     it("should fall back to claude models for an unknown agent", function()
