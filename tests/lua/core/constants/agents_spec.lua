@@ -82,32 +82,29 @@ describe("agents registry", function()
       assert.same(Agents.ORDER, values)
     end)
 
-    it("is what the frontmatter provider falls back to when no CLI can be asked", function()
-      local provider = require("vibing.infrastructure.completion.providers.frontmatter")
-      local catalog = require("vibing.infrastructure.adapter.models.catalog")
-      -- No installed CLI, so nothing is discovered and these lists are the whole answer.
-      local original_executable = vim.fn.executable
-      vim.fn.executable = function()
-        return 0
-      end
-      catalog.clear_cache()
+    describe("with no CLI installed to ask", function()
+      local restore_clis
 
-      local offered = {}
-      for _, def in ipairs(Agents.list()) do
-        offered[def.id] = vim.tbl_map(function(item)
-          return item.word
-        end, provider.get_model_values(def.id))
-      end
+      before_each(function()
+        restore_clis = require("tests.helpers.model_catalog").without_clis()
+      end)
 
-      vim.fn.executable = original_executable
-      catalog.clear_cache()
+      after_each(function()
+        restore_clis()
+      end)
 
-      for _, def in ipairs(Agents.list()) do
-        local expected = vim.tbl_map(function(m)
-          return m.value
-        end, def.models)
-        assert.same(expected, offered[def.id], def.id .. " model candidates drifted")
-      end
+      it("is what the frontmatter provider falls back to", function()
+        local provider = require("vibing.infrastructure.completion.providers.frontmatter")
+        for _, def in ipairs(Agents.list()) do
+          local values = vim.tbl_map(function(item)
+            return item.word
+          end, provider.get_model_values(def.id))
+          local expected = vim.tbl_map(function(m)
+            return m.value
+          end, def.models)
+          assert.same(expected, values, def.id .. " model candidates drifted")
+        end
+      end)
     end)
 
     it("is where the factory resolves adapter modules from", function()

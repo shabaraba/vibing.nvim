@@ -87,18 +87,34 @@ local function still_installed(path)
   return vim.uv.fs_stat(path) ~= nil
 end
 
+--- What `backends.grok.executable` asks for, with the `auto` sentinel already read.
+---
+--- The one interpretation of that option, so a caller that only needs the *name* of the binary --
+--- model discovery, which runs on the completion path -- does not re-derive the sentinel. It
+--- cannot use `resolve_grok_path`: that raises when the CLI is absent and sniffs the binary with
+--- two blocking `vim.fn.system` calls (the cost lines 68-70 discuss).
+--- @param config Vibing.Config|nil
+--- @return string|nil configured the configured path, or nil when the option says `auto`
+local function configured_executable(config)
+  local configured = vim.tbl_get(config or {}, "backends", "grok", "executable")
+  if type(configured) == "string" and configured ~= "" and configured ~= "auto" then
+    return configured
+  end
+  return nil
+end
+
 --- Resolve path to the grok binary
 --- @param config Vibing.Config
 --- @return string
 local function resolve_grok_path(config)
-  local configured = vim.tbl_get(config or {}, "backends", "grok", "executable")
+  local configured = configured_executable(config)
 
   if cached_grok_path and cached_configured_executable == configured and still_installed(cached_grok_path) then
     return cached_grok_path
   end
 
   local resolved
-  if configured and configured ~= "auto" and configured ~= "" then
+  if configured then
     if vim.fn.executable(configured) == 0 then
       error(
         string.format(
@@ -175,8 +191,17 @@ function M._reset_path_cache()
 end
 
 --- The binary, for the request spec: configurable and sniffed, so not the shared PATH lookup.
---- @type { resolve: fun(config: Vibing.Config): string, reset: fun() }
-M.BINARY = { resolve = resolve_grok_path, reset = M._reset_path_cache }
+---
+--- `name` is what the CLI is called on PATH and `configured` reads the option that overrides it;
+--- `resolve` is the two of them plus the existence check and the officialness sniff. A caller that
+--- only needs an argv[1] takes the first two, which is how codex's `BINARY.name` is used.
+--- @type { name: string, configured: fun(config: Vibing.Config|nil): string|nil, resolve: fun(config: Vibing.Config): string, reset: fun() }
+M.BINARY = {
+  name = "grok",
+  configured = configured_executable,
+  resolve = resolve_grok_path,
+  reset = M._reset_path_cache,
+}
 
 --- `--rules`, or nothing when there is nothing to say.
 --- @param ctx Vibing.RequestContext

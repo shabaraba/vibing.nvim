@@ -14,6 +14,13 @@ local Agents = require("vibing.core.constants.agents")
 
 local M = {}
 
+--- What a backend's `discovery_module` exports. Pinned for every registered backend by
+--- `tests/lua/infrastructure/adapter/models/discovery_spec.lua`, because a path that does not
+--- resolve to this shape would otherwise degrade to the fallback list without saying so.
+--- @class Vibing.ModelDiscovery
+--- @field command fun(config: Vibing.Config|nil): string[] the argv that lists the CLI's models
+--- @field parse fun(stdout: string): Vibing.AgentModelCandidate[] empty when unrecognised
+
 --- @type table<string, Vibing.AgentModelCandidate[]>
 local discovered = {}
 
@@ -36,14 +43,10 @@ local FAILURE_COOLDOWN_MS = 30000
 local TIMEOUT_MS = 10000
 
 --- @param id string
---- @return table|nil `{ command, parse }`
+--- @return Vibing.ModelDiscovery|nil nil when this backend's CLI cannot be asked
 local function discovery_spec(id)
   local path = Agents.get(id).discovery_module
-  if not path then
-    return nil
-  end
-  local ok, spec = pcall(require, path)
-  return ok and spec or nil
+  return path and require(path) or nil
 end
 
 --- @param id string
@@ -57,10 +60,10 @@ local function probe(id)
     return
   end
 
-  local ok, argv = pcall(spec.command, require("vibing.config").get())
+  local argv = spec.command(require("vibing.config").get())
   -- A backend whose CLI is not installed is the ordinary case, not a failure to report: it is
   -- also the case `vim.system` raises on rather than reporting through the callback.
-  if not ok or type(argv) ~= "table" or vim.fn.executable(argv[1]) ~= 1 then
+  if vim.fn.executable(argv[1]) ~= 1 then
     retry_after[id] = vim.uv.now() + FAILURE_COOLDOWN_MS
     return
   end
@@ -72,10 +75,11 @@ local function probe(id)
     vim.schedule_wrap(function(result)
       in_flight[id] = nil
 
-      local parsed_ok, candidates = pcall(spec.parse, result.stdout or "")
-      if result.code ~= 0 or not parsed_ok or type(candidates) ~= "table" or #candidates == 0 then
-        -- An empty answer is a failed one. Caching it would replace the fallback list with
-        -- nothing, which reads in the popup as "this backend has no models".
+      local candidates = spec.parse(result.stdout or "")
+      if result.code ~= 0 or #candidates == 0 then
+        -- An empty answer is a failed one -- which is also how a parser reports output it did not
+        -- recognise. Caching it would replace the fallback list with nothing, which reads in the
+        -- popup as "this backend has no models".
         retry_after[id] = vim.uv.now() + FAILURE_COOLDOWN_MS
         return
       end
@@ -94,9 +98,9 @@ end
 --- @param agent string? backend id; an unknown one resolves the same way `Agents.get` resolves it
 --- @return Vibing.AgentModelCandidate[]
 function M.candidates_for(agent)
-  local definition = Agents.get(agent)
-  probe(definition.id)
-  return discovered[definition.id] or definition.models
+  local id = Agents.get(agent).id
+  probe(id)
+  return discovered[id] or Agents.models_for(id)
 end
 
 --- Every backend's candidates, in backend order, de-duplicated.

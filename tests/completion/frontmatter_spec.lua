@@ -1,25 +1,18 @@
 local frontmatter_source = require("vibing.application.completion.sources.frontmatter")
 local frontmatter_provider = require("vibing.infrastructure.completion.providers.frontmatter")
-local ModelCatalog = require("vibing.infrastructure.adapter.models.catalog")
+local catalog_helper = require("tests.helpers.model_catalog")
 
 describe("Frontmatter completion", function()
-  local original_executable
+  -- These assertions are about the constants the catalogue falls back to. The catalogue's own
+  -- behaviour is covered by `tests/lua/infrastructure/adapter/models/catalog_spec.lua`.
+  local restore_clis
 
-  -- `model:` candidates come from the catalogue, which asks the backend's CLI. These assertions
-  -- are about the constants it falls back to, and a machine with codex installed would otherwise
-  -- race a real answer into the middle of them. The catalogue's own behaviour is covered by
-  -- `tests/lua/infrastructure/adapter/models/catalog_spec.lua`.
   before_each(function()
-    original_executable = vim.fn.executable
-    vim.fn.executable = function()
-      return 0
-    end
-    ModelCatalog.clear_cache()
+    restore_clis = catalog_helper.without_clis()
   end)
 
   after_each(function()
-    vim.fn.executable = original_executable
-    ModelCatalog.clear_cache()
+    restore_clis()
   end)
 
   describe("Enum fields", function()

@@ -3,6 +3,7 @@
 --- Both parsers are pure, so the real output of each CLI is pinned here as a fixture.
 local Codex = require("vibing.infrastructure.adapter.models.codex")
 local Grok = require("vibing.infrastructure.adapter.models.grok")
+local Agents = require("vibing.core.constants.agents")
 
 --- Trimmed from `codex debug models` (codex-cli 0.157.1): one listed entry with a description, one
 --- with none, and one the CLI hides.
@@ -36,6 +37,26 @@ local function values(candidates)
     return candidate.value
   end, candidates)
 end
+
+describe("every registered discovery_module", function()
+  -- The same reason `conformance/descriptor_shape_spec.lua` exists: a path that does not resolve
+  -- to `Vibing.ModelDiscovery` makes the catalogue fall back for that backend forever, and a
+  -- fallback list is what a working backend looks like too. Pinned per registered backend so a
+  -- fifth one is covered without an edit here.
+  for _, definition in ipairs(Agents.list()) do
+    if definition.discovery_module then
+      it(definition.id .. " loads and exports command/parse", function()
+        local spec = require(definition.discovery_module)
+        assert.are.equal("function", type(spec.command), "command missing")
+        assert.are.equal("function", type(spec.parse), "parse missing")
+
+        local argv = spec.command({})
+        assert.is_true(#argv > 0 and type(argv[1]) == "string", "command must build an argv")
+        assert.are.same({}, spec.parse(""), "parse must answer empty on output it cannot read")
+      end)
+    end
+  end
+end)
 
 describe("codex model discovery", function()
   it("asks the CLI for its own catalogue", function()

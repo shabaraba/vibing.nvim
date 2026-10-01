@@ -16,20 +16,19 @@
 --- streams to separate files; `grok models 2>&1 >/dev/null` reads the opposite way round).
 --- @module vibing.infrastructure.adapter.models.grok
 
+local GrokCommandBuilder = require("vibing.infrastructure.adapter.modules.grok_command_builder")
+
 local M = {}
 
 --- @param config Vibing.Config|nil
 --- @return string[]
 function M.command(config)
-  -- `grok_command_builder.BINARY.resolve` is deliberately not reused: it raises when the CLI is
-  -- missing, and it sniffs the binary for officialness with two **blocking** `vim.fn.system`
-  -- calls, which is what that module's own comment warns about paying per request. This runs on
-  -- the completion path. What is kept is the half a user can change -- the configured executable.
-  local configured = vim.tbl_get(config or {}, "backends", "grok", "executable")
-  if type(configured) == "string" and configured ~= "" and configured ~= "auto" then
-    return { configured, "models" }
-  end
-  return { "grok", "models" }
+  -- `BINARY.configured` and `BINARY.name`, not `BINARY.resolve`: the resolver raises when the CLI
+  -- is missing and sniffs the binary for officialness with two **blocking** `vim.fn.system` calls,
+  -- and this runs on the completion path. Reading the option through the builder keeps one
+  -- interpretation of the `auto` sentinel.
+  local binary = GrokCommandBuilder.BINARY
+  return { binary.configured(config) or binary.name, "models" }
 end
 
 --- @param stdout string

@@ -71,10 +71,15 @@ function M.clear_cache()
   local skills = require("vibing.infrastructure.completion.providers.skills")
   local files = require("vibing.infrastructure.completion.providers.files")
   local agents = require("vibing.infrastructure.completion.providers.agents")
+  -- The model lists each backend's CLI was asked for are a provider cache like the others, so they
+  -- are dropped here rather than beside this call: a caller that clears the completion caches and
+  -- misses them keeps offering a model list a CLI update has already changed.
+  local models = require("vibing.infrastructure.adapter.models.catalog")
 
   skills.clear_cache()
   files.clear_cache()
   agents.clear_cache()
+  models.clear_cache()
 end
 
 return M

@@ -1,5 +1,4 @@
 local notify = require("vibing.core.utils.notify")
-local ModelCatalog = require("vibing.infrastructure.adapter.models.catalog")
 
 ---@param args string[]
 ---@param chat_buffer Vibing.ChatBuffer
@@ -16,7 +15,7 @@ return function(args, chat_buffer)
     return false
   end
 
-  local known = ModelCatalog.all_values()
+  local known = require("vibing.infrastructure.adapter.models.catalog").all_values()
   if not vim.tbl_contains(known, model) then
     notify.error(string.format("Invalid model: %s (valid: %s)", model, table.concat(known, ", ")))
     return false

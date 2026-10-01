@@ -36,10 +36,9 @@ local M = {}
 ---@field models Vibing.AgentModelCandidate[] 補完候補。妥当性検証ではない（自由入力を許す
 ---  バックエンドもある）ので、ここに無いモデルを弾く用途には使わないこと。
 ---  `discovery_module` があるバックエンドでは、CLIに訊けなかったときのフォールバック
----@field discovery_module string? モデル候補をCLI自身に問い合わせるモジュールの require パス
----  （`command(config)` と `parse(stdout)` を持つ）。無いバックエンドは `models` のまま使う
----  ——claude は `opus` のようなエイリアスをCLIが最新モデルへ解決するので訊く対象が無く、
----  copilot のCLIには一覧を出す手段が無い
+---@field discovery_module string? モデル候補をCLI自身に問い合わせる `Vibing.ModelDiscovery` の
+---  require パス。無いバックエンドは `models` をそのまま使う（どのバックエンドに有るかと、
+---  その理由は `infrastructure/adapter/models/catalog.lua`）
 ---@field config_fields table<string, Vibing.AgentConfigField>? `setup().backends.<id>` の項目
 
 ---@type table<string, Vibing.AgentDefinition>
