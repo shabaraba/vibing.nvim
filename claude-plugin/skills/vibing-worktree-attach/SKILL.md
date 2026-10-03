@@ -20,7 +20,7 @@ existing one.
    git worktree list --porcelain
    ```
 
-2. Once the user picks one, follow steps 3-5 of the `vibing-worktree-create` skill to point this
+2. Once the user picks one, follow step 4 of the `vibing-worktree-create` skill to point this
    chat's own `working_dir` frontmatter at the chosen worktree's path via the `vibing-nvim` MCP
    tools — the worktree already exists, so there's no `git worktree add` step to run first, and
    there's no new chat buffer to open (the current conversation continues, and its next turn

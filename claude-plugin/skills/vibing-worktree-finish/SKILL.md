@@ -21,5 +21,5 @@ discard those changes themselves, rather than retrying with `--force` on their b
 
 If the removed path was this chat's own `working_dir`, clear that frontmatter field once removal
 succeeds (reverting to the main repo root) — leaving it pointed at a now-deleted directory would
-break the next turn. Follow the `vibing-nvim` MCP buffer-editing approach described in steps 3-4
+break the next turn. Follow the `vibing-nvim` MCP buffer-editing approach described in step 4
 of the `vibing-worktree-create` skill to edit the live buffer rather than the file on disk.
