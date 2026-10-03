@@ -196,6 +196,9 @@ function M.causes(prev, current, edited)
   -- two counts move independently -- a server can drop and a different one reconnect with the
   -- same net tool total -- so either moving on its own is reported, and the MCP-reconnect guess
   -- is only voiced when the MCP count itself is what moved.
+  --
+  -- Oneshot only in practice: the counts come from the CLI's `init`, which a resident (duplex)
+  -- process emits once at start, so from its second turn both sides are nil and nothing is claimed.
   local tools_changed = changed(prev.tools, current.tools)
   local mcp_changed = changed(prev.mcp_servers, current.mcp_servers)
   if tools_changed or mcp_changed then

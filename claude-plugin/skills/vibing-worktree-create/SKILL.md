@@ -41,9 +41,9 @@ predictable for later listing (see the `vibing-worktree-list` skill).
    ```
 
    Skip it silently otherwise — a repository that does not use CodeGraph has nothing to index —
-   and surface a failure verbatim rather than retrying. The worktree's `.codegraph/` is
-   git-ignored by the directory's own `.gitignore`, so it adds nothing to the chat's
-   `### Modified Files`.
+   and surface a failure verbatim rather than retrying. The index lands under
+   `.vibing/worktrees/`, which the repository's `.vibing/` ignore rule already covers, so it adds
+   nothing to the chat's `### Modified Files`.
 
 4. **Do not edit the frontmatter.** vibing.nvim writes `working_dir` itself at the end of this
    turn, by comparing `git worktree list` from before the command ran against after it. Setting

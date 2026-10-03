@@ -182,6 +182,29 @@ describe("prefix_rewrite", function()
       assert.is_nil(causes[1]:find("MCP servers", 1, true))
     end)
 
+    it("reports an MCP server count that moved while the tool total did not", function()
+      -- One server drops and another reconnects with the same number of tools: the prefix still
+      -- changed, and the server count is the only place it shows.
+      local causes = PrefixRewrite.causes(
+        facts({ tools = 100, mcp_servers = 3 }),
+        facts({ at = BASE + 60, tools = 100, mcp_servers = 2 }),
+        {}
+      )
+
+      assert.equals(1, #causes)
+      assert.truthy(causes[1]:find("3 to 2 MCP servers", 1, true))
+      assert.is_nil(causes[1]:find("%d to %d tools"))
+    end)
+
+    it("voices the reconnect guess only when the MCP server count moved", function()
+      local tools_only = PrefixRewrite.causes(
+        facts({ tools = 100, mcp_servers = 3 }),
+        facts({ at = BASE + 60, tools = 90, mcp_servers = 3 }),
+        {}
+      )
+      assert.is_nil(tools_only[1]:find("reconnected", 1, true))
+    end)
+
     it("does not claim a tool-list change when the count is the same or unknown", function()
       assert.same({}, PrefixRewrite.causes(facts({ tools = 50 }), facts({ at = BASE + 60, tools = 50 }), {}))
       assert.same({}, PrefixRewrite.causes(facts(), facts({ at = BASE + 60, tools = 50 }), {}))
