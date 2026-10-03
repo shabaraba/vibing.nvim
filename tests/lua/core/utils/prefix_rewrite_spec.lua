@@ -158,6 +158,35 @@ describe("prefix_rewrite", function()
       assert.truthy(causes[1]:find("2.1.231 to 2.1.232", 1, true))
     end)
 
+    it("names a changed tool list, with the MCP server count when that moved too", function()
+      local causes = PrefixRewrite.causes(
+        facts({ tools = 434, mcp_servers = 24 }),
+        facts({ at = BASE + 60, tools = 136, mcp_servers = 11 }),
+        {}
+      )
+
+      assert.equals(1, #causes)
+      assert.truthy(causes[1]:find("434 to 136 tools", 1, true))
+      assert.truthy(causes[1]:find("24 to 11 MCP servers", 1, true))
+    end)
+
+    it("omits the MCP server count when only the tools moved", function()
+      local causes = PrefixRewrite.causes(
+        facts({ tools = 100, mcp_servers = 3 }),
+        facts({ at = BASE + 60, tools = 90, mcp_servers = 3 }),
+        {}
+      )
+
+      assert.equals(1, #causes)
+      assert.truthy(causes[1]:find("100 to 90 tools", 1, true))
+      assert.is_nil(causes[1]:find("MCP servers", 1, true))
+    end)
+
+    it("does not claim a tool-list change when the count is the same or unknown", function()
+      assert.same({}, PrefixRewrite.causes(facts({ tools = 50 }), facts({ at = BASE + 60, tools = 50 }), {}))
+      assert.same({}, PrefixRewrite.causes(facts(), facts({ at = BASE + 60, tools = 50 }), {}))
+    end)
+
     it("lists every cause that applies, in the order they were catalogued", function()
       local causes = PrefixRewrite.causes(
         facts({ compacted = true }),
