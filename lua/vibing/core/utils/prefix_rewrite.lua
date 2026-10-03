@@ -192,13 +192,22 @@ function M.causes(prev, current, edited)
   end
 
   -- The tool list is part of the cached prefix, so an MCP server that disconnected or
-  -- reconnected between two turns rewrites it (#808). Nothing else on this side shows it.
-  if changed(prev.tools, current.tools) then
-    local detail = string.format("%d to %d tools", prev.tools, current.tools)
-    if changed(prev.mcp_servers, current.mcp_servers) then
-      detail = detail .. string.format(", %d to %d MCP servers", prev.mcp_servers, current.mcp_servers)
+  -- reconnected between two turns rewrites it (#808). Nothing else on this side shows it. The
+  -- two counts move independently -- a server can drop and a different one reconnect with the
+  -- same net tool total -- so either moving on its own is reported, and the MCP-reconnect guess
+  -- is only voiced when the MCP count itself is what moved.
+  local tools_changed = changed(prev.tools, current.tools)
+  local mcp_changed = changed(prev.mcp_servers, current.mcp_servers)
+  if tools_changed or mcp_changed then
+    local parts = {}
+    if tools_changed then
+      table.insert(parts, string.format("%d to %d tools", prev.tools, current.tools))
     end
-    table.insert(causes, string.format("the tool list changed (%s) — an MCP server may have reconnected", detail))
+    if mcp_changed then
+      table.insert(parts, string.format("%d to %d MCP servers", prev.mcp_servers, current.mcp_servers))
+    end
+    local suffix = mcp_changed and " — an MCP server may have reconnected" or ""
+    table.insert(causes, string.format("the tool list changed (%s)%s", table.concat(parts, ", "), suffix))
   end
 
   if prev.compacted then
