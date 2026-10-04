@@ -288,7 +288,17 @@ function M.can_use_tool(tool_name, input, config)
     end
 
     -- 3. Always allow Claude Code internal tools
-    if tools_constants.INTERNAL_TOOLS_MAP[tool_name] then
+    local is_internal = tools_constants.INTERNAL_TOOLS_MAP[tool_name] == true
+    if not is_internal then
+      for _, pattern in ipairs(tools_constants.INTERNAL_TOOL_PATTERNS) do
+        local prefix = pattern:match("^(.*)%*$")
+        if prefix and vim.startswith(tool_name, prefix) then
+          is_internal = true
+          break
+        end
+      end
+    end
+    if is_internal then
       return allow(input)
     end
 

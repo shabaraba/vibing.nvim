@@ -102,7 +102,16 @@ describe("can_use_tool", function()
     -- ハーネスの制御に必須なツール。ALWAYS_ALLOWED_TOOLSと違い、deny/askすら通さず常に許可。
     -- 名前は `Tools.INTERNAL_TOOLS` から引かずに直接書く。あちらを回すとこのテストは
     -- 「あちらに載っているものは許可される」しか言わなくなり、載せ忘れを検出できない。
-    local internal = { "ToolSearch", "TodoWrite", "ReportFindings", "ScheduleWakeup", "SendMessage", "ListAgents" }
+    local internal = {
+      "ToolSearch",
+      "TodoWrite",
+      "ReportFindings",
+      "ScheduleWakeup",
+      "SendMessage",
+      "ListAgents",
+      "mcp__codex_apps__search",
+      "mcp__cua_repl__js",
+    }
 
     for _, tool in ipairs(internal) do
       it(string.format("should allow %s even when in the deny list", tool), function()

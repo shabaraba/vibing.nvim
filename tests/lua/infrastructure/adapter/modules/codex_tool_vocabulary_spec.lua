@@ -1,0 +1,10 @@
+local vocabulary = require("vibing.infrastructure.adapter.modules.codex_tool_vocabulary")
+
+describe("codex_tool_vocabulary", function()
+  describe("to_canonical", function()
+    it("maps web search tool names to WebSearch", function()
+      assert.equals("WebSearch", vocabulary.to_canonical("web_search"))
+      assert.equals("WebSearch", vocabulary.to_canonical("webrun"))
+    end)
+  end)
+end)

@@ -90,6 +90,13 @@ M.INTERNAL_TOOLS = {
   "NotebookEdit",
 }
 
+---INTERNAL_TOOLSとして扱うMCP名前空間。Codexランタイム提供の制御/UIツール。
+---@type string[]
+M.INTERNAL_TOOL_PATTERNS = {
+  "mcp__codex_apps__*",
+  "mcp__cua_repl__*",
+}
+
 ---INTERNAL_TOOLSの高速検索用マップ
 ---@type table<string, boolean>
 M.INTERNAL_TOOLS_MAP = to_map(M.INTERNAL_TOOLS)
