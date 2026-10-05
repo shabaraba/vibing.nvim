@@ -481,6 +481,14 @@ In a chat buffer:~
     [v          Previous value for the frontmatter field under the cursor
     q           Close the chat window
 
+`gd`, `gf` and `gx` take a Markdown inline link from anywhere in its notation
+— the label, the brackets or the destination — so `gf` on the words of
+`[the config](handbook/configuration.md)` opens the file. `gx` takes the ones
+pointing at a URL, `gf` and `gd` the ones pointing at a path that exists,
+resolved against the chat's `working_dir`. A destination may name a line
+(`path.lua:42` or `path.lua#L42`), which `gf` jumps to; a `#section` anchor is
+dropped. Outside a link the three behave as they always did.
+
 Reserved messages~
                                                     *vibing-reserved-messages*
 While a chat is responding, `<CR>` (or |:VibingReserve|) takes a message to

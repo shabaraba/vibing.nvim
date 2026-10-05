@@ -43,7 +43,7 @@ describe("diff_opener.open", function()
     saved = {}
   end)
 
-  local function with_cursor(session_id, patch_filename, file_path)
+  local function with_cursor(session_id, patch_filename, file_path, linked_path)
     stub("vibing.presentation.chat.modules.patch_finder", {
       get_session_id = function()
         return session_id
@@ -55,6 +55,9 @@ describe("diff_opener.open", function()
     stub("vibing.core.utils.file_path", {
       is_cursor_on_file_path = function()
         return file_path
+      end,
+      find_link_target_under_cursor = function()
+        return linked_path
       end,
     })
   end
@@ -90,12 +93,31 @@ describe("diff_opener.open", function()
   end)
 
   it("opens nothing when there is neither a patch nor a path under the cursor", function()
-    with_cursor(nil, nil, nil)
+    with_cursor(nil, nil, nil, nil)
 
     DiffOpener.open(1)
 
     assert.same({}, calls.patch_viewer)
     assert.same({}, calls.head_diff)
     assert.same({}, calls.notified)
+  end)
+
+  it("takes the destination of a Markdown link outside the section", function()
+    -- 節の外ではターンのpatchが取れないので、HEADとの差分に落ちる
+    with_cursor("sess-1", nil, nil, "/repo/lua/a.lua")
+
+    DiffOpener.open(1)
+
+    assert.same({ { "/repo/lua/a.lua", "sess-1", nil } }, calls.head_diff)
+  end)
+
+  it("prefers the turn's patch over a Markdown link", function()
+    -- リンクを先に見ると、節の中でリンクを書いたターンの差分が見られなくなる
+    with_cursor("sess-1", "/tmp/turn.patch", nil, "/repo/lua/a.lua")
+
+    DiffOpener.open(1)
+
+    assert.same({ { "sess-1", "/tmp/turn.patch", nil } }, calls.patch_viewer)
+    assert.same({}, calls.head_diff)
   end)
 end)

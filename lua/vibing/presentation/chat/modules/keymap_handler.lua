@@ -90,15 +90,6 @@ local function trim_url(url)
   return url
 end
 
----URL の直前が Markdown のインラインリンクなら、ラベルの開始位置を返す。
----`%b[]` はネストした角括弧にも対応する。
----@param line string
----@param url_start number URL の 1-indexed byte position
----@return number|nil
-local function markdown_link_start(line, url_start)
-  return line:sub(1, url_start - 1):match("()%b[]%(%s*<?$")
-end
-
 ---行内からカーソル位置（1-indexed）に対応する URL を探す。
 ---カーソルが Markdown リンク記法内か URL 上にあればそれを、なければ最も近い URL を
 ---（max_dist 以内で）返す。
@@ -106,6 +97,14 @@ end
 ---@param col number カーソルの 1-indexed カラム
 ---@return string|nil
 function M.find_url_on_line(line, col)
+  -- リンク記法の中はラベル・括弧・リンク先のどこでも同じ行き先にする。
+  -- 括弧が切り出した時点でリンク先は確定しているので、prose から拾ったときの後処理は要らない
+  local MarkdownLink = require("vibing.core.utils.markdown_link")
+  local linked = MarkdownLink.find_at(line, col)
+  if linked and MarkdownLink.classify(linked) == "url" then
+    return linked
+  end
+
   local found_url = nil
   local best_dist = math.huge
   local max_dist = 10
@@ -120,10 +119,6 @@ function M.find_url_on_line(line, col)
     url = trim_url(truncate_at_non_ascii_punct(url))
     local url_end = url_start + #url - 1
 
-    local link_start = markdown_link_start(line, url_start)
-    if link_start and col >= link_start and col <= url_end then
-      return url
-    end
     if col >= url_start and col <= url_end then
       return url
     end
@@ -146,6 +141,13 @@ end
 ---@return string? 絶対パス
 function M.find_media_path_under_cursor(buf)
   local MediaPath = require("vibing.core.utils.media_path")
+
+  -- `![alt](shot.png)` のラベルの上でも効かせる。`<cfile>` はそこでラベルの文字列を拾う
+  local linked = require("vibing.core.utils.file_path").find_link_target_under_cursor(buf)
+  if linked and MediaPath.is_media(linked) then
+    return linked
+  end
+
   local ChatView = require("vibing.presentation.chat.view")
   local chat_buf = ChatView.get_chat_buffer(buf)
   return MediaPath.find_under_cursor(chat_buf and chat_buf:get_cwd() or nil)
@@ -204,19 +206,9 @@ function M.setup(buf, callbacks, keymaps)
     end, { buffer = buf, desc = "Previous frontmatter enum value" })
 
     vim.keymap.set("n", keymaps.open_file, function()
-      local FilePath = require("vibing.core.utils.file_path")
-      local file_path = FilePath.is_cursor_on_file_path(buf)
-      if file_path then
-        FilePath.open_file(file_path)
-      else
-        -- Modified Files セクション外では <cfile> で検出したパスを使う
-        local cfile = vim.fn.expand("<cfile>")
-        if cfile ~= "" then
-          local expanded = vim.fn.expand(cfile)
-          if vim.fn.filereadable(expanded) == 1 then
-            FilePath.open_file(expanded)
-          end
-        end
+      local path, lnum = require("vibing.presentation.chat.modules.file_under_cursor").resolve(buf)
+      if path then
+        require("vibing.core.utils.file_path").open_file(path, lnum)
       end
     end, { buffer = buf, desc = "Open file under cursor" })
 

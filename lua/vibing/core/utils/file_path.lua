@@ -4,6 +4,16 @@ local M = {}
 
 local BufferIdentifier = require("vibing.core.utils.buffer_identifier")
 
+---相対パスの解決基準。チャットの working_dir を優先する（worktree に紐づいたチャットでは
+---Neovim の cwd が一致しない）
+---@param buf number チャットバッファ番号
+---@return string
+local function chat_cwd(buf)
+  local ChatView = require("vibing.presentation.chat.view")
+  local chat_buf = ChatView.get_chat_buffer(buf)
+  return chat_buf and chat_buf:get_cwd() or vim.fn.getcwd()
+end
+
 ---カーソルが "### Modified Files" セクション内のファイルパス上にあるかチェック
 ---現在行がファイルパスであり、かつ "### Modified Files" セクション内にある場合、ファイルパスを返す
 ---@param buf number バッファ番号
@@ -86,9 +96,7 @@ function M.is_cursor_on_file_path(buf)
 
   -- ファイルの存在確認
   -- frontmatterのworking_dirを考慮してファイルパスを解決
-  local ChatView = require("vibing.presentation.chat.view")
-  local chat_buf = ChatView.get_chat_buffer(buf)
-  local cwd = chat_buf and chat_buf:get_cwd() or vim.fn.getcwd()
+  local cwd = chat_cwd(buf)
 
   -- 相対パスの場合はworking_dir基準で解決
   local file_path
@@ -111,10 +119,71 @@ function M.is_cursor_on_file_path(buf)
   return file_path
 end
 
+---リンク先から `#L42` / `:42` の行指定を切り離す。
+---`..-` は「1文字以上の最短一致」で、`#L3` のようなパス部分が空の綴りを除く
+---@param dest string
+---@return string path
+---@return number? lnum
+local function split_line_suffix(dest)
+  local path, lnum = dest:match("^(..-)#L(%d+)$")
+  if not path then
+    path, lnum = dest:match("^(..-):(%d+)$")
+  end
+  if path then
+    return path, tonumber(lnum)
+  end
+  return dest, nil
+end
+
+---Markdown リンク先を実在する絶対パスへ解決する。
+---行指定・アンカー・それらをファイル名に含むパスは、ファイルシステムに聞くまで区別が
+---つかないので、候補を順に並べて最初に実在したものを採る。
+---@param dest string リンク先
+---@param cwd string? 相対パスの解決基準（チャットの working_dir）
+---@return string? 実在する絶対パス
+---@return number? リンク先が指定していた行番号
+function M.resolve_link_dest(dest, cwd)
+  local PathResolve = require("vibing.core.utils.path_resolve")
+  local path, lnum = split_line_suffix(dest)
+
+  -- 1. 行指定を外したパス 2. 外す前（`a:42` という名前のファイル）3. アンカーを外したパス
+  for i, candidate in ipairs({ path, dest, (path:gsub("#.*$", "")) }) do
+    local resolved = PathResolve.existing_file(candidate, cwd)
+    if resolved then
+      return resolved, i == 1 and lnum or nil
+    end
+  end
+  return nil
+end
+
+---カーソル下の Markdown インラインリンク `[label](path)` のリンク先を解決する。
+---ラベル・括弧・リンク先のどこにカーソルがあっても同じ結果になる（`gx` と同じ扱い）。
+---
+---URL は `gx` の領分なので返さない。実在しないパスも返さない — `gf` はこの後 `<cfile>`
+---経路に回るので、ここで握り潰すと今まで開けていたものが開けなくなる。
+---@param buf number チャットバッファ番号
+---@return string? 実在する絶対パス
+---@return number? リンク先が指定していた行番号
+function M.find_link_target_under_cursor(buf)
+  local MarkdownLink = require("vibing.core.utils.markdown_link")
+
+  local cursor = vim.api.nvim_win_get_cursor(0)
+  local line = vim.api.nvim_buf_get_lines(buf, cursor[1] - 1, cursor[1], false)[1]
+  local dest = line and MarkdownLink.find_at(line, cursor[2] + 1)
+  if not dest or MarkdownLink.classify(dest) ~= "path" then
+    return nil
+  end
+
+  -- `chat_cwd` は git を起動する。絶対パスなら要らないので、ここまで判定を済ませてから呼ぶ
+  local cwd = dest:sub(1, 1) ~= "/" and chat_cwd(buf) or nil
+  return M.resolve_link_dest(dest, cwd)
+end
+
 ---ファイルを開く
 ---既に開かれている場合はそのバッファに切り替え、そうでない場合は新規に開く
 ---@param file_path string ファイルパス（絶対パス）または[Buffer N]形式
-function M.open_file(file_path)
+---@param lnum number? 開いた後にジャンプする行番号
+function M.open_file(file_path, lnum)
   -- Check if this is a [Buffer N] identifier
   if BufferIdentifier.is_buffer_identifier(file_path) then
     local bufnr = BufferIdentifier.extract_bufnr(file_path)
@@ -140,6 +209,14 @@ function M.open_file(file_path)
   else
     -- 新規に開く
     vim.cmd.edit(vim.fn.fnameescape(file_path))
+  end
+
+  if lnum then
+    -- nvim_win_set_cursor は ' マークも jumplist も更新しないので明示的に積む。
+    -- `gf` はモーションなので、これが無いと <C-o> で元の位置へ戻れない
+    vim.cmd("normal! m'")
+    pcall(vim.api.nvim_win_set_cursor, 0, { math.min(lnum, vim.api.nvim_buf_line_count(0)), 0 })
+    vim.cmd("normal! zz")
   end
 end
 
