@@ -246,8 +246,9 @@ come back. `handbook/architecture/processes-and-turns.md`.
 
 ## The Duplex Transport
 
-One resident `claude` process per chat, serving many turns over an open stdin. **Opt-in, claude
-only, default off** — `backends.claude.process = "duplex"` or a chat's own `process:` frontmatter.
+One resident `claude` process per chat, serving many turns over an open stdin. **Claude
+only, default on** — `backends.claude.process = "oneshot"` or a chat's own `process:` frontmatter
+turns it off.
 `process_model.lua` is the one place the exclusions live: a lightweight call, a subagent chat and
 every backend other than claude can never use it, whatever the configuration says.
 `handbook/architecture/duplex-transport.md`.

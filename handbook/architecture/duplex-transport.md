@@ -1,7 +1,8 @@
 # The Duplex Transport: one resident CLI process per chat
 
-Opt-in, claude only, default off. Turn it on with `backends.claude.process = "duplex"` or a chat's
-own `process: duplex` frontmatter. Why it exists, what it cost, and the five things that had to move
+Claude only, **on by default** since the MCP launcher stopped holding a second node process
+(resident cost per chat: ~200MB for the CLI, ~75MB for its MCP server). Turn it off with
+`backends.claude.process = "oneshot"` or a chat's own `process: oneshot` frontmatter. Why it exists, what it cost, and the five things that had to move
 before it could work at all.
 
 Chats that can never use it, whatever the configuration says: a lightweight call (title generation,

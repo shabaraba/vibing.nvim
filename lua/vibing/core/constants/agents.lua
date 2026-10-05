@@ -54,11 +54,13 @@ M.AGENTS = {
       -- 1ターン1プロセス（`oneshot`）か、チャットに常駐する1プロセスが複数ターンを捌くか
       -- （`duplex`、#777）。値の定義は `adapter/modules/process_model.lua`（このファイルは
       -- 何も require しないので文字列を直接書く）。チャット単位の上書きは frontmatter の
-      -- `process:`。既定が `oneshot` なのは、常駐プロセスがアイドル時も約200MBを占めるため
+      -- `process:`。既定は `duplex`：起動コスト（プラグイン走査・MCP サーバー・システム
+      -- プロンプト）をチャットごとに1回にする。アイドル時の常駐コスト（claude 約200MB + MCP
+      -- サーバー約75MB）は `duplex_pool.IDLE_TIMEOUT_MS` の回収で上限を切る
       process = {
         kind = "string",
         values = { "oneshot", "duplex" },
-        default = "oneshot",
+        default = "duplex",
       },
       -- `claude -p` はバックグラウンド subagent が終わるまでプロセスを開いたまま待つが、
       -- 「連続アイドル」がこの秒数を超えると**まだ動いているものを止め、部分結果を捨てる**。
