@@ -33,6 +33,7 @@ local NATIVE_TO_CANONICAL = {
   -- codex prompting for every image the way an unmapped name does.
   view_image = "Read",
   web_search = "WebSearch",
+  webrun = "WebSearch",
 }
 
 -- MCP server labels are normalized before Codex exposes them as tool names. In particular, the

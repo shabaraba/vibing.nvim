@@ -37,7 +37,7 @@ M.VALID_TOOLS_MAP = to_map(M.VALID_TOOLS)
 
 ---permissions_allowの設定に関わらず、askやdenyに明示的に入っていなければ常に許可されるツール。
 ---
----収録の基準は「ファイルを作成・更新・削除しない読み取り専用のビルトインツール」であること。
+---収録の基準は「明示的なask/denyがなければ既定で許可するツール」であること。
 ---Edit/Write/Bashは当然対象外。Agent/Workflowはサブエージェント経由でファイルを変更しうるので外す。
 ---WebSearch/WebFetch/ShareOnboardingGuideはファイルこそ触らないが外部通信という別軸のリスクがあるので
 ---ここには入れない（DEFAULT_ALLOWED_TOOLSのコメントも参照）。
@@ -52,6 +52,8 @@ M.ALWAYS_ALLOWED_TOOLS = {
   "Grep",
   "Skill",
   "StructuredOutput",
+  "mcp__codex_apps__*",
+  "mcp__cua_repl__*",
 }
 
 ---ALWAYS_ALLOWED_TOOLSの高速検索用マップ
