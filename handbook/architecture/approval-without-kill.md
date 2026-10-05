@@ -943,6 +943,13 @@ does not wait still registers a timeout and still must not be the one to give up
 
 ## The other channel: answering a question in place (#788)
 
+> **Removed.** `nvim_ask_user_question` and everything below that serves it — `pending_questions`,
+> `mcp.measured_answer_wait_sec`, `question_wait_sec`, the question exemptions from the
+> "responding" guards — are gone. A question is now a `vibing-question` block the model writes at
+> the end of its reply, and the answer is the next turn (`handbook/features/chat-ui.md` →
+> AskUserQuestion Support). This section stays as the record of what holding the turn open cost,
+> which is the reason it was dropped once duplex made the resident process the default.
+
 `nvim_ask_user_question` is the second thing a human is waited for on, and until #788 it was the
 last kill path left after #778: the handler called `adapter:cancel`, the turn died, and the user's
 answer came back as the next message on a `--resume`.

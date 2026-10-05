@@ -6,6 +6,7 @@ local Renderer = require("vibing.presentation.chat.modules.renderer")
 local StreamingHandler = require("vibing.presentation.chat.modules.streaming_handler")
 local ConversationExtractor = require("vibing.presentation.chat.modules.conversation_extractor")
 local ApprovalParser = require("vibing.presentation.chat.modules.approval_parser")
+local QuestionBlock = require("vibing.presentation.chat.modules.question_block")
 local TurnRegistry = require("vibing.infrastructure.adapter.modules.turn_registry")
 local KeymapHandler = require("vibing.presentation.chat.modules.keymap_handler")
 local Fs = require("vibing.core.utils.fs")
@@ -19,14 +20,8 @@ local Fs = require("vibing.core.utils.fs")
 ---@field session Vibing.ChatSession? セッションオブジェクト（非推奨、後方互換性のため）
 ---@field _chunk_parts string[] 未フラッシュのチャンク片。連結は流すときに1回だけ行う
 ---@field _chunk_timer any チャンクフラッシュ用のタイマー
----@field _pending_choices Vibing.PendingChoiceEntry[]? 答えを待たせている質問を**古い順に全件**。
----  1つの assistant メッセージが `nvim_ask_user_question` を2本ディスパッチできるので、単一
----  フィールドだと2件目が1件目を消す。消えると描き直せず、`strip_choice_lines` にも渡らないので
----  **描いてあった1件目のブロックがユーザーの未送信本文に化ける**。描くのは先頭1件だけ
----@field _pending_choices_request_id string? いま描いてあるブロックの質問ID＝先頭の request_id。
----  **`_pending_choices` と必ず同時に読み書きする** — 別々に更新するとずれ、ずれた時点で
----  答えが別の質問のものになる。書き込み口は `_set_question_queue` ただ1つ。
----  kill する経路では質問が登録されないので nil
+---@field _pending_choices Vibing.PendingChoiceEntry[]? 次の `add_user_section` で描く質問。
+---  ターンの最後に書かれた質問ブロック（`take_question_block`）から作られ、描いたら捨てる
 ---@field _pending_approvals table[]? add_user_section()後に挿入する承認要求UI。**複数**
 ---  なのは、CLIが1ターンに複数のPreToolUseフックを並列に起動するから（実測: claudeで3本が
 ---  0.54秒差で立ち上がり、全体が重なる）。表示順に並べる
@@ -70,7 +65,6 @@ function ChatBuffer:new(config)
   instance._chunk_parts = {}
   instance._chunk_timer = nil
   instance._pending_choices = nil
-  instance._pending_choices_request_id = nil
   instance._pending_approvals = {}
   instance._current_turn_id = nil
   instance._current_process_id = nil
@@ -132,15 +126,6 @@ end
 ---@return boolean
 function ChatBuffer:_has_blocked_approvals()
   return require("vibing.infrastructure.rpc.pending_approvals").has_for_chat(self.buf)
-end
-
----いまこのチャットが、答えを待たせているMCPツール呼び出しを1本でも持っているか（#788）
----
----`_has_blocked_approvals` と同じ理由でレジストリに訊く。`_pending_choices` は描画用の値で、
----答えが出たあとも最後の描画まで残る
----@return boolean
-function ChatBuffer:_has_blocked_questions()
-  return require("vibing.infrastructure.rpc.pending_questions").has_for_chat(self.buf)
 end
 
 ---いまこのチャットのターンを、承認か質問のどちらかが止めているか（#788）
@@ -1062,11 +1047,11 @@ end
 ---`ProgrammaticSender` はこれを見て呼び出し元に成否を返す
 ---@return boolean handled
 function ChatBuffer:send_message()
-  -- 送信処理中はEnter連打による重複送信を無視する。**ブロック中のプロンプトへの答えだけは
+  -- 送信処理中はEnter連打による重複送信を無視する。**ブロック中の承認への答えだけは
   -- 例外**（#788）。`_is_sending` は「`<CR>` からCLI起動まで」ではなく**ターンが終わるまで**
-  -- 真で（落とすのは `_handle_response` だけ）、承認も質問もそのターンの**途中**で訊かれる。
+  -- 真で（落とすのは `_handle_response` だけ）、承認はそのターンの**途中**で訊かれる。
   -- 素通しでここに落とすと、答えは「重複送信」として弾かれるのではなく**どこにも届かずに
-  -- 消える** — フックは上限まで空回りし、質問は保留のままCLIのMCPアイドルタイムアウトを待つ。
+  -- 消える** — フックは上限まで空回りする。
   -- 訊くのは「まだ止めているものがあるか」で、プロンプトの行が残っているかではない
   -- （`_resume_after_prompts` と同じ条件、同じ理由）
   if self._is_sending and not self:_has_blocked_prompts() then
@@ -1084,30 +1069,6 @@ function ChatBuffer:send_message()
   local answered = self:_answer_pending_approval()
   if answered and answered.outcome ~= "retry_as_new_turn" then
     return answered.outcome == "answered_in_place"
-  end
-
-  -- 質問への答えも同じ位置（#788）。承認より**後**なのは、承認プロンプトが出ているときの
-  -- `<CR>` は承認への答えであって質問への答えではないから — 承認側は自分に宛てられた答えか
-  -- どうかを判定できる（選択肢と `request_id`）が、質問側は自由文なので何でも受け取ってしまう。
-  -- 先に置くと、承認の答えが質問の答えとして消費される。
-  --
-  -- **`answered` が非nilなら、そこで打ち止め。** 上の `if` を抜けて来たということは
-  -- `retry_as_new_turn` — 承認は既に消費済みで、本文は承認の選択肢行そのものである。それを
-  -- ここへ通すと、`1. allow_once - Allow this execution only <!-- vibing:req=... -->` が
-  -- 「どちらの方式にしますか」への人間の答えとしてモデルに渡り、しかも `true` を返すので
-  -- 下の `answered.message`（再試行文）はどこにも行かない。消費したのに届かない、の変種
-  --
-  -- 戻りが `false` は「答えになり得たが帰属を決められなかった」で、理由は向こうが既に声に
-  -- 出している。下の一般的な警告（「上のプロンプトが～」）まで出すと1回の `<CR>` に2通出て、
-  -- しかも後の1通は「プロンプトに答えてください」— いま答えようとした人への案内としては嘘になる
-  if not answered then
-    local handled = self:_answer_pending_question()
-    if handled then
-      return true
-    end
-    if handled == false then
-      return false
-    end
   end
 
   -- 答えにならなかった `<CR>` は、ここから先はただの新しい送信。門を一段開けたのは**答えを
@@ -1223,8 +1184,11 @@ function ChatBuffer:send_message()
     get_bufnr = function()
       return self.buf
     end,
-    insert_choices = function(questions, request_id)
-      return self:insert_choices(questions, request_id)
+    insert_choices = function(questions)
+      return self:insert_choices(questions)
+    end,
+    take_question_block = function()
+      return self:take_question_block()
     end,
     set_pending_user_text = function(text)
       return self:set_pending_user_text(text)
@@ -1334,8 +1298,8 @@ function ChatBuffer:append_chunk(chunk, turn_id)
   end
 
   -- 片で積んで、流すときに `table.concat` する。プロンプトが立っている間は下の早期returnで
-  -- フラッシュが止まるので、`a = a .. chunk` だと最大 `approval_wait_sec` /
-  -- `question_wait_sec`（どちらも既定900秒）ぶんのあいだ、到着するたびに蓄積全体をコピーし直す
+  -- フラッシュが止まるので、`a = a .. chunk` だと最大 `approval_wait_sec`（既定900秒）ぶんの
+  -- あいだ、到着するたびに蓄積全体をコピーし直す
   -- ことになる。kill する設計ではプロセスがプロンプトの時点で死んでいたので、この形は
   -- 起こり得なかった
   self._chunk_parts[#self._chunk_parts + 1] = chunk
@@ -1345,7 +1309,7 @@ function ChatBuffer:append_chunk(chunk, turn_id)
     self._chunk_timer = nil
   end
 
-  -- **プロンプト（承認・質問）が1件でも立っている間は流さない（#778、#788）。**
+  -- **承認のプロンプトが1件でも立っている間は流さない（#778）。**
   --
   -- append-only のバッファは「入力欄」と「ストリーミング出力」を同時には持てない。プロンプトは
   -- 未送信の `## User` セクションとして末尾にあり、`flush_chunks` も末尾に追記するので、ここで
@@ -1361,12 +1325,8 @@ function ChatBuffer:append_chunk(chunk, turn_id)
   -- だけで、文章とツール呼び出しを交互に出すターンは測っていない）。一般化が外れたときに増える
   -- のは溜まる量だけで、壊れ方は変わらない
   --
-  -- **質問も同じ理由でここに入る（#788）。** 待たせている質問の選択肢も未送信の `## User`
-  -- セクションとして末尾に描かれる（`show_pending_prompts` は承認と共通）ので、承認だけを
-  -- 訊くと質問待ちの `question_wait_sec` のあいだだけ、続きの出力が入力欄の下に積まれる
-  --
   -- 溜めたものは必ず出る。出口は `_flush_chunks` を呼ぶ側全部 — 最後のプロンプトが答えられた
-  -- とき（`_answer_pending_approval` / `_answer_pending_question` / `_resume_after_prompts`）と、
+  -- とき（`_answer_pending_approval` / `_resume_after_prompts`）と、
   -- ターンが終わったとき（`add_user_section`）。前者が抜けても後者が拾うので、期限切れで
   -- プロンプトが消えた場合も置き去りにはならない
   if self:_has_blocked_prompts() then
@@ -1389,19 +1349,14 @@ function ChatBuffer:add_user_section()
 
   Renderer.addUserSection(self.buf, self.win, self._pending_choices, self._pending_approvals, self._pending_user_text)
 
-  -- **答えを待っている質問があるあいだは選択肢を捨てない（#788）。** kill する経路では描画は
-  -- 1回きりなので捨ててよかったが、待たせる経路ではターン途中で1回描いたあと、ターンの終わりに
-  -- `_finish_turn` が未送信セクションを落として描き直す。捨てていると、その描き直しで選択肢が
-  -- 消えて「答えろと言われているのに選択肢が無い」になる。承認リストが同じ理由で残るのと対。
-  -- 待っている質問が無くなった時点（答えた・期限切れ）の描画で捨てられる
-  if not self:_has_blocked_questions() then
-    self:_clear_pending_choices()
-  end
+  -- 質問の選択肢は1回描いたら捨てる。答えは次のターンの本文なので、描いたものを覚えておく
+  -- 理由が無い（`question_block.lua`）
+  self:_clear_pending_choices()
   self._pending_user_text = nil
   -- 「いま末尾の未送信セクションにプロンプトが描いてある」。ターンの途中で描けるように
   -- なった以上（#778、#788）、ターンの終わりがもう一度描くと**同じものが2つ**出る。どちらの
   -- プロンプトに答えられるのかは見た目では区別がつかない
-  self._prompts_rendered_unsent = #(self._pending_approvals or {}) > 0 or self:_has_blocked_questions()
+  self._prompts_rendered_unsent = #(self._pending_approvals or {}) > 0
   -- NOTE: Don't clear _pending_approvals here!
   -- They need to persist until the user answers, and each one is dropped individually by
   -- `approval_decision.consume` when its own answer is spent.
@@ -1426,11 +1381,6 @@ end
 ---どれに答えられるのかは見た目では区別がつかず、答えられるのは最後の1つだけになる。
 ---既にあるセクションを畳んでから描き直すことで、保留が何件になっても入力欄は1つ・
 ---プロンプトは各1回になる
----
----**質問も同じ入口を通る（#788）。** 1つの assistant メッセージが
----`[nvim_ask_user_question, Bash]` を同時にディスパッチすれば、質問とフックが同じターンで
----並ぶ。承認と質問で中身が同じなので1つ — 片方だけに名前を残すと、もう片方がターン途中に
----描かれない
 function ChatBuffer:show_pending_prompts()
   if self:_recycle_prompt_section() then
     -- 既に入力欄がある＝アシスタントセクションはそのとき閉じてある。もう一度打つと、
@@ -1459,282 +1409,59 @@ function ChatBuffer:update_filename_from_message(message)
   end
 end
 
----いま答えを待たせている質問のキュー
+---描く予定の質問
 ---@class Vibing.PendingChoiceEntry
----@field questions table CLIから受け取った質問構造
----@field request_id string? 答えを待っている質問のID。kill する経路では nil
+---@field questions table 質問ブロックの中身（`question_block.lua`）
 
----キューを書き換える唯一の場所
+---このターンの本文が選択肢付きの質問ブロックで終わっていれば、それを選択肢に変える
 ---
----`_pending_choices_request_id` は「いま描いてあるブロックはどの質問のものか」で、描くのは
----常に先頭なのでキューから取り直す。2つを別々に書く writer を作らないためにここへ閉じてある —
----ずれた瞬間、答えは画面に描いてあるのとは別の質問のものになる
----@param entries Vibing.PendingChoiceEntry[]
-function ChatBuffer:_set_question_queue(entries)
-  if #entries == 0 then
-    self._pending_choices = nil
-    self._pending_choices_request_id = nil
-    return
+---モデルは質問をツールではなく本文の末尾のフェンスで出す（`question_block.lua`）。見つけたら
+---ブロックを transcript から外し、`insert_choices` に渡す。描くのはターンの終わりの
+---`add_user_section` で、答えは次のターンの本文になる。
+---
+---ブロックを外すのは、残すと同じ質問が JSON と選択肢の2回出るから。CLI 側の transcript には
+---モデルが書いたとおり残っているので、次のターンでモデルが自分の質問を見失うことはない。
+---
+---探す範囲は `start_response` が返したヘッダ行から末尾まで。末尾から「ヘッダに見える行」を
+---探し直さないのは `stamp_response_end` と同じ理由（本文中の `## Assistant` を拾う）
+---@return boolean taken
+function ChatBuffer:take_question_block()
+  if not (self.buf and vim.api.nvim_buf_is_valid(self.buf)) or type(self._assistant_header_line) ~= "number" then
+    return false
   end
-  self._pending_choices = entries
-  self._pending_choices_request_id = entries[1].request_id
+  -- 承認のプロンプトが末尾に描いてあるなら、本文の末尾はアシスタントの文章ではない
+  if self._prompts_rendered_unsent then
+    return false
+  end
+  self:_flush_chunks()
+
+  local header = self._assistant_header_line
+  local lines = vim.api.nvim_buf_get_lines(self.buf, header, -1, false)
+  local questions, first, last = QuestionBlock.find_trailing(lines)
+  if not questions then
+    return false
+  end
+
+  vim.api.nvim_buf_set_lines(self.buf, header + first - 1, header + last, false, {})
+  self:insert_choices(questions)
+  return true
 end
 
----AskUserQuestion の選択肢を保存
+---質問の選択肢を、次の `add_user_section` で描くために保存する
 ---
----**追記であって置き換えではない。** 1つの assistant メッセージが `nvim_ask_user_question` を
----2本ディスパッチできるので、2件目で置き換えると1件目は描き直せず、`strip_choice_lines` にも
----渡らない。渡らなければ描いてあった行は剥がれず、`_pending_user_text` に載って**ユーザー自身の
----未送信本文として描き直される** — 次の `<CR>` で、質問文と選択肢がそのままモデルへ戻る。
----
----**`request_id` と対で持つ（#788）。** 選択肢は描画用の値だが、「その質問はもう答えを
----要しない」と判定する側は request_id で訊く。同じ id で来たら差し替える（承認側と同じく、
----フックを切って再実行した場合）
----@param questions table CLIから受け取った質問構造
----@param request_id string? 答えを待っている質問のID。kill する経路では nil
-function ChatBuffer:insert_choices(questions, request_id)
-  local entries = self._pending_choices or {}
-
-  -- **キューを変える前に畳む。** 描いてあるブロックはキュー全体の純関数で、待っている件数の
-  -- 1行を含む（`renderer.choice_lines`）。先に足してから畳むと、`strip_choice_lines` が
-  -- 組み立てるのは「他に1件」入りのブロックで、画面にあるのは件数行の無いブロック — 一致せず、
-  -- 描いてあった選択肢が剥がれないまま `_pending_user_text` に載る。この関数が直しているのと
-  -- 同じ壊れ方が、件数の1行のせいで戻ってくる。
-  --
-  -- 既に1件以上持っているときだけ畳むのは、0件のときは質問のブロックが描かれていないから。
-  -- 承認のプロンプトは `strip_prompt_lines` が剥がすのでキューとは無関係で、kill する経路の
-  -- 1件目（`show_pending_prompts` が続かない）を巻き込まずに済む。
-  -- 畳んだあとの描き直しは、呼び出し側が続けて呼ぶ `show_pending_prompts` が行う
-  if #entries > 0 then
-    self:_recycle_prompt_section()
-  end
-
-  local entry = { questions = questions, request_id = request_id }
-
-  local replaced = false
-  if request_id then
-    for index, existing in ipairs(entries) do
-      if existing.request_id == request_id then
-        entries[index] = entry
-        replaced = true
-        break
-      end
-    end
-  end
-  if not replaced then
-    table.insert(entries, entry)
-  end
-
-  self:_set_question_queue(entries)
+---1ターンに質問ブロックは1つ（ターンの最後に書いたものだけを認める）なので、置き換えでよい。
+---レンダラーとストリッパーはキュー（配列）を受け取る形のままなので、1件の配列で持つ
+---@param questions table 質問ブロックの中身
+function ChatBuffer:insert_choices(questions)
+  self._pending_choices = { { questions = questions } }
   self._stop_reason = "asked_question"
 end
 
 ---保存してある選択肢を捨てる
----
----id を渡すとその1件だけ落ちて、**次の1件が先頭に繰り上がる**。渡さなければ全部捨てる
----（待っている質問が1件も無くなったときの `add_user_section`）。
----
----**落としたあとは描き直しが要る。** 描いてあるブロックはキュー全体の純関数で、件数の1行を
----含む（`renderer.choice_lines`）。畳まずにキューだけ変えると、剥がす側が組み立てるものが
----変わって一致せず、描いてあるブロックがユーザーの本文として残る
----@param request_id string? 落とす1件。nil なら全件
-function ChatBuffer:_clear_pending_choices(request_id)
-  if not request_id then
-    self:_set_question_queue({})
-    return
-  end
-
-  local kept = {}
-  for _, entry in ipairs(self._pending_choices or {}) do
-    if entry.request_id ~= request_id then
-      table.insert(kept, entry)
-    end
-  end
-  self:_set_question_queue(kept)
+function ChatBuffer:_clear_pending_choices()
+  self._pending_choices = nil
 end
 
----いま描いてあるブロック（＝先頭）を落とし、次の質問を繰り上げる
----
----**答えたときはこちらで、id では落とさない。** kill する経路の選択肢には `request_id` が
----付かないので、答えた質問のIDで引いても一致しない。そこで
----`_question_the_answer_belongs_to` が「待っているのが1件だけだから」で帰属を決めているとき、
----その帰属の内容は「答えたのは先頭に描いてあるブロックだ」そのものである
-function ChatBuffer:_drop_drawn_question()
-  local entries = self._pending_choices or {}
-  table.remove(entries, 1)
-  self:_set_question_queue(entries)
-end
-
----期限切れの説明行の目印（質問用）。承認の `APPROVAL_EXPIRED_PREFIX` と分けてあるのは
----**別の出来事だから**で、互いを消してはいけない
-local QUESTION_EXPIRED_PREFIX = "⏱️  Question expired."
-
----質問が待ち時間の上限に達した（#788）
----
----**期限切れはターンを終わらせる。承認の期限切れが決して kill しないのと対照的**で、理由は
----モデルにとって拒否と未回答が違うものだから（`pending_questions.expire`）。ただし
----**それはこの質問がこのターン最後の未解決プロンプトだったときに限る。**
----
----この但し書きが要るのは、claude が1つの assistant メッセージに複数の `tool_use` を並べて
----**同時にディスパッチする**から。`[nvim_ask_user_question, Bash]` なら質問がMCPで、`Bash` の
----PreToolUseフックが同時にブロックする。無条件に kill すると、**ユーザーがいま答えかけている
----承認のターンごと消える** — #778 が閉じたドアの隣のドアで、人間が入力した答えが捨てられる。
----
----なので条件は承認・質問を区別せず「このターンを止めているプロンプトが他に残っているか」。
----残っていれば承認の期限切れとまったく同じ挙動に落ちる（1件ぶんの説明を書き、ターンは走り
----続ける）。`_prompts_rendered_unsent` で描画を統合したのと**同じ観察**を寿命側にも当てた形で、
----描画だけ統合して寿命を分けたままにすると、この2つは静かにずれる。
----
----最後の1つだった場合の順序に理由がある:
----
----1. 溜めていた出力を先に流す。あとで書く説明行がその上に乗ってしまわないように
----2. ターン途中に描いた未送信セクションを**落とす**。中身は選択肢だけで、ユーザーの本文では
----   ない。残したまま下を続けると `extract_user_message` がそこを読む
----3. 説明行を書く。ここはもうアシスタントのセクションなので、次の `<CR>` でモデルに送り返されない
----4. ターンを止める。`_finish_turn` が終了時刻を入れ、`add_user_section` が
----   `_pending_choices`（レジストリが空になったので今度は捨てられる）を新しい未送信セクションに
----   描き直す。ユーザーはそこで答えられて、**それは今日とまったく同じ経路**になる
----@param entry Vibing.PendingQuestion 期限に達した質問
----@return boolean handled このチャットの質問だったか
-function ChatBuffer:expire_question(entry)
-  if not (entry and entry.request_id) then
-    return false
-  end
-
-  -- この質問自身は `pending_questions.expire` が既にレジストリから外しているので、ここで見て
-  -- 残るのは**他の**プロンプトだけ。チャット単位で訊いているのはターン単位で訊くのと同じこと —
-  -- 1つのチャットで同時に開いているターンは1つだけで、止めているプロンプトはそのターンのもの
-  local others = self:_has_blocked_prompts()
-
-  local waited = require("vibing.infrastructure.hooks.wait_budget").question_wait_sec()
-  local text = string.format(
-    "%s No answer for %d seconds, so vibing.nvim stopped waiting for this one.",
-    QUESTION_EXPIRED_PREFIX,
-    waited
-  )
-  if not others then
-    text = string.format(
-      "%s No answer for %d seconds, so vibing.nvim stopped holding the turn open.",
-      QUESTION_EXPIRED_PREFIX,
-      waited
-    )
-  end
-  vim.notify("[vibing] " .. text, vim.log.levels.WARN)
-
-  if not (self.buf and vim.api.nvim_buf_is_valid(self.buf)) then
-    return true
-  end
-
-  -- **ここで `_flush_chunks` は呼ばない。** 溜めた出力を流すのは末尾への追記で、末尾にあるのは
-  -- プロンプトを描いた未送信セクションである。どちらの分岐に入っても壊れる:
-  --
-  -- - 他のプロンプトが残っているなら、アシスタントの文章が開いたままの `## User` の中に入り、
-  --   `extract_user_message` がそれをユーザーの次のメッセージとして読む
-  -- - 最後の1件だったなら、下の `_recycle_prompt_section` が未送信ヘッダから末尾までを畳むので、
-  --   いま流したばかりのテキストごと消える。`_chunk_parts` は空になった後なので**復元できない**
-  --
-  -- 溜めたものの出口は `append_chunk` が約束したとおり残っている — 他が残っているなら最後の
-  -- プロンプトが解けたとき、最後の1件だったなら `cancel_request` → `_finish_turn` の
-  -- `add_user_section`。後者では説明行より**後ろ**に出るので時系列は入れ替わるが、
-  -- 無音で消えるよりはよい
-  if others then
-    -- 承認の期限切れと同じ形。ターンは止めない。**ただし畳んで描き直す**、という点だけが
-    -- 承認と違う。
-    --
-    -- 順序に理由がある。描いてあるブロックは**キュー全体の純関数**で、待っている件数の1行を
-    -- 含む（`renderer.choice_lines`）。`strip_choice_lines` は剥がす時点のキューから組み立て
-    -- 直して突き合わせるので、キューを先に変えると組み立てたものが変わって一致せず、描いて
-    -- あったブロックが剥がれずに `_pending_user_text` へ載る — このPRが直しているのと同じ
-    -- 壊れ方が、件数の1行のせいで一段上で再現する。なので:
-    --
-    -- 1. **描いたときのキューで畳む。** ユーザーが打ちかけていた答えは `_pending_user_text` へ
-    -- 2. キューから落とす。先頭が消えたなら次が繰り上がる
-    -- 3. 説明行を書く。ここは畳んだ後なのでアシスタントのセクション側に落ちる
-    -- 4. 描き直す。繰り上がった質問と、減った件数の行が出る
-    --
-    -- 描いていない（`_prompts_rendered_unsent` が偽）なら畳むものも描き直すものも無いので、
-    -- 説明行を末尾に積むだけの今日どおりの形に落ちる
-    local recycled = self:_recycle_prompt_section()
-    self:_clear_pending_choices(entry.request_id)
-
-    local line_count = vim.api.nvim_buf_line_count(self.buf)
-    -- 「上の選択肢は」とは言わない。畳んだ後なのでその行はもう画面に無く、そもそも待機中の
-    -- まま期限切れになった質問は一度も描かれていない。画面の中身を指す文面は、どちらの場合にも
-    -- 外れる
-    vim.api.nvim_buf_set_lines(self.buf, line_count, line_count, false, {
-      text,
-      "   Nothing is waiting on it now; the turn is still running.",
-    })
-
-    if recycled then
-      self:add_user_section()
-    end
-    return true
-  end
-
-  -- 畳むのであって捨てるのではない（#786）。選択肢の下にユーザーが答えを打ちかけていたら、
-  -- それは `_pending_user_text` に載って下の `_finish_turn` の描き直しに現れる
-  self:_recycle_prompt_section()
-
-  local line_count = vim.api.nvim_buf_line_count(self.buf)
-  vim.api.nvim_buf_set_lines(self.buf, line_count, line_count, false, {
-    text,
-    "   The options are shown again below; answering them sends a new message.",
-  })
-
-  self:cancel_request()
-  return true
-end
-
----この答えはどの質問のものか（#788）
----
----**画面に描いてある選択肢の質問に渡す。** ユーザーは目の前のブロックを読んで書いたので、
----答えが向かう先はそれ以外にない。`_pending_choices_request_id` がその「描いてあるもの」で、
----`insert_choices` が選択肢と対で受け取っている。
----
----**最も古いものに渡してはいけない。** `list_for_chat` の先頭を取るのは、質問が1件のときだけ
----正しく、2件立っているときは**静かに別の質問の答えになる**。#795 以前は答えが kill 経路の
----新ターンの散文として届いたのでモデルが自由文として復帰できたが、待たせる経路では Q1 の
----**ツール呼び出しの結果**として構造的に配達される。`.claude/rules/permissions.md` の
----「答えは訊かれたチャットのものであって他のどれのものでもない」（#667）の一段下、同じ不変条件。
----
----**決められないときは消費しない。** 承認側の「曖昧なら拒否する、消費しない」と同じ形で、
----黙って最古に渡す道はここに残さない。1件しか待っていないなら曖昧さは無いのでそれに渡す
----（kill 経路など、選択肢に id が付いていない場合がこれ）
----@param waiting Vibing.PendingQuestion[] 答えを待っている質問、古い順
----@return string? request_id 決められないときは nil
-function ChatBuffer:_question_the_answer_belongs_to(waiting)
-  local drawn = self._pending_choices_request_id
-  if drawn then
-    for _, entry in ipairs(waiting) do
-      if entry.request_id == drawn then
-        return drawn
-      end
-    end
-  end
-
-  if #waiting == 1 then
-    return waiting[1].request_id
-  end
-
-  return nil
-end
-
----ブロック中の質問への答えを処理する（#788）
----
----**`send_message` の冒頭、`cancel_request()` より前に呼ばれる。** 答えは「新しいターンの本文」
----ではなく「いま走っているターンの続き」なので、cancel すると答えた瞬間にそのターンが死ぬ。
----
----**承認と違ってパーサを持たない。** 承認の答えは4つの選択肢のどれかで本文から帰属先を解決
----できるが、質問の答えは**自由文**で、ユーザーが書いたものがそのまま答えになる。だから帰属は
----本文ではなく「いま描いてあるのはどの質問か」で決める（`_question_the_answer_belongs_to`）。
----
----戻り値は3値:
----  - `true`  答えた
----  - `false` 答えになり得たが帰属を決められなかった。**理由は声に出した**ので、呼び出し側は
----            もう一度警告を出さずにそのまま止まる
----  - `nil`   答えるべき質問が無い。通常の送信がそのまま続く
----@return boolean? answered
 ---質問の答えとして読む本文 — 描いてあるプロンプトの行を落とした残り
 ---
 ---未送信セクションにはユーザーが打った行と**描いてあるプロンプト**が同居している。丸ごと
@@ -1759,55 +1486,6 @@ function ChatBuffer:_answer_text()
   kept = Renderer.strip_choice_lines(kept, self._pending_choices)
   local answer = vim.trim(table.concat(kept, "\n"))
   return answer ~= "" and answer or nil
-end
-
-function ChatBuffer:_answer_pending_question()
-  local PendingQuestions = require("vibing.infrastructure.rpc.pending_questions")
-  local waiting = PendingQuestions.list_for_chat(self.buf)
-  if #waiting == 0 then
-    return nil
-  end
-
-  local message = self:_answer_text()
-  if not message then
-    return nil
-  end
-
-  local target = self:_question_the_answer_belongs_to(waiting)
-  if not target then
-    -- 空の `<CR>` は黙って落とすが、これは本文を書いた人の `<CR>` なので黙って落とさない。
-    -- 無言で消すのは「静かに成功した失敗」で、このPRが直しているバグと同じ形
-    vim.notify(
-      "[vibing] More than one question is waiting and vibing.nvim cannot tell which one the "
-        .. "options on screen belong to, so your answer was not sent. Answer again once one of "
-        .. "them is resolved, or end the turn with :VibingCancel.",
-      vim.log.levels.WARN
-    )
-    return false
-  end
-
-  if not PendingQuestions.resolve(target, { status = "answered", answer = message }) then
-    return nil
-  end
-
-  -- **答えた1件だけ捨てる。** `add_user_section` の「待っているあいだは捨てない」条件は、
-  -- 下の分岐が `_resume_after_prompts`（= `add_user_section` を通らない）に入ると一度も走らない。
-  -- 残すと次のターンの終わりに、もう答えた質問の選択肢が新しい入力欄に描き直される。
-  --
-  -- 全件捨てないのは、待っている次の質問がここで消えるから。落とすと次が先頭に繰り上がり、
-  -- すぐ下の `add_user_section` がそれを描く — これが「1件ずつ順番に答える」の実体
-  self:_drop_drawn_question()
-
-  -- 答えた行はそのまま transcript に残す。あとは走り続けているターンの続きを受け取れる状態に
-  -- 戻すことだが、**それが何かは他の保留が残っているかで変わる** — 承認と同じ分岐で、同じ理由
-  if self:_has_blocked_prompts() then
-    ConversationExtractor.commit_user_message(self.buf)
-    self._prompts_rendered_unsent = false
-    self:add_user_section()
-  else
-    self:_resume_after_prompts()
-  end
-  return true
 end
 
 ---次のユーザーセクションに差し込む本文を保存

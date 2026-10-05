@@ -18,10 +18,8 @@ describe('tool descriptions', () => {
     }
   });
 
-  it('points the LSP tools at nvim_load_buffer instead', () => {
-    const lspTools = allTools.filter(
-      (t) => t.name.startsWith('nvim_lsp_') || t.name === 'nvim_diagnostics'
-    );
+  it('points the LSP tool at nvim_load_buffer instead', () => {
+    const lspTools = allTools.filter((t) => t.name === 'nvim_lsp');
 
     expect(lspTools.length).toBeGreaterThan(0);
     for (const tool of lspTools) {

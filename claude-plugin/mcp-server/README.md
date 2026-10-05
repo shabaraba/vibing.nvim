@@ -301,11 +301,6 @@ is enabled, and directs the agent back to `nvim_job_start`.
     number. The answer is recorded in the blocked chat as coming from it, so a call that cannot
     say whose decision it was is refused
 
-- **nvim_ask_user_question** - Render a multiple-choice question in the chat buffer. This cancels
-  the in-flight turn; the user's answer arrives as the next turn's message
-  - `chat_bufnr` (required): Chat buffer number
-  - `questions` (required): Array of `{ question, options, multiSelect? }`
-
 ### Instances
 
 - **nvim_list_instances** - List running Neovim instances with a vibing.nvim RPC server
@@ -313,49 +308,19 @@ is enabled, and directs the agent back to `nvim_job_start`.
 
 ### LSP Operations
 
-- **nvim_lsp_definition** - Get definition location(s) of symbol
+- **nvim_lsp** - Query the live LSP of the running Neovim
+  - `method` (required): one of
+    - `definition` - definition location(s) of the symbol → `{ locations: [{ uri, range }] }`
+    - `references` - all references to the symbol → `{ references: [{ uri, range }] }`
+    - `hover` - type and documentation → the hover text
+    - `type_definition` - type definition location(s) → `{ locations: [{ uri, range }] }`
+    - `call_hierarchy_incoming` - callers → `{ calls: [{ from, fromRanges }] }`
+    - `call_hierarchy_outgoing` - callees → `{ calls: [{ to, fromRanges }] }`
+    - `document_symbols` - all symbols in the buffer → `{ symbols: [...] }`
+    - `diagnostics` - errors and warnings → `{ diagnostics: [{ lnum, col, severity, message, source }] }`
   - `bufnr` (optional): Buffer number (0 for current)
-  - `line` (required): Line number (1-indexed)
-  - `col` (required): Column number (0-indexed)
-  - Returns: `{ locations: [{ uri, range }] }`
-
-- **nvim_lsp_references** - Get all references to symbol
-  - `bufnr` (optional): Buffer number (0 for current)
-  - `line` (required): Line number (1-indexed)
-  - `col` (required): Column number (0-indexed)
-  - Returns: `{ references: [{ uri, range }] }`
-
-- **nvim_lsp_hover** - Get hover information (type, documentation)
-  - `bufnr` (optional): Buffer number (0 for current)
-  - `line` (required): Line number (1-indexed)
-  - `col` (required): Column number (0-indexed)
-  - Returns: `{ contents: "..." }`
-
-- **nvim_diagnostics** - Get diagnostics (errors, warnings) for buffer
-  - `bufnr` (optional): Buffer number (0 for current)
-  - Returns: `{ diagnostics: [{ lnum, col, severity, message, source }] }`
-
-- **nvim_lsp_document_symbols** - Get all symbols in the document
-  - `bufnr` (optional): Buffer number (0 for current)
-  - Returns: `{ symbols: [...] }` (LSP DocumentSymbol array)
-
-- **nvim_lsp_type_definition** - Get type definition location(s)
-  - `bufnr` (optional): Buffer number (0 for current)
-  - `line` (required): Line number (1-indexed)
-  - `col` (required): Column number (0-indexed)
-  - Returns: `{ locations: [{ uri, range }] }`
-
-- **nvim_lsp_call_hierarchy_incoming** - Get incoming calls (callers)
-  - `bufnr` (optional): Buffer number (0 for current)
-  - `line` (required): Line number (1-indexed)
-  - `col` (required): Column number (0-indexed)
-  - Returns: `{ calls: [{ from, fromRanges }] }`
-
-- **nvim_lsp_call_hierarchy_outgoing** - Get outgoing calls (callees)
-  - `bufnr` (optional): Buffer number (0 for current)
-  - `line` (required): Line number (1-indexed)
-  - `col` (required): Column number (0-indexed)
-  - Returns: `{ calls: [{ to, fromRanges }] }`
+  - `line` / `col`: 1-indexed line, 0-indexed column; required for every method except
+    `document_symbols` and `diagnostics`
 
 ### Quickfix
 
@@ -434,46 +399,21 @@ const { bufnr } = await use_mcp_tool('vibing-nvim', 'nvim_load_buffer', {
 // Now use bufnr for LSP operations without disrupting user's view
 
 // Get definition of symbol at line 10, column 5
-const definition = await use_mcp_tool('vibing-nvim', 'nvim_lsp_definition', {
+const definition = await use_mcp_tool('vibing-nvim', 'nvim_lsp', {
+  method: 'definition',
   line: 10,
   col: 5,
 });
 
-// Get all references to symbol
-const references = await use_mcp_tool('vibing-nvim', 'nvim_lsp_references', {
+// Who calls this function?
+const incomingCalls = await use_mcp_tool('vibing-nvim', 'nvim_lsp', {
+  method: 'call_hierarchy_incoming',
   line: 10,
   col: 5,
 });
 
-// Get hover information (type, documentation)
-const hover = await use_mcp_tool('vibing-nvim', 'nvim_lsp_hover', {
-  line: 10,
-  col: 5,
-});
-
-// Get diagnostics for current buffer
-const diagnostics = await use_mcp_tool('vibing-nvim', 'nvim_diagnostics', {});
-
-// Get all symbols in the document
-const symbols = await use_mcp_tool('vibing-nvim', 'nvim_lsp_document_symbols', {});
-
-// Get type definition
-const typeDef = await use_mcp_tool('vibing-nvim', 'nvim_lsp_type_definition', {
-  line: 10,
-  col: 5,
-});
-
-// Get incoming calls (who calls this function?)
-const incomingCalls = await use_mcp_tool('vibing-nvim', 'nvim_lsp_call_hierarchy_incoming', {
-  line: 10,
-  col: 5,
-});
-
-// Get outgoing calls (what does this function call?)
-const outgoingCalls = await use_mcp_tool('vibing-nvim', 'nvim_lsp_call_hierarchy_outgoing', {
-  line: 10,
-  col: 5,
-});
+// Diagnostics for the current buffer (no position needed)
+const diagnostics = await use_mcp_tool('vibing-nvim', 'nvim_lsp', { method: 'diagnostics' });
 ```
 
 ## Development

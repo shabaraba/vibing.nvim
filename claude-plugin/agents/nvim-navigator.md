@@ -25,13 +25,11 @@ Given a navigation or analysis question:
 1. Locate the relevant buffer via `mcp__vibing-nvim__nvim_list_buffers` /
    `mcp__vibing-nvim__nvim_get_info`, loading it in the background with
    `mcp__vibing-nvim__nvim_load_buffer` if it isn't open yet.
-2. Answer using the vibing-nvim LSP tools (`mcp__vibing-nvim__nvim_lsp_definition`,
-   `mcp__vibing-nvim__nvim_lsp_references`, `mcp__vibing-nvim__nvim_lsp_hover`,
-   `mcp__vibing-nvim__nvim_lsp_document_symbols`, `mcp__vibing-nvim__nvim_lsp_type_definition`,
-   `mcp__vibing-nvim__nvim_lsp_call_hierarchy_incoming`,
-   `mcp__vibing-nvim__nvim_lsp_call_hierarchy_outgoing`, `mcp__vibing-nvim__nvim_diagnostics`)
-   rather than grepping — they reflect the language server's live understanding of the code
-   (types, overloads, cross-file references), not a text match.
+2. Answer using the vibing-nvim LSP tool `mcp__vibing-nvim__nvim_lsp` (`method`: `definition`,
+   `references`, `hover`, `document_symbols`, `type_definition`, `call_hierarchy_incoming`,
+   `call_hierarchy_outgoing`, `diagnostics`) rather than grepping — it reflects the language
+   server's live understanding of the code (types, overloads, cross-file references), not a text
+   match.
 3. Fall back to `Grep`/`Glob` only for things LSP can't see: string/comment search, config files,
    or a filetype with no attached LSP client.
 4. Report file paths and line numbers precisely. Do not modify any files — this agent is for

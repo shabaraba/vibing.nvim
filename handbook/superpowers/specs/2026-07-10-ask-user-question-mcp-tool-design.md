@@ -1,5 +1,8 @@
 # vibing.nvim専用 ask_user_question ツール 設計
 
+> **このツールは廃止済み。** 質問はモデルが返信の末尾に書く `vibing-question` ブロックになった
+> （`handbook/features/chat-ui.md` → AskUserQuestion Support）。以下は経緯の記録として残す。
+>
 > **現在の設計は「再改訂: handle_idをツール引数として渡す設計に変更」章以降**。それより前の章は採用されなかった過去案で、変更の経緯を残すために残置している。
 
 ## 背景

@@ -173,7 +173,7 @@ codex scans are the user's own; `skills.config` only toggles skills codex alread
 skills are listed in the developer message in the same shape codex uses for its own list — name,
 description and the absolute `SKILL.md` to read — and the model reads the file with its shell,
 which the sandbox allows. The same message names the tool prefix and carries the shared
-`nvim_ask_user_question` instruction plus the stable `chat_bufnr`; the RPC port remains out of
+question-block instruction plus the stable `chat_bufnr`; the RPC port remains out of
 band in the MCP subprocess environment. It is byte-stable across the turns of one chat because
 the plugin list and buffer number are stable, and codex's prompt cache matches on a prefix like
 Anthropic's (#469).

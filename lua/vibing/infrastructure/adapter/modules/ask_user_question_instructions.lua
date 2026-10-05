@@ -1,31 +1,44 @@
---- Shared prompt text for the vibing.nvim choice-list MCP tool.
+--- How every backend is told to ask the user a multiple-choice question.
+---
+--- The model writes the question as a fenced block at the end of its reply and stops; vibing.nvim
+--- draws the options and the user's answer is the next message
+--- (`presentation/chat/modules/question_block.lua` parses it). No tool is involved, so the same
+--- lines go to every backend — Grok included — and they carry no per-chat value: nothing in them
+--- changes between turns, which keeps the system prompt byte-stable for the prompt cache (#469).
 --- @module vibing.infrastructure.adapter.modules.ask_user_question_instructions
 
 local M = {}
 
-local CHAT_BUFFER_LABEL = "Current vibing.nvim chat buffer number"
+--- The fence's info string. The one definition both the instruction and the parser read.
+M.FENCE = "vibing-question"
 
---- Tell a backend how to invoke the shared choice-list tool and, when available, identify the
---- chat that should receive it. Keeping the instruction and its value together prevents one
---- backend from accidentally emitting only half of the routing contract.
---- The value is the buffer number, not the chat's file path: it survives a rename, keeping this
---- prefix byte-stable across turns for the provider's prompt cache (#489).
----@param tool_name string backend-specific fully qualified MCP tool name
----@param chat_bufnr number|nil
 ---@return string[]
-function M.lines(tool_name, chat_bufnr)
-  local lines = {
-    "When you need the user to choose among options (single or multi-select), always call the "
-      .. tool_name
-      .. " tool instead of asking in free text. Do not use the native AskUserQuestion tool for this — "
-      .. "it is unavailable in this environment. Pass this turn's \""
-      .. CHAT_BUFFER_LABEL
-      .. "\" (given below when available) as the chat_bufnr argument.",
+function M.lines()
+  return {
+    "When you need the user to choose among options (single or multi-select), do not ask in free "
+      .. "text and do not use the native AskUserQuestion tool (it is unavailable here). Instead, end "
+      .. "your reply with exactly one fenced code block whose info string is "
+      .. M.FENCE
+      .. ', containing JSON: {"questions": [{"question": "...", "multiSelect": false, "options": '
+      .. '[{"label": "...", "description": "..."}]}]}. Write nothing after the block and stop: '
+      .. "vibing.nvim shows the options to the user, and their answer arrives as the next message.",
   }
-  if chat_bufnr then
-    table.insert(lines, CHAT_BUFFER_LABEL .. ": " .. tostring(chat_bufnr))
+end
+
+--- The chat's own buffer number, as a line of the system prompt.
+---
+--- Not part of asking a question any more, but it used to ride along with that instruction and
+--- other things still read it: the orchestration skills pass it as `from_bufnr`, and
+--- `vibing-chat-recall` finds the chat by it. It is the buffer number rather than the file path
+--- because a rename (`:VibingSetFileTitle`) would otherwise change the prompt mid-conversation and
+--- invalidate the cache (#489).
+---@param chat_bufnr number|nil
+---@return string[] empty when there is no chat
+function M.chat_buffer_lines(chat_bufnr)
+  if not chat_bufnr then
+    return {}
   end
-  return lines
+  return { "Current vibing.nvim chat buffer number: " .. tostring(chat_bufnr) }
 end
 
 return M

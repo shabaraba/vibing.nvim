@@ -145,15 +145,23 @@ describe("grok_command_builder", function()
     end)
 
     it("names no MCP tool, because Grok cannot reach the vibing-nvim MCP server", function()
-      -- Grok registers no MCP server and no chat_bufnr, so an instruction to call
-      -- nvim_ask_user_question would name a tool it has no way to invoke. Codex is wired through
-      -- its per-run plugin configuration, but Grok has no matching MCP seam.
+      -- Grok registers no MCP server and no chat_bufnr, so an instruction naming a vibing-nvim tool
+      -- would name one it has no way to invoke.
       local cmd = grok_command_builder.build("hello", { chat_bufnr = 12 }, nil, {})
       local rules_text = cmd[find_flag(cmd, "--rules") + 1]
 
       assert.is_nil(rules_text:find("nvim_ask_user_question", 1, true))
       assert.is_nil(rules_text:find("mcp__vibing%-nvim__"))
       assert.is_nil(rules_text:find("Current vibing.nvim chat buffer", 1, true))
+    end)
+
+    it("still tells Grok how to ask a multiple-choice question", function()
+      -- A question is a block in the reply, not a tool call, so the one backend that could never
+      -- reach `nvim_ask_user_question` gets the feature too.
+      local cmd = grok_command_builder.build("hello", {}, nil, {})
+      local rules_text = cmd[find_flag(cmd, "--rules") + 1]
+
+      assert.is_truthy(rules_text:find("vibing-question", 1, true))
     end)
 
     it("embeds no turn_id, so the rules stay byte-identical across turns", function()

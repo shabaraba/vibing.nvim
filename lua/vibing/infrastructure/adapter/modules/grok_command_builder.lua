@@ -10,6 +10,7 @@ local CommonBuilder = require("vibing.infrastructure.adapter.modules.command_bui
 local RequestBuilder = require("vibing.infrastructure.adapter.modules.request_builder")
 local GrokLightweight = require("vibing.infrastructure.adapter.modules.grok_lightweight")
 local worktree_constants = require("vibing.core.constants.worktree")
+local AskUserQuestionInstructions = require("vibing.infrastructure.adapter.modules.ask_user_question_instructions")
 
 local M = {}
 
@@ -149,8 +150,9 @@ end
 --- What goes into `--rules`, Grok's equivalent of a system prompt.
 ---
 --- Deliberately much smaller than the Claude adapter's block: Grok reaches no vibing-nvim MCP
---- server, so instructing it to call `nvim_ask_user_question` or `nvim_highlight_range` would
---- name tools it cannot invoke. Only the backend-agnostic conventions go here.
+--- server, so instructing it to call `nvim_highlight_range` would name a tool it cannot invoke.
+--- Only the backend-agnostic conventions go here — which now includes asking a multiple-choice
+--- question, since that is a block in the reply rather than a tool call.
 --- @param opts Vibing.AdapterOpts
 --- @param config Vibing.Config
 --- @return string|nil rules `nil` when there is nothing to say, so the caller omits the flag —
@@ -175,6 +177,7 @@ local function build_rules(opts, config)
         .. worktree_constants.DIR
         .. "<branch-name>/ at the repository root."
     )
+    vim.list_extend(lines, AskUserQuestionInstructions.lines())
   end
 
   if #lines == 0 then

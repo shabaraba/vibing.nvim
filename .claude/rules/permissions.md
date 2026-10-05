@@ -46,10 +46,6 @@ as a new turn (#778). The mechanism, the measurements and the two limits they we
   `bin/hooks/pre-tool-use.sh`'s own wait < each backend's registered hook timeout, all derived in
   `hooks/wait_budget.lua`. The last inequality is not tidiness: **every CLI measured fails open
   past its own hook timeout**, running the tool with no verdict at all.
-  A fourth deadline bounds the whole thing from above — claude aborts a **silent** MCP tool call at
-  1800s. `nvim_ask_user_question` rides that path rather than the hook's, but **that number
-  licenses nothing on it**: a server that answers nothing and a server that answers late are
-  different phenomena, and the second has its own measurement (below).
 - **Waiting is enabled per backend by a _measurement_, not a flag.** `hook.measured_wait_floor_sec`
   is the longest a hook was observed blocking on that CLI without being cut, and a backend with
   none keeps today's kill-and-retry. Raising `approval_wait_sec` past a backend's floor turns the
@@ -96,9 +92,9 @@ as a new turn (#778). The mechanism, the measurements and the two limits they we
 - **A delegated answer is exempt from the "chat is responding" guard only while its hook is
   actually blocked**, never because a prompt is still drawn.
 - **The duplicate-send guard is opened for an answer and closed again immediately.**
-  `ChatBuffer:send_message` returns early on `_is_sending` **unless** an approval or a question is
-  still blocking this turn; both answer attempts run inside that exemption, and the guard is
-  re-applied the moment neither of them claimed the message. The condition is the pair of counts
+  `ChatBuffer:send_message` returns early on `_is_sending` **unless** an approval is still
+  blocking this turn; the answer attempt runs inside that exemption, and the guard is re-applied
+  the moment it did not claim the message. The condition is the pair of counts
   `_resume_after_prompts` uses — _is anything still holding this turn_ — never whether prompt lines
   are still on screen. `_is_sending` is true for **the whole of a running turn**, not for the gap
   before the CLI starts, so every in-place answer arrives in exactly the state the guard rejects:
@@ -107,94 +103,28 @@ as a new turn (#778). The mechanism, the measurements and the two limits they we
   `handbook/architecture/approval-without-kill.md` → "The duplicate-send guard swallowed every
   answer, on both routes".
 
-## Answering a Question in Place
+## Asking a Question
 
-`nvim_ask_user_question` is the second channel a human is waited for on, and the last kill path
-that #778 left behind (#788). It is **not** the hook: a question _is_ an MCP tool call, so none of
-the three deadlines above reach it and `hook.measured_wait_floor_sec` says nothing about it.
-`handbook/architecture/approval-without-kill.md` → "The other channel".
+A multiple-choice question is **not** waited for. The model ends its reply with a
+` ```vibing-question ` block and stops; `ChatBuffer:take_question_block` turns it into choices in
+the next unsent section, and the answer is the next turn's message. The in-place route
+(`nvim_ask_user_question`, `pending_questions`, a measured late-answer ceiling) was removed once
+duplex became the default: a resident process already survives between turns and the prompt cache
+is server-side, so holding the turn open bought nothing that cost its exemptions.
+`presentation/chat/modules/question_block.lua`.
 
-- **Its own measurement, and the default sits exactly on it — deliberately.**
-  `mcp.measured_answer_wait_sec` is how long a _late_ answer was observed still being consumed
-  (claude: 960s, `tests/perf/mcp_answer_after_delay.sh`). The gate is
-  `question_wait_sec() + MCP_MARGIN_SEC <= measured_answer_wait_sec`, and 960 **is** that budget:
-  the arm cell had to use the production wait, because the number is a floor and a shorter cell
-  would license only a shorter wait. Raising `approval_wait_sec` therefore turns the feature off
-  for that backend rather than waiting past the evidence. It is **not**
-  `MCP_TOOL_IDLE_TIMEOUT_SEC` (1800), which measured a server that answers _nothing_.
-- **A withheld reply is owed exactly as a withheld `.res` is.** `rpc/pending_questions.lua` has the
-  same four exits and no fifth. `Server.DEFERRED` is the only way a handler may answer later, and
-  it is compared by identity — a handler returning a lookalike table still writes its reply.
-- **An expiring question ends the turn; an expiring approval never does — unless another prompt is
-  still blocked, when neither does.** A refusal is something a model can act on; an unanswered
-  question leaves the choice it asked about open, and the obvious reading of that is to pick one.
-  But one assistant message dispatches several tool calls at once, so an unconditional kill takes
-  the turn the user is mid-answer on for a concurrent approval. The condition asks about
-  **prompts**, not about which registry they live in, and lives in `ChatBuffer:expire_question`.
-- **An approval and a question are one state — "a prompt holding this turn open".**
-  `_prompts_rendered_unsent`, `_resume_after_prompts` and `show_pending_prompts` are shared.
-  Merging the drawing and leaving the lifetimes split is how the two silently drift.
-- **A question's own lines are recognised by rebuilding them, never by a text rule.**
-  `renderer.choice_lines` is the one place the block is assembled and `strip_choice_lines` matches
-  that exact output back out. The lines carry no prefix and no `<!-- vibing:req=... -->`, unlike an
-  approval's, so any rule that read them would read the user's prose too. A block the user edited
-  no longer matches and stays — it is the answer.
-- **The answer is what the human added; the drawn prompts are not part of it.**
-  `ChatBuffer:_answer_text` removes them the way folding does and in the same order —
-  `strip_prompt_lines`, then `strip_choice_lines` — and what is left over is the answer. Reading
-  the unsent section whole handed the model its own question, its options and the count of the
-  questions behind it back as the human's choice. **Nothing left over means there was no answer**:
-  an untouched block is the state an empty `<CR>` is in, so it is not spent. It reads the section
-  **untrimmed** (`conversation_extractor.user_message_lines`), because the block's own trailing
-  blank line is part of what the renderer wrote — trim it and the match fails in exactly the case
-  that must strip, the one where the user typed nothing. **Everywhere that asks "did the human
-  write anything" asks it through `_answer_text`**, including the `_is_sending` gate below the two
-  answer attempts: `extract_user_message` is non-empty on the drawn block alone, so asking it
-  there warned on every empty `<CR>` under a prompt — "your message was not sent" about a message
-  that was never written, and a warning on every stray keypress is how the warnings that matter
-  get trained away ("An empty `<CR>` is never spent as the answer", below).
-- **The block on screen is a pure function of the whole queue, so anything that changes the queue
-  folds first and redraws after.** `strip_choice_lines` rebuilds from the queue _as it is when it
-  strips_, and the block carries a count of the questions behind it, so mutating first leaves the
-  drawn lines matching nothing: they survive the fold and come back as the user's own unsent text.
-  There are exactly three mouths onto the queue — `insert_choices`, `expire_question` and
-  `_release_blocked_prompts` — and the discipline is each one's own, not the caller's.
-- **Only the head of the queue is drawn; the rest is a count line.** A free-text answer carries
-  nothing that says which block it belongs to, so a second block on screen destroys the ground
-  "an answer belongs to the question drawn on screen" stands on.
-- **An empty `<CR>` is never spent as the answer, and neither is a message that answers nothing.**
-  Both fall through without ending the turn; the second is refused with a `vim.notify`, the first
-  in silence, because a mistyped `<CR>` needs no explanation and a warning on every one of them
-  trains the real warnings away.
-- **An answer belongs to the question drawn on screen, and to no other** —
-  `_question_the_answer_belongs_to` matches `_pending_choices_request_id` against the waiting list.
-  This is #667's "an answer belongs to the chat that was asked" one level down: taking
-  `list_for_chat`'s first entry is right only while one question is pending, and with two it
-  silently answers the other one. **An answer that cannot be attributed is not consumed, and the
-  refusal is spoken** (`vim.notify`), the same shape as the approval side. A single waiting
-  question is not ambiguous and takes the answer even with no id on the choices.
-- **`retry_as_new_turn` stops at the approval and never falls through into the question.** The
-  retry body _is_ the approval's own choice line, so passing it on hands it to the model as the
-  human's free-text answer and drops the retry. `approval_decision.consume` has also emptied
-  `_pending_approvals` by then, so `can_defer_send` no longer recognises it as an approval answer
-  and is told through `is_approval_retry` instead — what a deferral sends later is the buffer, not
-  the substituted message.
-- **A chat waiting for a question reports `asked_question`, not `responding`** — `chat_status`
-  reads `pending_questions`, the same hole #778 closed for approvals.
-- **Reporting the state and being able to act on it are two holes, and #778 closed only the
-  first.** `programmatic_sender.validate`'s "do not deliver into a responding chat" guard has one
-  exemption per channel, and the question one is not decoration: without it an orchestrator sees
-  `asked_question` and is refused by the very call the worker-stopped notice tells it to make. The
-  question exemption **takes no `request_id`** — the id is what separates a merely-drawn prompt
-  from a blocked hook, and for questions `_pending_choices` vs `pending_questions` already draws
-  that line — but it **does** require the caller's flag, or `auto_compact` / `auto_resume` /
-  `append_notice` reach the same `validate` and have their bodies eaten as the answer.
-- **A delivery is an answer only if it is one.** `message.lua`'s `is_report` asks
-  `orchestration_link.direction`, the same function `delivery_message.section_for` uses to choose
-  the heading, so what renders as `## Report` is never spent as the answer and `## Request` still
-  is. Deriving the exemption from the target's state alone let a worker's completion report be
-  read as the human's choice.
-- **An answer resumes a turn; it does not start one.** So it is exempt from `max_concurrent`, it
-  skips `auto_compact.before_delivery`, and `queue_if_busy` must **not** queue it — a queued answer
-  is delivered only after `question_wait_sec` has denied the question it answers, and the caller
-  was told `queued`, which reads as sent.
+- **Only the last thing a turn wrote is a question.** `find_trailing` accepts nothing but blank
+  lines after the closing fence, and refuses when a later fence closes the reply. Looking further
+  back draws a live prompt out of a quoted example.
+- **The block is looked for before anything is appended under the reply** — `send_message.lua`
+  calls `take_question_block` ahead of `### Tokens` and `### Modified Files`, which would otherwise
+  make the block no longer the last thing written.
+- **The fence name has one definition**, `ask_user_question_instructions.FENCE`, read by both the
+  instruction every backend is given and the parser.
+- **The `Current vibing.nvim chat buffer number` line is not part of the question protocol** and
+  must stay in the claude and codex prompts: the orchestration skills pass it as `from_bufnr` and
+  `vibing-chat-recall` finds the chat by it.
+- **A chat that asked reports `asked_question` until its next send**, through `_stop_reason`; it is
+  idle, so an orchestrator answers it with an ordinary delivery.
+- **Native `AskUserQuestion` is denied without killing anything**, with a reason that names the
+  block — a step the model can take itself.

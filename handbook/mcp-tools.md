@@ -95,17 +95,18 @@ Prefix each with whichever form matches how the server was registered (see above
   `nvim_job_wait`
 - **Highlighting**: `nvim_highlight_range`, `nvim_clear_highlight`
 - **Annotations**: `nvim_annotate`, `nvim_clear_annotations`
-- **Chat**: `nvim_ask_user_question` (renders a choice list in the chat buffer — see
-  `handbook/features/chat-ui.md`), `nvim_chat_send_message`, `nvim_chat_create`,
-  `nvim_chat_answer_approval`, `nvim_chat_list`, `nvim_chat_conflicts`
+- **Chat**: `nvim_chat_send_message`, `nvim_chat_create`, `nvim_chat_answer_approval`,
+  `nvim_chat_list`, `nvim_chat_conflicts`. A multiple-choice question is not a tool: the model ends
+  its reply with a `vibing-question` block (`handbook/features/chat-ui.md`)
 - **Instances**: `nvim_list_instances`
 - **Quickfix**: `nvim_set_qflist` (pushes a new list; the previous one survives under `:colder`)
-- **Debugger**: `nvim_dap_get_state`, `nvim_dap_get_stack_trace`, `nvim_dap_get_variables`,
+- **Debugger**: `nvim_dap_inspect` (`what`: `state` / `stack_trace` / `variables`),
   `nvim_dap_set_breakpoint`, `nvim_dap_evaluate` (nvim-dap is optional — every one of these
   reports it as missing rather than failing)
-- **LSP**: `nvim_lsp_definition`, `nvim_lsp_references`, `nvim_lsp_hover`, `nvim_diagnostics`,
-  `nvim_lsp_document_symbols`, `nvim_lsp_type_definition`, `nvim_lsp_call_hierarchy_incoming`,
-  `nvim_lsp_call_hierarchy_outgoing`
+- **LSP**: `nvim_lsp`, `method` one of `definition`, `references`, `hover`, `type_definition`,
+  `call_hierarchy_incoming`, `call_hierarchy_outgoing`, `document_symbols`, `diagnostics`. One tool
+  rather than eight because all of them are reads: merging tools is safe only where no permission
+  rule would need to tell the merged calls apart, which is also why DAP merges only its reads
 
 ## Background Jobs
 

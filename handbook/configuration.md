@@ -134,15 +134,15 @@ change to `config.lua`. Copilot declares none.
 ```lua
 backends = {
   claude = {
-    process = "oneshot",    -- "oneshot" (default): one CLI process per turn, which exits when the
-                            --   turn ends.
-                            -- "duplex": one resident process per chat, fed each turn's prompt on
-                            --   its stdin. The CLI's startup -- plugin scan, MCP servers,
-                            --   CLAUDE.md, system prompt, git status block -- is paid once per
-                            --   chat instead of once per message.
-                            -- Opt-in because a resident process holds ~200MB while idle. It is
-                            --   reclaimed after five idle minutes, when the chat buffer is
-                            --   unloaded, or when Neovim exits.
+    process = "duplex",     -- "duplex" (default): one resident process per chat, fed each turn's
+                            --   prompt on its stdin. The CLI's startup -- plugin scan, MCP
+                            --   servers, CLAUDE.md, system prompt, git status block -- is paid
+                            --   once per chat instead of once per message.
+                            -- A resident process holds ~200MB, plus ~75MB for its MCP server,
+                            --   while idle. It is reclaimed after five idle minutes, when the
+                            --   chat buffer is unloaded, or when Neovim exits.
+                            -- "oneshot": one CLI process per turn, which exits when the turn
+                            --   ends. Nothing stays resident between messages.
                             -- A chat's own `process:` frontmatter overrides this.
                             -- See handbook/architecture/duplex-transport.md.
     background_wait_sec = 3600,

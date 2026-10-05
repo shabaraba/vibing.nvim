@@ -161,46 +161,6 @@ describe("turn_registry", function()
     end)
   end)
 
-  describe("get_by_chat_bufnr", function()
-    it("returns the turn open in that chat, even with several concurrent turns", function()
-      start("a", { chat_bufnr = 11 })
-      start("b", { chat_bufnr = 12 })
-
-      assert.equals("b-turn", TurnRegistry.get_by_chat_bufnr(12).turn_id)
-    end)
-
-    it("falls back to the sole open turn when chat_bufnr is nil", function()
-      start("a", { chat_bufnr = 7 })
-
-      assert.equals("a-turn", TurnRegistry.get_by_chat_bufnr(nil).turn_id)
-    end)
-
-    it("falls back to the sole open turn when no process serves that bufnr", function()
-      -- `--resume` replays earlier turns, so the model can read a buffer number from a previous
-      -- Neovim session and pass one that no longer exists.
-      start("a", { chat_bufnr = 7 })
-
-      assert.equals("a-turn", TurnRegistry.get_by_chat_bufnr(99).turn_id)
-    end)
-
-    it("returns nil on mismatch when several turns are open (avoids guessing)", function()
-      start("a", { chat_bufnr = 11 })
-      start("b", { chat_bufnr = 12 })
-
-      assert.is_nil(TurnRegistry.get_by_chat_bufnr(99))
-    end)
-
-    it("returns nil for a chat whose process is idle, rather than another chat's turn", function()
-      -- The bufnr resolved: that chat simply has nothing open. Answering with some other chat's
-      -- turn would route its question into the wrong buffer — the #667 shape.
-      start("a", { chat_bufnr = 11 })
-      start("b", { chat_bufnr = 12 })
-      TurnRegistry.close("b-turn")
-
-      assert.is_nil(TurnRegistry.get_by_chat_bufnr(12))
-    end)
-  end)
-
   describe("find_other_writing_in", function()
     it("finds another turn running in the same worktree", function()
       start("a", { chat_bufnr = 11, worktree_root = "/repo" })

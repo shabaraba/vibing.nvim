@@ -73,25 +73,6 @@ local M = {
     measured_wait_floor_sec = 1090,
   },
 
-  -- The other channel a human can be waited for on, and a **separate measurement** (#788).
-  -- `nvim_ask_user_question` is an MCP tool call, so none of the hook's three deadlines apply to
-  -- it; what applies is whether claude still delivers an answer that arrives late.
-  --
-  -- 960s, measured on 2026-09-18 against claude 2.1.236 with a stub server that answers after
-  -- exactly that long: the tool_result arrived with `is_error=false` and the model emitted a marker
-  -- it could only have read from the result. `tests/perf/mcp_answer_after_delay.sh` is the
-  -- instrument, its control cell (immediate answer) is what makes the arm readable, and the logs
-  -- are in `.vibing/probe/mcp-answer-after-delay/`.
-  --
-  -- **A floor, and the production budget itself**: 960 is `approval_wait_sec` (900) plus
-  -- `MCP_MARGIN_SEC` (60), so what the cell establishes is that our whole wait survives — not that
-  -- 960 is where claude stops. It is deliberately not the 1800s in
-  -- `wait_budget.MCP_TOOL_IDLE_TIMEOUT_SEC`: that one measures how long claude tolerates a server
-  -- that answers **nothing**, which is a different phenomenon, and substituting one for the other
-  -- is the error this whole file's neighbouring comment records for the hook's floor.
-  mcp = {
-    measured_answer_wait_sec = 960,
-  },
   seeds_project_plugins = true,
 
   -- Reads a subagent's own transcript back off disk; the shared adapter calls this rather than
@@ -144,7 +125,8 @@ local M = {
 
   -- Claude's tool names are the canonical vocabulary, so nothing to translate.
   vocabulary = nil,
-  -- The one backend whose nvim_ask_user_question route is wired end to end.
+  -- Carries the chat buffer back on the turn, which the waiting approval route reads to draw its
+  -- prompt (`hooks/transports.lua`).
   register_chat_bufnr = true,
   -- Reads its prompt from argv; stdin stays open.
   stdin = nil,

@@ -224,7 +224,7 @@ appended under it.
 - **Waiting takes two descriptor fields, and `transports.can_wait_for_approval` requires both.**
   `hook.measured_wait_floor_sec` against the currently configured wait says the CLI tolerates a
   blocked hook; `register_chat_bufnr` says the turn carries the chat back. They read as unrelated —
-  one times the hook, the other is about `nvim_ask_user_question` — but `_ask_without_killing`
+  one times the hook, the other is about routing back to a chat — but `_ask_without_killing`
   names the chat that draws the prompt through `turn.process.chat_bufnr`, and `cli_adapter` fills
   that in **only** for a backend with the flag. Enabled on the floor alone the waiting branch is
   still taken, finds nil, and denies every `ask` with an internal-error reason: not a prompt in the

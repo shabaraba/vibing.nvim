@@ -4,6 +4,7 @@
 local can_use_tool_mod = require("vibing.infrastructure.permissions.can_use_tool")
 local Config = require("vibing.config")
 local HookScope = require("vibing.infrastructure.rpc.hook_scope")
+local AskUserQuestionInstructions = require("vibing.infrastructure.adapter.modules.ask_user_question_instructions")
 
 local M = {}
 
@@ -477,21 +478,17 @@ function M.check_tool_permission(params)
 
   local perm_config = build_permission_config(scope.turn_id)
 
-  -- Native AskUserQuestion is unavailable in headless `claude -p` mode and is fully opaque to us
-  -- (the SDK executes it internally), so the only way to handle it is to intercept + deny it here
-  -- and render the choice UI ourselves. This branch is a harmless fallback kept in case the
-  -- native tool is ever offered. vibing.nvim's own mcp__vibing-nvim__nvim_ask_user_question tool
-  -- is the primary path and does NOT go through this hook: since we fully control its execution,
-  -- its handler calls M.ask_user_question() (below) directly instead of being denied here.
-  local is_ask_user_question_tool = tool_name == "AskUserQuestion"
-
-  if is_ask_user_question_tool then
-    cancel_and_deny(function(turn)
-      if turn.on_insert_choices and tool_input.questions then
-        turn.on_insert_choices(tool_input.questions)
-      end
-    end, "vibing.nvim could not find the chat buffer to show this question in (internal error). Ask the question as plain text instead of retrying this tool.")
-    return { status = "denied", reason = "AskUserQuestion intercepted" }
+  -- Native AskUserQuestion is unavailable in headless `claude -p` mode and opaque to us (the CLI
+  -- executes it internally). Should a CLI ever offer it, refuse it **without killing anything** and
+  -- point the model at the block it was told to write: a question is the last thing a turn writes
+  -- (`question_block.lua`), and ending the turn that way is a step the model can take itself, so
+  -- there is nothing to rescue by tearing the process down.
+  if tool_name == "AskUserQuestion" then
+    local reason = "AskUserQuestion is unavailable in vibing.nvim. To ask the user to choose, end "
+      .. "your reply with a ```" .. AskUserQuestionInstructions.FENCE .. " block as your system prompt "
+      .. "describes, and stop."
+    write_hook_response(request_id, "deny", reason)
+    return { status = "denied", reason = reason }
   end
 
   local result = can_use_tool_mod.can_use_tool(tool_name, tool_input, perm_config)
@@ -540,157 +537,6 @@ function M.check_tool_permission(params)
     end, "vibing.nvim could not find the chat buffer to show the approval prompt in (internal error). Do not retry this tool immediately.")
     return { status = "pending" }
   end
-end
-
---- Ask the human without killing the CLI: hold the MCP reply open until they answer (#788).
----
---- The counterpart of `_ask_without_killing`, and the order is the same three steps for the same
---- three reasons — register first so nothing that throws later leaves a reply owed, draw the prompt
---- because no `_handle_response` will do it later, then tell the watchdog because
---- `VibingResponseDone` never fires for a turn that is still running.
----
---- **What is withheld is different, and that is the whole of #788.** An approval withholds a file a
---- shell hook is polling, which it could already do; a question withholds the reply to the MCP tool
---- call the CLI is blocked inside, which needed `rpc/server.lua` to learn how to answer late.
----
---- No `vim.schedule` here, deliberately (#649): `handle_request` has already scheduled, and the
---- staging must land before this turn's completion consumes it.
---- @param turn table the turn registry entry
---- @param chat_bufnr number
---- @param questions table[]
---- @param respond fun(result: table)
---- @return table the server's deferred sentinel
-function M._ask_question_without_killing(turn, chat_bufnr, questions, respond)
-  local request_id = require("vibing.core.utils.identity").new_request_id()
-
-  require("vibing.infrastructure.rpc.pending_questions").open({
-    request_id = request_id,
-    chat_bufnr = chat_bufnr,
-    turn_id = turn.turn_id,
-    questions = questions,
-    respond = respond,
-    on_timeout = M._on_question_expired,
-  })
-
-  -- Guarded for the same reason the approval prompt is: the wait limit is armed either way, so a
-  -- failure to draw costs the user a visible prompt, not a reply that is never written.
-  -- The `request_id` travels with the choices so the chat can tell whose block it is holding. It is
-  -- passed only on this path: the kill route registers no pending question, so there is no id for
-  -- its block to belong to, and `nil` is the honest value there.
-  if turn.on_insert_choices then
-    local ok, err = pcall(turn.on_insert_choices, questions, true, request_id)
-    if not ok then
-      vim.notify(
-        string.format("[vibing] could not draw the question prompt: %s", tostring(err)),
-        vim.log.levels.ERROR
-      )
-    end
-  end
-
-  -- Guarded, and **not only for symmetry with the approval side — the failure is a different
-  -- shape.** `on_approval_waiting` runs as the last statement inside a `vim.schedule`, so an error
-  -- there reaches the scheduler and costs a notification. This one runs synchronously, and what
-  -- comes after it is `return DEFERRED`. An error escaping here never reaches that return, so
-  -- `handle_request` falls back to writing the handler's own failure as the reply — or, if it does
-  -- not, the question stays registered with nobody left to answer it. Both break the "four ways out
-  -- and no fifth" this registry is built on, and neither is worth a notification that failed.
-  local ok, err = pcall(function()
-    require("vibing.application.chat.completion_notifier").on_question_waiting(chat_bufnr, request_id)
-  end)
-  if not ok then
-    vim.notify(
-      string.format("[vibing] could not announce the waiting question: %s", tostring(err)),
-      vim.log.levels.ERROR
-    )
-  end
-
-  return require("vibing.infrastructure.rpc.server").DEFERRED
-end
-
---- What the wait limit does besides replying: **end the turn**, which is today's route.
----
---- Passed to `pending_questions.open` as `on_timeout`, so it runs after the reply has been written.
---- The asymmetry with `_on_approval_expired` — which must not kill anything — is argued where the
---- decision lives, in `pending_questions.expire`. In one line: a model can act correctly on a
---- refused tool call, and cannot act correctly on a question its user never answered.
----
---- The chat is resolved here rather than captured when the question opened, because the buffer can
---- be gone by now.
---- @param entry Vibing.PendingQuestion
---- @return boolean marked
-function M._on_question_expired(entry)
-  if not (entry and entry.chat_bufnr) then
-    return false
-  end
-  local chat_buf = require("vibing.presentation.chat.view").get_chat_buffer(entry.chat_bufnr)
-  if not chat_buf or type(chat_buf.expire_question) ~= "function" then
-    return false
-  end
-  return chat_buf:expire_question(entry)
-end
-
---- Handle `ask_user_question` RPC request from the vibing-nvim MCP server's
---- `nvim_ask_user_question` tool handler. Unlike native AskUserQuestion (intercepted via
---- PreToolUse hook above, since the SDK executes it as a black box), this is vibing.nvim's own
---- MCP tool: its handler calls this directly instead of returning a real tool_result, so there is
---- no hook/deny plumbing here.
----
---- Two shapes, and which one is used is a property of the backend rather than of this call
---- (`turn.can_answer_question_in_place` — the descriptor's measured floor for a *late MCP answer*,
---- compared against the currently configured budget, resolved per turn in `cli_adapter.lua` so that
---- this handler still names no backend):
----
----   - **answer in place** — hold the reply, show the choices, and hand the user's text back as
----     this call's result. The turn never stops.
----   - **the fallback**, byte-for-byte what every backend did before #788: cancel the in-flight
----     turn and show the same choice-list UI. The killed turn means this RPC's return value is
----     never seen by the model; the user's next chat message (a fresh `--resume`d turn) delivers
----     their answer instead.
---- @param params {chat_bufnr: number?, questions: table[]}
---- @param respond fun(result: table)|nil supplied by `rpc/server.lua`; absent from direct callers
---- @return table RPC response, or the server's deferred sentinel
-function M.ask_user_question(params, respond)
-  if not params or not params.questions then
-    return { status = "error", reason = "Missing questions" }
-  end
-
-  local chat_bufnr = tonumber(params.chat_bufnr)
-
-  local TurnRegistry = require("vibing.infrastructure.adapter.modules.turn_registry")
-  local turn = TurnRegistry.get_by_chat_bufnr(chat_bufnr)
-  if not turn then
-    return {
-      status = "error",
-      reason = "vibing.nvim could not find the chat buffer to show this question in (internal error).",
-    }
-  end
-
-  if respond and turn.can_answer_question_in_place then
-    -- **The turn says which chat this question belongs to; the argument does not.**
-    -- `get_by_chat_bufnr` falls back to the sole open turn precisely because `--resume` replays
-    -- earlier turns, so the model can read a buffer number from a previous Neovim session and pass
-    -- one that names no chat at all (measured: a chat announced as 31 whose live buffer was 26).
-    -- That fallback repairs the *routing* and, kept here, silently splits the two halves of one
-    -- prompt: `on_insert_choices` draws into the turn's real chat while the wait is registered
-    -- under the stale number. The chat then answers "nothing is blocked" about a block that is on
-    -- screen — `chat_status` keeps saying `responding` instead of `asked_question`, and the `<CR>`
-    -- that was the answer opens the reservation box instead (`ChatBuffer:_has_blocked_prompts`).
-    -- The approval side has always read it off the turn (`_ask_without_killing`); this is the same
-    -- rule, and `.claude/rules/permissions.md`'s "an answer belongs to the chat that was asked"
-    -- one level up from `_question_the_answer_belongs_to`.
-    --
-    -- A backend that registers no `chat_bufnr` at all (`register_chat_bufnr = false`) leaves the
-    -- argument as the only candidate, which is today's behaviour there.
-    local target_bufnr = turn.process and turn.process.chat_bufnr or chat_bufnr
-    return M._ask_question_without_killing(turn, target_bufnr, params.questions, respond)
-  end
-
-  cancel_turn(turn)
-  if turn.on_insert_choices then
-    turn.on_insert_choices(params.questions)
-  end
-
-  return { status = "ok" }
 end
 
 return M

@@ -335,55 +335,31 @@ Single-select questions render as a numbered list (`1. 2. 3.`); multi-select que
 bullet list (`- - -`). The user deletes unwanted options with standard Vim commands (`dd`, etc.)
 and sends the remainder with `<CR>`.
 
-**Implementation:** the primary path is vibing.nvim's own MCP tool
-`nvim_ask_user_question` (`claude-plugin/mcp-server/src/tools/chat.ts`), which the Claude and Codex
-prompts instruct the model to use instead of the native tool. The backend-specific qualified tool
-names differ, but both prompts use the shared text in
-`adapter/modules/ask_user_question_instructions.lua`. Its handler calls
-`M.ask_user_question()` in `infrastructure/rpc/handlers/permission.lua`, which renders the choice
-list via `on_insert_choices`.
+**Implementation: a block in the reply, not a tool.** Every backend's prompt
+(`adapter/modules/ask_user_question_instructions.lua`) tells the model to end its reply with one
+fenced block whose info string is `vibing-question`, holding
+`{"questions": [{"question", "multiSelect", "options": [{"label", "description"}]}]}`, and to stop.
+When the turn succeeds, `send_message.lua` calls `ChatBuffer:take_question_block`, which asks
+`presentation/chat/modules/question_block.lua` for a block that ends the reply, takes it out of the
+transcript (otherwise the question shows twice, once as JSON) and stages it with `insert_choices`.
+The turn's closing `add_user_section` draws the choices; the user's `<CR>` is the next turn.
 
-**What happens to the turn depends on the backend** (#788). Where a measurement covers it — claude
-only, `mcp.measured_answer_wait_sec` — the reply to the MCP call is withheld, the turn stays open,
-and the user's `<CR>` becomes the tool's return value. Everywhere else the turn is cancelled as
-before and the answer arrives as the next `--resume`d turn's user message. The withheld reply, its
-four exits and what expiry means are
-`handbook/architecture/approval-without-kill.md` → "The other channel".
+**Why it stopped being a tool.** `nvim_ask_user_question` (#788) held its MCP reply open until the
+human answered, which needed a withheld-reply registry with four exits, a measured ceiling on how
+late an answer is still consumed (960s on claude), an exemption from every "this chat is
+responding" guard, and a rule for which of two blocked questions an answer belonged to. All of it
+bought one thing over ending the turn: the CLI process surviving while the human thinks. Once
+duplex became the default the resident process survives between turns anyway, and the prompt cache
+is server-side either way, so the cost bought nothing. A block also reaches Grok, which never could
+call the MCP tool. The tool's design history is `handbook/superpowers/specs/2026-07-10-ask-user-question-mcp-tool-design.md`.
 
-**The choice list is only staged, so the staging has to be synchronous.** `on_insert_choices`
-writes `_pending_choices` and nothing else; the one thing that renders it is `add_user_section()`
-at the end of `_handle_response`. But `cancel()` runs the adapter's wrapped `on_done`, and that is
-what queues the completion — so a staging deferred by its own `vim.schedule` lands one tick too
-late, the completion consumes a nil, and the turn ends cut short with nothing in the buffer to
-answer (#649). Neither this callback nor `on_approval_required` may add an inner `vim.schedule`:
-both are already on the main thread when `permission.lua` calls them. `on_approval_required` had
-always obeyed that rule; `on_insert_choices` was the one that did not.
+**Only the last thing written counts.** `find_trailing` accepts nothing but blank lines after the
+closing fence and refuses when a later fence closes the reply, so a quoted example of the format
+never becomes a live prompt. That is also why the block is taken **before** `### Tokens` and
+`### Modified Files` are appended under the reply.
 
-Rendering from `insert_choices` itself is not the alternative — `### Modified Files` and the patch
-comment are appended _before_ the User section, so the diff would land underneath the choices.
+**The chat reports `asked_question` until its next send** (`insert_choices` sets `_stop_reason`).
+It is idle, so an orchestrator answers with an ordinary delivery.
 
-Native `AskUserQuestion` is unavailable in headless `claude -p` mode and is opaque to vibing.nvim,
-so the PreToolUse hook intercepts and denies it, rendering the same UI as a fallback.
-
-### Codex backend
-
-Codex 0.153 and later use the same choice-list path. `codex_plugin_config.lua` names the normalized
-`mcp__vibing_nvim__nvim_ask_user_question` tool and embeds the stable chat buffer number in
-`developer_instructions`; `codex_cli.lua` puts that same number in the process registry, so the
-shared RPC handler resolves the correct turn even when several chats are active.
-
-The two things that originally made this impossible (#532) were added in Codex 0.153:
-
-- Codex now takes a system prompt seam: `-c developer_instructions` becomes the first `developer`
-  message. Context and language are still prepended to the user prompt.
-- Headless `codex exec` still auto-cancels an MCP call at its own approval prompt — stdin is
-  closed, so EOF reads as a denial ([openai/codex#24135][codex-24135]) — but
-  `-c mcp_servers.<name>.default_tools_approval_mode="approve"` is a per-server answer to it, and
-  is how the bundled server reaches codex at all (`handbook/architecture/plugin-and-commands.md` →
-  "Codex").
-
-The UI path is covered by the same E2E spec as Claude. Ordinary tool approval remains a different
-route: the `ask` permission list resolves on the turn id, while the model-called question tool
-resolves on the stable `chat_bufnr` to avoid putting a per-turn identifier in the prompt.
-
-[codex-24135]: https://github.com/openai/codex/issues/24135
+Native `AskUserQuestion` is unavailable in headless `claude -p` mode and opaque to vibing.nvim, so
+the PreToolUse hook denies it — without killing the turn — with a reason that names the block.

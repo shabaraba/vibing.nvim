@@ -18,7 +18,7 @@ local TIMEOUTS = {
   CHAT_CREATION = 2000,
   BUFFER_READY = 5000,
   -- The turn has to discover the tool through ToolSearch and round-trip the MCP server, like
-  -- nvim_ask_user_question_spec; same budget.
+  -- the tool-era question spec did; same budget.
   ASSISTANT_RESPONSE = 60000,
   -- After the job exits, the queued Notice starts a fresh turn on an idle chat. This covers the
   -- process exit, the queue flush and that second turn.

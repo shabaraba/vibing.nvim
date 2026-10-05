@@ -686,7 +686,7 @@ The removed `max_hops` is not silently ignored: `config.lua` drops it and warns 
 flag. A limit that reads as configured while doing nothing is worse than one that was never set.
 
 **The notification says "stopped", never "succeeded".** `idle` is also what a failed turn, a
-pending tool approval, and an `nvim_ask_user_question` look like, so judging outcomes from the
+pending tool approval, and a question the worker asked look like, so judging outcomes from the
 event would repeat `chat_status`'s mistake. The message names each finished chat by path (with its
 current bufnr in parentheses) and instructs A to read the transcript's tail — not the worker's
 text, which would pull B's context into A for no reason.

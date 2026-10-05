@@ -63,9 +63,9 @@ describe("conformance: descriptor shape", function()
 
       it("says out loud whether it registers chat_bufnr, rather than leaving it absent", function()
         -- Required explicitly, because an absent field and `false` mean the same thing to the code
-        -- and very different things to a reader. This flag now decides two features — the
-        -- `nvim_ask_user_question` route and whether an approval may be answered without killing
-        -- the CLI — so a descriptor that simply omits it looks like nobody considered either.
+        -- and very different things to a reader. This flag decides whether an approval may be
+        -- answered without killing the CLI, so a descriptor that simply omits it looks like nobody
+        -- considered it.
         -- Same reason codex and grok write their missing floor as a comment instead of silence.
         assert.is_true(
           type(descriptor.register_chat_bufnr) == "boolean",
@@ -75,7 +75,7 @@ describe("conformance: descriptor shape", function()
 
       it("may wait for an approval only when it is both measured and wired", function()
         -- The two fields read as independent — `measured_wait_floor_sec` times the hook,
-        -- `register_chat_bufnr` is about `nvim_ask_user_question` — and nothing but this assertion
+        -- `register_chat_bufnr` is about routing back to a chat — and nothing but this assertion
         -- connects them. Waiting needs both: `_ask_without_killing` names the chat through
         -- `turn.process.chat_bufnr`, and `cli_adapter` fills that in only when
         -- `register_chat_bufnr` is true. With the floor alone the waiting branch is still taken,
