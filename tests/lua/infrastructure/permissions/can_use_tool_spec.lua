@@ -63,6 +63,7 @@ describe("can_use_tool", function()
       "Grep",
       "Skill",
       "StructuredOutput",
+      "AgentList",
       "mcp__codex_apps__search",
       "mcp__cua_repl__js",
     }

@@ -52,6 +52,7 @@ M.ALWAYS_ALLOWED_TOOLS = {
   "Grep",
   "Skill",
   "StructuredOutput",
+  "AgentList",
   "mcp__codex_apps__*",
   "mcp__cua_repl__*",
 }
