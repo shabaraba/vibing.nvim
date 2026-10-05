@@ -2,45 +2,30 @@ import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import { withRpcPort } from './common.js';
 
 export const dapTools: Tool[] = [
+  // The three reads are one tool; the breakpoint and evaluate stay their own, because both change
+  // something (evaluate runs code in the debuggee) and a rule naming a tool must still be able to
+  // single those out.
   {
-    name: 'nvim_dap_get_state',
+    name: 'nvim_dap_inspect',
     description:
-      'Ask whether a debug session is running and where it is stopped. Call this first — the ' +
-      'other dap tools need a stopped program, and this says so plainly instead of failing.',
-    inputSchema: {
-      type: 'object',
-      properties: withRpcPort({}),
-      required: [],
-    },
-  },
-  {
-    name: 'nvim_dap_get_stack_trace',
-    description: 'Stack frames of the stopped thread, innermost first.',
+      'Read the debug session. `state` (call it first): whether a session is running and where it ' +
+      'is stopped — the other reads need a stopped program, and this says so plainly instead of ' +
+      'failing. `stack_trace`: frames of the stopped thread, innermost first. `variables`: a ' +
+      "frame's variables by scope, top level only; use nvim_dap_evaluate to look inside a value.",
     inputSchema: {
       type: 'object',
       properties: withRpcPort({
+        what: { type: 'string', enum: ['state', 'stack_trace', 'variables'] },
         thread_id: {
           type: 'number',
-          description: 'Defaults to the thread that is stopped.',
+          description: 'stack_trace only. Defaults to the thread that is stopped.',
         },
-      }),
-      required: [],
-    },
-  },
-  {
-    name: 'nvim_dap_get_variables',
-    description:
-      'Variables in a stack frame, grouped by scope (locals, globals, ...). Only the top level of ' +
-      'each scope is expanded; use nvim_dap_evaluate to look inside a specific value.',
-    inputSchema: {
-      type: 'object',
-      properties: withRpcPort({
         frame_id: {
           type: 'number',
-          description: 'Defaults to the frame the debugger is currently stopped in.',
+          description: 'variables only. Defaults to the frame the debugger is stopped in.',
         },
       }),
-      required: [],
+      required: ['what'],
     },
   },
   {

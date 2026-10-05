@@ -38,14 +38,7 @@ export const handlers: Record<string, (args: any) => Promise<any>> = {
   nvim_win_open_file: window.handleWinOpenFile,
 
   // LSP operations
-  nvim_lsp_definition: lsp.handleLspDefinition,
-  nvim_lsp_references: lsp.handleLspReferences,
-  nvim_lsp_hover: lsp.handleLspHover,
-  nvim_diagnostics: lsp.handleDiagnostics,
-  nvim_lsp_document_symbols: lsp.handleLspDocumentSymbols,
-  nvim_lsp_type_definition: lsp.handleLspTypeDefinition,
-  nvim_lsp_call_hierarchy_incoming: lsp.handleLspCallHierarchyIncoming,
-  nvim_lsp_call_hierarchy_outgoing: lsp.handleLspCallHierarchyOutgoing,
+  nvim_lsp: lsp.handleLsp,
 
   // Instance management
   nvim_list_instances: instances.handleListInstances,
@@ -69,9 +62,7 @@ export const handlers: Record<string, (args: any) => Promise<any>> = {
   nvim_set_qflist: qflist.handleSetQflist,
 
   // Debugger (nvim-dap)
-  nvim_dap_get_state: dap.handleDapGetState,
-  nvim_dap_get_stack_trace: dap.handleDapGetStackTrace,
-  nvim_dap_get_variables: dap.handleDapGetVariables,
+  nvim_dap_inspect: dap.handleDapInspect,
   nvim_dap_set_breakpoint: dap.handleDapSetBreakpoint,
   nvim_dap_evaluate: dap.handleDapEvaluate,
 

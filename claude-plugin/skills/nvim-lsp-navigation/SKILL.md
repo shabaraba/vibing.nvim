@@ -19,25 +19,27 @@ unavailable, look for a tool name **ending** in the one you need — loaded as a
 
 ## Tool mapping
 
-| Question                                  | Tool                                                 |
-| ----------------------------------------- | ---------------------------------------------------- |
-| Where is this symbol defined?             | `mcp__vibing-nvim__nvim_lsp_definition`              |
-| Where is this symbol used?                | `mcp__vibing-nvim__nvim_lsp_references`              |
-| What type/doc does this have?             | `mcp__vibing-nvim__nvim_lsp_hover`                   |
-| What are the errors/warnings here?        | `mcp__vibing-nvim__nvim_diagnostics`                 |
-| What symbols exist in this file?          | `mcp__vibing-nvim__nvim_lsp_document_symbols`        |
-| What's the underlying type of this alias? | `mcp__vibing-nvim__nvim_lsp_type_definition`         |
-| Who calls this function?                  | `mcp__vibing-nvim__nvim_lsp_call_hierarchy_incoming` |
-| What does this function call?             | `mcp__vibing-nvim__nvim_lsp_call_hierarchy_outgoing` |
+Every query is the one tool `mcp__vibing-nvim__nvim_lsp`, with `method` choosing what to ask:
+
+| Question                                  | `method`                  |
+| ----------------------------------------- | ------------------------- |
+| Where is this symbol defined?             | `definition`              |
+| Where is this symbol used?                | `references`              |
+| What type/doc does this have?             | `hover`                   |
+| What are the errors/warnings here?        | `diagnostics`             |
+| What symbols exist in this file?          | `document_symbols`        |
+| What's the underlying type of this alias? | `type_definition`         |
+| Who calls this function?                  | `call_hierarchy_incoming` |
+| What does this function call?             | `call_hierarchy_outgoing` |
 
 ## Workflow
 
 1. LSP tools operate on a loaded buffer, not an arbitrary path. If the target file isn't open,
    load it in the background first with `mcp__vibing-nvim__nvim_load_buffer` (returns `bufnr`) —
    this doesn't disrupt the user's current window/view.
-2. Pass that `bufnr` plus 1-indexed `line` / 0-indexed `col` to the LSP tool for the exact symbol
-   position.
-3. Surface relevant `nvim_diagnostics` results before proposing a fix for a file you're editing.
+2. Pass that `bufnr` plus 1-indexed `line` / 0-indexed `col` to `nvim_lsp` for the exact symbol
+   position (`diagnostics` and `document_symbols` take only the `bufnr`).
+3. Surface relevant `method: "diagnostics"` results before proposing a fix for a file you're editing.
 4. Fall back to `Grep`/`Glob` for things LSP doesn't cover: string/comment search, config files,
    non-code text, or a filetype with no attached LSP client (an empty/error result from an LSP
    tool is a signal to fall back, not to retry).
