@@ -48,6 +48,10 @@ function M.open(buf)
     return
   end
 
+  -- 節の外では Markdown リンク記法も対象にする。patch の判定より後なので、リンクを含む
+  -- ターンの差分を横取りすることはない
+  file_path = file_path or FilePath.find_link_target_under_cursor(buf)
+
   if not file_path then
     vim.notify("No file path under cursor", vim.log.levels.INFO)
     return

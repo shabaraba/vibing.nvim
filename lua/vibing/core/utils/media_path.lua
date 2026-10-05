@@ -40,27 +40,12 @@ function M.is_media(path)
   return ext ~= nil and MEDIA_EXTENSIONS[ext:lower()] == true
 end
 
----パスを実在する絶対パスへ解決する。
----相対パスは Neovim の cwd と `cwd` 引数（チャットの working_dir）の両方で試す。
----worktree に紐づいたチャットでは前者が一致しないため。
+---パスを実在する絶対パスへ解決する。解決規則は `gf` のリンク先と共有する
 ---@param path string
----@param cwd string? 相対パスの解決基準
+---@param cwd string? 相対パスの解決基準（チャットの working_dir）
 ---@return string? 実在する絶対パス（見つからなければ nil）
 function M.resolve(path, cwd)
-  local expanded = vim.fn.expand(path)
-  if expanded == "" then
-    return nil
-  end
-  if vim.fn.filereadable(expanded) == 1 then
-    return vim.fn.fnamemodify(expanded, ":p")
-  end
-  if cwd and expanded:sub(1, 1) ~= "/" then
-    local absolute = vim.fn.fnamemodify(cwd .. "/" .. expanded, ":p")
-    if vim.fn.filereadable(absolute) == 1 then
-      return absolute
-    end
-  end
-  return nil
+  return require("vibing.core.utils.path_resolve").existing_file(path, cwd)
 end
 
 ---カーソル下の `<cfile>` が実在する画像・動画なら、その絶対パスを返す。
