@@ -42,7 +42,7 @@ function M.processor(decoder, vocabulary)
     end
 
     local ok, msg = pcall(vim.json.decode, line)
-    if not ok or type(msg) ~= "table" or not msg.type then
+    if not ok or type(msg) ~= "table" or not (msg.type or msg.method) then
       return false
     end
 
@@ -61,7 +61,7 @@ function M.processor(decoder, vocabulary)
       if not context._decode_failed then
         context._decode_failed = true
         require("vibing.core.utils.notify").error(
-          string.format("Could not decode a '%s' line from the CLI: %s", tostring(msg.type), tostring(err))
+          string.format("Could not decode a '%s' line from the CLI: %s", tostring(msg.type or msg.method), tostring(err))
         )
       end
       return false

@@ -6,6 +6,7 @@
 --- overrides. `build()` remains as the historical entry point over that spec.
 --- @module vibing.infrastructure.adapter.modules.codex_command_builder
 
+local NonClaudeModel = require("vibing.infrastructure.adapter.modules.non_claude_model")
 local CodexPluginConfig = require("vibing.infrastructure.adapter.modules.codex_plugin_config")
 local CodexPermissionProfile = require("vibing.infrastructure.adapter.modules.codex_permission_profile")
 local TokenUsage = require("vibing.core.utils.token_usage")
@@ -96,7 +97,18 @@ end
 --- every title generation. With the user config unread, it validates our overrides and nothing
 ---
 --- @type string[]
-M.LIGHTWEIGHT_ARGS = { "--ignore-user-config", "--strict-config", "-c", 'sandbox_mode="read-only"', "-c", "tools.web_search=false", "-c", 'approval_policy="never"', "-c", "project_doc_max_bytes=0" }
+M.LIGHTWEIGHT_ARGS = {
+  "--ignore-user-config",
+  "--strict-config",
+  "-c",
+  'sandbox_mode="read-only"',
+  "-c",
+  "tools.web_search=false",
+  "-c",
+  'approval_policy="never"',
+  "-c",
+  "project_doc_max_bytes=0",
+}
 
 --- The permission mapping for an ordinary call. A project-local permission profile is a config
 --- layer, so unlike `-s` it is valid on `codex exec resume` and must be supplied on every process
@@ -106,6 +118,15 @@ M.LIGHTWEIGHT_ARGS = { "--ignore-user-config", "--strict-config", "-c", 'sandbox
 --- @param ctx Vibing.RequestContext
 --- @return string[]
 function M.permission_args(ctx)
+  if ctx.opts._process_model == "duplex" then
+    if ctx.opts.permission_mode == "bypassPermissions" then
+      return { "-c", 'sandbox_mode="danger-full-access"', "-c", 'approval_policy="never"' }
+    elseif ctx.opts.permission_mode == "plan" then
+      return { "-c", 'sandbox_mode="read-only"' }
+    end
+    local args = CodexPermissionProfile.args(ctx.opts.cwd, ctx.config)
+    return #args > 0 and args or { "-c", 'sandbox_mode="workspace-write"' }
+  end
   local opts, session_id, config = ctx.opts, ctx.session_id, ctx.config
   local cmd = {}
   local permission_mode = opts.permission_mode
@@ -148,6 +169,24 @@ end
 --- @return string[]
 function M.plugin_args(ctx)
   return CodexPluginConfig.args(ctx.opts.cwd, ctx.config, ctx.opts.chat_bufnr)
+end
+
+--- app-server accepts the hook override but not exec's trust-bypass flag.
+--- The protocol checks hooks/list before starting a thread, rather than silently losing the gate.
+function M.resident_hook_args(ctx)
+  local args = {}
+  for _, arg in ipairs(ctx.hook_arg or {}) do
+    if arg ~= "--dangerously-bypass-hook-trust" then
+      table.insert(args, arg)
+    end
+  end
+  return args
+end
+
+--- app-server has no -m flag. Use the same model resolver as the exec request.
+function M.resident_model_args(ctx)
+  local model = NonClaudeModel.resolve(ctx.opts, ctx.config)
+  return model and { "-c", "model=" .. vim.json.encode(model) } or {}
 end
 
 --- Build the `codex exec --json` command array from the request spec in `backends/codex.lua`.

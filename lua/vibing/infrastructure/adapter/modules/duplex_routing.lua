@@ -71,7 +71,11 @@ function M.line_router(chat_key, descriptor)
     local turn = M.turn_of(record)
     local context = turn and turn.context or record._idle_context
     if context then
-      descriptor.event_processor.processLine(line, context)
+      if descriptor.duplex then
+        descriptor.duplex.process_line(record, line, context)
+      else
+        descriptor.event_processor.processLine(line, context)
+      end
     end
   end
 end
@@ -261,7 +265,8 @@ function M.stop_turn(adapter, process_id)
   end
 
   record._interrupts = (record._interrupts or 0) + 1
-  if not DuplexProcess.interrupt(record, record._interrupts) then
+  local interrupt = record.protocol and record.protocol.interrupt or DuplexProcess.interrupt
+  if not interrupt(record, record._interrupts) then
     -- The request could not even be written -- a dying process, a closed stdin. Waiting out the
     -- grace period would be waiting for an answer to a question nobody was asked.
     return false, false

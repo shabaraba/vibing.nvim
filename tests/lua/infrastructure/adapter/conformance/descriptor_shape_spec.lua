@@ -122,7 +122,9 @@ describe("conformance: descriptor shape", function()
         if descriptor.process ~= "duplex" then
           return
         end
-        assert.is_nil(descriptor.stdin, def.id .. " runs duplex but closes stdin")
+        if not descriptor.duplex then
+          assert.is_nil(descriptor.stdin, def.id .. " runs duplex but closes stdin")
+        end
 
         local prompt_part
         for _, part in ipairs(descriptor.request.parts) do

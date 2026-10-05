@@ -86,6 +86,7 @@ M.AGENTS = {
     export_name = "CodexCLIAdapter",
     description = "Codex CLI (OpenAI)",
     config_fields = {
+      process = { kind = "string", values = { "oneshot", "duplex" }, default = "oneshot" },
       -- Project-local OS sandbox profile; `false` disables loading it.
       profile_file = {
         kind = "path_or_false",
