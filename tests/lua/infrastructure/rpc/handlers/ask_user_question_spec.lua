@@ -66,6 +66,27 @@ describe("permission handler ask_user_question routing", function()
     assert.same(QUESTIONS, rendered["chat-a"])
   end)
 
+  it("registers the wait under the turn's own chat, not the bufnr it was handed", function()
+    -- The other half of the fallback above. Repairing the *routing* for a stale number and then
+    -- filing the wait under that same number splits one prompt in two: the options are drawn in the
+    -- chat the turn belongs to, while `pending_questions` answers "nothing is blocked" about it. The
+    -- chat then reports `responding` instead of `asked_question`, and the `<CR>` that was the answer
+    -- opens the reservation box (`ChatBuffer:_has_blocked_prompts`).
+    local PendingQuestions = require("vibing.infrastructure.rpc.pending_questions")
+    PendingQuestions._reset()
+
+    local entry = turn("chat-a", 11)
+    entry.can_answer_question_in_place = true
+    turns.open(entry)
+
+    permission.ask_user_question({ chat_bufnr = 999, questions = QUESTIONS }, function() end)
+
+    assert.equals(1, #PendingQuestions.list_for_chat(11), "the chat the options were drawn in is owed the answer")
+    assert.equals(0, #PendingQuestions.list_for_chat(999), "the wait was filed under a buffer that does not exist")
+    assert.same({}, cancelled, "the waiting route must not kill the turn")
+    PendingQuestions._reset()
+  end)
+
   it("refuses to guess between two turns when the bufnr matches neither", function()
     turns.open(turn("chat-a", 11))
     turns.open(turn("chat-b", 12))

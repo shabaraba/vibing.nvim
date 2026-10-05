@@ -666,7 +666,23 @@ function M.ask_user_question(params, respond)
   end
 
   if respond and turn.can_answer_question_in_place then
-    return M._ask_question_without_killing(turn, chat_bufnr, params.questions, respond)
+    -- **The turn says which chat this question belongs to; the argument does not.**
+    -- `get_by_chat_bufnr` falls back to the sole open turn precisely because `--resume` replays
+    -- earlier turns, so the model can read a buffer number from a previous Neovim session and pass
+    -- one that names no chat at all (measured: a chat announced as 31 whose live buffer was 26).
+    -- That fallback repairs the *routing* and, kept here, silently splits the two halves of one
+    -- prompt: `on_insert_choices` draws into the turn's real chat while the wait is registered
+    -- under the stale number. The chat then answers "nothing is blocked" about a block that is on
+    -- screen — `chat_status` keeps saying `responding` instead of `asked_question`, and the `<CR>`
+    -- that was the answer opens the reservation box instead (`ChatBuffer:_has_blocked_prompts`).
+    -- The approval side has always read it off the turn (`_ask_without_killing`); this is the same
+    -- rule, and `.claude/rules/permissions.md`'s "an answer belongs to the chat that was asked"
+    -- one level up from `_question_the_answer_belongs_to`.
+    --
+    -- A backend that registers no `chat_bufnr` at all (`register_chat_bufnr = false`) leaves the
+    -- argument as the only candidate, which is today's behaviour there.
+    local target_bufnr = turn.process and turn.process.chat_bufnr or chat_bufnr
+    return M._ask_question_without_killing(turn, target_bufnr, params.questions, respond)
   end
 
   cancel_turn(turn)
