@@ -301,11 +301,6 @@ is enabled, and directs the agent back to `nvim_job_start`.
     number. The answer is recorded in the blocked chat as coming from it, so a call that cannot
     say whose decision it was is refused
 
-- **nvim_ask_user_question** - Render a multiple-choice question in the chat buffer. This cancels
-  the in-flight turn; the user's answer arrives as the next turn's message
-  - `chat_bufnr` (required): Chat buffer number
-  - `questions` (required): Array of `{ question, options, multiSelect? }`
-
 ### Instances
 
 - **nvim_list_instances** - List running Neovim instances with a vibing.nvim RPC server

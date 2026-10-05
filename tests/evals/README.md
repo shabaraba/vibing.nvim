@@ -2,8 +2,8 @@
 
 `tests/e2e/` checks that the **harness** works — a buffer opens, a keystroke lands, a response
 arrives. Nothing there checks that the _agent_ behaves: that a change to the system prompt or to a
-tool description didn't quietly stop the model from calling `nvim_ask_user_question`, or from
-putting worktrees where this project puts them. That gap is what these evals cover.
+tool description didn't quietly stop the model from asking with a `vibing-question` block, or
+from putting worktrees where this project puts them. That gap is what these evals cover.
 
 ```bash
 pnpm run test:eval
@@ -50,10 +50,10 @@ cannot be forgotten when adding one.
 ## Reading a failure
 
 ```text
-FAIL  ask_user_question/uses_the_mcp_tool
-      選択肢を出す場面ではnvim_ask_user_questionを使う
-      attempt 1: asked in free text instead of calling nvim_ask_user_question
-      tools called: ToolSearch
+FAIL  orchestrate/passes_from_bufnr
+      ワーカーを作るとき from_bufnr に自分のchat_bufnrを渡す
+      attempt 1: omitted from_bufnr, so nothing records which chat owns this worker
+      tools called: ToolSearch, mcp__plugin_vibing-nvim_vibing-nvim__nvim_chat_create
 ```
 
 The "tools called" line is usually the whole diagnosis. Before concluding the model regressed,

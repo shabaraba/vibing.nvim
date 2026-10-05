@@ -95,9 +95,9 @@ Prefix each with whichever form matches how the server was registered (see above
   `nvim_job_wait`
 - **Highlighting**: `nvim_highlight_range`, `nvim_clear_highlight`
 - **Annotations**: `nvim_annotate`, `nvim_clear_annotations`
-- **Chat**: `nvim_ask_user_question` (renders a choice list in the chat buffer — see
-  `handbook/features/chat-ui.md`), `nvim_chat_send_message`, `nvim_chat_create`,
-  `nvim_chat_answer_approval`, `nvim_chat_list`, `nvim_chat_conflicts`
+- **Chat**: `nvim_chat_send_message`, `nvim_chat_create`, `nvim_chat_answer_approval`,
+  `nvim_chat_list`, `nvim_chat_conflicts`. A multiple-choice question is not a tool: the model ends
+  its reply with a `vibing-question` block (`handbook/features/chat-ui.md`)
 - **Instances**: `nvim_list_instances`
 - **Quickfix**: `nvim_set_qflist` (pushes a new list; the previous one survives under `:colder`)
 - **Debugger**: `nvim_dap_inspect` (`what`: `state` / `stack_trace` / `variables`),
