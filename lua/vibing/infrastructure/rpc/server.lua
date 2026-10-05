@@ -21,14 +21,12 @@ local current_port = nil
 ---A handler that returns this has taken responsibility for replying later, through the `respond`
 ---function it was handed. Nothing is written now.
 ---
----**The only deferred method today is `ask_user_question` (#788).** A question is an MCP tool call
----the CLI is blocked awaiting, so the wait has to happen *inside* the call — unlike an approval,
----where the shell hook polls for a file and withholding the file was already enough. Without this,
----the only way to ask a human was to kill the turn.
----
----A deferred handler owes exactly what `rpc/pending_questions.lua` guarantees: the reply is written
----exactly once, and it is always eventually written. A handler that defers and then forgets leaves
----the CLI inside a tool call until its own MCP idle timeout — 1800s on claude.
+---**No method defers today.** `ask_user_question` (#788) did, holding an MCP tool call open until a
+---human answered; it was removed when a question became a block the model writes at the end of
+---its turn (`presentation/chat/modules/question_block.lua`). The mechanism stays because it is the
+---server's only way to answer late, and its contract stands for whoever uses it next: the reply is
+---written exactly once, and it is always eventually written. A handler that defers and then
+---forgets leaves the CLI inside a tool call until its own MCP idle timeout — 1800s on claude.
 M.DEFERRED = { _vibing_deferred = true }
 
 ---Is this what a handler returns to say "I will reply later"?

@@ -18,7 +18,8 @@ local Fs = require("vibing.core.utils.fs")
 ---@field update_session_id fun(session_id: string) セッションIDを更新
 ---@field add_user_section fun() ユーザーセクションを追加
 ---@field get_bufnr fun(): number バッファ番号を取得
----@field insert_choices fun(questions: table, request_id?: string) AskUserQuestion選択肢を挿入
+---@field take_question_block fun(): boolean ターン本文の末尾の質問ブロックを選択肢に変える（`question_block.lua`）
+---@field insert_choices fun(questions: table) 質問の選択肢を挿入
 ---@field set_pending_user_text fun(text: string) 次のユーザーセクションに差し込む本文を保存
 ---@field insert_approval_request fun(tool: string, input: table, options: table) ツール承認要求UIを挿入
 ---@field show_pending_prompts fun() 走っているターンの途中で溜まっている承認プロンプトを描く
@@ -216,29 +217,10 @@ function M.execute(adapter, callbacks, message, config)
         modified_file_paths[file_path] = true
       end
     end,
-    on_insert_choices = function(questions, waiting, request_id)
-      -- `on_approval_required` と同じ理由で vim.schedule を挟まない。呼び出し元
-      -- （permission.lua の `cancel_and_deny` / `M.ask_user_question`）はすでにメインスレッド上。
-      --
-      -- kill する経路では**その直前に cancel が済んでいる**。cancel は `wrapped_on_done` を同期で
-      -- 呼ぶので、ここで一段スケジュールすると `_handle_response` が `vim.schedule` した
-      -- `add_user_section` の後ろに並ぶ。そうなると選択肢はそのターンのユーザーセクションに
-      -- 描画されず、`_stop_reason` も `VibingResponseDone` に間に合わない（#649）。
-      --
-      -- **待たせる経路（#788）ではその前提が消える** — cancel していないので合流点が来ない。
-      -- 制約は同じままだが、理由は「合流点より先に置く」ではなく「合流点が存在しない」になる
-      callbacks.insert_choices(questions, request_id)
-
-      -- `on_approval_required` の `waiting` と同じ。ターンが終わらない以上、ここで描かないと
-      -- 選択肢は保存されるだけで画面に出ず、モデルは上限まで答えを待つ
-      if waiting then
-        callbacks.show_pending_prompts()
-      end
-    end,
     -- 常駐プロセス（duplex）が回収され、まだ報告していない background subagent を連れていった
     -- ときの起床（#840）。`adapter/` から `application/` を require しないための経路 —
     -- 「このチャットにターンが必要か」はアダプタの問いではない（`outstanding_subagents.lua`）。
-    -- ここだけ `on_insert_choices` などと違ってターンをまたいで生き残る: プロセスはターンより
+    -- ここだけ `on_approval_required` などと違ってターンをまたいで生き残る: プロセスはターンより
     -- 長生きするので、これを呼ぶのは「これを渡したターン」ではなく、そのプロセスの最後のターン
     on_subagents_orphaned = function(unreported, recovered, subagents_lost)
       require("vibing.application.chat.outstanding_subagents").wake_orphaned(
@@ -413,6 +395,12 @@ function M._handle_response(response, callbacks, adapter, config, modified_file_
   elseif not response.error then
     pcall(AutoResume.on_success, chat_file_path)
     pcall(LimitState.clear, chat_dir, agent)
+    -- ターンが選択肢付きの質問で終わっていれば、ここで選択肢に変える。**`### Tokens` と
+    -- `### Modified Files` より前**でなければならない: どちらもアシスタント本文の末尾に追記され、
+    -- 質問ブロックは「ターンが最後に書いたもの」としてしか認めない（`question_block.lua`）
+    if callbacks.take_question_block then
+      pcall(callbacks.take_question_block)
+    end
   else
     -- リミット以外のエラーで終わったターンも、未送信Userセクションは消費済み。予約
     -- （scheduled）を残すと、その後そこに入った別のテキスト（書きかけの続きや承認UIの
@@ -426,9 +414,8 @@ function M._handle_response(response, callbacks, adapter, config, modified_file_
     -- 「壊れた」ではなく、`chat_status` がそう報告すると `completion_notifier` の分岐2が
     -- 例外扱いして親を起こし、オーケストレーターは動いているワーカーを失敗と読む:
     --
-    --   * `_cancelled` — 質問（`nvim_ask_user_question`）と `ask` の承認要求はどちらも
-    --     ターンをkillして戻る。理由はその時点で `insert_choices` /
-    --     `insert_approval_request` が書いている
+    --   * `_cancelled` — `ask` の承認要求はターンをkillして戻る（待てないバックエンド）。
+    --     理由はその時点で `insert_approval_request` が書いている
     --   * `_rate_limit_info` — リミットで弾かれたターン。上の分岐が予約や auto_resume に
     --     回しているので、これは自動で再開する「待ち」。`response.error` はリミットの本文が
     --     入ったまま残る（`RateLimit.merge` はそれを入力に使うだけでクリアしない）ので、

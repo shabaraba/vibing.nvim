@@ -17,11 +17,9 @@ local M = {}
 ---   same-session refusal below asks this registry and not the turn one: two processes resuming one
 ---   session write the same transcript concurrently. Two chat buffers can be bound to one session
 ---   (a subagent chat shares its parent's), so this really can collide.
---- @field chat_bufnr? number Stable value (the "Current vibing.nvim chat buffer number" line
----   embedded in the model-visible provider prompt) used to route nvim_ask_user_question calls
----   without a per-turn id, which would otherwise defeat provider prompt caching (see issues #469,
----   #489). Per process rather than per turn because it names the chat, and the chat is what the
----   process serves for its whole life.
+--- @field chat_bufnr? number The chat this process serves, read by the waiting approval route to
+---   draw its prompt (`hooks/transports.lua`). Per process rather than per turn because it names
+---   the chat, and the chat is what the process serves for its whole life.
 --- @field adapter table backend adapter reference; the receiver of `cancel(process_id)`
 --- @field active_turn_id? string The turn this process currently has open, or nil while it is idle.
 ---   **Written only by `turn_registry.open` / `close`.** It is the one link between the two

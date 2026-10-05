@@ -46,7 +46,6 @@ function calledMethods(): string[] {
 const STATE_CHANGING_METHODS = [
   'annotate',
   'answer_approval',
-  'ask_user_question',
   'buf_set_lines',
   'clear_annotations',
   'clear_highlight',

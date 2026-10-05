@@ -203,15 +203,10 @@ export async function callNeovim(
 
     // Timeout after configured duration (default 30 seconds), or whatever this call asked for.
     //
-    // The override exists for exactly one method: `ask_user_question` waits for a human, and 30
-    // seconds is not a human (#788). It is per call rather than a raised default because every
-    // other method talks to Neovim and nothing else, so a long default would turn a hung editor
-    // into a hung tool call for all of them.
-    //
-    // It is a backstop, not the policy. The deadline that decides when to stop waiting lives in
-    // Lua (`wait_budget.question_wait_sec`), which replies with an explicit "unanswered" result;
-    // this only fires if that reply never comes at all. Requests are id-multiplexed over one
-    // socket, so holding this one open blocks no other call.
+    // No method overrides it today. `ask_user_question` did, to wait for a human (#788), until a
+    // question became a block the model writes at the end of its turn. It stays per call rather
+    // than a raised default because every method talks to Neovim and nothing else, so a long
+    // default would turn a hung editor into a hung tool call for all of them.
     setTimeout(() => {
       if (portPending.has(id)) {
         portPending.delete(id);

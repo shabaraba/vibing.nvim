@@ -51,67 +51,6 @@ describe("send_message", function()
 
       vim.api.nvim_buf_delete(buf, { force = true })
     end)
-
-    -- The choice list is only staged here; add_user_section() at the end of _handle_response is
-    -- what renders it, and cancel() queues that completion. Deferring the staging by one tick put
-    -- it after that completion, so the questions were consumed as nil and the turn ended with the
-    -- reply cut short and nothing to answer (#649).
-    it("stages AskUserQuestion choices synchronously rather than a tick later", function()
-      local buf = vim.api.nvim_create_buf(false, true)
-      vim.api.nvim_buf_set_name(buf, vim.fn.tempname() .. ".md")
-
-      local staged, staged_request_id
-      local callbacks = {
-        get_bufnr = function()
-          return buf
-        end,
-        get_session_id = function()
-          return "test-session"
-        end,
-        parse_frontmatter = function()
-          return {}
-        end,
-        extract_conversation = function()
-          return {}
-        end,
-        update_filename_from_message = function(_) end,
-        start_response = function() end,
-        get_session_allow = function()
-          return {}
-        end,
-        get_session_deny = function()
-          return {}
-        end,
-        add_user_section = function() end,
-        insert_choices = function(questions, request_id)
-          staged = questions
-          staged_request_id = request_id
-        end,
-      }
-
-      local captured = {}
-      local adapter = {
-        supports = function(_, _feature)
-          return false
-        end,
-        execute = function(_, _prompt, opts)
-          captured.opts = opts
-          return { content = "ok" }
-        end,
-      }
-
-      SendMessage.execute(adapter, callbacks, "hello", {})
-
-      local questions = { { question = "Which one?", options = { { label = "a" } } } }
-      captured.opts.on_insert_choices(questions, nil, "q-77")
-      -- Asserted without running the event loop: a vim.schedule here would leave this nil.
-      assert.same(questions, staged)
-      -- The id of the question the chat is being asked to draw for. Dropped here, the chat cannot
-      -- tell whose options it holds, and retiring an expired question's block takes a live one's.
-      assert.equals("q-77", staged_request_id)
-
-      vim.api.nvim_buf_delete(buf, { force = true })
-    end)
   end)
 
   describe("_handle_response", function()
@@ -156,6 +95,9 @@ describe("send_message", function()
       local callbacks = {
         mark_turn_error = function()
           marked_error = true
+        end,
+        take_question_block = function()
+          table.insert(appended, "<question block taken>")
         end,
         clear_sending = function() end,
         get_bufnr = function()
@@ -210,6 +152,33 @@ describe("send_message", function()
         local _, _, marked_error = handle_turn({ error = "Cancelled", _cancelled = true })
 
         assert.is_false(marked_error)
+      end)
+    end)
+
+    describe("a question the turn ended on", function()
+      -- The model asks by ending its reply with a ```vibing-question block
+      -- (`question_block.lua`), and the block is recognised only as the last thing the turn wrote.
+
+      it("is looked for on a turn that succeeded", function()
+        local _, appended = handle_turn({ content = "ok" })
+
+        assert.same({ "<question block taken>" }, vim.tbl_filter(function(chunk)
+          return chunk == "<question block taken>"
+        end, appended))
+      end)
+
+      it("is looked for before anything is appended after the reply", function()
+        -- `### Tokens` and `### Modified Files` go under the assistant's text; looked for after
+        -- them, the block is no longer the last thing written and is never found.
+        local _, appended = handle_turn({ content = "ok" })
+
+        assert.equals("<question block taken>", appended[1], vim.inspect(appended))
+      end)
+
+      it("is not looked for on a turn that failed", function()
+        local _, appended = handle_turn({ error = "boom" })
+
+        assert.is_false(vim.tbl_contains(appended, "<question block taken>"))
       end)
     end)
 

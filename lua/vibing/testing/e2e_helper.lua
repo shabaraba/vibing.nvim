@@ -129,8 +129,9 @@ function M.child_config(chat_dir, overrides)
       save_location_type = "custom",
       save_dir = chat_dir,
     },
-    -- Already the default; stated because nvim_ask_user_question_spec exists to drive that tool
-    -- and a child without the RPC server could never pass it, so this is not safe to "tidy away".
+    -- Already the default; stated because the MCP-driven specs (approvals, background jobs) need
+    -- the RPC server and a child without it could never pass them, so this is not safe to "tidy
+    -- away".
     -- Concurrent children do not collide — the server walks to the next free port when 9876 is
     -- taken.
     mcp = { enabled = true },

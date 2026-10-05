@@ -32,19 +32,9 @@ describe('chat tools (worktree redesign)', () => {
     expect(typeof handlers.nvim_chat_send_message).toBe('function');
   });
 
-  it('registers nvim_ask_user_question with chat_bufnr and questions required', () => {
-    const tool = allTools.find((t) => t.name === 'nvim_ask_user_question');
-    expect(tool).toBeDefined();
-    const inputSchema = tool?.inputSchema as {
-      required?: string[];
-      properties: Record<string, unknown>;
-    };
-    expect(inputSchema.required).toContain('chat_bufnr');
-    expect(inputSchema.required).not.toContain('rpc_port');
-    expect(inputSchema.required).toContain('questions');
-    expect(inputSchema.properties.chat_bufnr).toBeDefined();
-    expect(inputSchema.properties.rpc_port).toBeDefined();
-    expect(inputSchema.properties.questions).toBeDefined();
+  it('no longer offers nvim_ask_user_question: a question is a block the model writes', () => {
+    expect(allTools.find((t) => t.name === 'nvim_ask_user_question')).toBeUndefined();
+    expect(handlers.nvim_ask_user_question).toBeUndefined();
   });
 
   it('registers nvim_chat_create with every argument optional', () => {
@@ -589,115 +579,6 @@ describe('chat tools (worktree redesign)', () => {
 
     expect(description).toContain('scoped');
     expect(description).toContain('delegated_scope');
-  });
-
-  it('has a handler for nvim_ask_user_question', () => {
-    expect(handlers.nvim_ask_user_question).toBeDefined();
-    expect(typeof handlers.nvim_ask_user_question).toBe('function');
-  });
-
-  it('nvim_ask_user_question calls the ask_user_question RPC with chat_bufnr and rpc_port passed as arguments', async () => {
-    vi.mocked(rpc.callNeovim).mockResolvedValue({ status: 'ok' });
-
-    const questions = [{ question: 'Which?', options: [{ label: 'A' }] }];
-    const result = await handlers.nvim_ask_user_question({
-      chat_bufnr: 12,
-      rpc_port: 9878,
-      questions,
-    });
-
-    expect(rpc.callNeovim).toHaveBeenCalledWith(
-      'ask_user_question',
-      { chat_bufnr: 12, questions },
-      9878,
-      expect.any(Number)
-    );
-    expect(result.isError).toBeUndefined();
-  });
-
-  it('nvim_ask_user_question waits far longer than an ordinary RPC, but under the measured MCP ceiling', async () => {
-    // This one call waits for a human, so the 30s default that suits every other method would cut
-    // it off after half a minute (#788). The upper bound is claude's measured 1800s abort for a
-    // silent MCP tool -- crossing it would turn a wait into a hang the CLI ends on its own terms.
-    vi.mocked(rpc.callNeovim).mockResolvedValue({ status: 'ok' });
-
-    await handlers.nvim_ask_user_question({
-      chat_bufnr: 12,
-      questions: [{ question: 'Which?', options: [{ label: 'A' }] }],
-    });
-
-    const timeout = vi.mocked(rpc.callNeovim).mock.calls[0][3] as number;
-    expect(timeout).toBeGreaterThan(900_000);
-    expect(timeout).toBeLessThan(1_800_000);
-  });
-
-  it('nvim_ask_user_question returns the human answer as the tool result', async () => {
-    // The whole point of #788: the model reads what the user chose as an ordinary tool result,
-    // instead of the turn being killed and the answer arriving as a separate message.
-    vi.mocked(rpc.callNeovim).mockResolvedValue({ status: 'answered', answer: 'B, and rename it' });
-
-    const result = await handlers.nvim_ask_user_question({
-      chat_bufnr: 12,
-      questions: [{ question: 'Which?', options: [{ label: 'A' }, { label: 'B' }] }],
-    });
-
-    expect(result.isError).toBeUndefined();
-    expect(result.content[0].text).toBe('B, and rename it');
-  });
-
-  it('nvim_ask_user_question reports an unanswered question without marking it an error', async () => {
-    // An error is what a model retries, and retrying this one re-asks the question -- so the user
-    // comes back to two copies of a prompt they were already looking at.
-    vi.mocked(rpc.callNeovim).mockResolvedValue({
-      status: 'unanswered',
-      reason: 'The user did not answer within 900 seconds.',
-    });
-
-    const result = await handlers.nvim_ask_user_question({
-      chat_bufnr: 12,
-      questions: [{ question: 'Which?', options: [{ label: 'A' }] }],
-    });
-
-    expect(result.isError).toBeUndefined();
-    expect(result.content[0].text).toContain('did not answer');
-  });
-
-  it('nvim_ask_user_question rejects a call missing chat_bufnr instead of silently guessing', async () => {
-    vi.mocked(rpc.callNeovim).mockResolvedValue({ status: 'ok' });
-
-    await expect(
-      handlers.nvim_ask_user_question({
-        rpc_port: 9878,
-        questions: [{ question: 'Which?', options: [{ label: 'A' }] }],
-      })
-    ).rejects.toThrow();
-    expect(rpc.callNeovim).not.toHaveBeenCalled();
-  });
-
-  it('nvim_ask_user_question lets callNeovim use the process binding when rpc_port is omitted', async () => {
-    vi.mocked(rpc.callNeovim).mockResolvedValue({ status: 'ok' });
-
-    const questions = [{ question: 'Which?', options: [{ label: 'A' }] }];
-    await handlers.nvim_ask_user_question({ chat_bufnr: 12, questions });
-    expect(rpc.callNeovim).toHaveBeenCalledWith(
-      'ask_user_question',
-      { chat_bufnr: 12, questions },
-      undefined,
-      expect.any(Number)
-    );
-  });
-
-  it('nvim_ask_user_question surfaces an error result when the RPC call fails to find a stream', async () => {
-    vi.mocked(rpc.callNeovim).mockResolvedValue({ status: 'error', reason: 'no active chat' });
-
-    const result = await handlers.nvim_ask_user_question({
-      chat_bufnr: 12,
-      rpc_port: 9878,
-      questions: [{ question: 'Which?', options: [{ label: 'A' }] }],
-    });
-
-    expect(result.isError).toBe(true);
-    expect(result.content[0].text).toBe('no active chat');
   });
 
   it('registers nvim_chat_list as a read, with no required arguments', () => {

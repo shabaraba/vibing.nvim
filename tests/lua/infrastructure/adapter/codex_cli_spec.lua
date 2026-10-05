@@ -50,7 +50,7 @@ describe("codex_cli hook registration", function()
     assert.is_true(registers_hook(system.cli_call().cmd))
   end)
 
-  it("registers chat_bufnr for nvim_ask_user_question routing", function()
+  it("registers chat_bufnr so a waiting approval can draw into the chat", function()
     local run = helper.run_stream(adapter, { permission_mode = "default", chat_bufnr = 42 })
     local entry = TurnRegistry.get(run.turn_id)
 

@@ -32,13 +32,6 @@ local M = {}
 ---   is shared state, so a snapshot diff taken while another turn is mutating the same worktree
 ---   would attribute that turn's changes to this one — this is what lets the turn fall back to the
 ---   per-tool `request_diff` path instead (see core/utils/git_snapshot.lua).
---- @field on_insert_choices? fun(questions: table, waiting?: boolean, request_id?: string)
----   `waiting` says the same thing it says on `on_approval_required`, for the same reason (#788):
----   this prompt is holding a turn that is still running, so the chat has to draw it now.
---- @field can_answer_question_in_place? boolean Whether `nvim_ask_user_question` may hold its MCP
----   reply open on this backend instead of killing the turn (#788). Resolved per turn from the
----   descriptor's measured floor against the configured budget, so the RPC handler never names a
----   backend.
 --- @field on_approval_required? fun(tool: string, input: table, options: table, hook_request_id?: string, waiting?: boolean)
 ---   `waiting` says this prompt is holding a turn that is still running (#778), so the chat has to
 ---   draw it now — the kill path's drawing point, `_handle_response`, never comes.
@@ -109,11 +102,10 @@ end
 
 --- The sole turn currently open, or nil when there is none or more than one.
 ---
---- This is the only guess in the codebase about whose request an inbound call belongs to. Both
---- guessing callers — `rpc/hook_scope.lua` for a hook that named no process, and `get_by_chat_bufnr`
---- below for a bufnr that names none — reach it through here rather than open-coding it, so there is
---- one place to reason about and one place to delete once a resident process can name its own turn
---- on its own stdio (#774).
+--- This is the only guess in the codebase about whose request an inbound call belongs to. The
+--- guessing caller — `rpc/hook_scope.lua`, for a hook that named no process — reaches it through
+--- here rather than open-coding it, so there is one place to reason about and one place to delete
+--- once a resident process can name its own turn on its own stdio (#774).
 --- @return Vibing.TurnEntry|nil
 function M.sole_open()
   local only_turn_id, only_entry = next(turns)
@@ -132,25 +124,6 @@ function M.of_process(process_id)
     return M.get(process.active_turn_id)
   end
   return nil
-end
-
---- The turn open in a given chat buffer — the stable value embedded in the provider prompt (see the
---- backend command builders), used to route the backend-qualified nvim_ask_user_question MCP call
---- instead of a per-turn id (see the Vibing.ProcessEntry docstring, issues #469/#489).
----
---- A bufnr that names no process still falls back to the sole open turn: `--resume` replays earlier
---- turns, so the model can read a buffer number from a previous Neovim session and pass one that no
---- longer exists, and with a single turn open there is no other candidate. A bufnr that *does* name
---- a process with nothing open gets nil instead — that chat is idle, and answering with some other
---- chat's turn is a worse answer than none.
---- @param chat_bufnr number|nil
---- @return Vibing.TurnEntry|nil
-function M.get_by_chat_bufnr(chat_bufnr)
-  local process = ProcessRegistry.find_by_chat_bufnr(chat_bufnr)
-  if process then
-    return M.get(process.active_turn_id)
-  end
-  return M.sole_open()
 end
 
 --- Another turn writing in the same git worktree.

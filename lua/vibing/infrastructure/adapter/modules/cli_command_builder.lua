@@ -189,13 +189,8 @@ function M.system_prompt_args(ctx)
         .. "nvim_job_status, nvim_job_wait, and nvim_job_stop to manage them. If nvim_job_start is "
         .. "unavailable, say so instead of silently substituting shell backgrounding."
     )
-    vim.list_extend(
-      system_prompt_lines,
-      AskUserQuestionInstructions.lines(
-        "mcp__vibing-nvim__nvim_ask_user_question",
-        opts.chat_bufnr
-      )
-    )
+    vim.list_extend(system_prompt_lines, AskUserQuestionInstructions.lines())
+    vim.list_extend(system_prompt_lines, AskUserQuestionInstructions.chat_buffer_lines(opts.chat_bufnr))
     table.insert(
       system_prompt_lines,
       "When the user asks to see code, show it rather than describing where it lives: call "

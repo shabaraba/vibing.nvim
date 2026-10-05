@@ -23,9 +23,8 @@ const setQflistArgsSchema = z.object({
  * is decided by `handlers/qflist.lua`, because a relative path resolves against the target
  * instance's cwd (a worktree, often enough), which this process has no view of.
  *
- * One bad stop fails the whole call rather than being dropped. Unlike nvim_ask_user_question,
- * this tool's result does come back to the model, so a hard error is something it can act on;
- * a silently shortened tour is not.
+ * One bad stop fails the whole call rather than being dropped. This tool's result comes back
+ * to the model, so a hard error is something it can act on; a silently shortened tour is not.
  */
 export async function handleSetQflist(args: any): Promise<any> {
   const { items, title, open, rpc_port } = setQflistArgsSchema.parse(args);

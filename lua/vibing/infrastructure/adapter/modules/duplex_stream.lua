@@ -71,8 +71,8 @@ end
 ---
 --- The chat is not woken from here: `adapter/` requires nothing from `application/`, and whether a
 --- chat needs a turn is not an adapter question — only *what this backend wrote and where* is. So the
---- finding leaves through the callback the chat layer handed in, the same shape as `on_insert_choices`
---- and `on_approval_required`. Nothing is stored at all when there is no callback, which is every
+--- finding leaves through the callback the chat layer handed in, the same shape as
+--- `on_approval_required`. Nothing is stored at all when there is no callback, which is every
 --- lightweight call.
 --- @param params Vibing.DuplexRunParams
 --- @param record Vibing.DuplexProcess
