@@ -288,17 +288,7 @@ function M.can_use_tool(tool_name, input, config)
     end
 
     -- 3. Always allow Claude Code internal tools
-    local is_internal = tools_constants.INTERNAL_TOOLS_MAP[tool_name] == true
-    if not is_internal then
-      for _, pattern in ipairs(tools_constants.INTERNAL_TOOL_PATTERNS) do
-        local prefix = pattern:match("^(.*)%*$")
-        if prefix and vim.startswith(tool_name, prefix) then
-          is_internal = true
-          break
-        end
-      end
-    end
-    if is_internal then
+    if tools_constants.INTERNAL_TOOLS_MAP[tool_name] then
       return allow(input)
     end
 
@@ -340,7 +330,17 @@ function M.can_use_tool(tool_name, input, config)
     end
 
     -- 7. Always-allowed tools: bypass allow list, but respect deny (checked above) and ask
-    if tools_constants.ALWAYS_ALLOWED_TOOLS_MAP[tool_name] then
+    local is_always_allowed = tools_constants.ALWAYS_ALLOWED_TOOLS_MAP[tool_name] == true
+    if not is_always_allowed then
+      for _, pattern in ipairs(tools_constants.ALWAYS_ALLOWED_TOOLS) do
+        local prefix = pattern:match("^(.*)%*$")
+        if prefix and vim.startswith(tool_name, prefix) then
+          is_always_allowed = true
+          break
+        end
+      end
+    end
+    if is_always_allowed then
       for _, pattern in ipairs(config.asked_tools) do
         if matchers.matches_permission(tool_name, input, pattern) then
           if mode == "dontAsk" then

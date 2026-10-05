@@ -57,7 +57,15 @@ describe("can_use_tool", function()
   end)
 
   describe("ALWAYS_ALLOWED_TOOLS (UT-PERM-010)", function()
-    local always_allowed = { "Read", "Glob", "Grep", "Skill", "StructuredOutput" }
+    local always_allowed = {
+      "Read",
+      "Glob",
+      "Grep",
+      "Skill",
+      "StructuredOutput",
+      "mcp__codex_apps__search",
+      "mcp__cua_repl__js",
+    }
 
     for _, tool in ipairs(always_allowed) do
       it(string.format("should allow %s even when permissions_allow is empty", tool), function()
@@ -109,8 +117,6 @@ describe("can_use_tool", function()
       "ScheduleWakeup",
       "SendMessage",
       "ListAgents",
-      "mcp__codex_apps__search",
-      "mcp__cua_repl__js",
     }
 
     for _, tool in ipairs(internal) do
