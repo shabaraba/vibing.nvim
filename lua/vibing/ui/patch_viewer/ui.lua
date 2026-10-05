@@ -94,7 +94,7 @@ function M._render_unified(state, display, file_diff)
   if ((require("vibing.config").options or {}).diff or {}).highlights == false then
     state.buf_after = unified.render_plain(state.win_after, file_diff, display)
   else
-    -- filetypeは拡張子だけで決まるので、ターンで削除されて実体が無いファイルでも当たる
+    -- 元のパスと描画済みの内容でfiletypeを判定する。削除済みファイルも実体を開く必要が無い
     local _, abs = M._resolve_selected(state)
     state.buf_after = unified.render(state.win_after, abs or display, file_diff, display)
   end
