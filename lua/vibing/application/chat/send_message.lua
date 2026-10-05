@@ -702,6 +702,10 @@ function M._turn_diagnosis(acc, response, callbacks, started_fresh_session)
     effort = frontmatter.effort,
     version = cli_info.version,
     compacted = cli_info.compacted == true,
+    -- 前ターンと比べるために記録する。MCP サーバーの切断・再接続でツール数が動くと
+    -- プレフィックスが変わる（#808）。init を取りこぼしたターンは nil のまま主張しない
+    tools = type(cli_info.tools) == "number" and cli_info.tools or nil,
+    mcp_servers = type(cli_info.mcp_servers) == "number" and cli_info.mcp_servers or nil,
   }
 
   -- 新しいセッションの初回ターンは、そのチャットに履歴があっても（`/new-session` 直後など）

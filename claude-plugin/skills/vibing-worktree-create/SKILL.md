@@ -30,7 +30,22 @@ predictable for later listing (see the `vibing-worktree-list` skill).
    If this fails (branch already checked out elsewhere, etc.), the error is self-explanatory —
    surface it verbatim rather than retrying blindly with a different name.
 
-3. **Do not edit the frontmatter.** vibing.nvim writes `working_dir` itself at the end of this
+3. **Give the worktree its own CodeGraph index, if the repository uses one.** CodeGraph keeps its
+   index at the repository root, so a tool running inside the worktree is answered from the
+   _main checkout_ — another branch's symbols, and none of the ones changed here. That is wrong
+   information, not merely stale information. Only when the git root has a `.codegraph/`
+   directory and `codegraph` is on `PATH`:
+
+   ```bash
+   (cd .vibing/worktrees/<branch> && codegraph init -i)
+   ```
+
+   Skip it silently otherwise — a repository that does not use CodeGraph has nothing to index —
+   and surface a failure verbatim rather than retrying. The index lands under
+   `.vibing/worktrees/`, which the repository's `.vibing/` ignore rule already covers, so it adds
+   nothing to the chat's `### Modified Files`.
+
+4. **Do not edit the frontmatter.** vibing.nvim writes `working_dir` itself at the end of this
    turn, by comparing `git worktree list` from before the command ran against after it. Setting
    it by hand races that and can leave the field pointing at a worktree the command failed to
    create. Just tell the user the worktree is ready.
