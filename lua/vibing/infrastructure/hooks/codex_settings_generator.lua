@@ -66,6 +66,25 @@ function M.script_path(cwd)
   return vim.fn.resolve(cwd) .. "/.vibing/codex-pre-tool-use.sh"
 end
 
+--- Only reuse an actual copy with the exact permissions staging installs.
+--- @param path string
+--- @param contents string
+--- @return boolean
+local function staged_matches(path, contents)
+  local stat = vim.loop.fs_lstat(path)
+  -- lstat excludes links outside the writable roots. The low twelve bits include special bits.
+  if not stat or stat.type ~= "file" or stat.mode % 4096 ~= tonumber("755", 8) then
+    return false
+  end
+  local staged = io.open(path, "rb")
+  if not staged then
+    return false
+  end
+  local staged_contents = staged:read("*a")
+  staged:close()
+  return staged_contents == contents
+end
+
 --- Stage the hook script inside the working directory and return its path.
 ---
 --- **Codex will not execute a hook script that lives outside the sandbox's writable roots**
@@ -87,13 +106,12 @@ end
 --- copilot's throwaway plugin goes for the same reason. A symlink is not used: it would point back
 --- out of the writable roots, which is the case that fails.
 ---
---- Copied rather than cached: the source path moves when the plugin is updated or reinstalled, and
---- a stale copy is a hook that silently answers with old logic. The write goes through a temp file
---- and a rename because every chat open on this cwd rewrites this path just before spawning its own
---- codex, and a reader catching a truncated script would get a hook that fails in a way none of the
---- three decisions covers. `rename(2)` is atomic within a directory. One shared path is safe only
---- because the contents are identical for every chat -- per-process identity (`VIBING_PROCESS_ID`,
---- the RPC port) travels in codex's environment, not in this file.
+--- The source is read on every call so updates and reinstalls cannot leave stale hook logic.
+--- An identical copy with permissions 0755 is reused; otherwise the write goes through a temp file
+--- and a rename because chats share this path. A reader catching a truncated script would get a
+--- hook that fails in a way none of the three decisions covers. `rename(2)` is atomic within a
+--- directory. One shared path is safe because the contents are identical for every chat:
+--- per-process identity (`VIBING_PROCESS_ID`, the RPC port) travels in codex's environment.
 --- @param cwd? string Working directory (defaults to vim.fn.getcwd())
 --- @return string path Absolute path to the staged script
 function M.ensure(cwd)
@@ -107,6 +125,10 @@ function M.ensure(cwd)
   end
   local contents = src:read("*a")
   src:close()
+
+  if staged_matches(path, contents) then
+    return path
+  end
 
   local tmp_path = string.format("%s.%d.tmp", path, vim.loop.getpid())
   local out, out_err = io.open(tmp_path, "wb")

@@ -40,6 +40,7 @@ end
 
 describe("E2E: AskUserQuestion - no repeated questions", function()
   local nvim_instance
+  local report_path
 
   before_each(function()
     nvim_instance = helper.spawn_nvim_instance({
@@ -50,6 +51,10 @@ describe("E2E: AskUserQuestion - no repeated questions", function()
 
   after_each(function()
     helper.cleanup_instance(nvim_instance)
+    if report_path then
+      vim.fn.delete(report_path)
+      report_path = nil
+    end
   end)
 
   it("should display AskUserQuestion prompt exactly once", function()
@@ -103,13 +108,37 @@ describe("E2E: AskUserQuestion - no repeated questions", function()
     ok, reason = helper.wait_for_response(nvim_instance, "\n1%. Red\n", TIMEOUTS.ASSISTANT_RESPONSE)
     assert.is_true(ok, reason or "Choice list should be rendered into the buffer")
 
-    -- Send an answer by pressing <CR> (all options remain — Claude understands)
+    -- An untouched choice list is not an answer. Claude now holds the asking turn open and
+    -- receives the user's text as the MCP tool result, so answering starts no second turn.
+    -- Observe actual completion rather than the existing Assistant / unsent User headers.
+    report_path = vim.fn.tempname()
+    vim.fn.rpcrequest(nvim_instance.job_id, "nvim_exec_lua", [[
+      local report_path = ...
+      local bufnr = vim.api.nvim_get_current_buf()
+      vim.api.nvim_create_autocmd("User", {
+        pattern = "VibingResponseDone",
+        callback = function(ev)
+          if ev.data and ev.data.bufnr == bufnr then
+            vim.fn.writefile(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), report_path)
+            return true
+          end
+        end,
+      })
+      -- Another chat finishing must not consume this chat's completion listener.
+      local other = vim.api.nvim_create_buf(false, true)
+      vim.api.nvim_exec_autocmds("User", { pattern = "VibingResponseDone", data = { bufnr = other } })
+      vim.api.nvim_buf_delete(other, { force = true })
+      local n = vim.api.nvim_buf_line_count(bufnr)
+      vim.api.nvim_buf_set_lines(bufnr, n, n, false, { "Red" })
+    ]], { report_path })
     helper.send_keys(nvim_instance, "<CR>")
 
-    -- 答えを送った**あとの**応答を待つ。`## .* Assistant` を待つのでは、質問を出した1本目の
-    -- 見出しが既にあるので最初から一致してしまい、何も待っていないのと同じだった
-    ok, reason = helper.wait_for_assistant_turns(nvim_instance, 2, TIMEOUTS.ASSISTANT_RESPONSE)
-    assert.is_true(ok, reason or "Claude should respond after the answer is sent")
+    ok = vim.wait(TIMEOUTS.ASSISTANT_RESPONSE, function()
+      return vim.fn.filereadable(report_path) == 1
+    end, 200)
+    assert.is_true(ok, "Claude should complete the turn after receiving Red")
+    local completed_text = table.concat(vim.fn.readfile(report_path), "\n")
+    assert.is_nil(helper._turn_failure(completed_text, 1), "The answered turn must finish without an error")
 
     -- Verify prompt still appears only once (not re-inserted after answering)
     local count = count_lines_matching(nvim_instance, "^1%. Red$")

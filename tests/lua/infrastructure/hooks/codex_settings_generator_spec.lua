@@ -14,13 +14,25 @@ end
 
 describe("codex_settings_generator", function()
   local tmp_dir
+  local original_source_path
+  local original_setfperm
+  local original_open
+  local original_lstat
 
   before_each(function()
+    original_source_path = SettingsGenerator.get_hook_script_path
+    original_setfperm = vim.fn.setfperm
+    original_open = io.open
+    original_lstat = vim.loop.fs_lstat
     tmp_dir = vim.fn.tempname()
     vim.fn.mkdir(tmp_dir, "p")
   end)
 
   after_each(function()
+    SettingsGenerator.get_hook_script_path = original_source_path
+    vim.fn.setfperm = original_setfperm
+    io.open = original_open
+    vim.loop.fs_lstat = original_lstat
     vim.fn.delete(tmp_dir, "rf")
   end)
 
@@ -48,6 +60,115 @@ describe("codex_settings_generator", function()
       assert.equals(
         table.concat(vim.fn.readfile(source, "b"), "\n"),
         table.concat(vim.fn.readfile(staged, "b"), "\n")
+      )
+    end)
+
+    it("reuses an identical 0755 copy without writing or chmod", function()
+      local path = CodexSettingsGenerator.ensure(tmp_dir)
+      local before = assert(vim.loop.fs_lstat(path))
+      local chmod_calls = 0
+      vim.fn.setfperm = function(...)
+        chmod_calls = chmod_calls + 1
+        return original_setfperm(...)
+      end
+
+      assert.equals(path, CodexSettingsGenerator.ensure(tmp_dir))
+      local after = assert(vim.loop.fs_lstat(path))
+      -- Atomic restaging replaces the inode, even when a filesystem's timestamp is too coarse.
+      assert.equals(before.ino, after.ino, "an unchanged script must not be replaced")
+      assert.same(before.mtime, after.mtime, "an unchanged script must not be rewritten")
+      assert.equals(0, chmod_calls, "an unchanged script must not be chmodded")
+    end)
+
+    for _, mode in ipairs({ "644", "700", "775" }) do
+      it("restages identical content when permissions are " .. mode, function()
+        local path = CodexSettingsGenerator.ensure(tmp_dir)
+        assert(vim.loop.fs_chmod(path, tonumber(mode, 8)))
+        assert.equals(tonumber(mode, 8), vim.loop.fs_lstat(path).mode % 4096)
+        local before = vim.loop.fs_lstat(path)
+
+        CodexSettingsGenerator.ensure(tmp_dir)
+
+        local after = assert(vim.loop.fs_lstat(path))
+        assert.equals(tonumber("755", 8), after.mode % 4096)
+        assert.are_not.equals(before.ino, after.ino, "permission repair must use atomic restaging")
+      end)
+    end
+
+    it("restages identical content with special permission bits", function()
+      local path = CodexSettingsGenerator.ensure(tmp_dir)
+      local before = original_lstat(path)
+      -- Some filesystems strip setuid on chmod. Model the observed mode at the stat boundary.
+      vim.loop.fs_lstat = function(name, ...)
+        local stat = original_lstat(name, ...)
+        if name == path and stat then
+          stat.mode = stat.mode + tonumber("4000", 8)
+        end
+        return stat
+      end
+
+      CodexSettingsGenerator.ensure(tmp_dir)
+
+      local after = original_lstat(path)
+      assert.equals(tonumber("755", 8), after.mode % 4096)
+      assert.are_not.equals(before.ino, after.ino)
+    end)
+
+    it("replaces a matching symlink with a regular copy", function()
+      local path = CodexSettingsGenerator.ensure(tmp_dir)
+      local target = tmp_dir .. "/linked-hook.sh"
+      vim.fn.writefile(vim.fn.readfile(path, "b"), target, "b")
+      assert.equals(1, vim.fn.setfperm(target, "rwxr-xr-x"))
+      assert(os.remove(path))
+      assert(vim.loop.fs_symlink(target, path))
+
+      CodexSettingsGenerator.ensure(tmp_dir)
+
+      assert.equals("file", vim.loop.fs_lstat(path).type)
+      assert.same(vim.fn.readfile(target, "b"), vim.fn.readfile(path, "b"))
+    end)
+
+    it("refreshes the copy when the source changes between calls", function()
+      local source = tmp_dir .. "/source.sh"
+      SettingsGenerator.get_hook_script_path = function()
+        return source
+      end
+      vim.fn.writefile({ "#!/bin/sh", "exit 0" }, source)
+      local path = CodexSettingsGenerator.ensure(tmp_dir)
+
+      vim.fn.writefile({ "#!/bin/sh", "exit 2" }, source)
+      CodexSettingsGenerator.ensure(tmp_dir)
+
+      assert.same(vim.fn.readfile(source, "b"), vim.fn.readfile(path, "b"))
+    end)
+
+    it("does not trust an existing copy when the source disappears", function()
+      CodexSettingsGenerator.ensure(tmp_dir)
+      SettingsGenerator.get_hook_script_path = function()
+        return tmp_dir .. "/missing-source.sh"
+      end
+
+      local ok, err = pcall(CodexSettingsGenerator.ensure, tmp_dir)
+      assert.is_false(ok)
+      assert.is_truthy(tostring(err):find("Failed to read the hook script", 1, true))
+    end)
+
+    it("restages when the existing copy cannot be read", function()
+      local path = CodexSettingsGenerator.ensure(tmp_dir)
+      local before = vim.loop.fs_lstat(path)
+      io.open = function(name, mode)
+        if name == path and mode == "rb" then
+          return nil, "permission denied"
+        end
+        return original_open(name, mode)
+      end
+
+      CodexSettingsGenerator.ensure(tmp_dir)
+
+      assert.are_not.equals(before.ino, vim.loop.fs_lstat(path).ino)
+      assert.same(
+        vim.fn.readfile(SettingsGenerator.get_hook_script_path(), "b"),
+        vim.fn.readfile(path, "b")
       )
     end)
 
@@ -133,12 +254,10 @@ describe("codex_settings_generator", function()
       -- Registering the hook without a script codex can run is the case that *hangs* the turn,
       -- which is strictly worse than skipping the gate. So this fails loudly and `codex_cli` drops
       -- the hook; it must never come back with a `-c` pair pointing at nothing.
-      local original = SettingsGenerator.get_hook_script_path
       SettingsGenerator.get_hook_script_path = function()
         return tmp_dir .. "/definitely-not-here.sh"
       end
       local ok, err = pcall(CodexSettingsGenerator.get_hook_args, tmp_dir)
-      SettingsGenerator.get_hook_script_path = original
 
       assert.is_false(ok)
       assert.is_truthy(tostring(err):find("hook script", 1, true))
