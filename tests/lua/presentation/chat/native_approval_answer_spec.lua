@@ -177,6 +177,33 @@ describe("answering a Codex approval in the chat", function()
     end)
   end)
 
+  describe("a decision whose name is not a plain word", function()
+    it("is read back literally, not as the Lua pattern its characters spell", function()
+      -- The vocabulary is the CLI's to choose (#861), so what reaches `action_pattern` is a word
+      -- vibing did not pick. `codex_native_decisions.slug` folds today's names to `[a-z0-9_]`, but
+      -- that is a *producer* keeping a promise for a consumer two modules away — and the consumer
+      -- is building a **Lua pattern**. Unescaped, `accept-%d` matches "accept-" followed by a
+      -- digit: the human's actual line matches nothing, the answer is discarded in silence, and
+      -- the request waits out its whole limit. So the escaping lives where the pattern is built.
+      local vocabulary = { "accept-%d" }
+      local line = ApprovalParser.option_line(1, "accept-%d - Run it", "codex-p1-0")
+
+      assert.is_true(ApprovalParser.is_approval_response(line, vocabulary))
+      assert.same(
+        { { action = "accept-%d", request_id = "codex-p1-0" } },
+        ApprovalParser.parse_answers(line, vocabulary)
+      )
+
+      -- The pattern must not match what it would have matched read as a pattern.
+      assert.is_false(
+        ApprovalParser.is_approval_response(
+          ApprovalParser.option_line(1, "accept-7 - Run it", "codex-p1-0"),
+          vocabulary
+        )
+      )
+    end)
+  end)
+
   describe("a decision this prompt did not offer", function()
     it("is refused rather than sent, and the request stays waiting", function()
       local chat_buf, decisions = chat_with_native({ "accept" })

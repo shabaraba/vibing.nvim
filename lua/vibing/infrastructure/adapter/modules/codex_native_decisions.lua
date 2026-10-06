@@ -44,10 +44,10 @@ local DESCRIPTIONS = {
 
 --- `acceptWithExecpolicyAmendment` → `accept_with_execpolicy_amendment`.
 ---
---- Also the sanitiser: `approval_parser.action_pattern` interpolates an option value straight into
---- a **Lua pattern**, so a value carrying `-` or `%` would silently match the wrong lines or none.
---- Folding everything outside `[a-z0-9]` to `_` is what keeps that safe for a decision nobody has
---- seen yet.
+--- This is for **readability** — the word a human leaves on the option line. It is deliberately no
+--- longer load-bearing for safety: `approval_parser.action_pattern` escapes what it interpolates
+--- (`vim.pesc`), so a decision carrying `-` or `%` is handled where the pattern is built rather
+--- than by every producer of a value remembering to fold it first.
 --- @param key string
 --- @return string
 function M.slug(key)
