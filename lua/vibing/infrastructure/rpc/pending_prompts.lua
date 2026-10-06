@@ -18,6 +18,10 @@ local M = {}
 local CHANNELS = {
   { noun = "approval", module = "pending_approvals" },
   { noun = "question", module = "pending_questions" },
+  -- The third channel withholds a JSON-RPC response to a resident CLI (#861). Its registry drops
+  -- the reason sentence — codex's response carries a decision and nowhere to put prose — but it
+  -- owes the exits exactly as the other two do, which is the whole point of being listed here.
+  { noun = "approval", module = "pending_native_approvals" },
 }
 
 --- The reason each registry is given is the same sentence with a different noun, so callers hand
@@ -47,8 +51,12 @@ end
 --- @param chat_bufnr number
 --- @return boolean
 function M.has_for_chat(chat_bufnr)
-  return require("vibing.infrastructure.rpc.pending_approvals").has_for_chat(chat_bufnr)
-    or require("vibing.infrastructure.rpc.pending_questions").has_for_chat(chat_bufnr)
+  for _, channel in ipairs(CHANNELS) do
+    if require("vibing.infrastructure.rpc." .. channel.module).has_for_chat(chat_bufnr) then
+      return true
+    end
+  end
+  return false
 end
 
 --- Answer everything this chat is holding, with nobody's answer.

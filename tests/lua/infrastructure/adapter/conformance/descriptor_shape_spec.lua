@@ -109,6 +109,31 @@ describe("conformance: descriptor shape", function()
         )
       end)
 
+      it("may wait for its own approval requests only when that was measured and it can ask", function()
+        -- The third gate (#861), and it needs the same pair for the same reason: the bridge names
+        -- the chat through `turn.process.chat_bufnr`, which `register_chat_bufnr` is what fills in.
+        -- A floor without the flag would take the waiting branch, find no chat, and refuse every
+        -- request without drawing anything — the copilot failure one gate over, repeated.
+        --
+        -- Recomputed from the raw fields rather than asserted as an implication, so the case stays
+        -- able to fail if the gate stops reading either of them.
+        local floor = descriptor.native_approval and descriptor.native_approval.measured_wait_floor_sec
+        local WaitBudget = require("vibing.infrastructure.hooks.wait_budget")
+        local measured = type(floor) == "number" and WaitBudget.native_approval_budget_sec() <= floor
+
+        assert.equals(
+          measured,
+          WaitBudget.can_wait_for_native_approval(descriptor.native_approval),
+          string.format("%s: the gate disagrees with the descriptor's own measurement", def.id)
+        )
+        if measured then
+          assert.is_true(
+            descriptor.register_chat_bufnr == true,
+            def.id .. ": a measured native-approval floor with no chat to ask in refuses everything silently"
+          )
+        end
+      end)
+
       it("closes stdin or leaves it alone, nothing else", function()
         assert.is_true(descriptor.stdin == nil or descriptor.stdin == "")
       end)

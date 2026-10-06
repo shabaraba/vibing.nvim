@@ -15,10 +15,26 @@
 ---人間が見出し以外の手がかりを要らないようにしている。だから delegate も `option_line` を通す。
 local M = {}
 
----4つのアクション。語彙の定義は `approval_decision.ACTIONS` ただ1つで、こちらは行の読み書き
----だけを持つ。書き写すと、5つ目を足したときにこのモジュールだけが静かに読めなくなる
+---フック承認の4つのアクション。語彙の定義は `approval_decision.ACTIONS` ただ1つで、こちらは
+---行の読み書きだけを持つ。書き写すと、5つ目を足したときにこのモジュールだけが静かに読めなくなる
 ---@type string[]
 local ACTIONS = require("vibing.application.chat.approval_decision").ACTIONS
+
+---**語彙はプロンプトが持ち込む（#861）。** Codex 自身の承認要求は `accept` / `decline` /
+---`cancel` といった**別の語彙**で選択肢を出すので、この固定4語だけを読んでいると、その行は
+---「選択肢ではない普通の本文」として素通りし、答えがどこにも届かないまま上限まで待つ。
+---
+---引数を省略したときに `ACTIONS` に落ちるのは、呼び出し側が語彙を知らない場合（保留が1件も
+---無い等）のため。**語彙が混ざっても帰属は揺れない** — 帰属を決めるのは行の `request_id`
+---マーカーただ1つで、どの語彙の行かは `resolve` の判断材料に入っていない
+---@param vocabulary string[]|nil
+---@return string[]
+local function words(vocabulary)
+  if type(vocabulary) == "table" and #vocabulary > 0 then
+    return vocabulary
+  end
+  return ACTIONS
+end
 
 ---行に載る identity。`## User <!-- unsent -->` と同じ見た目の規約を同じバッファで使っている。
 ---ユーザーには見えるが、既に毎回見ているものと同じ形なので新しい語彙ではない
@@ -29,10 +45,16 @@ local MARKER_PATTERN = "<!%-%- vibing:req=([^%s]+) %-%->"
 
 ---選択肢行そのもののパターン。番号は1行の中の位置ではなく、そのプロンプトの選択肢リスト内の
 ---連番なので、**複数プロンプトが出ていれば重複する**。帰属は identity だけが決める
+---
+---`action` は `vim.pesc` で逃がす。語彙がプロンプト持ち込みになった時点（#861）で、ここに入る
+---文字列は CLI が決めた語を素通ししたものになりうる。逃がさないと `-` や `%` を含む決定名が
+---**別の行に当たる（あるいはどこにも当たらない）Luaパターン**になり、答えが黙って消える。
+---`codex_native_decisions.slug` が `[a-z0-9_]` に畳んでいるので今日は何も変わらないが、
+---**安全がモジュールをまたいだ約束ではなくこの行で閉じている**ことが要る
 ---@param action string
 ---@return string
 local function action_pattern(action)
-  return "^[>%s]*%d+%.%s*" .. action .. "%s*%-"
+  return "^[>%s]*%d+%.%s*" .. vim.pesc(action) .. "%s*%-"
 end
 
 ---承認プロンプトに描く1行を組み立てる（**唯一の組み立て口**）
@@ -153,14 +175,15 @@ end
 
 ---承認レスポンスかどうかを判定
 ---@param message string ユーザーメッセージ
+---@param vocabulary string[]|nil いま出ているプロンプトが提示している action 値
 ---@return boolean
-function M.is_approval_response(message)
+function M.is_approval_response(message, vocabulary)
   if not message or type(message) ~= "string" or message == "" then
     return false
   end
 
   for line in message:gmatch("[^\r\n]+") do
-    for _, action in ipairs(ACTIONS) do
+    for _, action in ipairs(words(vocabulary)) do
       if line:match(action_pattern(action)) then
         return true
       end
@@ -176,15 +199,16 @@ end
 ---消し忘れた行が別の承認への答えとして通る。帰属と曖昧さの判定は `resolve` の仕事で、ここは
 ---「何が書いてあるか」だけを返す
 ---@param message string
+---@param vocabulary string[]|nil いま出ているプロンプトが提示している action 値
 ---@return {action: string, request_id: string?}[]
-function M.parse_answers(message)
+function M.parse_answers(message, vocabulary)
   local answers = {}
   if not message or type(message) ~= "string" or message == "" then
     return answers
   end
 
   for line in message:gmatch("[^\r\n]+") do
-    for _, action in ipairs(ACTIONS) do
+    for _, action in ipairs(words(vocabulary)) do
       if line:match(action_pattern(action)) then
         table.insert(answers, { action = action, request_id = line:match(MARKER_PATTERN) })
         break
@@ -207,16 +231,17 @@ end
 ---ユーザーはどこまで通ったのかをバッファから読み取れない
 ---@param message string
 ---@param pending_ids string[] いま答えを待っている request_id（順序は表示順）
+---@param vocabulary string[]|nil いま出ているプロンプトが提示している action 値の和集合
 ---@return {request_id: string, action: string}[] answers エラーがあれば空
 ---@return string[] errors 人間が読んで直せる文面
-function M.resolve(message, pending_ids)
+function M.resolve(message, pending_ids, vocabulary)
   pending_ids = pending_ids or {}
   local is_pending = {}
   for _, id in ipairs(pending_ids) do
     is_pending[id] = true
   end
 
-  local parsed = M.parse_answers(message)
+  local parsed = M.parse_answers(message, vocabulary)
   local errors = {}
   local by_request = {}
   local anonymous = {}

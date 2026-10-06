@@ -353,6 +353,16 @@ function M.addUserSection(buf, win, pendingChoices, pendingApprovals, initial_me
         if pendingApproval.input.url then
           table.insert(approvalLines, "URL: " .. tostring(pendingApproval.input.url))
         end
+        -- Anything a channel wants shown that has no field of its own: the cwd and the reason on a
+        -- Codex command approval, the per-file kinds and the diff on a file-change one (#861).
+        --
+        -- **Indented, never given a new `Foo: ` prefix.** `approval_parser.continues_block` already
+        -- counts a three-space indent as part of a prompt block, so these are stripped with the
+        -- rest of it; a new prefix would have to be added to `FIELD_PREFIXES`, which widens what
+        -- `strip_prompt_lines` eats out of the user's own prose for every chat.
+        for _, line in ipairs(pendingApproval.input.details or {}) do
+          table.insert(approvalLines, "   " .. tostring(line))
+        end
       end
 
       table.insert(approvalLines, "")

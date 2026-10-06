@@ -37,7 +37,14 @@ function M.get(bufnr)
   -- 読むのは `_stop_reason` ではなく「実際にフックが1つ以上ブロックされているか」。
   -- `_stop_reason` は次の送信まで前のターンの値が残るので、先に読むと本当に走っている
   -- ターンを承認待ちと誤報する。保留レジストリは答えが出た瞬間に空になるので古くならない
-  if require("vibing.infrastructure.rpc.pending_approvals").has_for_chat(bufnr) then
+  --
+  -- **CLI 自身の承認要求も同じ状態（#861）。** 待たせているものがフックの `.res` か JSON-RPC の
+  -- 応答かはオーケストレーターには関係がなく、「人間の答えが要る」という1つの状態。片方だけ
+  -- 見ると、codex のサンドボックス昇格待ちのチャットが `responding` を装う
+  if
+    require("vibing.infrastructure.rpc.pending_approvals").has_for_chat(bufnr)
+    or require("vibing.infrastructure.rpc.pending_native_approvals").has_for_chat(bufnr)
+  then
     return "waiting_approval"
   end
 

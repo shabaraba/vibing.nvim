@@ -110,6 +110,26 @@ M.LIGHTWEIGHT_ARGS = {
   "project_doc_max_bytes=0",
 }
 
+--- The user's `backends.codex.approval_policy`, as the `-c` pair it becomes, or nothing.
+---
+--- Applied only on the branches that make no statement of their own: `bypassPermissions` already
+--- means "ask nothing" and `plan` already means "write nothing", and a configured policy must not
+--- quietly undo either. On every other branch this is what turns codex's own approval requests on
+--- (#861) — the argv is the duplex reuse key, so changing it starts a fresh process and therefore
+--- reaches resumed threads as well as new ones.
+---
+--- Returning nothing means "say nothing", which is the right answer on the exec path and the wrong
+--- one on the resident path; `resident_permission_args` is where that difference is decided.
+--- @param ctx Vibing.RequestContext
+--- @return string[]
+local function approval_policy_args(ctx)
+  local policy = vim.tbl_get(ctx.config or {}, "backends", "codex", "approval_policy")
+  if type(policy) ~= "string" or policy == "" then
+    return {}
+  end
+  return { "-c", string.format('approval_policy="%s"', policy) }
+end
+
 --- The permission mapping for an ordinary call. A project-local permission profile is a config
 --- layer, so unlike `-s` it is valid on `codex exec resume` and must be supplied on every process
 --- invocation. Keeping the rendered overrides byte-stable also keeps the model-visible permission
@@ -125,29 +145,35 @@ M.LIGHTWEIGHT_ARGS = {
 --- inside a builder is one the parts list cannot see.
 ---
 --- Two things differ from the exec mapping, and only two. `-s` does not exist here, so every mode
---- travels as a `-c` override -- the shape exec already uses when resuming. And
---- `approval_policy="never"` is appended in **every** permission mode, not only
---- `bypassPermissions`: native approval dialogs are not implemented by this transport (every one
---- is auto-declined in `codex_duplex_protocol.lua`), so leaving `default`/`acceptEdits`/`auto`/
---- `dontAsk` at codex's own default meant a sandboxed action that would have raised one was
---- silently denied instead of being allowed or asked about through vibing's own PreToolUse hook.
+--- travels as a `-c` override -- the shape exec already uses when resuming. And the approval
+--- policy is **always stated**, never left at codex's own default: a request this transport
+--- cannot put in front of a human is declined (#861 routes the ones it can, and refuses the rest
+--- when there is no chat to ask or the configured wait is longer than the backend was measured to
+--- tolerate), so an unstated policy turns a sandboxed action into a silent denial instead of
+--- something vibing's own PreToolUse hook and permission rules get to decide. `never` unless the
+--- user asked for something else; the exec path below has no such channel to fail on and keeps
+--- passing nothing.
 --- @param ctx Vibing.RequestContext
 --- @return string[]
 function M.resident_permission_args(ctx)
-  local args
+  -- `bypassPermissions` already means "ask nothing" and `plan` already means "write nothing", so
+  -- neither consults the configured policy -- it must not quietly undo either.
   if ctx.opts.permission_mode == "bypassPermissions" then
-    args = { "-c", 'sandbox_mode="danger-full-access"' }
+    return { "-c", 'sandbox_mode="danger-full-access"', "-c", 'approval_policy="never"' }
   elseif ctx.opts.permission_mode == "plan" then
-    args = { "-c", 'sandbox_mode="read-only"' }
-  else
-    local profile_args = CodexPermissionProfile.args(ctx.opts.cwd, ctx.config)
-    -- A fresh table, never the profile's own: `CodexPermissionProfile.args` is memoised per cwd,
-    -- so appending below would grow the cached argv on every turn.
-    args = #profile_args > 0 and vim.list_extend({}, profile_args) or { "-c", 'sandbox_mode="workspace-write"' }
+    return { "-c", 'sandbox_mode="read-only"', "-c", 'approval_policy="never"' }
   end
-  table.insert(args, "-c")
-  table.insert(args, 'approval_policy="never"')
-  return args
+
+  local profile_args = CodexPermissionProfile.args(ctx.opts.cwd, ctx.config)
+  -- A fresh table, never the profile's own: `CodexPermissionProfile.args` is memoised per cwd,
+  -- so appending below would grow the cached argv on every turn.
+  local args = #profile_args > 0 and vim.list_extend({}, profile_args) or { "-c", 'sandbox_mode="workspace-write"' }
+
+  local policy = approval_policy_args(ctx)
+  if #policy == 0 then
+    policy = { "-c", 'approval_policy="never"' }
+  end
+  return vim.list_extend(args, policy)
 end
 
 function M.permission_args(ctx)
@@ -176,6 +202,9 @@ function M.permission_args(ctx)
       table.insert(cmd, "-s")
       table.insert(cmd, "workspace-write")
     end
+    -- Same branch condition as the duplex path above, for the same reason: the two explicit modes
+    -- already say what they want about asking, and this one must not undo them.
+    vim.list_extend(cmd, approval_policy_args(ctx))
   end
   return cmd
 end

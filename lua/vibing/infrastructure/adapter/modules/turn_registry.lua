@@ -39,7 +39,11 @@ local M = {}
 ---   reply open on this backend instead of killing the turn (#788). Resolved per turn from the
 ---   descriptor's measured floor against the configured budget, so the RPC handler never names a
 ---   backend.
---- @field on_approval_required? fun(tool: string, input: table, options: table, hook_request_id?: string, waiting?: boolean)
+--- @field can_wait_for_native_approval? boolean Whether a CLI's own approval request may be held
+---   open for a human on this backend instead of being refused on arrival (#861). Resolved per turn
+---   from the descriptor's measured floor against the configured budget, the same shape as
+---   `can_answer_question_in_place` and for the same reason.
+--- @field on_approval_required? fun(tool: string, input: table, options: table, hook_request_id?: string, waiting?: boolean, kind?: string)
 ---   `waiting` says this prompt is holding a turn that is still running (#778), so the chat has to
 ---   draw it now — the kill path's drawing point, `_handle_response`, never comes.
 --- @field subagent_count? number Task/Agent tool calls this turn has launched and not yet gotten a

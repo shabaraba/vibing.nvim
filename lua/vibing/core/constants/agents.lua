@@ -87,6 +87,22 @@ M.AGENTS = {
     description = "Codex CLI (OpenAI)",
     config_fields = {
       process = { kind = "string", values = { "oneshot", "duplex" }, default = "oneshot" },
+      -- When codex asks the human before running something, as a `-c approval_policy` override.
+      --
+      -- A **separate dial from `permission_mode`**, and deliberately so (#861): `permission_mode`
+      -- decides what vibing's own gate does, this decides when codex's sandbox asks to be escaped.
+      -- The two explicit modes still win over it, because choosing them is an explicit statement
+      -- about this chat — `bypassPermissions` means "ask nothing", `plan` means "write nothing".
+      --
+      -- `""` is the default and means **unset**: no override is emitted and codex's own config.toml
+      -- decides, which is byte-for-byte today's argv. `"untrusted"` is **not** offered: codex 0.160
+      -- removed it and now refuses to start at all when it is set, so accepting the word here would
+      -- turn a typo into a chat that cannot be opened.
+      approval_policy = {
+        kind = "string",
+        values = { "", "on-request", "on-failure", "never" },
+        default = "",
+      },
       -- Project-local OS sandbox profile; `false` disables loading it.
       profile_file = {
         kind = "path_or_false",

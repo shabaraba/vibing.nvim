@@ -152,6 +152,29 @@ function M.is_alive(record)
   return record ~= nil and record.job_id ~= nil
 end
 
+--- Write to a channel named by its id alone.
+---
+--- Writing needs nothing from a record but `job_id`, and a caller that must **outlive the turn**
+--- should hold the id rather than the record. A reply closure parked in a registry for a whole
+--- approval wait (#861, up to 960s) otherwise keeps a reclaimed process's `decoder_state` and its
+--- cached file-change diffs reachable for that long, with no sweep able to free them early.
+--- @param job_id number|nil
+--- @param payload table
+--- @return boolean sent
+local function write_to(job_id, payload)
+  if type(job_id) ~= "number" then
+    return false
+  end
+  -- The byte count decides, not `pcall`. A job that has been killed but whose `on_exit` has not
+  -- yet run still has a valid channel id — `job_id` is cleared only there — so `is_alive` says yes
+  -- and `chansend` quietly returns 0. Reading that as success is how a turn gets bound to a dying
+  -- process and then waits out the whole first-response watchdog with nothing to show for it.
+  local ok, written = pcall(vim.fn.chansend, job_id, vim.json.encode(payload) .. "\n")
+  return ok and type(written) == "number" and written > 0
+end
+
+M.write_to = write_to
+
 --- @param record Vibing.DuplexProcess
 --- @param payload table
 --- @return boolean sent
@@ -159,12 +182,7 @@ local function write(record, payload)
   if not M.is_alive(record) then
     return false
   end
-  -- The byte count decides, not `pcall`. A job that has been killed but whose `on_exit` has not
-  -- yet run still has a valid channel id — `job_id` is cleared only there — so `is_alive` says yes
-  -- and `chansend` quietly returns 0. Reading that as success is how a turn gets bound to a dying
-  -- process and then waits out the whole first-response watchdog with nothing to show for it.
-  local ok, written = pcall(vim.fn.chansend, record.job_id, vim.json.encode(payload) .. "\n")
-  return ok and type(written) == "number" and written > 0
+  return write_to(record.job_id, payload)
 end
 
 M.write = write

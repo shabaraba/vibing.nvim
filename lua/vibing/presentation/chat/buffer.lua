@@ -737,7 +737,10 @@ function ChatBuffer:can_defer_send(message, is_approval_retry)
   end
 
   local ApprovalParser = require("vibing.presentation.chat.modules.approval_parser")
-  if #(self._pending_approvals or {}) > 0 and ApprovalParser.is_approval_response(message) then
+  if
+    #(self._pending_approvals or {}) > 0
+    and ApprovalParser.is_approval_response(message, self:_approval_vocabulary())
+  then
     return false
   end
 
@@ -921,6 +924,26 @@ end
 ---
 ---nil は「そもそも承認への答えではない」で、通常の送信がそのまま続く
 ---@return Vibing.AnsweredApproval?
+---いま画面に出ているプロンプトが提示している action 値の和集合（#861）
+---
+---**固定の4語ではない。** CLI 自身の承認要求は `accept` / `cancel` のような別語彙で選択肢を
+---出すので、固定リストだけを読むとその行は普通の本文として素通りし、答えがどこにも届かない
+---まま上限まで待つことになる。語彙はプロンプトが持ち込み、帰属を決めるのは従来どおり
+---`request_id` マーカーだけなので、2種類が同時に出ていても取り違えは起きない
+---@return string[]|nil nil なら呼び出し先の既定（フックの4語）に落ちる
+function ChatBuffer:_approval_vocabulary()
+  local values, seen = {}, {}
+  for _, entry in ipairs(self._pending_approvals or {}) do
+    for _, option in ipairs(entry.options or {}) do
+      if type(option.value) == "string" and option.value ~= "" and not seen[option.value] then
+        seen[option.value] = true
+        table.insert(values, option.value)
+      end
+    end
+  end
+  return #values > 0 and values or nil
+end
+
 function ChatBuffer:_answer_pending_approval()
   local pending = self._pending_approvals or {}
   if #pending == 0 then
@@ -929,7 +952,8 @@ function ChatBuffer:_answer_pending_approval()
 
   local message = self:extract_user_message()
   local ApprovalParser = require("vibing.presentation.chat.modules.approval_parser")
-  if not message or not ApprovalParser.is_approval_response(message) then
+  local vocabulary = self:_approval_vocabulary()
+  if not message or not ApprovalParser.is_approval_response(message, vocabulary) then
     return nil
   end
 
@@ -942,7 +966,7 @@ function ChatBuffer:_answer_pending_approval()
   end
 
   -- **曖昧なら拒否する。** 消し忘れた行が別の承認への答えとして通る経路を残さない
-  local resolved, errors = ApprovalParser.resolve(message, answerable)
+  local resolved, errors = ApprovalParser.resolve(message, answerable, vocabulary)
   if #errors > 0 then
     self:_show_approval_refusal(errors)
     return { outcome = "refused" }
@@ -964,17 +988,18 @@ function ChatBuffer:_answer_pending_approval()
   --
   -- 途中で失敗したものは**そこだけ残す**。全部巻き戻すと「答えたのに消えた」になり、
   -- 黙って続けると失敗が見えない
-  local PendingApprovals = require("vibing.infrastructure.rpc.pending_approvals")
   local ApprovalDecision = require("vibing.application.chat.approval_decision")
-  local Permission = require("vibing.infrastructure.rpc.handlers.permission")
 
   local answered_in_place, retry_messages, failures = 0, {}, {}
 
   for _, approval in ipairs(resolved) do
-    -- 判定を届ける前に、フックがまだ待っているかを見ておく。`consume` はプロンプトを消すので、
-    -- 後から聞いても「待っていない」と区別がつかない。1件ずつ見るのは、直前の `consume` が
-    -- 消すのはその1件のプロンプトだけで、他の保留のレジストリ登録には触らないため
-    local blocked = PendingApprovals.get(approval.request_id)
+    -- 判定を届ける前に、まだ待っているかを見ておく。`consume` はプロンプトを消すので、後から
+    -- 聞いても「待っていない」と区別がつかない。1件ずつ見るのは、直前の `consume` が消すのは
+    -- その1件のプロンプトだけで、他の保留のレジストリ登録には触らないため。
+    -- **どのレジストリに訊くかはプロンプト自身が決める（#861）** — フックの `.res` を待つものと
+    -- CLI の JSON-RPC 応答を待つものが同じバッファに並びうる
+    local pending_entry = self:get_pending_approval(approval.request_id)
+    local blocked = ApprovalDecision.find_blocked(pending_entry)
 
     -- 答えが**意味すること**（セッションリストの更新、`:once` の記帳、再試行文）は
     -- `approval_decision.consume` が1箇所で持つ。ここで書き下すのは
@@ -989,15 +1014,15 @@ function ChatBuffer:_answer_pending_approval()
       -- 今日の経路。プロセスは既に死んでいるので、答えは散文として新しいターンで届く
       table.insert(retry_messages, consumed.retry_message)
     else
-      local ok, released = pcall(Permission.release_answered_approval, blocked, self)
+      local ok, released = pcall(ApprovalDecision.release, pending_entry, blocked, consumed, self)
       if ok and released then
         answered_in_place = answered_in_place + 1
       else
-        -- フックを解放できないまま黙って戻ると、そのフックは上限まで空回りする。答えは既に
+        -- 解放できないまま黙って戻ると、待っている側は上限まで空回りする。答えは既に
         -- 消費済みなので、再試行文として新しいターンに載せるのが唯一の通る道
         vim.notify(
           string.format(
-            "[vibing] Could not answer the waiting %s hook in place (%s); retrying as a new turn.",
+            "[vibing] Could not answer the waiting %s prompt in place (%s); retrying as a new turn.",
             tostring(consumed.tool),
             ok and "it was no longer waiting" or tostring(released)
           ),
@@ -1229,8 +1254,12 @@ function ChatBuffer:send_message()
     set_pending_user_text = function(text)
       return self:set_pending_user_text(text)
     end,
-    insert_approval_request = function(tool, input, options, hook_request_id, waiting)
-      return self:insert_approval_request(tool, input, options, hook_request_id, waiting)
+    -- **全部そのまま渡す。** `kind` はどのチャネルの承認かを決める値で（#861）、ここで落ちても
+    -- 何もエラーにならない — プロンプトは描かれ、ユーザーは答えられ、その答えだけが別のレイヤの
+    -- 検証に落ちて黙って捨てられる。中継のクロージャが引数を1つ落とす故障は、この並びに
+    -- 7つ目を足す日にまた起きる
+    insert_approval_request = function(tool, input, options, hook_request_id, waiting, kind)
+      return self:insert_approval_request(tool, input, options, hook_request_id, waiting, kind)
     end,
     get_session_allow = function()
       return self:get_session_allow()
@@ -1830,7 +1859,11 @@ end
 ---@param waiting boolean? このプロンプトが走り続けているターンを止めているか（#778）。
 ---  レンダラーはこれを見て「このターンの残りの出力は止まっている」と書く。kill する経路では
 ---  止まっているものが無いので書かない
-function ChatBuffer:insert_approval_request(tool, input, options, hook_request_id, waiting)
+---@param kind string? どのチャネルの承認か（#861）。省略＝PreToolUse フック。`"native"` は
+---  CLI 自身の承認要求で、**答えの意味が違う** — `approval_decision.consume` はこれを見て
+---  セッション許可リストを触らない経路へ振り分ける。レジストリも別なので、`find_blocked` の
+---  訊き先もこれが決める
+function ChatBuffer:insert_approval_request(tool, input, options, hook_request_id, waiting, kind)
   self._pending_approvals = self._pending_approvals or {}
 
   local entry = {
@@ -1838,6 +1871,7 @@ function ChatBuffer:insert_approval_request(tool, input, options, hook_request_i
     input = input,
     options = options,
     waiting = waiting or nil,
+    kind = kind,
     -- 名前は1つだけ。同じ値を2フィールドに持つと、片方だけ書き換える writer が現れたときに
     -- 帰属が黙って割れる — `request_id` という identity が入ったのは、まさにそれを閉じるため
     request_id = hook_request_id,
