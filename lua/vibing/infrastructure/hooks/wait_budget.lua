@@ -25,6 +25,27 @@
 
 local M = {}
 
+--- Whether a measurement covers the budget this configuration derives.
+---
+--- The two "may this channel wait for a human" gates below (`can_answer_question_in_place`,
+--- `can_wait_for_native_approval`) differ **only in which measurement they read** — never in the
+--- test applied to it. Writing the test out per channel put three copies of "a missing number means
+--- unmeasured, and unmeasured means today's behaviour" in one file, which is how one of them
+--- acquires a `<` the others do not have.
+---
+--- Not shared with `transports.can_wait_for_approval`, deliberately: that one compares against the
+--- script's own deadline with a strict `>`, which is a different question about a different
+--- ordering.
+--- @param floor any the descriptor's measured figure, if it has one
+--- @param budget number what this configuration would hold the channel open for
+--- @return boolean
+local function measured_covers(floor, budget)
+  if type(floor) ~= "number" then
+    return false
+  end
+  return budget <= floor
+end
+
 --- What the script adds to vibing's own limit.
 ---
 --- Not a second policy. The script's deadline is the backstop for "Neovim answered the RPC and
@@ -191,11 +212,7 @@ end
 --- @param mcp Vibing.McpSpec|nil the backend descriptor's `mcp` table
 --- @return boolean
 function M.can_answer_question_in_place(mcp)
-  local floor = mcp and mcp.measured_answer_wait_sec
-  if type(floor) ~= "number" then
-    return false
-  end
-  return M.question_budget_sec() <= floor
+  return measured_covers(mcp and mcp.measured_answer_wait_sec, M.question_budget_sec())
 end
 
 --- What the resident-CLI route adds to vibing's own limit, the counterpart of `MCP_MARGIN_SEC`.
@@ -233,11 +250,7 @@ end
 --- @param native_approval Vibing.NativeApprovalSpec|nil the descriptor's `native_approval` table
 --- @return boolean
 function M.can_wait_for_native_approval(native_approval)
-  local floor = native_approval and native_approval.measured_wait_floor_sec
-  if type(floor) ~= "number" then
-    return false
-  end
-  return M.native_approval_budget_sec() <= floor
+  return measured_covers(native_approval and native_approval.measured_wait_floor_sec, M.native_approval_budget_sec())
 end
 
 --- The environment entry the hook script reads. Merged into the CLI child's environment.
