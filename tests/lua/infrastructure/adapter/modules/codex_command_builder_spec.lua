@@ -432,9 +432,19 @@ describe("codex_command_builder", function()
       return { backends = { codex = { approval_policy = value } } }
     end
 
-    it("emits nothing when it is unset, so today's argv is unchanged", function()
+    it("falls back to never on duplex when it is unset, rather than to codex's own default", function()
+      -- Not tidiness. A request this transport cannot route to a human is declined, so under
+      -- codex's default policy an unconfigured chat turns a sandboxed action into a silent denial
+      -- instead of something vibing's own hook and permission rules get to decide (#860).
       for _, config in ipairs({ {}, policy("") }) do
         local cmd = codex_command_builder.build("hi", { _process_model = "duplex" }, nil, config, nil)
+        assert.is_true(vim.tbl_contains(config_overrides(cmd), 'approval_policy="never"'))
+      end
+    end)
+
+    it("emits nothing when it is unset on a oneshot call, which has no such channel to fail on", function()
+      for _, config in ipairs({ {}, policy("") }) do
+        local cmd = codex_command_builder.build("hi", {}, nil, config, nil)
         for _, override in ipairs(config_overrides(cmd)) do
           assert.is_nil(override:match("^approval_policy="), "an unset policy must add no override")
         end

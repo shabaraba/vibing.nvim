@@ -110,13 +110,6 @@ M.LIGHTWEIGHT_ARGS = {
   "project_doc_max_bytes=0",
 }
 
---- The permission mapping for an ordinary call. A project-local permission profile is a config
---- layer, so unlike `-s` it is valid on `codex exec resume` and must be supplied on every process
---- invocation. Keeping the rendered overrides byte-stable also keeps the model-visible permission
---- prefix stable for prompt caching; the file path and its source location are never added to
---- the prompt.
---- @param ctx Vibing.RequestContext
---- @return string[]
 --- The user's `backends.codex.approval_policy`, as the `-c` pair it becomes, or nothing.
 ---
 --- Applied only on the branches that make no statement of their own: `bypassPermissions` already
@@ -134,12 +127,21 @@ local function approval_policy_args(ctx)
   return { "-c", string.format('approval_policy="%s"', policy) }
 end
 
+--- The permission mapping for an ordinary call. A project-local permission profile is a config
+--- layer, so unlike `-s` it is valid on `codex exec resume` and must be supplied on every process
+--- invocation. Keeping the rendered overrides byte-stable also keeps the model-visible permission
+--- prefix stable for prompt caching; the file path and its source location are never added to
+--- the prompt.
+--- @param ctx Vibing.RequestContext
+--- @return string[]
 function M.permission_args(ctx)
   if ctx.opts._process_model == "duplex" then
+    -- `bypassPermissions` already means "ask nothing" and `plan` already means "write nothing", so
+    -- neither consults `approval_policy_args` -- a configured policy must not quietly undo either.
     if ctx.opts.permission_mode == "bypassPermissions" then
       return { "-c", 'sandbox_mode="danger-full-access"', "-c", 'approval_policy="never"' }
     elseif ctx.opts.permission_mode == "plan" then
-      return { "-c", 'sandbox_mode="read-only"' }
+      return { "-c", 'sandbox_mode="read-only"', "-c", 'approval_policy="never"' }
     end
     -- A fresh table, never the profile's own: `CodexPermissionProfile.args` is memoised per cwd,
     -- so extending what it returned would append to the cache and grow the argv on every turn.
@@ -147,7 +149,15 @@ function M.permission_args(ctx)
     if #args == 0 then
       args = { "-c", 'sandbox_mode="workspace-write"' }
     end
-    return vim.list_extend(args, approval_policy_args(ctx))
+    local policy = approval_policy_args(ctx)
+    if #policy == 0 then
+      -- Duplex only, and not a tidy default: an approval request this transport cannot route to a
+      -- human is declined, so leaving the policy at codex's own turns a sandboxed action into a
+      -- silent denial instead of something vibing's PreToolUse hook and permission rules get to
+      -- decide. The oneshot path below has no such channel to fail on and keeps codex's default.
+      policy = { "-c", 'approval_policy="never"' }
+    end
+    return vim.list_extend(args, policy)
   end
   local opts, session_id, config = ctx.opts, ctx.session_id, ctx.config
   local cmd = {}

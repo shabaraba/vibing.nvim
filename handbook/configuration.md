@@ -161,7 +161,8 @@ backends = {
                             -- Chat frontmatter `process:` overrides this.
     approval_policy = "",   -- When Codex itself asks before running something, as a
                             -- `-c approval_policy` override. "" (the default) passes no
-                            -- override, so your own config.toml decides.
+                            -- override on a one-shot call, so your own config.toml
+                            -- decides; on duplex it sends "never" instead.
                             -- "on-request" | "on-failure" | "never".
                             -- See "Codex's own approval requests" below.
     profile_file = ".vibing/codex-permissions.toml",
@@ -1739,10 +1740,16 @@ backends = {
 }
 ```
 
-With `""` (the default) vibing.nvim passes no override and your own `config.toml` decides, which is
-byte-for-byte the argv before this option existed. `"on-request"` lets Codex ask when it wants to
-escalate, `"on-failure"` only after the sandbox refuses, `"never"` not at all. `"untrusted"` is not
-accepted: Codex 0.160 removed it and now refuses to start when it is set.
+`"on-request"` lets Codex ask when it wants to escalate, `"on-failure"` only after the sandbox
+refuses, `"never"` not at all. `"untrusted"` is not accepted: Codex 0.160 removed it and now
+refuses to start when it is set.
+
+With `""` (the default) what happens depends on the transport, and the difference is not tidiness.
+A **one-shot** call passes no override, so your own `config.toml` decides — byte-for-byte the argv
+before this option existed. A **duplex** chat sends `"never"`: a request this transport cannot put
+in front of a human is declined (no chat to ask, or a configured wait longer than the backend was
+measured to tolerate), so leaving the policy at Codex's own default would turn a sandboxed action
+into a silent denial instead of something vibing.nvim's hook and permission rules get to decide.
 
 Two things it deliberately does **not** do:
 

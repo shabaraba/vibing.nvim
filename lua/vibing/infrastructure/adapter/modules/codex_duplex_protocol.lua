@@ -42,7 +42,10 @@ local function render(record, msg)
   local turn = record._turn
   local context = turn and turn.context or record._idle_context
   if context then
-    Processor.processLine(vim.json.encode(msg), context)
+    -- `msg` is already a Lua table, built here or decoded off the wire by `M.process_line` --
+    -- `Processor.apply` takes it directly, rather than encoding back to JSON only for the
+    -- decoder to immediately decode it again.
+    Processor.apply(msg, context)
   end
 end
 
@@ -94,7 +97,8 @@ local function start_turn(record, prompt, params)
       return
     end
     rpc.turn_id, rpc.starting_turn = result.turn.id, false
-    record.decoder_state.started, record.decoder_state.text_items = nil, nil
+    record.decoder_state.started, record.decoder_state.text_items, record.decoder_state.reasoning_items =
+      nil, nil, nil
     -- Per turn, so the table that lets a fileChange approval show its diff cannot grow across a
     -- resident process's whole life. An approval always arrives in the turn its item started in.
     rpc.file_changes = {}
@@ -102,6 +106,13 @@ local function start_turn(record, prompt, params)
     rpc.queued = {}
     for _, msg in ipairs(queued) do
       notification(record, msg)
+    end
+    -- A cancel that arrived while this turn/start was still in flight could not name a turn id
+    -- yet, so `M.interrupt` deferred it instead of refusing outright (which would have fallen
+    -- through to a hard kill of the whole resident process). Honour it now that one exists.
+    if rpc.interrupt_pending then
+      rpc.interrupt_pending = false
+      request(record, "turn/interrupt", { threadId = rpc.thread_id, turnId = rpc.turn_id }, function() end)
     end
   end)
 end
@@ -232,18 +243,15 @@ function M.process_line(record, line, context)
         fail(record, "Could not answer a Codex approval request.")
         return
       end
-      Processor.processLine(
-        vim.json.encode({
-          method = "vibing/requestDenied",
-          params = {
-            message = "Codex asked for approval ("
-              .. tostring(msg.method)
-              .. "); vibing.nvim refused it without asking, because no chat was available to ask or "
-              .. "the configured wait is longer than this backend was measured to tolerate.",
-          },
-        }),
-        context
-      )
+      render(record, {
+        method = "vibing/requestDenied",
+        params = {
+          message = "Codex asked for approval ("
+            .. tostring(msg.method)
+            .. "); vibing.nvim refused it without asking, because no chat was available to ask or "
+            .. "the configured wait is longer than this backend was measured to tolerate.",
+        },
+      })
       return
     end
 
@@ -256,15 +264,14 @@ function M.process_line(record, line, context)
       fail(record, "Could not answer a Codex server request.")
       return
     end
-    Processor.processLine(
-      vim.json.encode({
-        method = "vibing/requestDenied",
-        params = {
-          message = "Codex requested " .. tostring(msg.method) .. "; this request is not supported in duplex mode.",
-        },
-      }),
-      context
-    )
+    -- Same turn-vs-idle context routing as every other notification, so this does not become a
+    -- second place that decision has to be kept in sync by hand.
+    render(record, {
+      method = "vibing/requestDenied",
+      params = {
+        message = "Codex requested " .. tostring(msg.method) .. "; this request is not supported in duplex mode.",
+      },
+    })
   elseif msg.method then
     notification(record, msg)
   end
@@ -272,7 +279,20 @@ end
 
 function M.interrupt(record)
   local rpc = record._rpc
-  if not rpc or not rpc.turn_id or rpc.starting_turn then
+  if not rpc then
+    return false
+  end
+  -- `turn/start` has been sent but its reply (and therefore the turn id to interrupt) has not
+  -- arrived yet. Refusing here used to read as "could not even be written" to `duplex_routing`,
+  -- which falls back to killing the whole resident process -- destroying the thread this
+  -- transport exists to keep alive, on the ordinary case of cancelling right after sending.
+  -- Deferring claims the interrupt and fires it the moment `start_turn`'s callback learns the
+  -- turn id, so the grace-period kill timer `stop_turn` arms is the only fallback left.
+  if rpc.starting_turn then
+    rpc.interrupt_pending = true
+    return true
+  end
+  if not rpc.turn_id then
     return false
   end
   return request(record, "turn/interrupt", { threadId = rpc.thread_id, turnId = rpc.turn_id }, function() end)
