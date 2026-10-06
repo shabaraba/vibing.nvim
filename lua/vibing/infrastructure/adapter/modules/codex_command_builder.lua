@@ -117,27 +117,40 @@ M.LIGHTWEIGHT_ARGS = {
 --- the prompt.
 --- @param ctx Vibing.RequestContext
 --- @return string[]
-function M.permission_args(ctx)
-  if ctx.opts._process_model == "duplex" then
-    -- Native approval/user-input dialogs are not implemented by this transport (every one is
-    -- auto-declined in `codex_duplex_protocol.lua`), in every permission mode -- not only
-    -- `bypassPermissions`. Without this, `default`/`acceptEdits`/`auto`/`dontAsk` left
-    -- `approval_policy` at codex's own default, so a sandboxed action that would otherwise
-    -- trigger a native approval request was silently denied instead of being allowed or asked
-    -- about through vibing's own PreToolUse hook and permission rules.
-    local args
-    if ctx.opts.permission_mode == "bypassPermissions" then
-      args = { "-c", 'sandbox_mode="danger-full-access"' }
-    elseif ctx.opts.permission_mode == "plan" then
-      args = { "-c", 'sandbox_mode="read-only"' }
-    else
-      local profile_args = CodexPermissionProfile.args(ctx.opts.cwd, ctx.config)
-      args = #profile_args > 0 and profile_args or { "-c", 'sandbox_mode="workspace-write"' }
-    end
-    table.insert(args, "-c")
-    table.insert(args, 'approval_policy="never"')
-    return args
+--- The permission mapping for a resident app-server.
+---
+--- Its own builder rather than a branch inside `permission_args`, because "is this call duplex"
+--- is already a first-class condition on the parts list (`when = "duplex"`), which is how every
+--- other argv difference in this descriptor is stated. A second spelling of the same condition
+--- inside a builder is one the parts list cannot see.
+---
+--- Two things differ from the exec mapping, and only two. `-s` does not exist here, so every mode
+--- travels as a `-c` override -- the shape exec already uses when resuming. And
+--- `approval_policy="never"` is appended in **every** permission mode, not only
+--- `bypassPermissions`: native approval dialogs are not implemented by this transport (every one
+--- is auto-declined in `codex_duplex_protocol.lua`), so leaving `default`/`acceptEdits`/`auto`/
+--- `dontAsk` at codex's own default meant a sandboxed action that would have raised one was
+--- silently denied instead of being allowed or asked about through vibing's own PreToolUse hook.
+--- @param ctx Vibing.RequestContext
+--- @return string[]
+function M.resident_permission_args(ctx)
+  local args
+  if ctx.opts.permission_mode == "bypassPermissions" then
+    args = { "-c", 'sandbox_mode="danger-full-access"' }
+  elseif ctx.opts.permission_mode == "plan" then
+    args = { "-c", 'sandbox_mode="read-only"' }
+  else
+    local profile_args = CodexPermissionProfile.args(ctx.opts.cwd, ctx.config)
+    -- A fresh table, never the profile's own: `CodexPermissionProfile.args` is memoised per cwd,
+    -- so appending below would grow the cached argv on every turn.
+    args = #profile_args > 0 and vim.list_extend({}, profile_args) or { "-c", 'sandbox_mode="workspace-write"' }
   end
+  table.insert(args, "-c")
+  table.insert(args, 'approval_policy="never"')
+  return args
+end
+
+function M.permission_args(ctx)
   local opts, session_id, config = ctx.opts, ctx.session_id, ctx.config
   local cmd = {}
   local permission_mode = opts.permission_mode
@@ -185,9 +198,10 @@ end
 --- app-server accepts the hook override but not exec's trust-bypass flag.
 --- The protocol checks hooks/list before starting a thread, rather than silently losing the gate.
 function M.resident_hook_args(ctx)
+  local trust_flag = require("vibing.infrastructure.hooks.codex_settings_generator").TRUST_FLAG
   local args = {}
   for _, arg in ipairs(ctx.hook_arg or {}) do
-    if arg ~= "--dangerously-bypass-hook-trust" then
+    if arg ~= trust_flag then
       table.insert(args, arg)
     end
   end
@@ -195,9 +209,13 @@ function M.resident_hook_args(ctx)
 end
 
 --- app-server has no -m flag. Use the same model resolver as the exec request.
+---
+--- The value is rendered as TOML, not JSON. The two agree on a plain model name, which is why
+--- `vim.json.encode` passed every case anyone tried; `core/utils/toml.lua` is the one place the
+--- `-c` value side is spelled, and every other codex override already goes through it.
 function M.resident_model_args(ctx)
   local model = NonClaudeModel.resolve(ctx.opts, ctx.config)
-  return model and { "-c", "model=" .. vim.json.encode(model) } or {}
+  return model and { "-c", "model=" .. require("vibing.core.utils.toml").string(model) } or {}
 end
 
 --- Build the `codex exec --json` command array from the request spec in `backends/codex.lua`.

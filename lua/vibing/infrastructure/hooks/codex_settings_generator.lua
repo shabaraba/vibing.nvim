@@ -162,4 +162,11 @@ end
 
 M._HOOK_EVENT_KEY = HOOK_EVENT_KEY
 
+--- Exported for the one caller that has to take the flag back **out**: `app-server` accepts the
+--- hook override but not exec's trust bypass, so the resident transport filters it from the argv
+--- it was handed (`codex_command_builder.resident_hook_args`). A second spelling of the literal
+--- there would go stale in silence -- the flag would simply stop being filtered, and a rename
+--- here would leave app-server being passed a flag that makes it refuse to start.
+M.TRUST_FLAG = TRUST_FLAG
+
 return M
