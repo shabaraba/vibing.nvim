@@ -48,12 +48,18 @@ function M.remember_changes(rpc, item)
   rpc.file_changes[item.id] = item.changes
 end
 
---- @param record Vibing.DuplexProcess
+--- Answer one of codex's own requests.
+---
+--- Takes the **channel id**, not the process record. The `respond` closure built below is parked in
+--- the registry until a human answers, so capturing the record would keep a process that has since
+--- been reclaimed — along with its decoder state and its cached file-change diffs — reachable for
+--- the whole wait. Writing never needed more than this (`duplex_process.write_to`).
+--- @param job_id number|nil
 --- @param rpc_id any
 --- @param decision any
 --- @return boolean written
-local function reply(record, rpc_id, decision)
-  return Process.write(record, { id = rpc_id, result = { decision = decision } })
+local function reply(job_id, rpc_id, decision)
+  return Process.write_to(job_id, { id = rpc_id, result = { decision = decision } })
 end
 
 --- Codex resolved one of its own requests, so nothing is owed on it any more.
@@ -98,7 +104,8 @@ function M.handle(record, msg)
   local tool, input = Request.describe(msg.method, params, changes)
   local options = Decisions.options(params.availableDecisions)
   local request_id = M.request_id(record, msg.id)
-  local rpc_id = msg.id
+  -- Both captured as scalars, so the closure below holds nothing but what the reply needs.
+  local rpc_id, job_id = msg.id, record.job_id
 
   -- **Register before drawing.** The registry is what arms the wait limit, so anything that throws
   -- below still ends in a decision reaching codex rather than a turn blocked forever.
@@ -108,7 +115,7 @@ function M.handle(record, msg)
     turn_id = turn_id,
     tool = tool,
     respond = function(decision)
-      reply(record, rpc_id, decision)
+      reply(job_id, rpc_id, decision)
     end,
     on_timeout = function(entry)
       local chat_buf = require("vibing.presentation.chat.view").get_chat_buffer(entry.chat_bufnr)
@@ -138,7 +145,7 @@ end
 --- @param rpc_id any
 --- @return boolean written
 function M.refuse(record, rpc_id)
-  return reply(record, rpc_id, Decisions.refusal())
+  return reply(record.job_id, rpc_id, Decisions.refusal())
 end
 
 return M
