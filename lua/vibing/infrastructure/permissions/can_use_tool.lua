@@ -45,6 +45,7 @@ local BACKGROUND_JOB_MESSAGE = "Shell backgrounding is disabled in vibing.nvim b
 --- @field permission_rules? PermissionRule[] Granular rules
 --- @field permission_mode "default"|"acceptEdits"|"bypassPermissions"|"plan"|"dontAsk"|"auto"
 --- @field mcp_enabled boolean
+--- @field is_always_allowed? fun(tool_name: string): boolean Backend-specific always-allowed tools
 
 --- Check whether a tool name is a vibing-nvim MCP tool, regardless of how the MCP server was
 --- registered (plain user-level server vs. Claude Code plugin — see the call site for details).
@@ -331,6 +332,9 @@ function M.can_use_tool(tool_name, input, config)
 
     -- 7. Always-allowed tools: bypass allow list, but respect deny (checked above) and ask
     local is_always_allowed = tools_constants.ALWAYS_ALLOWED_TOOLS_MAP[tool_name] == true
+    if not is_always_allowed and config.is_always_allowed then
+      is_always_allowed = config.is_always_allowed(tool_name)
+    end
     if not is_always_allowed then
       for _, pattern in ipairs(tools_constants.ALWAYS_ALLOWED_TOOLS) do
         local prefix = pattern:match("^(.*)%*$")
