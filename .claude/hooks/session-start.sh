@@ -4,15 +4,15 @@
 #
 # The remote container ships node and git but no Neovim, so `test:lua`, `test:e2e`, `check:doc`
 # and `check` cannot start there. All four invoke `nvim`; syntax checking uses its Lua parser.
-# This installs Neovim and the existing Lua tooling, mirroring the
-# "Setup Neovim" / "Install plenary.nvim" / "Install Lua" steps of .github/workflows/ci.yml so
+# This installs Neovim and plenary.nvim, mirroring the
+# "Setup Neovim" / "Install plenary.nvim" steps of .github/workflows/ci.yml so
 # a web session passes and fails on the same things CI does.
 #
 # It is deliberately synchronous: the first thing a session here typically does is run the
 # suite, and an async hook would let that start against a half-installed environment.
 set -euo pipefail
 
-# A local machine already has the developer's own Neovim, package manager and Lua. Touching
+# A local machine already has the developer's own Neovim and package manager. Touching
 # /opt and /usr/local there would be rude and is never what is wanted.
 if [ "${CLAUDE_CODE_REMOTE:-}" != "true" ]; then
   exit 0
@@ -24,10 +24,6 @@ PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." &
 # a number that would silently drift away from it. Override to reproduce a version-specific bug.
 NVIM_VERSION="${VIBING_NVIM_VERSION:-stable}"
 NVIM_PREFIX="${VIBING_NVIM_PREFIX:-/opt/nvim}"
-
-# Lua tooling matching CI's lua5.3 installation. The `check` gate uses Neovim's parser;
-# see install_luac for how the standalone compiler version is verified.
-LUA_VERSION="5.3"
 
 # tests/minimal_init.lua resolves plenary from `vim.fn.stdpath("data")`, which honours
 # XDG_DATA_HOME — so this has to as well, or the clone lands where nothing looks for it.
@@ -121,44 +117,6 @@ install_plenary() {
   git clone --depth 1 --quiet https://github.com/nvim-lua/plenary.nvim "${PLENARY_DIR}"
 }
 
-luac_is_required_version() {
-  command -v luac >/dev/null 2>&1 || return 1
-  luac -v 2>&1 | head -1 | grep -q "Lua ${LUA_VERSION}\b"
-}
-
-install_luac() {
-  # Keep the standalone compiler aligned with CI's Lua tooling rather than accepting any
-  # installed version. `npm run check` uses Neovim's parser and does not depend on luac.
-  if luac_is_required_version; then
-    log "luac present: $(luac -v 2>&1 | head -1)"
-    return
-  fi
-  if command -v luac >/dev/null 2>&1; then
-    log "luac is $(luac -v 2>&1 | head -1), but CI uses Lua ${LUA_VERSION}; installing it"
-  fi
-  if ! command -v apt-get >/dev/null 2>&1; then
-    log "ERROR: no apt-get; cannot install lua${LUA_VERSION}"
-    return 1
-  fi
-
-  export DEBIAN_FRONTEND=noninteractive
-  # The image usually carries usable package lists already, so try the install first and pay
-  # for `apt-get update` only when it is actually needed.
-  $SUDO apt-get install -y -qq "lua${LUA_VERSION}" >/dev/null 2>&1 || {
-    log "refreshing package lists"
-    $SUDO apt-get update -qq >/dev/null
-    $SUDO apt-get install -y -qq "lua${LUA_VERSION}" >/dev/null
-  }
-
-  # Debian's alternatives provide a bare `luac`, but it may point at another installed
-  # version. Name the compiler we want
-  # explicitly, in /usr/local/bin so it wins over /usr/bin.
-  luac_is_required_version \
-    || $SUDO ln -sf "/usr/bin/luac${LUA_VERSION}" /usr/local/bin/luac
-
-  log "installed $(luac -v 2>&1 | head -1)"
-}
-
 # The root and claude-plugin/mcp-server are two separate npm trees, and CI runs `npm ci` in
 # each. Installing only the root leaves test:node's MCP server gate
 # (tests/mcp-server-test-gate.test.mjs) failing on a missing vitest — an error that belongs to
@@ -205,7 +163,6 @@ install_node_deps() {
 
 install_neovim
 install_plenary
-install_luac
 for node_dir in "${NODE_DEP_DIRS[@]}"; do
   install_node_deps "$node_dir"
 done
@@ -214,18 +171,13 @@ done
 # the exact failure this one exists to prevent — the session would then blame the repository
 # for an error that belongs to its own setup.
 #
-# Presence is not the whole check: `nvim` and `luac` must be the builds this hook installed,
+# Presence is not the whole check: `nvim` must be the build this hook installed,
 # or the gates run against something CI never saw.
 missing=()
 if ! command -v nvim >/dev/null 2>&1; then
   missing+=("nvim")
 elif [ "$(readlink -f "$(command -v nvim)")" != "$(readlink -f "${NVIM_PREFIX}/bin/nvim")" ]; then
   missing+=("nvim (PATH resolves to $(command -v nvim), not the managed ${NVIM_PREFIX})")
-fi
-if ! command -v luac >/dev/null 2>&1; then
-  missing+=("luac")
-elif ! luac_is_required_version; then
-  missing+=("luac Lua ${LUA_VERSION} (PATH resolves to $(luac -v 2>&1 | head -1))")
 fi
 [ -d "${PLENARY_DIR}" ] || missing+=("plenary.nvim")
 for node_dir in "${NODE_DEP_DIRS[@]}"; do

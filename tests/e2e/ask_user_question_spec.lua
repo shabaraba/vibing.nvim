@@ -117,13 +117,17 @@ describe("E2E: AskUserQuestion - no repeated questions", function()
       local bufnr = vim.api.nvim_get_current_buf()
       vim.api.nvim_create_autocmd("User", {
         pattern = "VibingResponseDone",
-        once = true,
         callback = function(ev)
           if ev.data and ev.data.bufnr == bufnr then
             vim.fn.writefile(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), report_path)
+            return true
           end
         end,
       })
+      -- Another chat finishing must not consume this chat's completion listener.
+      local other = vim.api.nvim_create_buf(false, true)
+      vim.api.nvim_exec_autocmds("User", { pattern = "VibingResponseDone", data = { bufnr = other } })
+      vim.api.nvim_buf_delete(other, { force = true })
       local n = vim.api.nvim_buf_line_count(bufnr)
       vim.api.nvim_buf_set_lines(bufnr, n, n, false, { "Red" })
     ]], { report_path })
