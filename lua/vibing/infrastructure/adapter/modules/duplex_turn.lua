@@ -94,6 +94,12 @@ function M.open(params, record, chat_key)
     can_answer_question_in_place = require("vibing.infrastructure.hooks.wait_budget").can_answer_question_in_place(
       params.descriptor and params.descriptor.mcp
     ),
+    -- Read off the turn for the same reason, and resolved here rather than in the protocol module
+    -- so the gate is asked the same way all three are: from the descriptor, against the configured
+    -- budget, with no backend named at the point of use.
+    can_wait_for_native_approval = require("vibing.infrastructure.hooks.wait_budget").can_wait_for_native_approval(
+      params.descriptor and params.descriptor.native_approval
+    ),
   })
 
   local completed = false

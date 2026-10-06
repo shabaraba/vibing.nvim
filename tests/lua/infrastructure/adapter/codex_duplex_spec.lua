@@ -2,6 +2,7 @@ local helper = require("tests.helpers.adapter_stream")
 local Adapter = require("vibing.infrastructure.adapter.codex_cli")
 local Pool = require("vibing.infrastructure.adapter.modules.duplex_pool")
 local Registry = require("vibing.infrastructure.adapter.modules.turn_registry")
+local Native = require("vibing.infrastructure.rpc.pending_native_approvals")
 local CHAT = 4243
 
 describe("Codex duplex app-server", function()
@@ -19,6 +20,7 @@ describe("Codex duplex app-server", function()
     })
   end)
   after_each(function()
+    Native._reset()
     Pool._reset()
     jobs.restore()
     vim.fn.exepath = exepath
@@ -248,13 +250,134 @@ describe("Codex duplex app-server", function()
     jobs.flush_exits()
     assert.equals(1, #result.responses)
   end)
-  it("answers native approval requests with a denial rather than leaving the server blocked", function()
-    send()
-    local call = jobs.only_call()
-    ready(call)
-    emit(call, { id = 88, method = "item/commandExecution/requestApproval", params = {} })
-    assert.equals(88, last(call).id)
-    assert.equals("decline", last(call).result.decision)
+  describe("Codex's own approval requests", function()
+    --- Everything a prompt was drawn with, in the order `on_approval_required` received it.
+    local function asking()
+      local drawn = {}
+      return drawn,
+        function(tool, input, options, request_id, waiting, kind)
+          table.insert(drawn, {
+            tool = tool,
+            input = input,
+            options = options,
+            request_id = request_id,
+            waiting = waiting,
+            kind = kind,
+          })
+        end
+    end
+
+    it("asks the chat instead of refusing, and writes nothing until it is answered", function()
+      local drawn, on_approval_required = asking()
+      send({ on_approval_required = on_approval_required })
+      local call = jobs.only_call()
+      ready(call)
+      local before = #call.stdin
+
+      emit(call, {
+        id = 88,
+        method = "item/commandExecution/requestApproval",
+        params = { command = "/bin/zsh -lc 'ls'", cwd = "/tmp", reason = "outside the sandbox", availableDecisions = { "accept", "cancel" } },
+      })
+
+      -- Nothing on the wire: the request is being held open, which is the whole feature.
+      assert.equals(before, #call.stdin)
+      assert.equals(1, #drawn)
+      assert.equals("Codex command execution", drawn[1].tool)
+      assert.equals("/bin/zsh -lc 'ls'", drawn[1].input.command)
+      assert.is_true(vim.tbl_contains(drawn[1].input.details, "in /tmp"))
+      assert.is_true(vim.tbl_contains(drawn[1].input.details, "outside the sandbox"))
+      assert.is_true(drawn[1].waiting)
+      -- The kind is what keeps the answer out of vibing's own permission lists.
+      assert.equals("native", drawn[1].kind)
+      assert.is_not_nil(Native.get(drawn[1].request_id))
+    end)
+
+    it("sends the human's decision back as the response to that very request", function()
+      local drawn, on_approval_required = asking()
+      send({ on_approval_required = on_approval_required })
+      local call = jobs.only_call()
+      ready(call)
+      emit(call, { id = 88, method = "item/commandExecution/requestApproval", params = {} })
+
+      assert.is_true(Native.resolve(drawn[1].request_id, "accept"))
+      assert.equals(88, last(call).id)
+      assert.equals("accept", last(call).result.decision)
+    end)
+
+    it("names the request by process as well as by Codex's id, which restarts at 0 per process", function()
+      local drawn, on_approval_required = asking()
+      local result = send({ on_approval_required = on_approval_required })
+      local call = jobs.only_call()
+      ready(call)
+      emit(call, { id = 0, method = "item/commandExecution/requestApproval", params = {} })
+
+      assert.is_truthy(drawn[1].request_id:find(result.process, 1, true))
+    end)
+
+    it("shows a file change's diff, which its own params do not carry", function()
+      local drawn, on_approval_required = asking()
+      send({ on_approval_required = on_approval_required })
+      local call = jobs.only_call()
+      ready(call)
+      note(call, "item/started", {
+        item = {
+          id = "exec-1",
+          type = "fileChange",
+          changes = { { path = "/tmp/note.txt", kind = { type = "update" }, diff = "@@ -1 +1 @@\n-hello\n+goodbye\n" } },
+        },
+      })
+
+      emit(call, { id = 7, method = "item/fileChange/requestApproval", params = { itemId = "exec-1" } })
+
+      assert.equals("/tmp/note.txt", drawn[1].input.file_path)
+      assert.is_true(vim.tbl_contains(drawn[1].input.details, "update /tmp/note.txt"))
+      assert.is_true(vim.tbl_contains(drawn[1].input.details, "+goodbye"))
+      -- Its params list no decisions at all, so the implied pair has to be offered.
+      assert.same({ "accept", "decline" }, vim.tbl_map(function(option)
+        return option.value
+      end, drawn[1].options))
+    end)
+
+    it("stops owing a response once Codex resolves its own request", function()
+      local drawn, on_approval_required = asking()
+      send({ on_approval_required = on_approval_required })
+      local call = jobs.only_call()
+      ready(call)
+      emit(call, { id = 88, method = "item/commandExecution/requestApproval", params = {} })
+      local before = #call.stdin
+
+      emit(call, { method = "serverRequest/resolved", params = { threadId = "thread-1", requestId = 88 } })
+
+      assert.is_nil(Native.get(drawn[1].request_id))
+      assert.equals(before, #call.stdin)
+    end)
+
+    it("refuses without asking when there is no chat to ask, rather than leaving the server blocked", function()
+      send()
+      local call = jobs.only_call()
+      ready(call)
+
+      emit(call, { id = 88, method = "item/commandExecution/requestApproval", params = {} })
+
+      assert.equals(88, last(call).id)
+      assert.equals("decline", last(call).result.decision)
+      assert.equals(0, Native.count())
+    end)
+
+    it("still answers -32601 to a request it does not implement", function()
+      -- `item/permissions/requestApproval` negotiates a grant rather than taking a decision, so it
+      -- is deliberately not in the handled set.
+      local _, on_approval_required = asking()
+      send({ on_approval_required = on_approval_required })
+      local call = jobs.only_call()
+      ready(call)
+
+      emit(call, { id = 9, method = "item/permissions/requestApproval", params = {} })
+
+      assert.equals(9, last(call).id)
+      assert.equals(-32601, last(call).error.code)
+    end)
   end)
   it("does not route late notifications from a replaced process into its successor", function()
     local first = send()

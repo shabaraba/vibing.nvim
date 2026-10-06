@@ -101,6 +101,19 @@ describe("vibing.config", function()
       assert.equals(config.defaults.backends.codex.profile_content, config.get().backends.codex.profile_content)
     end)
 
+    it("should refuse a Codex approval_policy the installed CLI cannot start with", function()
+      -- Measured: codex 0.160 exits at startup with `approval_policy = "untrusted" is no longer
+      -- supported`, so accepting the word here would turn one typo into a chat that never opens.
+      -- Unset is the default and means "codex's own config.toml decides".
+      assert.equals("", config.defaults.backends.codex.approval_policy)
+
+      config.setup({ backends = { codex = { approval_policy = "untrusted" } } })
+      assert.equals("", config.get().backends.codex.approval_policy)
+
+      config.setup({ backends = { codex = { approval_policy = "on-request" } } })
+      assert.equals("on-request", config.get().backends.codex.approval_policy)
+    end)
+
     it("should validate the grok executable without resetting a missing path", function()
       config.setup({ backends = { grok = { executable = "" } } })
       assert.equals("auto", config.get().backends.grok.executable)

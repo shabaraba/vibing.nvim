@@ -73,6 +73,18 @@ local M = {
   -- killing the turn. Run `tests/perf/hook_wait_ceiling.sh` before adding a number.
   hook = { transport = "config_override", dialect = "claude", keep_in_bypass = true },
 
+  -- Codex's **own** approval requests, which are a third channel and not the hook (#861). Measured
+  -- with `tests/perf/codex_approval_answer_after_delay.sh` against codex-cli 0.160.1: a decision
+  -- delivered 960s after `item/commandExecution/requestApproval` arrived was acknowledged
+  -- (`serverRequest/resolved`), the approved command ran, and the turn completed normally. The
+  -- control cell at 0s passed in the same run, which is what makes that reading legible.
+  --
+  -- **A floor, not a ceiling.** 960 is `permissions.approval_wait_sec` (900) plus
+  -- `NATIVE_APPROVAL_MARGIN_SEC` (60) — the whole budget the default configuration derives — so the
+  -- gate sits exactly on the evidence, and raising `approval_wait_sec` turns the waiting off here
+  -- rather than waiting past what was observed.
+  native_approval = { measured_wait_floor_sec = 960 },
+
   -- No `mcp.measured_answer_wait_sec` either, so `nvim_ask_user_question` keeps killing the turn
   -- here (#788). Codex is the backend where this is a real gap rather than a formality: its
   -- choice-list UI **is** wired (`register_chat_bufnr`), so the only thing standing between it and

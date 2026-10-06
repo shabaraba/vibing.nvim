@@ -424,6 +424,72 @@ describe("codex_command_builder", function()
     end)
   end)
 
+  -- `backends.codex.approval_policy` decides when codex asks the human before running something,
+  -- which is the switch that makes its own approval requests happen at all (#861). A separate dial
+  -- from `permission_mode`, with one rule about where the two meet.
+  describe("approval policy", function()
+    local function policy(value)
+      return { backends = { codex = { approval_policy = value } } }
+    end
+
+    it("emits nothing when it is unset, so today's argv is unchanged", function()
+      for _, config in ipairs({ {}, policy("") }) do
+        local cmd = codex_command_builder.build("hi", { _process_model = "duplex" }, nil, config, nil)
+        for _, override in ipairs(config_overrides(cmd)) do
+          assert.is_nil(override:match("^approval_policy="), "an unset policy must add no override")
+        end
+      end
+    end)
+
+    it("reaches the resident process, where it decides whether Codex ever asks", function()
+      local cmd = codex_command_builder.build("hi", { _process_model = "duplex" }, nil, policy("on-request"), nil)
+      assert.is_true(vim.tbl_contains(config_overrides(cmd), 'approval_policy="on-request"'))
+    end)
+
+    it("reaches a oneshot call too", function()
+      local cmd = codex_command_builder.build("hi", {}, nil, policy("on-request"), nil)
+      assert.is_true(vim.tbl_contains(config_overrides(cmd), 'approval_policy="on-request"'))
+    end)
+
+    it("does not undo the two modes that already said what they want about asking", function()
+      -- `bypassPermissions` means "ask nothing" and `plan` means "write nothing"; a configured
+      -- policy that overrode either would turn an explicit choice about this chat into a surprise.
+      for _, mode in ipairs({ "bypassPermissions", "plan" }) do
+        for _, model in ipairs({ "duplex", "oneshot" }) do
+          local cmd = codex_command_builder.build(
+            "hi",
+            { _process_model = model, permission_mode = mode },
+            nil,
+            policy("on-request"),
+            nil
+          )
+          assert.is_false(
+            vim.tbl_contains(config_overrides(cmd), 'approval_policy="on-request"'),
+            mode .. " on " .. model .. " must not take the configured policy"
+          )
+        end
+      end
+
+      -- …and what each of those modes does say instead is unchanged by this feature.
+      local duplex_bypass =
+        codex_command_builder.build("hi", { _process_model = "duplex", permission_mode = "bypassPermissions" }, nil, policy("on-request"), nil)
+      assert.is_true(vim.tbl_contains(config_overrides(duplex_bypass), 'approval_policy="never"'))
+
+      local oneshot_bypass =
+        codex_command_builder.build("hi", { permission_mode = "bypassPermissions" }, nil, policy("on-request"), nil)
+      assert.is_not_nil(find_flag(oneshot_bypass, "--dangerously-bypass-approvals-and-sandbox"))
+    end)
+
+    it("does not grow the argv across turns by appending to the memoised profile", function()
+      -- `CodexPermissionProfile.args` is cached per cwd. Extending what it returned would append to
+      -- the cache, so the second turn's argv would carry two copies and the third three.
+      local config = policy("on-request")
+      local first = codex_command_builder.build("hi", { _process_model = "duplex" }, nil, config, nil)
+      local second = codex_command_builder.build("hi", { _process_model = "duplex" }, nil, config, nil)
+      assert.same(first, second)
+    end)
+  end)
+
   -- Checked structurally rather than on one fixture, because the risk is a *future* build that
   -- sends --strict-config down a path where --ignore-user-config is gated more narrowly. Alone,
   -- --strict-config also strictifies the user's own config.toml, so one unrecognised field of

@@ -1,4 +1,5 @@
 --- Codex app-server JSON-RPC. The shared transport owns processes, turns and timers.
+local NativeApproval = require("vibing.infrastructure.adapter.modules.codex_native_approval")
 local Process = require("vibing.infrastructure.adapter.modules.duplex_process")
 local Processor = require("vibing.infrastructure.adapter.modules.stream_decoder").processor(
   require("vibing.infrastructure.adapter.decoders.codex_app_server"),
@@ -55,6 +56,13 @@ local function notification(record, msg)
   if p.threadId and p.threadId ~= rpc.thread_id then
     return
   end
+  -- Codex answered one of its own requests, so the response we were holding is no longer owed.
+  -- Checked before the turn guards below: it carries no `turnId`, and a request outliving its turn
+  -- is exactly the case this exit exists for.
+  if msg.method == "serverRequest/resolved" then
+    NativeApproval.resolved(record, p)
+    return
+  end
   local id = p.turnId or (p.turn and p.turn.id)
   if id then
     if rpc.starting_turn then
@@ -64,6 +72,10 @@ local function notification(record, msg)
     if not record._turn or id ~= rpc.turn_id then
       return
     end
+  end
+  -- An `item/fileChange/requestApproval` carries only an `itemId`; the paths and the diff are here.
+  if msg.method == "item/started" then
+    NativeApproval.remember_changes(rpc, p.item)
   end
   render(record, msg)
 end
@@ -83,6 +95,9 @@ local function start_turn(record, prompt, params)
     end
     rpc.turn_id, rpc.starting_turn = result.turn.id, false
     record.decoder_state.started, record.decoder_state.text_items = nil, nil
+    -- Per turn, so the table that lets a fileChange approval show its diff cannot grow across a
+    -- resident process's whole life. An approval always arrives in the turn its item started in.
+    rpc.file_changes = {}
     local queued = rpc.queued
     rpc.queued = {}
     for _, msg in ipairs(queued) do
@@ -206,17 +221,38 @@ function M.process_line(record, line, context)
       end
     end
   elseif msg.id ~= nil then
-    -- PreToolUse handles vibing's UI. Answer native requests too, failing closed.
-    local result
-    if msg.method == "item/commandExecution/requestApproval" or msg.method == "item/fileChange/requestApproval" then
-      result = { decision = "decline" }
+    -- An approval codex asked for itself. The bridge takes ownership only when there is a chat to
+    -- ask and the wait is covered by a measurement; otherwise it declines here, which is the
+    -- behaviour every unmeasured backend keeps.
+    if NativeApproval.handles(msg.method) then
+      if NativeApproval.handle(record, msg) then
+        return
+      end
+      if not NativeApproval.refuse(record, msg.id) then
+        fail(record, "Could not answer a Codex approval request.")
+        return
+      end
+      Processor.processLine(
+        vim.json.encode({
+          method = "vibing/requestDenied",
+          params = {
+            message = "Codex asked for approval ("
+              .. tostring(msg.method)
+              .. "); vibing.nvim refused it without asking, because no chat was available to ask or "
+              .. "the configured wait is longer than this backend was measured to tolerate.",
+          },
+        }),
+        context
+      )
+      return
     end
-    local reply = result and { id = msg.id, result = result }
-      or {
+
+    if
+      not Process.write(record, {
         id = msg.id,
         error = { code = -32601, message = "Unsupported Codex request: " .. tostring(msg.method) },
-      }
-    if not Process.write(record, reply) then
+      })
+    then
       fail(record, "Could not answer a Codex server request.")
       return
     end

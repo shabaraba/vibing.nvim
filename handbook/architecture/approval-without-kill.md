@@ -1111,6 +1111,87 @@ required: the control makes the arm readable, and the arm must use `question_bud
 than a shorter delay, for the floor reason above. Grok cannot reach the MCP tool at all, so there
 is nothing to measure there yet.
 
+## The third channel: a CLI asking for itself (#861)
+
+Under `backends.codex.process = "duplex"` the CLI is a resident `codex app-server`, and it can send
+**its own** approval requests over the open connection — `item/commandExecution/requestApproval`
+and `item/fileChange/requestApproval`. Before #861 every one of them was answered
+`{decision="decline"}` on arrival, so `approval_policy = "on-request"` had nowhere to put a human.
+
+**It is a third route, and neither of the other two measurements reaches it.**
+`hook.measured_wait_floor_sec` timed a hook blocking; `mcp.measured_answer_wait_sec` timed a late
+MCP answer being consumed; this one times a late **JSON-RPC decision** being acted on by a process
+that has been sitting on an open request. Borrowing either is the substitution this page already
+records twice.
+
+### What it asks, which is not what the hook asks
+
+They are different questions about the same call, and measurement settles the ordering: the
+PreToolUse hook runs **first**, and when it denies, codex never sends an approval request at all
+(observed: `hook/completed` with `status: "blocked"`, no request, the command un-run, the turn
+completing normally). So the hook answers _may this tool run_, and what survives it reaches the
+sandbox, which asks _may this call leave it_. Both prompts can be seen for one command, in
+sequence, never at once.
+
+That is also why the answer must not touch `permissions.allow` / `permissions.deny`. A human
+approving a sandbox escape has said nothing about vibing.nvim's own gate, and
+`application/chat/native_approval_decision.lua` exists so the omission is a different module rather
+than a flag inside `approval_decision.consume`.
+
+### Its own measurement
+
+`native_approval.measured_wait_floor_sec = 960` on the codex descriptor, measured 2026-10-06
+against codex-cli 0.160.1. Instrument: `tests/perf/codex_approval_answer_after_delay.sh`.
+
+```text
+approval_wait_sec              900   the same number every prompt shares
+  + NATIVE_APPROVAL_MARGIN_SEC  60 = 960   what the CLI must still be willing to act on
+```
+
+Two cells, both PASS. The control answered at 0s; the arm answered at 960s and codex acknowledged
+it (`serverRequest/resolved`), **ran the approved command**, and completed the turn normally. Signal
+4 is the one the plumbing cannot fake: a per-cell marker path that only the approved command
+creates.
+
+As on the other two routes the gate is `native_approval_budget_sec() <= floor`, so the default sits
+exactly on the evidence and raising `approval_wait_sec` turns the waiting **off** here rather than
+waiting past it.
+
+### The protocol facts the implementation leans on
+
+All measured, none read off the docs:
+
+- The request `id` is a **small integer that restarts at 0 per process**, so the chat's prompt is
+  keyed by `codex-<process_id>-<rpc_id>`. Keying on codex's id alone is the #667 collision with
+  extra steps.
+- `availableDecisions` is a **heterogeneous array** — strings for payload-free decisions,
+  single-key objects for the rest (`{"acceptWithExecpolicyAmendment": {...}}`). The chosen element
+  is echoed back verbatim; rebuilding its body from the option's slug would be a second copy of
+  codex's schema.
+- **`decline` appeared in no observed `availableDecisions` and is honoured by all of them**: the
+  call is marked `declined`, the model is told, the turn carries on. It is therefore always offered,
+  because a human whose listed options are `accept` and `cancel` could otherwise refuse one command
+  only by aborting the turn.
+- `item/fileChange/requestApproval` carries **no path and no diff** — only an `itemId`. Those were
+  in the `item/started` notification just before it, which is why the protocol module keeps a
+  per-turn `rpc.file_changes` table.
+- **`serverRequest/resolved` is a fifth exit the other two registries have no equivalent of.** Codex
+  can resolve its own request, after which a response names an id it no longer holds; `forget` is
+  the only exit that writes nothing.
+- `approval_policy = "untrusted"` **kills the process at startup** on 0.160.1
+  (`is no longer supported; remove this setting`), so the config enum does not offer the word.
+- Hook trust is content-hashed over the whole hook entry **including `timeout`**. A probe that
+  changed the timeout to a convenient value reported `trustStatus: "modified"` and codex silently
+  ran no hook — which read exactly like "app-server never runs hooks", and was wrong. Verify with
+  `hooks/list` **using the production argv**, never a simplified one.
+
+### What is deliberately not handled
+
+`item/permissions/requestApproval` keeps its `-32601`. Its response is not a decision at all — the
+struct carries `permissions`, `scope` and `strict_auto_review`, i.e. a grant being negotiated — so
+answering it with `{decision=...}` would be inventing a protocol. It could not be triggered in any
+probe, so there is nothing measured to build the real UI against.
+
 ## How this was measured wrong twice
 
 Both mistakes produced a plausible verdict rather than an error, which is the only reason they were

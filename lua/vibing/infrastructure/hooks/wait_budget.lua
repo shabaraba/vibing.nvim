@@ -198,6 +198,48 @@ function M.can_answer_question_in_place(mcp)
   return M.question_budget_sec() <= floor
 end
 
+--- What the resident-CLI route adds to vibing's own limit, the counterpart of `MCP_MARGIN_SEC`.
+---
+--- Covers everything between our timer deciding the request is unanswered and the CLI having the
+--- decision in hand: a `chansend` on an open stdin and the CLI's own read of it. Sized like the
+--- other two margins rather than smaller, because being wrong here loses a human's answer.
+M.NATIVE_APPROVAL_MARGIN_SEC = 60
+
+--- @class Vibing.NativeApprovalSpec
+--- @field measured_wait_floor_sec? number The longest a **delayed decision** was observed still
+---   being acted on by this CLI, with the turn carrying on. A floor, exactly like
+---   `hook.measured_wait_floor_sec` and `mcp.measured_answer_wait_sec`: it says a decision survived
+---   at least this long, not that the CLI would have stopped after. Absent means unmeasured.
+
+--- @return number seconds
+function M.native_approval_budget_sec()
+  return M.approval_wait_sec() + M.NATIVE_APPROVAL_MARGIN_SEC
+end
+
+--- Whether a CLI's **own** approval request may be held open for a human instead of being refused
+--- on arrival (#861).
+---
+--- The third gate, and parallel to the other two on purpose — a backend gets the behaviour when a
+--- measurement covers the budget the current configuration derives, and keeps today's immediate
+--- refusal otherwise. What differs is again *which* measurement. The hook's floor times a hook
+--- blocking; `mcp.measured_answer_wait_sec` times a late MCP answer being consumed; this one times
+--- a late **JSON-RPC decision** being acted on by a resident process. None of the three substitutes
+--- for another, and none of them is `MCP_TOOL_IDLE_TIMEOUT_SEC`, which times silence.
+---
+--- Comparing against the derived budget means raising `permissions.approval_wait_sec` past what was
+--- measured turns the feature **off** for that backend rather than waiting past the evidence. The
+--- way to wait longer is to re-run `tests/perf/codex_approval_answer_after_delay.sh` at the longer
+--- value, not to raise the number and hope.
+--- @param native_approval Vibing.NativeApprovalSpec|nil the descriptor's `native_approval` table
+--- @return boolean
+function M.can_wait_for_native_approval(native_approval)
+  local floor = native_approval and native_approval.measured_wait_floor_sec
+  if type(floor) ~= "number" then
+    return false
+  end
+  return M.native_approval_budget_sec() <= floor
+end
+
 --- The environment entry the hook script reads. Merged into the CLI child's environment.
 --- @param env table<string, string>
 function M.bind(env)

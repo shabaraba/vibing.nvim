@@ -159,6 +159,11 @@ backends = {
   codex = {
     process = "oneshot",    -- Set "duplex" to keep one codex app-server per chat.
                             -- Chat frontmatter `process:` overrides this.
+    approval_policy = "",   -- When Codex itself asks before running something, as a
+                            -- `-c approval_policy` override. "" (the default) passes no
+                            -- override, so your own config.toml decides.
+                            -- "on-request" | "on-failure" | "never".
+                            -- See "Codex's own approval requests" below.
     profile_file = ".vibing/codex-permissions.toml",
                             -- Project-local OS sandbox profile; false disables loading it.
                             -- See "Project-local Codex permission profiles" below.
@@ -1718,6 +1723,49 @@ The script's deadline reaches it in the CLI child's environment, alongside the R
 **resident duplex process is handed its environment once, at spawn**, so changing this setting
 takes effect on the next process rather than the next turn — reopen the chat, or let the five
 minute idle timer reclaim it. Oneshot chats (the default) pick it up on the next message.
+
+### Codex's own approval requests
+
+Codex has a second approval channel of its own, separate from vibing.nvim's PreToolUse gate. The
+hook decides _may this tool run at all_; Codex's own request asks _may this call leave Codex's
+sandbox_ — which is the only way to run something the sandbox blocks (Chrome via Mach IPC,
+`xcrun simctl`, and anything else that needs a service outside the workspace).
+
+```lua
+backends = {
+  codex = {
+    approval_policy = "on-request",
+  },
+}
+```
+
+With `""` (the default) vibing.nvim passes no override and your own `config.toml` decides, which is
+byte-for-byte the argv before this option existed. `"on-request"` lets Codex ask when it wants to
+escalate, `"on-failure"` only after the sandbox refuses, `"never"` not at all. `"untrusted"` is not
+accepted: Codex 0.160 removed it and now refuses to start when it is set.
+
+Two things it deliberately does **not** do:
+
+- **It does not override `permission_mode`.** A chat in `bypassPermissions` still asks nothing and
+  one in `plan` still writes nothing; those are explicit statements about that chat.
+- **Answering one of these grants nothing in `permissions.allow` / `permissions.deny`.** The human
+  said yes to Codex's sandbox, not to vibing.nvim's permission list, and the answer is routed so
+  that it cannot reach the session lists at all.
+
+The prompt is the ordinary `⚠️  Tool approval required` block, with the options Codex itself
+offered (`accept`, `cancel`, the exec-policy amendment it proposes when it has one) plus `decline`,
+which refuses that one call and leaves the turn running. The request is held open while you decide,
+for the same `permissions.approval_wait_sec` as every other prompt — measured as safe to 960s
+against codex-cli 0.160.1 by `tests/perf/codex_approval_answer_after_delay.sh`. Raise
+`approval_wait_sec` past that and the waiting turns **off** for this channel rather than waiting
+past the evidence.
+
+Both prompts can appear for one command, in sequence: the hook asks first, and only if it allows
+does Codex get as far as asking about its sandbox. A hook denial means Codex never asks at all.
+
+The policy travels as a `-c` override fixed at process spawn, so on `process = "duplex"` changing
+it reaches the next process rather than the next turn — the argv is the reuse key, so a changed
+value starts a fresh one by itself.
 
 ## MCP
 

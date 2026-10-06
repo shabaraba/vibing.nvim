@@ -139,6 +139,9 @@ actually tend to change: >lua
       -- per-backend options; see handbook/configuration.md
       backends = {
         codex = {
+          -- when Codex itself asks before running something;
+          -- "" (default) leaves it to your Codex config.toml
+          approval_policy = "",
           -- auto-generated sandbox profile; false disables it
           profile_file = ".vibing/codex-permissions.toml",
           -- true explicitly trusts a Git-tracked profile
@@ -573,6 +576,27 @@ The prompt itself stays, with its options, and you can still answer it — come
 back after an hour, or a day, and answering grants the permission and asks the
 agent to retry, exactly as it did before this waiting behaviour existed. What
 expiry takes away is only the ability to answer *the call that was in flight*.
+
+Codex's own sandbox approvals~
+
+Codex has a second approval channel of its own. vibing.nvim's own gate decides
+whether a tool may run at all; Codex's asks whether a call may leave Codex's
+sandbox, which is the only way to reach something the sandbox blocks. Turn it
+on with `backends.codex.approval_policy = "on-request"`; unset (the default)
+passes no override and your own Codex `config.toml` decides.
+
+The prompt looks the same, with the options Codex itself offered plus
+`decline`, which refuses that one call and leaves the turn running. The
+options are not the usual four: they are Codex's words (`accept`, `cancel`,
+and an exec-policy amendment when Codex proposes one).
+
+Answering one of these grants nothing in `permissions.allow` or
+`permissions.deny` — you approved Codex's sandbox, not vibing.nvim's
+permission list. A chat in `bypassPermissions` or `plan` ignores the setting,
+since those modes already say what they want.
+
+Both prompts can appear for one command, one after the other: vibing.nvim's
+gate asks first, and only a call it allows gets as far as Codex's sandbox.
 
 Answering a question~
 

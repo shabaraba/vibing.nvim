@@ -117,6 +117,23 @@ M.LIGHTWEIGHT_ARGS = {
 --- the prompt.
 --- @param ctx Vibing.RequestContext
 --- @return string[]
+--- The user's `backends.codex.approval_policy`, as the `-c` pair it becomes, or nothing.
+---
+--- Applied only on the branches that make no statement of their own: `bypassPermissions` already
+--- means "ask nothing" and `plan` already means "write nothing", and a configured policy must not
+--- quietly undo either. On every other branch this is what turns codex's own approval requests on
+--- (#861) — the argv is the duplex reuse key, so changing it starts a fresh process and therefore
+--- reaches resumed threads as well as new ones.
+--- @param ctx Vibing.RequestContext
+--- @return string[]
+local function approval_policy_args(ctx)
+  local policy = vim.tbl_get(ctx.config or {}, "backends", "codex", "approval_policy")
+  if type(policy) ~= "string" or policy == "" then
+    return {}
+  end
+  return { "-c", string.format('approval_policy="%s"', policy) }
+end
+
 function M.permission_args(ctx)
   if ctx.opts._process_model == "duplex" then
     if ctx.opts.permission_mode == "bypassPermissions" then
@@ -124,8 +141,13 @@ function M.permission_args(ctx)
     elseif ctx.opts.permission_mode == "plan" then
       return { "-c", 'sandbox_mode="read-only"' }
     end
-    local args = CodexPermissionProfile.args(ctx.opts.cwd, ctx.config)
-    return #args > 0 and args or { "-c", 'sandbox_mode="workspace-write"' }
+    -- A fresh table, never the profile's own: `CodexPermissionProfile.args` is memoised per cwd,
+    -- so extending what it returned would append to the cache and grow the argv on every turn.
+    local args = vim.list_extend({}, CodexPermissionProfile.args(ctx.opts.cwd, ctx.config))
+    if #args == 0 then
+      args = { "-c", 'sandbox_mode="workspace-write"' }
+    end
+    return vim.list_extend(args, approval_policy_args(ctx))
   end
   local opts, session_id, config = ctx.opts, ctx.session_id, ctx.config
   local cmd = {}
@@ -152,6 +174,9 @@ function M.permission_args(ctx)
       table.insert(cmd, "-s")
       table.insert(cmd, "workspace-write")
     end
+    -- Same branch condition as the duplex path above, for the same reason: the two explicit modes
+    -- already say what they want about asking, and this one must not undo them.
+    vim.list_extend(cmd, approval_policy_args(ctx))
   end
   return cmd
 end
