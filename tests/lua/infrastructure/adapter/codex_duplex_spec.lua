@@ -60,6 +60,7 @@ describe("Codex duplex app-server", function()
               eventName = "preToolUse",
               enabled = true,
               trustStatus = "trusted",
+              source = "sessionFlags",
               command = require("vibing.infrastructure.hooks.codex_settings_generator").script_path(vim.fn.getcwd()),
             },
           },
@@ -188,6 +189,55 @@ describe("Codex duplex app-server", function()
     assert.matches("trusted PreToolUse hook", result.responses[1].error)
     assert.equals("hooks/list", last(call).method)
     assert.is_nil(Pool.get(CHAT))
+  end)
+  it("trusts only its session hook and verifies it before starting inference", function()
+    local result = send()
+    local call = jobs.only_call()
+    reply(call, {})
+    local script = require("vibing.infrastructure.hooks.codex_settings_generator").script_path(vim.fn.getcwd())
+    reply(call, { data = { { hooks = {
+      { eventName = "preToolUse", enabled = true, trustStatus = "untrusted", source = "user",
+        command = script, key = "other", currentHash = "sha256:other" },
+      { eventName = "preToolUse", enabled = true, trustStatus = "untrusted", source = "sessionFlags",
+        command = script, key = "session-key", currentHash = "sha256:expected" },
+    } } } })
+    assert.equals("config/batchWrite", last(call).method)
+    local params = last(call).params
+    assert.equals("hooks.state", params.edits[1].keyPath)
+    assert.equals("upsert", params.edits[1].mergeStrategy)
+    assert.same({ ["session-key"] = { trusted_hash = "sha256:expected" } }, params.edits[1].value)
+    assert.is_true(params.reloadUserConfig)
+    reply(call, {})
+    assert.equals("hooks/list", last(call).method)
+    assert.equals(0, #result.responses)
+    trusted_hook(call)
+    assert.equals("thread/start", last(call).method)
+  end)
+  it("fails closed if the trust write does not make its hook trusted", function()
+    local result = send()
+    local call = jobs.only_call()
+    reply(call, {})
+    local script = require("vibing.infrastructure.hooks.codex_settings_generator").script_path(vim.fn.getcwd())
+    local untrusted = { data = { { hooks = { {
+      eventName = "preToolUse", enabled = true, trustStatus = "untrusted", source = "sessionFlags",
+      command = script, key = "session-key", currentHash = "sha256:expected",
+    } } } } }
+    reply(call, untrusted)
+    reply(call, {})
+    reply(call, untrusted)
+    assert.matches("trusted PreToolUse hook", result.responses[1].error)
+    assert.is_nil(Pool.get(CHAT))
+  end)
+  it("never trusts an unrelated hook", function()
+    local result = send()
+    local call = jobs.only_call()
+    reply(call, {})
+    reply(call, { data = { { hooks = { {
+      eventName = "preToolUse", enabled = true, trustStatus = "untrusted", source = "sessionFlags",
+      command = "/tmp/other.sh", key = "other", currentHash = "sha256:other",
+    } } } } })
+    assert.matches("trusted PreToolUse hook", result.responses[1].error)
+    assert.equals("hooks/list", last(call).method)
   end)
   it("surfaces initialization errors once and reclaims the bad process", function()
     local result = send()

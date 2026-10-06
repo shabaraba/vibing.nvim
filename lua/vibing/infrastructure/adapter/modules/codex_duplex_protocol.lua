@@ -103,41 +103,7 @@ function M.send_prompt(record, prompt, params)
       fail(record, "Could not initialize the Codex app-server.")
       return
     end
-    request(record, "hooks/list", { cwds = { params.cwd } }, function(hooks)
-      local script = require("vibing.infrastructure.hooks.codex_settings_generator").script_path(params.cwd)
-      local trusted = false
-      for _, group in ipairs(hooks.data or {}) do
-        for _, hook in ipairs(group.hooks or {}) do
-          if
-            hook.eventName == "preToolUse"
-            and hook.command == script
-            and hook.enabled
-            and (hook.trustStatus == "trusted" or hook.trustStatus == "managed")
-          then
-            trusted = true
-          end
-        end
-      end
-      if not trusted then
-        local review = { vim.fn.shellescape(params.argv[1]) }
-        for _, arg in ipairs(params.hook_arg or {}) do
-          if arg ~= "--dangerously-bypass-hook-trust" then
-            table.insert(review, vim.fn.shellescape(arg))
-          end
-        end
-        fail(
-          record,
-          "Codex duplex requires a trusted PreToolUse hook: "
-            .. script
-            .. ". From "
-            .. params.cwd
-            .. ", run "
-            .. table.concat(review, " ")
-            .. " and review this hook with /hooks, or use process: oneshot. "
-            .. "app-server does not support exec's hook-trust bypass."
-        )
-        return
-      end
+    local function start_thread()
       local session = params.opts._session_id
       request(
         record,
@@ -154,6 +120,71 @@ function M.send_prompt(record, prompt, params)
           start_turn(record, prompt, params)
         end
       )
+    end
+    local function check_hook(hooks, after_write)
+      local script = require("vibing.infrastructure.hooks.codex_settings_generator").script_path(params.cwd)
+      local target
+      for _, group in ipairs(hooks.data or {}) do
+        for _, hook in ipairs(group.hooks or {}) do
+          if
+            hook.eventName == "preToolUse"
+            and hook.command == script
+            and hook.enabled
+            and hook.source == "sessionFlags"
+          then
+            target = hook
+          end
+        end
+      end
+      if target and (target.trustStatus == "trusted" or target.trustStatus == "managed") then
+        start_thread()
+        return
+      end
+      -- Match the exact session hook before writing trust. Codex's TUI uses this same
+      -- hooks/list key/hash and config/batchWrite upsert route for its review action.
+      if
+        not after_write
+        and target
+        and (target.trustStatus == "untrusted" or target.trustStatus == "modified")
+        and type(target.key) == "string"
+        and type(target.currentHash) == "string"
+      then
+        request(record, "config/batchWrite", {
+          edits = {
+            {
+              keyPath = "hooks.state",
+              value = { [target.key] = { trusted_hash = target.currentHash } },
+              mergeStrategy = "upsert",
+            },
+          },
+          reloadUserConfig = true,
+        }, function()
+          request(record, "hooks/list", { cwds = { params.cwd } }, function(updated)
+            check_hook(updated, true)
+          end)
+        end)
+        return
+      end
+      local review = { vim.fn.shellescape(params.argv[1]) }
+      for _, arg in ipairs(params.hook_arg or {}) do
+        if arg ~= "--dangerously-bypass-hook-trust" then
+          table.insert(review, vim.fn.shellescape(arg))
+        end
+      end
+      fail(
+        record,
+        "Codex duplex requires a trusted PreToolUse hook: "
+          .. script
+          .. ". From "
+          .. params.cwd
+          .. ", run "
+          .. table.concat(review, " ")
+          .. " and review this hook with /hooks, or use process: oneshot. "
+          .. "app-server does not support exec's hook-trust bypass."
+      )
+    end
+    request(record, "hooks/list", { cwds = { params.cwd } }, function(hooks)
+      check_hook(hooks, false)
     end)
   end)
 end

@@ -386,12 +386,13 @@ the thread. The existing PreToolUse hook remains the approval and diff-baseline 
 app-server does **not** inherit exec's `--dangerously-bypass-hook-trust`: a root CLI
 flag is accepted but ignored for this subcommand (Codex 0.159.2). Before inference,
 `hooks/list` must report the staged script as enabled and `trusted` or `managed`.
-Missing, untrusted or modified hooks produce an actionable error and reclaim the
-process. Review and trust this hook in Codex before opting in; use oneshot meanwhile.
-The startup error includes a shell-quoted CLI command with the exact hook override.
-Run it from the displayed cwd, open `/hooks`, review the staged script and trust its
-current definition. Retry the chat afterward; changed definitions need another review.
-This check is intentionally part of startup, not an assumption based on argv.
+For an untrusted or modified hook, vibing.nvim matches the exact session-flag
+PreToolUse command it staged, then uses Codex's `config/batchWrite` trust route with
+that hook's reported key and current hash. It lists hooks again before starting a
+thread. Missing hooks, mismatched commands, and writes that do not result in trust
+produce an actionable error and reclaim the process. The startup error includes a
+shell-quoted CLI command with the exact hook override for manual review through
+`/hooks`. This check is intentionally part of startup, not an assumption based on argv.
 Native app-server approval requests are declined; unsupported server requests receive
 a JSON-RPC error and a visible notice rather than leaving Codex blocked. Native approval
 and user-input dialogs are not implemented by this transport.
