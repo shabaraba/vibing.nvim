@@ -193,14 +193,9 @@ function M.send_prompt(record, prompt, params)
       -- The same filter the argv itself went through, asked of the one place that owns it rather
       -- than spelled a second time: a command the user is told to run must be the command they
       -- were about to run, and a third copy of the flag literal would drift from it in silence.
+      local Builder = require("vibing.infrastructure.adapter.modules.codex_command_builder")
       local review = { vim.fn.shellescape(params.argv[1]) }
-      for _, arg in
-        ipairs(
-          require("vibing.infrastructure.adapter.modules.codex_command_builder").resident_hook_args({
-            hook_arg = params.hook_arg,
-          })
-        )
-      do
+      for _, arg in ipairs(Builder.resident_hook_args({ hook_arg = params.hook_arg })) do
         table.insert(review, vim.fn.shellescape(arg))
       end
       fail(
