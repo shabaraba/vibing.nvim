@@ -119,13 +119,24 @@ M.LIGHTWEIGHT_ARGS = {
 --- @return string[]
 function M.permission_args(ctx)
   if ctx.opts._process_model == "duplex" then
+    -- Native approval/user-input dialogs are not implemented by this transport (every one is
+    -- auto-declined in `codex_duplex_protocol.lua`), in every permission mode -- not only
+    -- `bypassPermissions`. Without this, `default`/`acceptEdits`/`auto`/`dontAsk` left
+    -- `approval_policy` at codex's own default, so a sandboxed action that would otherwise
+    -- trigger a native approval request was silently denied instead of being allowed or asked
+    -- about through vibing's own PreToolUse hook and permission rules.
+    local args
     if ctx.opts.permission_mode == "bypassPermissions" then
-      return { "-c", 'sandbox_mode="danger-full-access"', "-c", 'approval_policy="never"' }
+      args = { "-c", 'sandbox_mode="danger-full-access"' }
     elseif ctx.opts.permission_mode == "plan" then
-      return { "-c", 'sandbox_mode="read-only"' }
+      args = { "-c", 'sandbox_mode="read-only"' }
+    else
+      local profile_args = CodexPermissionProfile.args(ctx.opts.cwd, ctx.config)
+      args = #profile_args > 0 and profile_args or { "-c", 'sandbox_mode="workspace-write"' }
     end
-    local args = CodexPermissionProfile.args(ctx.opts.cwd, ctx.config)
-    return #args > 0 and args or { "-c", 'sandbox_mode="workspace-write"' }
+    table.insert(args, "-c")
+    table.insert(args, 'approval_policy="never"')
+    return args
   end
   local opts, session_id, config = ctx.opts, ctx.session_id, ctx.config
   local cmd = {}

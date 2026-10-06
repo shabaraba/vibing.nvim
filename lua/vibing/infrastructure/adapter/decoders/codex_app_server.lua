@@ -34,10 +34,16 @@ function M.decode(msg, state)
   elseif method == "turn/started" then
     return { { kind = "first_response" } }
   elseif method == "item/agentMessage/delta" then
-    state.text_items = state.text_items or {}
-    state.text_items[p.itemId] = true
+    if p.itemId ~= nil then
+      state.text_items = state.text_items or {}
+      state.text_items[p.itemId] = true
+    end
     return { { kind = "text", delta = p.delta or "" } }
   elseif method == "item/reasoning/summaryTextDelta" or method == "item/reasoning/textDelta" then
+    if p.itemId ~= nil then
+      state.reasoning_items = state.reasoning_items or {}
+      state.reasoning_items[p.itemId] = true
+    end
     return { { kind = "thinking", delta = p.delta or "" } }
   elseif method == "item/started" or method == "item/completed" then
     local item = p.item
@@ -52,6 +58,21 @@ function M.decode(msg, state)
         end
         if not streamed then
           return { { kind = "text", delta = item.text or "" } }
+        end
+      end
+      return {}
+    end
+    -- Same dedup as agentMessage above: a reasoning item that already streamed its text through
+    -- `item/reasoning/*Delta` must not also render the full text again on `item/completed`, or
+    -- the whole thinking block appears twice.
+    if item.type == "reasoning" then
+      if method == "item/completed" then
+        local streamed = state.reasoning_items and state.reasoning_items[item.id]
+        if state.reasoning_items then
+          state.reasoning_items[item.id] = nil
+        end
+        if not streamed and item.text and item.text ~= "" then
+          return { { kind = "thinking", delta = item.text } }
         end
       end
       return {}
