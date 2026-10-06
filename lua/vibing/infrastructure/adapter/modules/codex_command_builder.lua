@@ -117,6 +117,9 @@ M.LIGHTWEIGHT_ARGS = {
 --- quietly undo either. On every other branch this is what turns codex's own approval requests on
 --- (#861) — the argv is the duplex reuse key, so changing it starts a fresh process and therefore
 --- reaches resumed threads as well as new ones.
+---
+--- Returning nothing means "say nothing", which is the right answer on the exec path and the wrong
+--- one on the resident path; `resident_permission_args` is where that difference is decided.
 --- @param ctx Vibing.RequestContext
 --- @return string[]
 local function approval_policy_args(ctx)
@@ -134,31 +137,46 @@ end
 --- the prompt.
 --- @param ctx Vibing.RequestContext
 --- @return string[]
-function M.permission_args(ctx)
-  if ctx.opts._process_model == "duplex" then
-    -- `bypassPermissions` already means "ask nothing" and `plan` already means "write nothing", so
-    -- neither consults `approval_policy_args` -- a configured policy must not quietly undo either.
-    if ctx.opts.permission_mode == "bypassPermissions" then
-      return { "-c", 'sandbox_mode="danger-full-access"', "-c", 'approval_policy="never"' }
-    elseif ctx.opts.permission_mode == "plan" then
-      return { "-c", 'sandbox_mode="read-only"', "-c", 'approval_policy="never"' }
-    end
-    -- A fresh table, never the profile's own: `CodexPermissionProfile.args` is memoised per cwd,
-    -- so extending what it returned would append to the cache and grow the argv on every turn.
-    local args = vim.list_extend({}, CodexPermissionProfile.args(ctx.opts.cwd, ctx.config))
-    if #args == 0 then
-      args = { "-c", 'sandbox_mode="workspace-write"' }
-    end
-    local policy = approval_policy_args(ctx)
-    if #policy == 0 then
-      -- Duplex only, and not a tidy default: an approval request this transport cannot route to a
-      -- human is declined, so leaving the policy at codex's own turns a sandboxed action into a
-      -- silent denial instead of something vibing's PreToolUse hook and permission rules get to
-      -- decide. The oneshot path below has no such channel to fail on and keeps codex's default.
-      policy = { "-c", 'approval_policy="never"' }
-    end
-    return vim.list_extend(args, policy)
+--- The permission mapping for a resident app-server.
+---
+--- Its own builder rather than a branch inside `permission_args`, because "is this call duplex"
+--- is already a first-class condition on the parts list (`when = "duplex"`), which is how every
+--- other argv difference in this descriptor is stated. A second spelling of the same condition
+--- inside a builder is one the parts list cannot see.
+---
+--- Two things differ from the exec mapping, and only two. `-s` does not exist here, so every mode
+--- travels as a `-c` override -- the shape exec already uses when resuming. And the approval
+--- policy is **always stated**, never left at codex's own default: a request this transport
+--- cannot put in front of a human is declined (#861 routes the ones it can, and refuses the rest
+--- when there is no chat to ask or the configured wait is longer than the backend was measured to
+--- tolerate), so an unstated policy turns a sandboxed action into a silent denial instead of
+--- something vibing's own PreToolUse hook and permission rules get to decide. `never` unless the
+--- user asked for something else; the exec path below has no such channel to fail on and keeps
+--- passing nothing.
+--- @param ctx Vibing.RequestContext
+--- @return string[]
+function M.resident_permission_args(ctx)
+  -- `bypassPermissions` already means "ask nothing" and `plan` already means "write nothing", so
+  -- neither consults the configured policy -- it must not quietly undo either.
+  if ctx.opts.permission_mode == "bypassPermissions" then
+    return { "-c", 'sandbox_mode="danger-full-access"', "-c", 'approval_policy="never"' }
+  elseif ctx.opts.permission_mode == "plan" then
+    return { "-c", 'sandbox_mode="read-only"', "-c", 'approval_policy="never"' }
   end
+
+  local profile_args = CodexPermissionProfile.args(ctx.opts.cwd, ctx.config)
+  -- A fresh table, never the profile's own: `CodexPermissionProfile.args` is memoised per cwd,
+  -- so appending below would grow the cached argv on every turn.
+  local args = #profile_args > 0 and vim.list_extend({}, profile_args) or { "-c", 'sandbox_mode="workspace-write"' }
+
+  local policy = approval_policy_args(ctx)
+  if #policy == 0 then
+    policy = { "-c", 'approval_policy="never"' }
+  end
+  return vim.list_extend(args, policy)
+end
+
+function M.permission_args(ctx)
   local opts, session_id, config = ctx.opts, ctx.session_id, ctx.config
   local cmd = {}
   local permission_mode = opts.permission_mode
@@ -209,9 +227,10 @@ end
 --- app-server accepts the hook override but not exec's trust-bypass flag.
 --- The protocol checks hooks/list before starting a thread, rather than silently losing the gate.
 function M.resident_hook_args(ctx)
+  local trust_flag = require("vibing.infrastructure.hooks.codex_settings_generator").TRUST_FLAG
   local args = {}
   for _, arg in ipairs(ctx.hook_arg or {}) do
-    if arg ~= "--dangerously-bypass-hook-trust" then
+    if arg ~= trust_flag then
       table.insert(args, arg)
     end
   end
@@ -219,9 +238,13 @@ function M.resident_hook_args(ctx)
 end
 
 --- app-server has no -m flag. Use the same model resolver as the exec request.
+---
+--- The value is rendered as TOML, not JSON. The two agree on a plain model name, which is why
+--- `vim.json.encode` passed every case anyone tried; `core/utils/toml.lua` is the one place the
+--- `-c` value side is spelled, and every other codex override already goes through it.
 function M.resident_model_args(ctx)
   local model = NonClaudeModel.resolve(ctx.opts, ctx.config)
-  return model and { "-c", "model=" .. vim.json.encode(model) } or {}
+  return model and { "-c", "model=" .. require("vibing.core.utils.toml").string(model) } or {}
 end
 
 --- Build the `codex exec --json` command array from the request spec in `backends/codex.lua`.

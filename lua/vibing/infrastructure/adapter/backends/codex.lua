@@ -51,7 +51,11 @@ local M = {
       -- setting after --ignore-user-config.
       { kind = "extra", fn = CodexCommandBuilder.auto_compact_args, unless = "lightweight" },
       vim.tbl_extend("force", { kind = "args", when = "lightweight" }, CodexCommandBuilder.LIGHTWEIGHT_ARGS),
-      { kind = "extra", fn = CodexCommandBuilder.permission_args, unless = "lightweight" },
+      -- One mapping per transport, chosen here rather than inside the builder: app-server has no
+      -- `-s` and no native approval dialog, so its permission argv is a different shape, not a
+      -- variation on this one.
+      { kind = "extra", fn = CodexCommandBuilder.permission_args, unless = { "lightweight", "duplex" } },
+      { kind = "extra", fn = CodexCommandBuilder.resident_permission_args, when = "duplex" },
       { kind = "extra", fn = CodexCommandBuilder.plugin_args, unless = "lightweight" },
       -- Codex's `developer_instructions` is reserved for the plugin material, so the language
       -- sentence rides on the prompt.

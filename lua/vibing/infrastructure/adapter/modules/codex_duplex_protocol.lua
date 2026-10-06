@@ -8,11 +8,12 @@ local Processor = require("vibing.infrastructure.adapter.modules.stream_decoder"
 local M = {}
 
 local function fail(record, message)
-  local turn = record._turn
+  local Routing = require("vibing.infrastructure.adapter.modules.duplex_routing")
+  local turn = Routing.turn_of(record)
   if turn then
     turn.complete(
       require("vibing.infrastructure.adapter.modules.turn_outcome").ended(
-        { turn_id = turn.turn_id, process_id = record.process_id },
+        Routing.ids_of(record, turn),
         table.concat(turn.context.output, ""),
         message
       )
@@ -83,6 +84,18 @@ local function notification(record, msg)
   render(record, msg)
 end
 
+--- Ask the app-server to stop the turn it is running.
+---
+--- Reached from two places that must not drift: `M.interrupt`, and `start_turn`'s own reply for a
+--- cancel that arrived before there was a turn id to name. Nothing waits on the response -- the
+--- turn ends on `turn/completed` with `status = "interrupted"`.
+--- @param record Vibing.DuplexProcess
+--- @return boolean sent
+local function send_interrupt(record)
+  local rpc = record._rpc
+  return request(record, "turn/interrupt", { threadId = rpc.thread_id, turnId = rpc.turn_id }, function() end)
+end
+
 local function start_turn(record, prompt, params)
   local rpc = record._rpc
   rpc.starting_turn, rpc.queued = true, {}
@@ -97,10 +110,11 @@ local function start_turn(record, prompt, params)
       return
     end
     rpc.turn_id, rpc.starting_turn = result.turn.id, false
-    record.decoder_state.started, record.decoder_state.text_items, record.decoder_state.reasoning_items =
-      nil, nil, nil
-    -- Per turn, so the table that lets a fileChange approval show its diff cannot grow across a
-    -- resident process's whole life. An approval always arrives in the turn its item started in.
+    -- Per-item state belongs to the turn that opened the items, not to the resident process, so
+    -- nothing survives into the next turn and nothing accumulates over the process's whole life.
+    record.decoder_state.started, record.decoder_state.streamed_items = nil, nil
+    -- Same reasoning, one table further out: what lets a fileChange approval show its diff is
+    -- filed per item too, and an approval always arrives in the turn its item started in (#861).
     rpc.file_changes = {}
     local queued = rpc.queued
     rpc.queued = {}
@@ -112,7 +126,7 @@ local function start_turn(record, prompt, params)
     -- through to a hard kill of the whole resident process). Honour it now that one exists.
     if rpc.interrupt_pending then
       rpc.interrupt_pending = false
-      request(record, "turn/interrupt", { threadId = rpc.thread_id, turnId = rpc.turn_id }, function() end)
+      send_interrupt(record)
     end
   end)
 end
@@ -191,11 +205,13 @@ function M.send_prompt(record, prompt, params)
         end)
         return
       end
+      -- The same filter the argv itself went through, asked of the one place that owns it rather
+      -- than spelled a second time: a command the user is told to run must be the command they
+      -- were about to run, and a third copy of the flag literal would drift from it in silence.
+      local Builder = require("vibing.infrastructure.adapter.modules.codex_command_builder")
       local review = { vim.fn.shellescape(params.argv[1]) }
-      for _, arg in ipairs(params.hook_arg or {}) do
-        if arg ~= "--dangerously-bypass-hook-trust" then
-          table.insert(review, vim.fn.shellescape(arg))
-        end
+      for _, arg in ipairs(Builder.resident_hook_args({ hook_arg = params.hook_arg })) do
+        table.insert(review, vim.fn.shellescape(arg))
       end
       fail(
         record,
@@ -215,7 +231,15 @@ function M.send_prompt(record, prompt, params)
   end)
 end
 
-function M.process_line(record, line, context)
+--- One decoded line from the resident app-server.
+---
+--- Takes **no context**. Most of what this module renders is not synchronous with a line at all --
+--- a handshake failure, a deferred `turn/start` reply, a locally-built notice -- so the turn a
+--- message belongs to has to be resolved when it is rendered, not when the line arrived. `render`
+--- is the one place that happens; a context handed in here would be the stale half of two answers.
+--- @param record Vibing.DuplexProcess
+--- @param line string
+function M.process_line(record, line)
   local ok, msg = pcall(vim.json.decode, line)
   if not ok or type(msg) ~= "table" or not record._rpc then
     return
@@ -295,7 +319,7 @@ function M.interrupt(record)
   if not rpc.turn_id then
     return false
   end
-  return request(record, "turn/interrupt", { threadId = rpc.thread_id, turnId = rpc.turn_id }, function() end)
+  return send_interrupt(record)
 end
 
 return M
