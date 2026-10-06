@@ -79,8 +79,12 @@ function M.processor(decoder, vocabulary)
       return false
     end
 
+    -- `type` and nothing else: every caller of this entry point reads stream-json off a stdout
+    -- pipe. A resident JSON-RPC transport's `method`-keyed messages reach the renderer through
+    -- `apply`, never through here, so widening the gate to accept them would only let a malformed
+    -- stream-json line past the one check that rejects it.
     local ok, msg = pcall(vim.json.decode, line)
-    if not ok or type(msg) ~= "table" or not (msg.type or msg.method) then
+    if not ok or type(msg) ~= "table" or not msg.type then
       return false
     end
 
