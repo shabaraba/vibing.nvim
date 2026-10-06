@@ -167,6 +167,8 @@ local function write(record, payload)
   return ok and type(written) == "number" and written > 0
 end
 
+M.write = write
+
 --- Begin a turn by handing the CLI a user message on stdin.
 ---
 --- `--input-format stream-json` takes the same envelope the CLI emits, so the prompt travels as a

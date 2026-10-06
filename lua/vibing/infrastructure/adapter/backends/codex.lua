@@ -16,6 +16,8 @@ end
 ---@type Vibing.BackendDescriptor
 local M = {
   id = "codex",
+  process = "duplex",
+  duplex = require("vibing.infrastructure.adapter.modules.codex_duplex_protocol"),
 
   features = {
     streaming = true,
@@ -30,14 +32,18 @@ local M = {
   request = {
     binary = CodexCommandBuilder.BINARY,
     parts = {
-      { kind = "args", "exec" },
-      { kind = "resume", subcommand = "resume" },
-      { kind = "args", "--json" },
+      -- app-server does not implement exec's hook-trust bypass; verify trust over RPC.
+      { kind = "args", "app-server", "--listen", "stdio://", when = "duplex" },
+      { kind = "extra", fn = CodexCommandBuilder.resident_hook_args, when = "duplex" },
+      { kind = "args", "exec", unless = "duplex" },
+      { kind = "resume", subcommand = "resume", unless = "duplex" },
+      { kind = "args", "--json", unless = "duplex" },
       -- The transport's fragment verbatim: the `-c hooks.PreToolUse` pair and the trust bypass.
       -- Never on a lightweight call, whatever was handed in: the conformance suite passes one to
       -- prove the request drops it, since a hook nothing can answer is what stalls the turn.
-      { kind = "hook_arg", unless = "lightweight" },
-      { kind = "model", flag = "-m", names = "native" },
+      { kind = "hook_arg", unless = { "lightweight", "duplex" } },
+      { kind = "model", flag = "-m", names = "native", unless = "duplex" },
+      { kind = "extra", fn = CodexCommandBuilder.resident_model_args, when = "duplex" },
       -- No dedicated exec flag; a per-process config override applies to fresh and resumed
       -- threads alike without changing the user's config.toml.
       { kind = "effort", config = 'model_reasoning_effort="%s"' },
@@ -45,11 +51,15 @@ local M = {
       -- setting after --ignore-user-config.
       { kind = "extra", fn = CodexCommandBuilder.auto_compact_args, unless = "lightweight" },
       vim.tbl_extend("force", { kind = "args", when = "lightweight" }, CodexCommandBuilder.LIGHTWEIGHT_ARGS),
-      { kind = "extra", fn = CodexCommandBuilder.permission_args, unless = "lightweight" },
+      -- One mapping per transport, chosen here rather than inside the builder: app-server has no
+      -- `-s` and no native approval dialog, so its permission argv is a different shape, not a
+      -- variation on this one.
+      { kind = "extra", fn = CodexCommandBuilder.permission_args, unless = { "lightweight", "duplex" } },
+      { kind = "extra", fn = CodexCommandBuilder.resident_permission_args, when = "duplex" },
       { kind = "extra", fn = CodexCommandBuilder.plugin_args, unless = "lightweight" },
       -- Codex's `developer_instructions` is reserved for the plugin material, so the language
       -- sentence rides on the prompt.
-      { kind = "prompt", language_prefix = true },
+      { kind = "prompt", language_prefix = true, unless = "duplex" },
     },
   },
   build = CodexCommandBuilder.build,

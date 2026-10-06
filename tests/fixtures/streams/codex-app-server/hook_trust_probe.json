@@ -1,0 +1,32 @@
+{
+  "cli_version": "0.159.2",
+  "argv": [
+    "codex",
+    "--dangerously-bypass-hook-trust",
+    "app-server",
+    "-c",
+    "hooks.PreToolUse=[{hooks=[{type=\"command\",command=\"true\"}]}]"
+  ],
+  "requests": ["initialize", "initialized", "hooks/list"],
+  "session_flag_hooks": [
+    {
+      "key": "/<session-flags>/config.toml:pre_tool_use:0:0",
+      "eventName": "preToolUse",
+      "handlerType": "command",
+      "command": "true",
+      "async": false,
+      "matcher": null,
+      "timeoutSec": 600,
+      "statusMessage": null,
+      "additionalContextLimit": null,
+      "sourcePath": "/<session-flags>/config.toml",
+      "source": "sessionFlags",
+      "pluginId": null,
+      "displayOrder": 4,
+      "enabled": true,
+      "isManaged": false,
+      "currentHash": "sha256:a7de97b60e1412f8e936f33ad7e97c04dfe69190d43e61d14c46265643383835",
+      "trustStatus": "untrusted"
+    }
+  ]
+}

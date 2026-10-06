@@ -723,14 +723,17 @@ same way. Available levels can depend on the selected model. |/effort| updates
 this frontmatter field.
 
 `process` chooses how the CLI is run for this chat, overriding
-`backends.claude.process`. `oneshot` (the default) starts a CLI process per
-message and lets it exit when the answer is done. `duplex` starts one process
-for the chat and feeds every later message to it on its stdin, so the CLI's
-startup — plugins, MCP servers, CLAUDE.md, the system prompt — is paid once
-instead of once per message; the process is stopped after five idle minutes,
-when the chat's buffer is unloaded, or when Neovim exits. Claude only, and
-ignored on every other backend. It costs about 200MB of memory while idle,
-which is why it is opt-in. Title generation and |:VibingSummarize| are always
+`backends.<agent>.process` (Claude and Codex). `oneshot` (the default) starts
+a CLI process per message and lets it exit when the answer is done. `duplex`
+starts one process for the chat and feeds every later message to it on its
+stdin, so the CLI's startup — plugins, MCP servers, CLAUDE.md, the system
+prompt — is paid once instead of once per message; the process is stopped
+after five idle minutes, when the chat's buffer is unloaded, or when Neovim
+exits. Supported by Claude and Codex; ignored on other backends. Claude holds
+about 200MB while idle, which is why it is opt-in. Codex uses app-server and
+requires its staged PreToolUse hook to be trusted in Codex. An untrusted or
+modified hook stops startup with a message before inference; use `process:
+oneshot` meanwhile. Title generation and |:VibingSummarize| are always
 `oneshot`, and so is a subagent chat.
 
 `orchestrated` and `orchestrated_by` record which chat drove which. They are

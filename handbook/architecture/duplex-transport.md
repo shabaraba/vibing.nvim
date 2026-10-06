@@ -1,11 +1,11 @@
 # The Duplex Transport: one resident CLI process per chat
 
-Opt-in, claude only, default off. Turn it on with `backends.claude.process = "duplex"` or a chat's
+Opt-in for Claude and Codex, default off. Turn it on with `backends.claude.process = "duplex"` or a chat's
 own `process: duplex` frontmatter. Why it exists, what it cost, and the five things that had to move
 before it could work at all.
 
 Chats that can never use it, whatever the configuration says: a lightweight call (title generation,
-`/summarize`), a subagent chat, and every backend other than claude. `process_model.lua` is the one
+`/summarize`), a subagent chat, and every backend other than Claude and Codex. `process_model.lua` is the one
 place those exclusions live.
 
 Identifier background is `processes-and-turns.md`; this file assumes `process_id` and `turn_id` are
@@ -359,3 +359,44 @@ back before killing anything.
 `transport` was taken. `Vibing.HookSpec.transport` names one of `settings_file` /
 `config_override` / `plugin_dir` / `project_dir`, and two conformance specs branch on it. A second,
 unrelated `transport` in the same descriptor is how a branch ends up reading the wrong one.
+
+## Codex app-server
+
+Set `backends.codex.process = "duplex"`, or `process: duplex` in a Codex chat.
+The existing per-chat pool, process/turn registries, five-minute idle reclamation and
+interrupt watchdog also serve Codex. Lightweight calls and subagent chats remain oneshot.
+
+Codex uses newline-delimited JSON-RPC on `codex app-server --listen stdio://`.
+`codex_duplex_protocol.lua` performs initialize → initialized → hooks/list → thread/start (or
+thread/resume) → turn/start; subsequent messages send only turn/start. Replies are
+correlated by request id. Notifications arriving before the turn/start reply are queued
+until its turn id is known; another thread or turn cannot finish the active request.
+`turn/interrupt` addresses that same thread and turn, keeping the process for the next
+message. Startup or protocol failures reclaim the process, so the next send can resume.
+
+`codex_app_server.lua` translates text deltas, reasoning, tool items, cumulative token
+usage and terminal status into the shared renderer's events. An agentMessage completion
+is displayed only when no deltas were received, preventing duplicate output. Failed and
+interrupted terminal statuses are failed responses even though the process remains alive.
+
+MCP, developer instructions, model, effort, compaction and sandbox settings are process
+config overrides. Changed overrides cause the pool to replace the process and resume
+the thread. The existing PreToolUse hook remains the approval and diff-baseline route. Codex
+app-server does **not** inherit exec's `--dangerously-bypass-hook-trust`: a root CLI
+flag is accepted but ignored for this subcommand (Codex 0.159.2). Before inference,
+`hooks/list` must report the staged script as enabled and `trusted` or `managed`.
+For an untrusted or modified hook, vibing.nvim matches the exact session-flag
+PreToolUse command it staged, then uses Codex's `config/batchWrite` trust route with
+that hook's reported key and current hash. It lists hooks again before starting a
+thread. Missing hooks, mismatched commands, and writes that do not result in trust
+produce an actionable error and reclaim the process. The startup error includes a
+shell-quoted CLI command with the exact hook override for manual review through
+`/hooks`. This check is intentionally part of startup, not an assumption based on argv.
+Native app-server approval requests are declined; unsupported server requests receive
+a JSON-RPC error and a visible notice rather than leaving Codex blocked. Native approval
+and user-input dialogs are not implemented by this transport.
+
+Verification: adapter tests exercise two turns on one process, resume, early/foreign
+notifications, interrupt, failures, native request denial and replacement races. The
+local Codex app-server was probed without inference for initialization and hooks/list.
+Real model latency and full native approval UI parity have not been measured.

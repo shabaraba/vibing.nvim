@@ -163,11 +163,18 @@ function M.run(params)
   -- thing, and one of them travelling under a second identity is a third id to keep in step.
   params.event_context.promptUuid = M.prompt_uuid(ids.turn_id)
 
+  record.protocol = descriptor.duplex
   local complete = DuplexTurn.open(params, record, chat_key)
 
   local prompt =
     RequestBuilder.prompt_text(descriptor.request, params.prompt, params.opts, params.opts._session_id, params.config)
-  if not DuplexProcess.send_prompt(record, prompt or params.prompt, params.event_context.promptUuid) then
+  local sent
+  if record.protocol then
+    sent = record.protocol.send_prompt(record, prompt or params.prompt, params)
+  else
+    sent = DuplexProcess.send_prompt(record, prompt or params.prompt, params.event_context.promptUuid)
+  end
+  if not sent then
     -- Reported before the kill, for the reason `turn_outcome.first_response_timeout` states:
     -- `Pool.stop` completes this turn as "Cancelled" on its way out, and `complete` is idempotent,
     -- so killing first would replace this message with one that says nothing about what went wrong.

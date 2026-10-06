@@ -157,6 +157,8 @@ backends = {
                             -- A value already exported in the environment wins over this.
   },
   codex = {
+    process = "oneshot",    -- Set "duplex" to keep one codex app-server per chat.
+                            -- Chat frontmatter `process:` overrides this.
     profile_file = ".vibing/codex-permissions.toml",
                             -- Project-local OS sandbox profile; false disables loading it.
                             -- See "Project-local Codex permission profiles" below.
