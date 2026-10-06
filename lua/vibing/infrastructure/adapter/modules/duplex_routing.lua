@@ -72,7 +72,10 @@ function M.line_router(chat_key, descriptor)
     local context = turn and turn.context or record._idle_context
     if context then
       if descriptor.duplex then
-        descriptor.duplex.process_line(record, line, context)
+        -- Deliberately not handed the context resolved above: a wire protocol renders from
+        -- deferred callbacks too, so it resolves the turn when it renders rather than when the
+        -- line arrived. What the guard above still decides is whether anything is listening at all.
+        descriptor.duplex.process_line(record, line)
       else
         descriptor.event_processor.processLine(line, context)
       end

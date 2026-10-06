@@ -73,7 +73,9 @@ local PluginScaffold = require("vibing.infrastructure.plugins.scaffold")
 ---  (anthropics/claude-code#87675). Absent means this backend never backgrounds a subagent, so
 ---  `BackgroundTasks.unreported()` is always empty for it and this is never called.
 ---@field duplex? table Resident wire protocol: send_prompt(record, prompt, params),
----  process_line(record, line, context), interrupt(record, seq). Absent uses stream-json.
+---  process_line(record, line), interrupt(record, seq). Absent uses stream-json. `process_line`
+---  takes no context: a protocol renders from deferred callbacks as well as from lines, so it
+---  resolves the turn itself rather than being handed the one that was current when a line landed.
 ---@field process? "oneshot"|"duplex" The most capable process model this backend can run; absent
 ---  means `oneshot` only. Not the default — that is `oneshot` for everyone, and a chat opts in
 ---  through `backends.<id>.process` or its own frontmatter (`process_model.lua`). Named `process`
