@@ -254,12 +254,10 @@ describe("codex_settings_generator", function()
       -- Registering the hook without a script codex can run is the case that *hangs* the turn,
       -- which is strictly worse than skipping the gate. So this fails loudly and `codex_cli` drops
       -- the hook; it must never come back with a `-c` pair pointing at nothing.
-      local original = SettingsGenerator.get_hook_script_path
       SettingsGenerator.get_hook_script_path = function()
         return tmp_dir .. "/definitely-not-here.sh"
       end
       local ok, err = pcall(CodexSettingsGenerator.get_hook_args, tmp_dir)
-      SettingsGenerator.get_hook_script_path = original
 
       assert.is_false(ok)
       assert.is_truthy(tostring(err):find("hook script", 1, true))

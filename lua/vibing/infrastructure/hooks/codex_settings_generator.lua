@@ -110,9 +110,8 @@ end
 --- An identical copy with permissions 0755 is reused; otherwise the write goes through a temp file
 --- and a rename because chats share this path. A reader catching a truncated script would get a
 --- hook that fails in a way none of the three decisions covers. `rename(2)` is atomic within a
---- directory. One shared path is safe only
---- because the contents are identical for every chat -- per-process identity (`VIBING_PROCESS_ID`,
---- the RPC port) travels in codex's environment, not in this file.
+--- directory. One shared path is safe because the contents are identical for every chat:
+--- per-process identity (`VIBING_PROCESS_ID`, the RPC port) travels in codex's environment.
 --- @param cwd? string Working directory (defaults to vim.fn.getcwd())
 --- @return string path Absolute path to the staged script
 function M.ensure(cwd)

@@ -1,10 +1,8 @@
 -- Compile Lua with Neovim's parser without executing it.
 -- Usage: nvim --headless -u NONE -i NONE -l scripts/check-lua.lua [file ...]
 local root = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h")
-local files = {}
-if arg and #arg > 0 then
-  files = arg
-else
+local files = arg or {}
+if #files == 0 then
   files = vim.fn.globpath(root .. "/lua", "**/*.lua", false, true)
 end
 

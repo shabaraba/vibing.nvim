@@ -40,6 +40,7 @@ end
 
 describe("E2E: AskUserQuestion - no repeated questions", function()
   local nvim_instance
+  local report_path
 
   before_each(function()
     nvim_instance = helper.spawn_nvim_instance({
@@ -50,6 +51,10 @@ describe("E2E: AskUserQuestion - no repeated questions", function()
 
   after_each(function()
     helper.cleanup_instance(nvim_instance)
+    if report_path then
+      vim.fn.delete(report_path)
+      report_path = nil
+    end
   end)
 
   it("should display AskUserQuestion prompt exactly once", function()
@@ -106,7 +111,7 @@ describe("E2E: AskUserQuestion - no repeated questions", function()
     -- An untouched choice list is not an answer. Claude now holds the asking turn open and
     -- receives the user's text as the MCP tool result, so answering starts no second turn.
     -- Observe actual completion rather than the existing Assistant / unsent User headers.
-    local report_path = vim.fn.tempname()
+    report_path = vim.fn.tempname()
     vim.fn.rpcrequest(nvim_instance.job_id, "nvim_exec_lua", [[
       local report_path = ...
       local bufnr = vim.api.nvim_get_current_buf()
@@ -124,14 +129,12 @@ describe("E2E: AskUserQuestion - no repeated questions", function()
     ]], { report_path })
     helper.send_keys(nvim_instance, "<CR>")
 
-    local deadline = vim.loop.hrtime() + TIMEOUTS.ASSISTANT_RESPONSE * 1000000
-    while vim.fn.filereadable(report_path) == 0 and vim.loop.hrtime() < deadline do
-      vim.loop.sleep(200)
-    end
-    assert.equals(1, vim.fn.filereadable(report_path), "Claude should complete the turn after receiving Red")
+    ok = vim.wait(TIMEOUTS.ASSISTANT_RESPONSE, function()
+      return vim.fn.filereadable(report_path) == 1
+    end, 200)
+    assert.is_true(ok, "Claude should complete the turn after receiving Red")
     local completed_text = table.concat(vim.fn.readfile(report_path), "\n")
     assert.is_nil(helper._turn_failure(completed_text, 1), "The answered turn must finish without an error")
-    vim.fn.delete(report_path)
 
     -- Verify prompt still appears only once (not re-inserted after answering)
     local count = count_lines_matching(nvim_instance, "^1%. Red$")
