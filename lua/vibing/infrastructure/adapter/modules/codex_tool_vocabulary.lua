@@ -10,13 +10,17 @@ local tools_constants = require("vibing.core.constants.tools")
 
 local M = {}
 
----Codexの組み込みツールだけを既定で許可する。共有の許可判定はバックエンドを知らず、
+---Codexの制御ツールだけを既定で許可する。共有の許可判定はバックエンドを知らず、
 ---このpredicateを通常のALWAYS_ALLOWED_TOOLSと同じ位置で評価する。
 ---@param tool_name string 正規化後のツール名
 ---@return boolean
 function M.is_always_allowed(tool_name)
   -- functions経由のMCP名も組み込みツールの名前空間パターンに巻き込まない。
   if tool_name:lower():find("mcp__", 1, true) then
+    return false
+  end
+  -- functions*に含まれていても通常のツールへ変換できる操作は通常の許可設定に従う。
+  if tools_constants.VALID_TOOLS_MAP[tool_name] or M.to_canonical(tool_name) then
     return false
   end
   local matchers = require("vibing.infrastructure.permissions.matchers")
@@ -53,8 +57,11 @@ local NATIVE_TO_CANONICAL = {
   -- Reads an image off disk to attach it. `Read` is in ALWAYS_ALLOWED_TOOLS, so this also stops
   -- codex prompting for every image the way an unmapped name does.
   view_image = "Read",
+  read_file = "Read",
   web_search = "WebSearch",
   webrun = "WebSearch",
+  ["web.run"] = "WebSearch",
+  web__run = "WebSearch",
 }
 
 -- MCP server labels are normalized before Codex exposes them as tool names. In particular, the
@@ -84,6 +91,9 @@ function M.to_canonical(native_tool_name)
     or native_tool_name:match("^functions(.+)$")
   if plain_name and NATIVE_TO_CANONICAL[plain_name] then
     return NATIVE_TO_CANONICAL[plain_name]
+  end
+  if plain_name and tools_constants.VALID_TOOLS_MAP[plain_name] then
+    return plain_name
   end
   return NATIVE_TO_CANONICAL[native_tool_name]
 end

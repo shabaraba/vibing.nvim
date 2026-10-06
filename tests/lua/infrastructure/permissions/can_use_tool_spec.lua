@@ -45,6 +45,17 @@ describe("can_use_tool", function()
       assert.equals("ask", decision("mcp__other__write"))
     end)
 
+    it("keeps canonical operations under their existing permission settings", function()
+      for _, name in ipairs({ "Bash", "Edit", "Write", "WebSearch", "WebFetch" }) do
+        assert.equals("ask", decision(name), name)
+        assert.equals("allow", decision(name, { allowed_tools = { name } }), name)
+      end
+      for _, name in ipairs({ "Read", "Glob", "Grep" }) do
+        assert.equals("allow", decision(name), name)
+        assert.equals("deny", decision(name, { denied_tools = { name } }), name)
+      end
+    end)
+
     it("respects explicit ask, deny and session deny", function()
       assert.equals("ask", decision("collaborationspawn_agent", { asked_tools = { "collaboration*" } }))
       assert.equals("deny", decision("collaborationspawn_agent", { denied_tools = { "collaboration*" } }))

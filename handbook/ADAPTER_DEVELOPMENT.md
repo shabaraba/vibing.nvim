@@ -125,8 +125,10 @@ the CLI never sends is inert, a missing one lets a deny rule fall open.
 An optional `is_always_allowed(tool_name)` predicate classifies backend built-ins after name
 normalization. The permission handler passes it to the shared evaluator alongside the chat's
 lists. It is evaluated with `ALWAYS_ALLOWED_TOOLS`, after deny rules and session denials, and
-respects explicit `ask`. Codex uses this to permit its built-ins without requiring allow-list
-entries for every control tool; the patterns live in `core/constants/tools.lua`. MCP tool names
+respects explicit `ask`. Codex uses this to permit control tools without requiring allow-list
+entries for each one; the patterns live in `core/constants/tools.lua`. Operations mapped to
+canonical tools such as Bash, Edit, Read and WebSearch use their normal permission settings,
+including when wrapped in the `functions` namespace. MCP tool names
 are excluded from that predicate, including names wrapped in the `functions` namespace. Other
 backends that omit it keep their existing behavior. Hook responses still defer to the CLI's
 native permission gate, so this classification does not override its sandbox or approvals.

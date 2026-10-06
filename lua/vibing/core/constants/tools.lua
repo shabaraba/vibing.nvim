@@ -60,27 +60,13 @@ M.ALWAYS_ALLOWED_TOOLS = {
 ---@type table<string, boolean>
 M.ALWAYS_ALLOWED_TOOLS_MAP = to_map(M.ALWAYS_ALLOWED_TOOLS)
 
----Codexの組み込みツール。Codexのvocabulary経由でのみ常時許可するので、他バックエンドには
+---Codexの制御ツール。Codexのvocabulary経由でのみ常時許可するので、他バックエンドには
 ---適用しない。ALWAYS_ALLOWED_TOOLSと同じく明示的なask/denyは優先する。
 ---名前空間付き・名前空間を連結したフック名も扱う。MCPはvocabulary側で除外する。
+---Bash/Edit/Read/WebSearch等へマッピングされる操作は通常の許可設定に従う。
 ---@type string[]
 M.CODEX_ALWAYS_ALLOWED_TOOL_PATTERNS = {
-  "Bash",
-  "Read",
-  "Edit",
-  "Write",
-  "Glob",
-  "Grep",
-  "WebSearch",
-  "WebFetch",
-  "shell",
-  "shell_command",
-  "exec_command",
-  "unified_exec",
   "write_stdin",
-  "apply_patch",
-  "view_image",
-  "web_search",
   "update_plan",
   "request_user_input",
   "tool_search",
@@ -92,7 +78,6 @@ M.CODEX_ALWAYS_ALLOWED_TOOL_PATTERNS = {
   "list_agents",
   "send_message",
   "report_agent_job_result",
-  "read_file",
   "list_dir",
   "grep_files",
   "list_mcp_resources",
@@ -104,7 +89,6 @@ M.CODEX_ALWAYS_ALLOWED_TOOL_PATTERNS = {
   "functions*",
   "collaboration*",
   "clock*",
-  "web*",
   "image_gen*",
   "multi_tool_use*",
 }

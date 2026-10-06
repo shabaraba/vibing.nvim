@@ -135,7 +135,7 @@ describe("permission handler tool vocabulary", function()
       permissions_ask = {},
       _tool_vocabulary = vocabulary,
     })
-    for index, name in ipairs({ "collaborationspawn_agent", "functionscreate_goal", "apply_patch", "Bash" }) do
+    for index, name in ipairs({ "collaborationspawn_agent", "functionscreate_goal" }) do
       local id = "req-builtin-" .. index
       write_request(id, name, { command = "echo hello" })
       local result = permission.check_tool_permission({ request_id = id, process_id = CHAT.process_id })
@@ -170,6 +170,30 @@ describe("permission handler tool vocabulary", function()
         permission.check_tool_permission({ request_id = id, process_id = CHAT.process_id }).status
       )
     end
+  end)
+
+  it("keeps mapped operations subject to the normal allow list", function()
+    permission.set_active_opts(CHAT.turn_id, {
+      permission_mode = "dontAsk",
+      permissions_allow = { "Read" },
+      permissions_deny = {},
+      _tool_vocabulary = require("vibing.infrastructure.adapter.modules.codex_tool_vocabulary"),
+    })
+    for index, name in ipairs({
+      "exec_command", "functions.Bash", "apply_patch", "functions__Edit", "web.run", "functionsweb_search",
+    }) do
+      local id = "req-normal-policy-" .. index
+      write_request(id, name, { command = "echo hello" })
+      assert.equals(
+        "denied",
+        permission.check_tool_permission({ request_id = id, process_id = CHAT.process_id }).status
+      )
+    end
+    write_request("req-read-file", "functionsread_file", { path = "/tmp/example.lua" })
+    assert.equals(
+      "allowed",
+      permission.check_tool_permission({ request_id = "req-read-file", process_id = CHAT.process_id }).status
+    )
   end)
 
   it("maps the codex built-ins that reach the hook under their own names", function()
