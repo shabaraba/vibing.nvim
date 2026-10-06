@@ -29,6 +29,14 @@ local Decisions = require("vibing.infrastructure.adapter.modules.codex_native_de
 
 local M = {}
 
+--- The word a chat's prompt carries to say it belongs to **this** channel.
+---
+--- One definition, here rather than next to the backend that produces it, because the thing it
+--- selects is this registry: every reader (`approval_decision.consume`, `find_blocked`, `release`)
+--- is asking "which channel owes a response". A literal copied into any of them is a rename that
+--- compiles, draws a prompt, takes an answer, and sends it nowhere.
+M.KIND = "native"
+
 --- @class Vibing.PendingNativeApproval
 --- @field request_id string what this registry is keyed by
 --- @field chat_bufnr number|nil the chat whose prompt answers it

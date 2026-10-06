@@ -1254,8 +1254,12 @@ function ChatBuffer:send_message()
     set_pending_user_text = function(text)
       return self:set_pending_user_text(text)
     end,
-    insert_approval_request = function(tool, input, options, hook_request_id, waiting)
-      return self:insert_approval_request(tool, input, options, hook_request_id, waiting)
+    -- **全部そのまま渡す。** `kind` はどのチャネルの承認かを決める値で（#861）、ここで落ちても
+    -- 何もエラーにならない — プロンプトは描かれ、ユーザーは答えられ、その答えだけが別のレイヤの
+    -- 検証に落ちて黙って捨てられる。中継のクロージャが引数を1つ落とす故障は、この並びに
+    -- 7つ目を足す日にまた起きる
+    insert_approval_request = function(tool, input, options, hook_request_id, waiting, kind)
+      return self:insert_approval_request(tool, input, options, hook_request_id, waiting, kind)
     end,
     get_session_allow = function()
       return self:get_session_allow()

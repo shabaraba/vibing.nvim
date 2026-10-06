@@ -248,10 +248,14 @@ function M.execute(adapter, callbacks, message, config)
         subagents_lost
       )
     end,
-    on_approval_required = function(tool, input, options, hook_request_id, waiting)
+    on_approval_required = function(tool, input, options, hook_request_id, waiting, kind)
       -- permission.lua の vim.schedule 内から呼ばれるためすでにメインスレッド上
       -- 二重 vim.schedule を避けることで _pending_approval が add_user_section より確実に先に設定される
-      callbacks.insert_approval_request(tool, input, options, hook_request_id, waiting)
+      --
+      -- `kind` は「どのチャネルの承認か」（#861）。落とすと、プロンプトは描かれ、ユーザーは
+      -- 答えられ、**その答えだけが別レイヤの語彙検証に落ちて捨てられる** — どこにもエラーが
+      -- 出ないまま、CLI は待ち上限まで放置される
+      callbacks.insert_approval_request(tool, input, options, hook_request_id, waiting, kind)
 
       -- `waiting` は「このプロンプトは走り続けているターンを止めている」（#778）。
       -- kill する経路ではプロセスが死に、`_handle_response` → `add_user_section` が描画の

@@ -17,7 +17,8 @@ local Request = require("vibing.infrastructure.adapter.modules.codex_native_requ
 
 local M = {}
 
-M.KIND = "native"
+--- Restated, never redefined: the word lives with the registry it selects.
+M.KIND = require("vibing.infrastructure.rpc.pending_native_approvals").KIND
 
 --- The id this prompt is known by in the chat.
 ---

@@ -8,9 +8,11 @@
 --- to those lists here would widen a permission the user never granted, which is the failure #861
 --- names in its own description.
 ---
---- It is a separate module rather than a flag inside the other one so that the omission is visible
---- at the call site — `approval_decision.consume` dispatches in one line — and so that a change to
---- how hook approvals are spent cannot reach this path by accident.
+--- It is a separate module rather than a flag inside the other one so that a change to how hook
+--- approvals are spent cannot reach this path by accident. `approval_decision` dispatches to it
+--- from **three** places — `consume`, `find_blocked` and `release` — each asking the prompt's own
+--- `kind` which channel owes it something; they are three because the three answers differ, not
+--- because the knowledge is duplicated.
 ---
 --- Everything the two **do** share is shared: the returned shape is `Vibing.ConsumedApproval`, and
 --- the retry wording comes from `approval_decision.retry_message`, told explicitly what the chosen

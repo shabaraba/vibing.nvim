@@ -25,6 +25,10 @@
 --- returns what the caller should say; deciding *how* to say it is the caller's half.
 --- @module vibing.application.chat.approval_decision
 
+--- Required for its `KIND` alone — the one definition of "which channel owes this prompt a
+--- response". Written out three times below as a literal, it is a rename that compiles.
+local NativeApprovals = require("vibing.infrastructure.rpc.pending_native_approvals")
+
 local M = {}
 
 --- The four answers, in the vocabulary the whole feature shares: the option values
@@ -170,7 +174,7 @@ function M.consume(chat_buf, approval)
   -- 通してはいけない。分岐をここに置き、本体は別モジュールに出してあるのは、「どちらの意味を
   -- 適用したか」が呼び出し1行で読めるようにするため — 同じ関数の中に if で混ぜると、claude 側の
   -- 変更が codex 側の意味を黙って巻き込む
-  if pending.kind == "native" then
+  if pending.kind == NativeApprovals.KIND then
     return require("vibing.application.chat.native_approval_decision").consume(chat_buf, pending, approval)
   end
   -- **期限切れでも消費する。** 上限が切ったのは「飛んでいたその1回」であって、ユーザーが許可を
@@ -222,7 +226,7 @@ function M.find_blocked(pending)
   if not (pending and pending.request_id) then
     return nil
   end
-  if pending.kind == "native" then
+  if pending.kind == NativeApprovals.KIND then
     return require("vibing.infrastructure.rpc.pending_native_approvals").get(pending.request_id)
   end
   return require("vibing.infrastructure.rpc.pending_approvals").get(pending.request_id)
@@ -257,7 +261,7 @@ end
 --- @param chat_buf Vibing.ChatBuffer
 --- @return boolean released
 function M.release(pending, blocked, consumed, chat_buf)
-  if pending.kind == "native" then
+  if pending.kind == NativeApprovals.KIND then
     return require("vibing.infrastructure.rpc.pending_native_approvals").resolve(
       blocked.request_id,
       consumed.raw_decision
