@@ -127,6 +127,51 @@ describe("permission handler tool vocabulary", function()
     assert.is_nil(vocabulary.to_canonical("Read"))
   end)
 
+  it("allows Codex built-ins through the hook without adding them to the allow list", function()
+    local vocabulary = require("vibing.infrastructure.adapter.modules.codex_tool_vocabulary")
+    permission.set_active_opts(CHAT.turn_id, {
+      permissions_allow = { "Read" },
+      permissions_deny = {},
+      permissions_ask = {},
+      _tool_vocabulary = vocabulary,
+    })
+    for index, name in ipairs({ "collaborationspawn_agent", "functionscreate_goal", "apply_patch", "Bash" }) do
+      local id = "req-builtin-" .. index
+      write_request(id, name, { command = "echo hello" })
+      local result = permission.check_tool_permission({ request_id = id, process_id = CHAT.process_id })
+      assert.equals("allowed", result.status, name .. ": " .. vim.inspect(result))
+      -- Preserve Codex's native sandbox/approval gate rather than bypassing it with hook allow.
+      assert.equals("defer", read_response(id).hookSpecificOutput.permissionDecision)
+    end
+  end)
+
+  it("still denies a Codex built-in explicitly denied by the chat", function()
+    permission.set_active_opts(CHAT.turn_id, {
+      permissions_deny = { "collaboration*" },
+      _tool_vocabulary = require("vibing.infrastructure.adapter.modules.codex_tool_vocabulary"),
+    })
+    write_request("req-builtin-deny", "collaborationspawn_agent", {})
+    assert.equals(
+      "denied",
+      permission.check_tool_permission({ request_id = "req-builtin-deny", process_id = CHAT.process_id }).status
+    )
+  end)
+
+  it("does not let namespaced shell or edit tools bypass canonical deny entries", function()
+    permission.set_active_opts(CHAT.turn_id, {
+      permissions_deny = { "Bash", "Edit" },
+      _tool_vocabulary = require("vibing.infrastructure.adapter.modules.codex_tool_vocabulary"),
+    })
+    for index, name in ipairs({ "functionsexec_command", "functions.apply_patch" }) do
+      local id = "req-namespaced-deny-" .. index
+      write_request(id, name, { command = "echo hello" })
+      assert.equals(
+        "denied",
+        permission.check_tool_permission({ request_id = id, process_id = CHAT.process_id }).status
+      )
+    end
+  end)
+
   it("maps the codex built-ins that reach the hook under their own names", function()
     -- codex 0.154.0 renames only what carries risk: hook_names.rs serializes shell-likes as
     -- `Bash` and aliases `apply_patch` to Write/Edit. Its remaining built-ins arrive as

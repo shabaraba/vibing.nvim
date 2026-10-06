@@ -60,6 +60,55 @@ M.ALWAYS_ALLOWED_TOOLS = {
 ---@type table<string, boolean>
 M.ALWAYS_ALLOWED_TOOLS_MAP = to_map(M.ALWAYS_ALLOWED_TOOLS)
 
+---Codexの組み込みツール。Codexのvocabulary経由でのみ常時許可するので、他バックエンドには
+---適用しない。ALWAYS_ALLOWED_TOOLSと同じく明示的なask/denyは優先する。
+---名前空間付き・名前空間を連結したフック名も扱う。MCPはvocabulary側で除外する。
+---@type string[]
+M.CODEX_ALWAYS_ALLOWED_TOOL_PATTERNS = {
+  "Bash",
+  "Read",
+  "Edit",
+  "Write",
+  "Glob",
+  "Grep",
+  "WebSearch",
+  "WebFetch",
+  "shell",
+  "shell_command",
+  "exec_command",
+  "unified_exec",
+  "write_stdin",
+  "apply_patch",
+  "view_image",
+  "web_search",
+  "update_plan",
+  "request_user_input",
+  "tool_search",
+  "spawn_agent",
+  "send_input",
+  "wait",
+  "close_agent",
+  "resume_agent",
+  "list_agents",
+  "send_message",
+  "report_agent_job_result",
+  "read_file",
+  "list_dir",
+  "grep_files",
+  "list_mcp_resources",
+  "list_mcp_resource_templates",
+  "read_mcp_resource",
+  "search_tool_bm25",
+  "js",
+  "js_reset",
+  "functions*",
+  "collaboration*",
+  "clock*",
+  "web*",
+  "image_gen*",
+  "multi_tool_use*",
+}
+
 ---Claude Codeハーネス自身の制御ツール。`ask`/`deny`すら通さず常に許可される
 ---（can_use_tool.luaの評価順で`ALWAYS_ALLOWED_TOOLS`より前）。
 ---

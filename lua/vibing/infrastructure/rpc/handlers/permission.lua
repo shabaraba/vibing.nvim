@@ -131,6 +131,7 @@ local function build_permission_config(turn_id)
     permission_rules = M._resolve_permission_rules(perms),
     permission_mode = o.permission_mode or perms.mode or "default",
     mcp_enabled = config.mcp and config.mcp.enabled or false,
+    is_always_allowed = o._tool_vocabulary and o._tool_vocabulary.is_always_allowed,
   }
 end
 

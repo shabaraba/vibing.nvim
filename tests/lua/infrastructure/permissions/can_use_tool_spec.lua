@@ -17,6 +17,58 @@ local function make_config(overrides)
 end
 
 describe("can_use_tool", function()
+  describe("backend-specific always-allowed tools", function()
+    local vocabulary = require("vibing.infrastructure.adapter.modules.codex_tool_vocabulary")
+    local function decision(name, overrides, input)
+      return can_use_tool.can_use_tool(
+        name,
+        input or {},
+        make_config(vim.tbl_extend("force", {
+          allowed_tools = { "Read" },
+          is_always_allowed = vocabulary.is_always_allowed,
+        }, overrides or {}))
+      ).behavior
+    end
+
+    it("only applies when the backend supplies the predicate", function()
+      assert.equals("allow", decision("collaborationspawn_agent"))
+      assert.equals(
+        "ask",
+        can_use_tool.can_use_tool(
+          "collaborationspawn_agent",
+          {},
+          make_config({
+            allowed_tools = { "Read" },
+          })
+        ).behavior
+      )
+      assert.equals("ask", decision("mcp__other__write"))
+    end)
+
+    it("respects explicit ask, deny and session deny", function()
+      assert.equals("ask", decision("collaborationspawn_agent", { asked_tools = { "collaboration*" } }))
+      assert.equals("deny", decision("collaborationspawn_agent", { denied_tools = { "collaboration*" } }))
+      assert.equals("deny", decision("collaborationspawn_agent", { session_denied_tools = { "collaboration*" } }))
+      assert.equals(
+        "deny",
+        decision("collaborationspawn_agent", {
+          asked_tools = { "collaboration*" },
+          permission_mode = "dontAsk",
+        })
+      )
+    end)
+
+    it("keeps command deny rules and the background-job invariant ahead of built-in allowances", function()
+      assert.equals(
+        "deny",
+        decision("Bash", {
+          permission_rules = { { tools = { "Bash" }, action = "deny", commands = { "echo" } } },
+        }, { command = "echo forbidden" })
+      )
+      assert.equals("deny", decision("Bash", { mcp_enabled = true }, { command = "npm run dev &" }))
+    end)
+  end)
+
   describe("Neovim-owned background-job policy", function()
     local function decision(input, overrides)
       return can_use_tool.can_use_tool("Bash", input, make_config(vim.tbl_extend("force", {

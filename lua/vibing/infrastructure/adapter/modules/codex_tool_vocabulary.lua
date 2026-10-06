@@ -10,6 +10,24 @@ local tools_constants = require("vibing.core.constants.tools")
 
 local M = {}
 
+---Codexの組み込みツールだけを既定で許可する。共有の許可判定はバックエンドを知らず、
+---このpredicateを通常のALWAYS_ALLOWED_TOOLSと同じ位置で評価する。
+---@param tool_name string 正規化後のツール名
+---@return boolean
+function M.is_always_allowed(tool_name)
+  -- functions経由のMCP名も組み込みツールの名前空間パターンに巻き込まない。
+  if tool_name:lower():find("mcp__", 1, true) then
+    return false
+  end
+  local matchers = require("vibing.infrastructure.permissions.matchers")
+  for _, pattern in ipairs(tools_constants.CODEX_ALWAYS_ALLOWED_TOOL_PATTERNS) do
+    if matchers.matches_permission(tool_name, {}, pattern) then
+      return true
+    end
+  end
+  return false
+end
+
 --- Captured from real codex 0.153.4 PreToolUse payloads, which vibing.nvim could not see until the
 --- hook was registered under the key codex actually reads (`codex_settings_generator`):
 ---
@@ -29,6 +47,9 @@ local M = {}
 local NATIVE_TO_CANONICAL = {
   apply_patch = "Edit", -- Codex's file patch tool maps to Claude's Edit
   shell = "Bash",
+  shell_command = "Bash",
+  exec_command = "Bash",
+  unified_exec = "Bash",
   -- Reads an image off disk to attach it. `Read` is in ALWAYS_ALLOWED_TOOLS, so this also stops
   -- codex prompting for every image the way an unmapped name does.
   view_image = "Read",
@@ -55,6 +76,14 @@ local CODEX_VIBING_MCP_PREFIX = (CANONICAL_VIBING_MCP_PREFIX:gsub("%-", "_"))
 function M.to_canonical(native_tool_name)
   if native_tool_name:sub(1, #CODEX_VIBING_MCP_PREFIX) == CODEX_VIBING_MCP_PREFIX then
     return CANONICAL_VIBING_MCP_PREFIX .. native_tool_name:sub(#CODEX_VIBING_MCP_PREFIX + 1)
+  end
+  -- 同じ組み込みツールでもfunctions.exec_command / functionsexec_commandで届く。
+  -- 名前空間を外してから変換し、Bash/Editのdenyを名前の違いで迂回させない。
+  local plain_name = native_tool_name:match("^functions%.(.+)$")
+    or native_tool_name:match("^functions__(.+)$")
+    or native_tool_name:match("^functions(.+)$")
+  if plain_name and NATIVE_TO_CANONICAL[plain_name] then
+    return NATIVE_TO_CANONICAL[plain_name]
   end
   return NATIVE_TO_CANONICAL[native_tool_name]
 end
