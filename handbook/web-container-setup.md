@@ -6,9 +6,9 @@ runnable in the container at all.
 
 ## Environment Setup (SessionStart Hook)
 
-The web container ships node and git but **neither Neovim nor a Lua compiler**, so four of the
-five CI gates cannot start there: `test:lua`, `test:e2e` and `check:doc` invoke `nvim`, and
-`check` invokes `luac`. `.claude/hooks/session-start.sh` installs them —
+The web container ships node and git but **no Neovim**, so `test:lua`, `test:e2e`, `check:doc`
+and `check` cannot start there. All four invoke `nvim`; syntax checking compiles with Neovim's
+Lua parser without executing the files or requiring `luac`. `.claude/hooks/session-start.sh` installs —
 Neovim `stable` to `/opt/nvim`, plenary.nvim, `lua5.3`, `npm install` — mirroring the
 corresponding steps of `.github/workflows/ci.yml` so a web session fails and passes on the same
 things CI does. It is registered as a `SessionStart` hook in `.claude/settings.json`.
@@ -25,9 +25,8 @@ Five things about it are decisions rather than details:
   **stderr**: a `SessionStart` hook's stdout is prepended to the session as context.
 - **It checks which `nvim` and `luac` it got, not merely that one exists.** Both are keyed on
   the build the hook itself manages, because a tool the image happens to ship would otherwise
-  decide what the gates run against. `luac` is the sharp case: 5.4 compiles syntax 5.3 rejects
-  (`local x <const> = 1`), so a container whose bare `luac` is 5.4 would let `npm run check`
-  pass here and fail in CI.
+  decide what the gates run against. The hook still installs and verifies Lua 5.3 for tooling;
+  `npm run check` uses Neovim's parser in both the container and CI.
 - **It installs Node dependencies with `npm ci`, like CI.** `npm install` **rewrites
   `package-lock.json`** when it disagrees with `package.json`, which both hides drift CI would
   reject and leaves a working-tree change the per-turn git tree snapshot reports under

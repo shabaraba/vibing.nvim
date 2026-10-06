@@ -103,13 +103,35 @@ describe("E2E: AskUserQuestion - no repeated questions", function()
     ok, reason = helper.wait_for_response(nvim_instance, "\n1%. Red\n", TIMEOUTS.ASSISTANT_RESPONSE)
     assert.is_true(ok, reason or "Choice list should be rendered into the buffer")
 
-    -- Send an answer by pressing <CR> (all options remain — Claude understands)
+    -- An untouched choice list is not an answer. Claude now holds the asking turn open and
+    -- receives the user's text as the MCP tool result, so answering starts no second turn.
+    -- Observe actual completion rather than the existing Assistant / unsent User headers.
+    local report_path = vim.fn.tempname()
+    vim.fn.rpcrequest(nvim_instance.job_id, "nvim_exec_lua", [[
+      local report_path = ...
+      local bufnr = vim.api.nvim_get_current_buf()
+      vim.api.nvim_create_autocmd("User", {
+        pattern = "VibingResponseDone",
+        once = true,
+        callback = function(ev)
+          if ev.data and ev.data.bufnr == bufnr then
+            vim.fn.writefile(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), report_path)
+          end
+        end,
+      })
+      local n = vim.api.nvim_buf_line_count(bufnr)
+      vim.api.nvim_buf_set_lines(bufnr, n, n, false, { "Red" })
+    ]], { report_path })
     helper.send_keys(nvim_instance, "<CR>")
 
-    -- 答えを送った**あとの**応答を待つ。`## .* Assistant` を待つのでは、質問を出した1本目の
-    -- 見出しが既にあるので最初から一致してしまい、何も待っていないのと同じだった
-    ok, reason = helper.wait_for_assistant_turns(nvim_instance, 2, TIMEOUTS.ASSISTANT_RESPONSE)
-    assert.is_true(ok, reason or "Claude should respond after the answer is sent")
+    local deadline = vim.loop.hrtime() + TIMEOUTS.ASSISTANT_RESPONSE * 1000000
+    while vim.fn.filereadable(report_path) == 0 and vim.loop.hrtime() < deadline do
+      vim.loop.sleep(200)
+    end
+    assert.equals(1, vim.fn.filereadable(report_path), "Claude should complete the turn after receiving Red")
+    local completed_text = table.concat(vim.fn.readfile(report_path), "\n")
+    assert.is_nil(helper._turn_failure(completed_text, 1), "The answered turn must finish without an error")
+    vim.fn.delete(report_path)
 
     -- Verify prompt still appears only once (not re-inserted after answering)
     local count = count_lines_matching(nvim_instance, "^1%. Red$")

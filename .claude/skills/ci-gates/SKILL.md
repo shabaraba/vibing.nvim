@@ -98,11 +98,12 @@ cases and both fail-closed cases. The CI step gates the document; that file gate
 
 ## The Lua Syntax Gate Had the Same Hole
 
-`npm run check` could not fail. `find lua -name '*.lua' -exec luac -p {} \;` reports `find`'s exit
-status, not `luac`'s, so a file that would not compile printed its error and CI went green. It is
-`-exec ... +` now, which propagates, and `tests/lua-syntax-gate.test.mjs` holds it there — reading
-the command out of `package.json` rather than restating it, so the test cannot pass against a
-command the project no longer runs.
+`npm run check` once could not fail. `find lua -name '*.lua' -exec luac -p {} \;` reports
+`find`'s exit status, not `luac`'s, so a file that would not compile printed its error and CI went
+green. `scripts/check-lua.lua` now compiles every file with Neovim's parser without executing
+it. It fails on syntax errors and empty trees, and roots the default scan at its own repository.
+`tests/lua-syntax-gate.test.mjs` reads the command from `package.json` and runs the checker over
+valid, invalid, nested and empty fixtures. A separate `luac` installation is not required.
 
 ## E2E Specs Are Not Part of the Normal Suite
 

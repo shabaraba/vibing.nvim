@@ -153,7 +153,9 @@ local function add_pathspec(root)
     return cached
   end
   -- check-ignore は 0=無視されている / 1=されていない / 128=エラー
-  local ignored = git({ "git", "check-ignore", "-q", ".vibing" }, root)
+  -- The trailing slash matches directory-only ignore rules even before the state directory
+  -- exists. Otherwise we cache an exclude pathspec that fails once the first chat creates it.
+  local ignored = git({ "git", "check-ignore", "-q", ".vibing/" }, root)
   local spec = (ignored and ignored.code == 0) and { "." } or { ".", EXCLUDE_VIBING_DIR }
   add_pathspec_cache[root] = spec
   return spec

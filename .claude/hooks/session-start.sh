@@ -2,9 +2,9 @@
 #
 # SessionStart hook for Claude Code on the web.
 #
-# The remote container ships node and git but neither Neovim nor a Lua compiler, so four of
-# this repository's five gates cannot even start there: `test:lua`, `test:e2e` and `check:doc`
-# invoke `nvim`, and `check` invokes `luac`. This installs what they need, mirroring the
+# The remote container ships node and git but no Neovim, so `test:lua`, `test:e2e`, `check:doc`
+# and `check` cannot start there. All four invoke `nvim`; syntax checking uses its Lua parser.
+# This installs Neovim and the existing Lua tooling, mirroring the
 # "Setup Neovim" / "Install plenary.nvim" / "Install Lua" steps of .github/workflows/ci.yml so
 # a web session passes and fails on the same things CI does.
 #
@@ -25,8 +25,8 @@ PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." &
 NVIM_VERSION="${VIBING_NVIM_VERSION:-stable}"
 NVIM_PREFIX="${VIBING_NVIM_PREFIX:-/opt/nvim}"
 
-# The Lua the `check` gate must compile with. CI installs lua5.3; see install_luac for why the
-# version is checked rather than assumed.
+# Lua tooling matching CI's lua5.3 installation. The `check` gate uses Neovim's parser;
+# see install_luac for how the standalone compiler version is verified.
 LUA_VERSION="5.3"
 
 # tests/minimal_init.lua resolves plenary from `vim.fn.stdpath("data")`, which honours
@@ -127,10 +127,8 @@ luac_is_required_version() {
 }
 
 install_luac() {
-  # The version matters, so `command -v luac` is not enough on its own. CI installs lua5.3,
-  # and 5.4 accepts syntax 5.3 rejects — `local x <const> = 1` compiles under 5.4 — so a
-  # container whose bare `luac` is 5.4 would let `npm run check` pass here and fail in CI.
-  # That is the same divergence the version check above guards against.
+  # Keep the standalone compiler aligned with CI's Lua tooling rather than accepting any
+  # installed version. `npm run check` uses Neovim's parser and does not depend on luac.
   if luac_is_required_version; then
     log "luac present: $(luac -v 2>&1 | head -1)"
     return
@@ -152,8 +150,8 @@ install_luac() {
     $SUDO apt-get install -y -qq "lua${LUA_VERSION}" >/dev/null
   }
 
-  # Debian's alternatives provide a bare `luac`, which is the name package.json's `check`
-  # script calls — but it may point at another installed version. Name the compiler we want
+  # Debian's alternatives provide a bare `luac`, but it may point at another installed
+  # version. Name the compiler we want
   # explicitly, in /usr/local/bin so it wins over /usr/bin.
   luac_is_required_version \
     || $SUDO ln -sf "/usr/bin/luac${LUA_VERSION}" /usr/local/bin/luac
