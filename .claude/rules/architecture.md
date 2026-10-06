@@ -246,14 +246,22 @@ come back. `handbook/architecture/processes-and-turns.md`.
 
 ## The Duplex Transport
 
-One resident `claude` process per chat, serving many turns over an open stdin. **Opt-in, claude
-only, default off** — `backends.claude.process = "duplex"` or a chat's own `process:` frontmatter.
-`process_model.lua` is the one place the exclusions live: a lightweight call, a subagent chat and
-every backend other than claude can never use it, whatever the configuration says.
-`handbook/architecture/duplex-transport.md`.
+One resident CLI process per chat, serving many turns over an open stdin. **Opt-in and default
+off** — `backends.<id>.process = "duplex"` or a chat's own `process:` frontmatter, and only for a
+backend whose descriptor declares it (claude over stdin stream-json, codex over `app-server`
+JSON-RPC). `process_model.lua` is the one place the exclusions live: a lightweight call, a subagent
+chat and a backend whose descriptor does not declare `duplex` can never use it, whatever the
+configuration says. `handbook/architecture/duplex-transport.md`.
 
 - **`descriptor.process` is a ceiling, not a default.** A descriptor that does not declare `duplex`
-  cannot be configured into it.
+  cannot be configured into it. **That field is how a backend is admitted — never a backend name**:
+  `process_model.lua` contains none, which is what let codex join without the exclusion list
+  growing a second branch.
+- **The wire is the descriptor's; everything above it is not.** `descriptor.duplex` supplies
+  `send_prompt` / `process_line` / `interrupt` for a CLI that speaks its own protocol (codex's
+  `app-server` JSON-RPC); a backend that leaves it unset gets `duplex_process`'s stdin
+  stream-json. The pool, the reuse key, the turn, the timers and the reclaim routes are shared and
+  stay free of both.
 - **The reuse key is the argv, and it is built with no session id.** `permission_mode` comes from
   frontmatter, changes between turns and changes the argv, and a live process cannot be re-flagged.
   Including the session makes the key differ by construction on every chat's second turn — every
