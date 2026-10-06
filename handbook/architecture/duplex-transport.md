@@ -360,7 +360,6 @@ back before killing anything.
 `config_override` / `plugin_dir` / `project_dir`, and two conformance specs branch on it. A second,
 unrelated `transport` in the same descriptor is how a branch ends up reading the wrong one.
 
-
 ## Codex app-server
 
 Set `backends.codex.process = "duplex"`, or `process: duplex` in a Codex chat.

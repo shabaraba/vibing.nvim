@@ -7,11 +7,7 @@
     "-c",
     "hooks.PreToolUse=[{hooks=[{type=\"command\",command=\"true\"}]}]"
   ],
-  "requests": [
-    "initialize",
-    "initialized",
-    "hooks/list"
-  ],
+  "requests": ["initialize", "initialized", "hooks/list"],
   "session_flag_hooks": [
     {
       "key": "/<session-flags>/config.toml:pre_tool_use:0:0",
