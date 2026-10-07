@@ -152,6 +152,18 @@ require("vibing").setup({
 
 The MCP server exposes the following tools to Claude:
 
+### External CLI Sessions (Claude and Codex)
+
+- **nvim_session_search** — Search actual JSONL transcripts, including conversations started
+  outside vibing.nvim. Optional `query` (literal, case-insensitive), `backend`, `session_id`
+  (substring), `working_dir` (exact absolute cwd), and `limit` (default 20, maximum 100).
+- **nvim_session_read** — Read a found session with required `backend` and `session_id`.
+  Optional `offset`, `limit`, and `max_chars`; follow `next_offset` for further pages.
+
+Both tools read local CLI logs directly and work without Neovim RPC. They honor
+`CLAUDE_CONFIG_DIR` and `CODEX_HOME`, defaulting to `~/.claude/projects` and
+`~/.codex/{sessions,archived_sessions}`. See [the session handoff workflow](../../handbook/mcp-tools.md#external-cli-sessions).
+
 ### Buffer Operations
 
 - **nvim_get_buffer** - Get current buffer content

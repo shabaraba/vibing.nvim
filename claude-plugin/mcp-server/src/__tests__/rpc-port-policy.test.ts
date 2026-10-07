@@ -5,7 +5,7 @@ import { allTools } from '../tools/index.js';
  * Reading the registry is how you find out which ports exist, so this one cannot take a port at
  * all. Every server-backed tool keeps an optional legacy override for manually launched clients.
  */
-const PORTLESS_TOOLS = ['nvim_list_instances'];
+const PORTLESS_TOOLS = ['nvim_list_instances', 'nvim_session_search', 'nvim_session_read'];
 
 const requiredOf = (tool: { inputSchema: unknown }) =>
   (tool.inputSchema as { required?: string[] })?.required ?? [];
