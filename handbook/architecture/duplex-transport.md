@@ -379,9 +379,14 @@ usage and terminal status into the shared renderer's events. An agentMessage com
 is displayed only when no deltas were received, preventing duplicate output. Failed and
 interrupted terminal statuses are failed responses even though the process remains alive.
 
-MCP, developer instructions, model, effort, compaction and sandbox settings are process
-config overrides. Changed overrides cause the pool to replace the process and resume
-the thread. The existing PreToolUse hook remains the approval and diff-baseline route. Codex
+MCP, developer instructions, compaction and sandbox settings are process config overrides.
+Changed overrides cause the pool to replace the process and resume the thread. Model and
+effort are sent only in each `turn/start`, so changing either keeps the resident process.
+Codex retains both values when a later `turn/start` omits them or sends JSON null (measured
+against 0.160.1). On startup, vibing.nvim reads `config/read` and `model/list`, then sends
+the resolved model and effort explicitly on every turn. This also restores the CLI or model
+default after a chat's explicit override is removed. The existing PreToolUse hook remains
+the approval and diff-baseline route. Codex
 app-server does **not** inherit exec's `--dangerously-bypass-hook-trust`: a root CLI
 flag is accepted but ignored for this subcommand (Codex 0.159.2). Before inference,
 `hooks/list` must report the staged script as enabled and `trusted` or `managed`.

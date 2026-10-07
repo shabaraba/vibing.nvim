@@ -42,11 +42,9 @@ local M = {
       -- Never on a lightweight call, whatever was handed in: the conformance suite passes one to
       -- prove the request drops it, since a hook nothing can answer is what stalls the turn.
       { kind = "hook_arg", unless = { "lightweight", "duplex" } },
-      { kind = "model", flag = "-m", names = "native", unless = "duplex" },
-      { kind = "extra", fn = CodexCommandBuilder.resident_model_args, when = "duplex" },
-      -- No dedicated exec flag; a per-process config override applies to fresh and resumed
-      -- threads alike without changing the user's config.toml.
-      { kind = "effort", config = 'model_reasoning_effort="%s"' },
+      -- One-shot selections are process flags. Resident selections go only through turn/start,
+      -- so changing them does not change the pool's argv reuse key.
+      { kind = "extra", fn = CodexCommandBuilder.oneshot_selection_args, unless = "duplex" },
       -- Utility calls neither inherit the chat's threshold nor override codex's compaction
       -- setting after --ignore-user-config.
       { kind = "extra", fn = CodexCommandBuilder.auto_compact_args, unless = "lightweight" },

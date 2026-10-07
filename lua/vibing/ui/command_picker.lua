@@ -242,7 +242,10 @@ function M._handle_selection(command_name, chat_buffer)
   end
 
   -- 引数補完が必要かチェック
-  local arg_completions = commands.get_argument_completions(command_name)
+  local agent = require("vibing.core.constants.modes").resolve_agent(
+    chat_buffer:parse_frontmatter(), require("vibing.config").get()
+  )
+  local arg_completions = commands.get_argument_completions(command_name, agent)
 
   if arg_completions and #arg_completions > 0 then
     -- 引数選択UIを表示

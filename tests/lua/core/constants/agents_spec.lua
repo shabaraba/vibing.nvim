@@ -102,6 +102,9 @@ describe("agents registry", function()
           local expected = vim.tbl_map(function(m)
             return m.value
           end, def.models)
+          if def.id == "codex" then
+            table.insert(expected, 1, "default")
+          end
           assert.same(expected, values, def.id .. " model candidates drifted")
         end
       end)

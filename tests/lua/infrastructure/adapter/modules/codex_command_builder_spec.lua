@@ -206,6 +206,13 @@ describe("codex_command_builder", function()
       assert.equals("gpt-5.6-terra", cmd[find_flag(cmd, "-m") + 1])
     end)
 
+    it("lets model: default bypass agent.default_model", function()
+      local cmd = codex_command_builder.build("hi", { model = "default" }, nil, {
+        agent = { default_model = "gpt-6-sol" },
+      }, nil)
+      assert.is_nil(find_flag(cmd, "-m"))
+    end)
+
     it("maps the shared auto_compact threshold to Codex's native setting", function()
       local config = { agent = { token_usage = { auto_compact = { enabled = true, at = 300000 } } } }
       local cmd = codex_command_builder.build("hi", {}, nil, config, nil)

@@ -236,12 +236,21 @@ end
 
 ---@param command_name string
 ---@return string[]?
-function M.get_argument_completions(command_name)
+function M.get_argument_completions(command_name, agent)
   local Modes = require("vibing.core.constants.modes")
   local ModelCatalog = require("vibing.infrastructure.adapter.models.catalog")
+  if command_name == "model" and agent == nil then
+    local content = table.concat(vim.api.nvim_buf_get_lines(0, 0, -1, false), "\n")
+    local frontmatter = require("vibing.infrastructure.storage.frontmatter").parse(content)
+    agent = Modes.resolve_agent(frontmatter, require("vibing.config").get())
+  end
+  local models = ModelCatalog.all_values()
+  if agent == "codex" then
+    table.insert(models, 1, "default")
+  end
   local completions = {
     permission = Modes.PERMISSION_MODES,
-    model = ModelCatalog.all_values(),
+    model = models,
     effort = Modes.EFFORT_VALUES,
   }
   return completions[command_name]

@@ -6,7 +6,7 @@
 --- overrides. `build()` remains as the historical entry point over that spec.
 --- @module vibing.infrastructure.adapter.modules.codex_command_builder
 
-local NonClaudeModel = require("vibing.infrastructure.adapter.modules.non_claude_model")
+local CodexTurnSettings = require("vibing.infrastructure.adapter.modules.codex_turn_settings")
 local CodexPluginConfig = require("vibing.infrastructure.adapter.modules.codex_plugin_config")
 local CodexPermissionProfile = require("vibing.infrastructure.adapter.modules.codex_permission_profile")
 local TokenUsage = require("vibing.core.utils.token_usage")
@@ -237,14 +237,17 @@ function M.resident_hook_args(ctx)
   return args
 end
 
---- app-server has no -m flag. Use the same model resolver as the exec request.
----
---- The value is rendered as TOML, not JSON. The two agree on a plain model name, which is why
---- `vim.json.encode` passed every case anyone tried; `core/utils/toml.lua` is the one place the
---- `-c` value side is spelled, and every other codex override already goes through it.
-function M.resident_model_args(ctx)
-  local model = NonClaudeModel.resolve(ctx.opts, ctx.config)
-  return model and { "-c", "model=" .. require("vibing.core.utils.toml").string(model) } or {}
+--- One shared selection for the one-shot argv; app-server sends the same selection per turn.
+function M.oneshot_selection_args(ctx)
+  local selection = CodexTurnSettings.resolve(ctx.opts, ctx.config)
+  local args = {}
+  if selection.model then
+    vim.list_extend(args, { "-m", selection.model })
+  end
+  if selection.effort then
+    vim.list_extend(args, { "-c", string.format('model_reasoning_effort="%s"', selection.effort) })
+  end
+  return args
 end
 
 --- Build the `codex exec --json` command array from the request spec in `backends/codex.lua`.
