@@ -757,12 +757,22 @@ the original session instead, set its `session_id` in a new chat with the same
 Open Neovim in the original repository if it is outside the current git root.
 The search/read tools do not attach or start sessions automatically.
 
-`effort` is translated to Claude's `--effort`, Codex's
-`model_reasoning_effort` config override, or Grok's `--effort`. New chats use
-`default`, which passes no override and preserves the same CLI/model default
-used before this setting existed. Omitting it in an existing chat behaves the
-same way. Available levels can depend on the selected model. |/effort| updates
-this frontmatter field.
+`effort` is translated to Claude's `--effort`, Codex's one-shot
+`model_reasoning_effort` override or duplex `turn/start` field, or Grok's
+`--effort`. New chats use `default`, which selects the CLI/model default.
+An omitted field uses `agent.default_effort` when configured, otherwise the
+CLI/model default. Available levels can depend on the selected model.
+|/effort| updates this frontmatter field.
+
+In a Codex chat, `model: default` selects the CLI's configured model even when
+`agent.default_model` is set. An omitted `model` still uses
+`agent.default_model`.
+Codex duplex sends the resolved model and effort on each turn, so changing
+either setting does not restart the resident process; `default` restores the
+CLI or selected model's default after an earlier explicit override.
+If a custom provider does not report a default effort, duplex accepts an
+explicit effort or initially leaves it to Codex. Restoring an unknown default
+after an explicit effort requires choosing an effort explicitly.
 
 `process` chooses how the CLI is run for this chat, overriding
 `backends.<agent>.process` (Claude and Codex). `oneshot` (the default) starts
