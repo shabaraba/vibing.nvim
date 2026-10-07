@@ -48,4 +48,25 @@ describe("model handler", function()
     assert.is_false(handler({ "sonett" }, chat_buffer))
     assert.is_nil(written)
   end)
+
+  it("accepts default only for a Codex chat", function()
+    local written
+    local chat_buffer = {
+      parse_frontmatter = function()
+        return { agent = "codex" }
+      end,
+      update_frontmatter = function(_, key, value)
+        written = { key = key, value = value }
+        return true
+      end,
+    }
+    assert.is_true(handler({ "default" }, chat_buffer))
+    assert.same({ key = "model", value = "default" }, written)
+    chat_buffer.parse_frontmatter = function()
+      return { agent = "claude" }
+    end
+    written = nil
+    assert.is_false(handler({ "default" }, chat_buffer))
+    assert.is_nil(written)
+  end)
 end)

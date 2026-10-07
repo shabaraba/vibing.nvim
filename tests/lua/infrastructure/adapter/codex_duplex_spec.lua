@@ -52,7 +52,7 @@ describe("Codex duplex app-server", function()
   local function reply(call, result)
     emit(call, { id = last(call).id, result = result })
   end
-  local function trusted_hook(call)
+  local function trusted_hook(call, config_result, model_result)
     assert.equals("hooks/list", last(call).method)
     reply(call, {
       data = {
@@ -69,6 +69,15 @@ describe("Codex duplex app-server", function()
         },
       },
     })
+    assert.equals("config/read", last(call).method)
+    reply(call, config_result or { config = { model = "gpt-6.1-sol", model_reasoning_effort = "medium" } })
+    assert.equals("model/list", last(call).method)
+    assert.equals("{}", vim.json.encode(last(call).params))
+    reply(call, model_result or { data = {
+      { model = "gpt-6.1-sol", isDefault = true, defaultReasoningEffort = "medium" },
+      { model = "gpt-6-sol", defaultReasoningEffort = "medium" },
+      { model = "gpt-6-luna", defaultReasoningEffort = "low" },
+    } })
   end
   local function ready(call)
     assert.equals("initialize", last(call).method)
@@ -99,7 +108,10 @@ describe("Codex duplex app-server", function()
     assert.is_true(vim.tbl_contains(call.argv, "app-server"))
     assert.is_false(vim.tbl_contains(call.argv, "exec"))
     assert.is_false(vim.tbl_contains(call.argv, "hello"))
-    assert.is_true(vim.tbl_contains(call.argv, 'model="gpt-6-sol"'))
+    for _, arg in ipairs(call.argv) do
+      assert.is_nil(arg:match("^model="))
+      assert.is_nil(arg:match("^model_reasoning_effort="))
+    end
     assert.is_false(vim.tbl_contains(call.argv, "--dangerously-bypass-hook-trust"))
     local hook
     for _, arg in ipairs(call.argv) do
@@ -129,6 +141,36 @@ describe("Codex duplex app-server", function()
     assert.equals(1, #second.responses)
     assert.is_not_nil(Pool.get(CHAT))
   end)
+  it("switches model and effort, then restores Codex defaults on the same process", function()
+    local first = send({ model = "gpt-6-luna", effort = "low" })
+    local call = jobs.only_call()
+    reply(call, {})
+    trusted_hook(call)
+    reply(call, { thread = { id = "thread-1" } })
+    assert.same({ model = "gpt-6-luna", effort = "low" }, {
+      model = last(call).params.model, effort = last(call).params.effort,
+    })
+    reply(call, { turn = { id = "turn-1" } })
+    finish(call)
+
+    local second = send({ _session_id = "thread-1", model = "gpt-6-sol", effort = "high" })
+    assert.equals(first.process, second.process)
+    assert.equals(1, #jobs.calls)
+    assert.same({ model = "gpt-6-sol", effort = "high" }, {
+      model = last(call).params.model, effort = last(call).params.effort,
+    })
+    reply(call, { turn = { id = "turn-2" } })
+    finish(call, "completed", "turn-2")
+
+    local third = send({ _session_id = "thread-1", model = "default", effort = "default" })
+    assert.equals(first.process, third.process)
+    assert.equals(1, #jobs.calls)
+    assert.same({ model = "gpt-6.1-sol", effort = "medium" }, {
+      model = last(call).params.model, effort = last(call).params.effort,
+    })
+    reply(call, { turn = { id = "turn-3" } })
+    finish(call, "completed", "turn-3")
+  end)
   it("resumes a saved thread through RPC, not through argv", function()
     send({ _session_id = "saved-thread" })
     local call = jobs.only_call()
@@ -137,6 +179,17 @@ describe("Codex duplex app-server", function()
     assert.equals("thread/resume", last(call).method)
     assert.equals("saved-thread", last(call).params.threadId)
     assert.is_false(vim.tbl_contains(call.argv, "saved-thread"))
+  end)
+  it("starts a custom-provider thread even when its default effort is not listed", function()
+    send({ model = "custom-model", effort = "high" })
+    local call = jobs.only_call()
+    reply(call, {})
+    trusted_hook(call, { config = { model = "custom-model" } }, { data = {} })
+    assert.equals("thread/start", last(call).method)
+    reply(call, { thread = { id = "thread-1" } })
+    assert.equals("turn/start", last(call).method)
+    assert.equals("custom-model", last(call).params.model)
+    assert.equals("high", last(call).params.effort)
   end)
   it("queues early notifications until turn/start identifies this turn and rejects foreign completion", function()
     local result = send()

@@ -1,5 +1,6 @@
 --- Codex app-server JSON-RPC. The shared transport owns processes, turns and timers.
 local NativeApproval = require("vibing.infrastructure.adapter.modules.codex_native_approval")
+local TurnSettings = require("vibing.infrastructure.adapter.modules.codex_turn_settings")
 local Process = require("vibing.infrastructure.adapter.modules.duplex_process")
 local Processor = require("vibing.infrastructure.adapter.modules.stream_decoder").processor(
   require("vibing.infrastructure.adapter.decoders.codex_app_server"),
@@ -98,11 +99,18 @@ end
 
 local function start_turn(record, prompt, params)
   local rpc = record._rpc
+  local settings, settings_error = TurnSettings.for_turn(
+    TurnSettings.resolve(params.opts, params.config), rpc.defaults, rpc.settings
+  )
+  if not settings then
+    fail(record, settings_error)
+    return false
+  end
   rpc.starting_turn, rpc.queued = true, {}
   return request(record, "turn/start", {
     threadId = rpc.thread_id,
-    model = require("vibing.infrastructure.adapter.modules.non_claude_model").resolve(params.opts, params.config),
-    effort = require("vibing.infrastructure.adapter.modules.reasoning_effort").resolve(params.opts, params.config),
+    model = settings.model,
+    effort = settings.effort,
     input = { { type = "text", text = prompt } },
   }, function(result)
     if type(result.turn) ~= "table" or not result.turn.id then
@@ -110,6 +118,7 @@ local function start_turn(record, prompt, params)
       return
     end
     rpc.turn_id, rpc.starting_turn = result.turn.id, false
+    rpc.settings = settings
     -- Per-item state belongs to the turn that opened the items, not to the resident process, so
     -- nothing survives into the next turn and nothing accumulates over the process's whole life.
     record.decoder_state.started, record.decoder_state.streamed_items = nil, nil
@@ -156,10 +165,34 @@ function M.send_prompt(record, prompt, params)
             return
           end
           record._rpc.thread_id = thread.id
+          if session then
+            record._rpc.settings = {
+              model = type(thread.model) == "string" and thread.model or nil,
+              effort = type(thread.reasoningEffort) == "string" and thread.reasoningEffort or nil,
+            }
+          elseif type(thread.reasoningEffort) == "string" then
+            if type(thread.model) == "string" then
+              -- A fresh custom-provider thread can report a default absent from model/list.
+              record._rpc.defaults.catalog[thread.model] = thread.reasoningEffort
+            end
+          end
           render(record, { method = "thread/started", params = { thread = thread } })
           start_turn(record, prompt, params)
         end
       )
+    end
+    local function load_defaults()
+      request(record, "config/read", { includeLayers = false }, function(config_result)
+        request(record, "model/list", vim.empty_dict(), function(model_result)
+          local defaults, err = TurnSettings.defaults(config_result, model_result)
+          if not defaults then
+            fail(record, err)
+            return
+          end
+          record._rpc.defaults = defaults
+          start_thread()
+        end)
+      end)
     end
     local function check_hook(hooks, after_write)
       local script = require("vibing.infrastructure.hooks.codex_settings_generator").script_path(params.cwd)
@@ -177,7 +210,7 @@ function M.send_prompt(record, prompt, params)
         end
       end
       if target and (target.trustStatus == "trusted" or target.trustStatus == "managed") then
-        start_thread()
+        load_defaults()
         return
       end
       -- Match the exact session hook before writing trust. Codex's TUI uses this same
