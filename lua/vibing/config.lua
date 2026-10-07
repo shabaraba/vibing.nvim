@@ -209,7 +209,7 @@
 ---バックエンドごとの設定。`backends.<agent id>` の下に、そのバックエンドが
 ---`core/constants/agents.lua` の `config_fields` で宣言した項目だけを持つ（ADR 009）。
 ---項目と既定値と検証はそこから導かれるので、このファイルはバックエンド名を知らない。
----@field codex { profile_file: string|false?, profile_content: string?, allow_tracked_profile: boolean?, provider_notice: boolean? }?
+---@field codex { process: string?, approval_policy: string?, auto_approve: boolean?, profile_file: string|false?, profile_content: string?, allow_tracked_profile: boolean?, provider_notice: boolean? }?
 ---@field grok { executable: string? }?
 
 ---@class Vibing.SubagentConfig

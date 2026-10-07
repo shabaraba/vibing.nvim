@@ -103,6 +103,20 @@ M.AGENTS = {
         values = { "", "on-request", "on-failure", "never" },
         default = "",
       },
+      -- Answer codex's own sandbox-escape requests with `accept` instead of drawing a prompt.
+      --
+      -- The two gates ask different questions, but by the time one of these arrives the first has
+      -- already said yes: the PreToolUse hook runs first and codex sends no approval request at all
+      -- when it denies (`codex_native_approval.lua`). So what this turns off is the **second** ask
+      -- about a call `permissions` already allowed — `permissions.ask` / `deny` still prompt and
+      -- still refuse, one layer up, which is where the dangerous-command rules live.
+      --
+      -- Default `false`, because the two questions are not the same one: a user may want `Bash`
+      -- allowed inside the sandbox and gated on the way out of it. Turning this on says they do not.
+      auto_approve = {
+        kind = "boolean",
+        default = false,
+      },
       -- Project-local OS sandbox profile; `false` disables loading it.
       profile_file = {
         kind = "path_or_false",

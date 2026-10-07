@@ -165,6 +165,11 @@ backends = {
                             -- decides; on duplex it sends "never" instead.
                             -- "on-request" | "on-failure" | "never".
                             -- See "Codex's own approval requests" below.
+    auto_approve = false,   -- Answer Codex's own sandbox-escape requests with `accept`
+                            -- instead of drawing a prompt. The PreToolUse hook has
+                            -- already allowed the call by then, so this removes the
+                            -- second ask, not the only one.
+                            -- See "Codex's own approval requests" below.
     profile_file = ".vibing/codex-permissions.toml",
                             -- Project-local OS sandbox profile; false disables loading it.
                             -- See "Project-local Codex permission profiles" below.
@@ -1769,6 +1774,42 @@ past the evidence.
 
 Both prompts can appear for one command, in sequence: the hook asks first, and only if it allows
 does Codex get as far as asking about its sandbox. A hook denial means Codex never asks at all.
+
+#### Answering them without a human
+
+```lua
+backends = {
+  codex = {
+    auto_approve = true,
+  },
+}
+```
+
+`auto_approve` replies `accept` to these requests instead of drawing a prompt. What makes that a
+defensible default to _choose_ — it is still `false` out of the box — is the sequence just above:
+by the time one of these arrives, vibing.nvim's own gate has already allowed the call. So the flag
+removes the **second** ask about something `permissions` passed, not the only one.
+`permissions.ask` and `permissions.deny` keep prompting and keep refusing, one layer up, which is
+where a rule like `Bash(rm:*)` lives.
+
+It is off by default because the two questions are genuinely different: a user may want `Bash`
+allowed inside the sandbox and gated on the way **out** of it — a worktree chat reaching into the
+main checkout is the usual shape. Turning this on says that distinction is not one you want to be
+asked about.
+
+Three things it deliberately does not do:
+
+- **It prefers plain `accept` over every other `accept…`.** The variants outlive the call —
+  `accept_with_execpolicy_amendment` writes a command pattern into Codex's own policy and
+  `accept_for_session` grants the rest of the thread. A human picking one of those has read what it
+  would remember; a flag has not, so it takes the narrowest option that lets the call run.
+- **A request offering no `accept…` at all still reaches you.** It is not turned into a `decline`;
+  turning the flag on must not _lose_ an approval you could have granted by hand.
+- **It grants nothing in `permissions.allow`**, exactly as answering one by hand grants nothing.
+
+Because it needs no chat to draw in, it also answers requests the human path would have had to
+decline for want of somewhere to ask — a wait budget longer than the backend was measured to
+tolerate, or a turn whose chat has gone away.
 
 The policy travels as a `-c` override fixed at process spawn, so on `process = "duplex"` changing
 it reaches the next process rather than the next turn — the argv is the reuse key, so a changed
