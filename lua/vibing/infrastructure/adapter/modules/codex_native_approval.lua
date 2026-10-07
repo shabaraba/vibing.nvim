@@ -20,6 +20,7 @@
 local Decisions = require("vibing.infrastructure.adapter.modules.codex_native_decisions")
 local Process = require("vibing.infrastructure.adapter.modules.duplex_process")
 local Request = require("vibing.infrastructure.adapter.modules.codex_native_request")
+local Rules = require("vibing.infrastructure.adapter.modules.codex_auto_approve_rules")
 
 local M = {}
 
@@ -80,17 +81,32 @@ function M.resolved(record, params)
   return require("vibing.infrastructure.rpc.pending_native_approvals").forget(M.request_id(record, rpc_id))
 end
 
---- Whether `backends.codex.auto_approve` is on.
+--- One `backends.codex.*` option.
 ---
---- Read per request rather than captured once: this is an ordinary `setup()` value, and a flag that
---- only took effect after a Neovim restart would be indistinguishable from one that silently did
---- nothing. Reading `backends.codex` by name is this module's own business -- it is the codex one.
---- @return boolean
-function M.auto_approve_enabled()
+--- Read per request rather than captured once: these are ordinary `setup()` values, and a setting
+--- that only took effect after a Neovim restart would be indistinguishable from one that silently
+--- did nothing. Reading `backends.codex` by name is this module's own business -- it is the codex
+--- one.
+--- @param name string
+--- @return any
+local function codex_option(name)
   local ok, config = pcall(function()
     return require("vibing.config").get()
   end)
-  return ok and vim.tbl_get(config or {}, "backends", "codex", "auto_approve") == true
+  return ok and vim.tbl_get(config or {}, "backends", "codex", name) or nil
+end
+
+--- Whether `backends.codex.auto_approve` is on.
+--- @return boolean
+function M.auto_approve_enabled()
+  return codex_option("auto_approve") == true
+end
+
+--- The patterns that send a request to a human anyway. Empty unless the user listed any.
+--- @return string[]
+function M.auto_approve_ask()
+  local value = codex_option("auto_approve_ask")
+  return type(value) == "table" and value or {}
 end
 
 --- Whether this request is one we answer with a decision.
@@ -112,12 +128,13 @@ function M.handle(record, msg)
   local rpc = record._rpc or {}
   local params = type(msg.params) == "table" and msg.params or {}
   local options = Decisions.options(params.availableDecisions)
+  local changes = params.itemId and (rpc.file_changes or {})[params.itemId] or nil
 
   -- **Before the turn is resolved, deliberately.** Everything below this needs a chat to draw in and
   -- a turn allowed to hold the request open; answering by configuration needs neither, so a request
   -- that would otherwise be declined for want of somewhere to ask (`can_wait_for_native_approval`
   -- false, or no chat) is answered here instead of refused.
-  if M.auto_approve_enabled() then
+  if M.auto_approve_enabled() and not Rules.must_ask(msg.method, params, changes, M.auto_approve_ask()) then
     local decision = Decisions.auto_choice(options)
     if decision ~= nil then
       return reply(record.job_id, msg.id, decision)
@@ -132,7 +149,6 @@ function M.handle(record, msg)
     return false
   end
 
-  local changes = params.itemId and (rpc.file_changes or {})[params.itemId] or nil
   local tool, input = Request.describe(msg.method, params, changes)
   local request_id = M.request_id(record, msg.id)
   -- Both captured as scalars, so the closure below holds nothing but what the reply needs.

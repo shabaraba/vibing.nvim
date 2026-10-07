@@ -117,6 +117,20 @@ M.AGENTS = {
         kind = "boolean",
         default = false,
       },
+      -- The exceptions to `auto_approve`, as ordinary permission patterns (`Bash(git push:*)`).
+      -- A request matching one of these is drawn for a human even while `auto_approve` is on.
+      --
+      -- A **separate list from `permissions.ask`**, because the two answer different questions.
+      -- `permissions.ask` decides whether the tool may run at all and has already said yes by the
+      -- time this list is consulted; this one decides whether running it *outside codex's sandbox*
+      -- is something to look at. A command can be fine inside the workspace and worth a glance on
+      -- the way out of it, which is the whole reason the second gate exists.
+      --
+      -- Ignored entirely when `auto_approve` is off, where every request is drawn anyway.
+      auto_approve_ask = {
+        kind = "string_list",
+        default = {},
+      },
       -- Project-local OS sandbox profile; `false` disables loading it.
       profile_file = {
         kind = "path_or_false",

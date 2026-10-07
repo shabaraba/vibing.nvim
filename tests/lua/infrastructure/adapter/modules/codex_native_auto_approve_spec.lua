@@ -99,6 +99,24 @@ describe("codex native approval, auto_approve", function()
       assert.is_false(handled)
       assert.same({}, written)
     end)
+
+    it("takes the human path for a command auto_approve_ask names", function()
+      -- The exception list can only ever send a request *to* a human; `handle` falls through to
+      -- the turn lookup, which this record has nothing for, so nothing is written.
+      load({ auto_approve = true, auto_approve_ask = { "Bash(git stash)" } })
+
+      local handled = NativeApproval.handle(record(), request({ "accept" }))
+
+      assert.is_false(handled)
+      assert.same({}, written)
+    end)
+
+    it("auto-answers a command the exception list does not name", function()
+      load({ auto_approve = true, auto_approve_ask = { "Bash(rm:*)" } })
+
+      assert.is_true(NativeApproval.handle(record(), request({ "accept" })))
+      assert.equals("accept", written[1].payload.result.decision)
+    end)
   end)
 
   describe("when it is off", function()
