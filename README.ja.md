@@ -4,7 +4,7 @@
 
 # vibing.nvim
 
-**Claude・Codex・Copilot・Grok を Neovim のバッファに。エディタごと彼らに渡す**
+**Claude・Codex・Copilot・Grok・Pi を Neovim のバッファに。エディタごと彼らに渡す**
 
 [![CI](https://github.com/shabaraba/vibing.nvim/actions/workflows/ci.yml/badge.svg)](https://github.com/shabaraba/vibing.nvim/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -35,7 +35,7 @@ MCP を通じて、AI に**実行中の Neovim への直接アクセス**を渡�
   問い合わせ(診断・定義・参照・シンボル)
 - 💬 **チャットは Markdown バッファ** — 自分のキーマップ・モーション・検索がそのまま効く。
   `.vibing/chat/` に保存され、再開でき、grep でき、バージョン管理できる
-- 🔀 **マルチバックエンド** — Claude・Codex・GitHub Copilot・Grok を全体またはチャット単位で切替
+- 🔀 **マルチバックエンド** — Claude・Codex・GitHub Copilot・Grok・Pi を全体またはチャット単位で切替
 - 🧵 **並行チャット** — 何枚でも開ける。別のチャットがストリーミング中でも新しく始められる
 - 🪟 **マルチエージェント** — 1つのチャットが worker チャットを作って動かし、報告を集約する
 - 🌱 **git worktree ワークフロー** — 頼むだけで `.vibing/worktrees/<branch>/` に作業を隔離
@@ -126,6 +126,7 @@ https://github.com/user-attachments/assets/8182307e-83f6-428a-af11-1122b69f4483
 | Codex CLI          | `npm install -g @openai/codex`(**0.140+**)                    |
 | GitHub Copilot CLI | `npm install -g @github/copilot`(Node.js 22+ が必要)          |
 | Grok Build CLI     | [xAI のインストール手順](https://github.com/xai-org/grok-cli) |
+| Pi コーディングエージェント | `curl -fsSL https://pi.dev/install.sh | sh`(Node.js 22.19+) |
 
 <details>
 <summary><b>Codex のバージョンについて</b></summary>
@@ -150,6 +151,8 @@ vibing.nvim は Codex バックエンドの軽量呼び出し(チャットタイ
 ## 📦 インストール
 
 [lazy.nvim](https://github.com/folke/lazy.nvim) の場合:
+
+> Pi の実行には Node.js 22.19+ が必要です。同梱 MCP サーバー自体の要件は Node.js 18+ です。
 
 ```lua
 {
@@ -355,7 +358,7 @@ vibing.nvim: true
 session_id: <cli-session-id>
 created_at: 2024-01-01T12:00:00
 working_dir: .vibing/worktrees/feature-x # オプション: 作業ディレクトリ(git ルートからの相対パス)
-agent: claude # claude | codex | copilot | grok(チャット単位で adapter 設定を上書き)
+agent: claude # claude | codex | copilot | grok | pi(チャット単位で adapter 設定を上書き)
 mode: code # code | plan | explore
 model: sonnet # backend のモデルID。例: sonnet / gpt-5.6-terra
 effort: default # CLI・モデル既定値 | low | medium | high | xhigh | max
@@ -441,9 +444,11 @@ graph TB
 - **Codex CLI**(`codex exec --json`)— OpenAI Codex バックエンド
 - **GitHub Copilot CLI**(`copilot -p --output-format json`)— GitHub Copilot バックエンド
 - **Grok Build CLI**(`grok --single --output-format streaming-json`)— xAI Grok バックエンド
+- **Pi コーディングエージェント**(`pi --mode json`)— ベンダー CLI ではなくハーネスです。Pi 自身の
+  設定で選択したプロバイダを使い、OpenAI 互換エンドポイント経由でローカルモデルも実行できます
 
-setup の `adapter = "claude"|"codex"|"copilot"|"grok"` でグローバルに、チャットファイルの
-frontmatter に `agent: claude` / `agent: codex` / `agent: copilot` / `agent: grok` を書けば
+setup の `adapter = "claude"|"codex"|"copilot"|"grok"|"pi"` でグローバルに、チャットファイルの
+frontmatter に `agent: claude` / `agent: codex` / `agent: copilot` / `agent: grok` / `agent: pi` を書けば
 チャット単位で切り替えられます。`effort: low|medium|high|xhigh|max` は、選択したモデルがその
 レベルに対応している場合に Claude・Codex・Grok の推論量を制御します。新規チャットは
 `effort: default` になり、CLI へ override を渡さないため、effort 対応前と同じ CLI・モデル
@@ -456,6 +461,45 @@ frontmatter に `agent: claude` / `agent: codex` / `agent: copilot` / `agent: gr
 > 引き続きバックストップとして渡します。対応するのは `Bash`(`Bash(cmd:*)` 形式を含む)・
 > `Write`・`Edit`・`WebFetch`・`WebSearch` で、Copilot 側に権限パターンが無いツール名を落とす
 > 際は一度だけ警告を出します。
+
+> **注意:** Pi バックエンドは**ツール承認機構を自前で持たない**唯一のバックエンドです。Pi は
+> `bash` の実行前に確認せず、JSON/RPC モードではプロンプト自体を出せません。したがって
+> vibing.nvim の権限レイヤーが唯一の関門であり、それは Pi 拡張(`pi-extension/`)として提供され、
+> `./build.sh` がビルドし `pi --extension` が読み込みます。このバンドルが無い場合、Pi のターンは
+> 無防備に走るのではなく読み取り専用ツールへ縮退し、その旨を一度警告します。Pi は MCP クライアント
+> も持たないため、`nvim_*` ツールとチャット内の質問 UI は(Grok と同様に)使えません。
+>
+> モデル選択は vibing.nvim ではなく Pi の担当です。`model:` には Pi が自身の
+> `~/.pi/agent/models.json` かログイン済みプロバイダで解決できる id を書きます。ローカル
+> エンドポイントの例:
+>
+> ```json
+> {
+>   "providers": {
+>     "mlx-local": {
+>       "baseUrl": "http://127.0.0.1:8081/v1",
+>       "api": "openai-completions",
+>       "apiKey": "not-needed",
+>       "models": [{ "id": "mlx-community/Qwen3.6-27B-4bit" }]
+>     }
+>   }
+> }
+> ```
+>
+> そのうえで `backends.pi.provider = "mlx-local"`、`model: mlx-community/Qwen3.6-27B-4bit` とします。
+> ローカルエンドポイントでは provider の指定は省略できません。`--model` は Pi の組み込みクラウド
+> カタログも含めたあいまい一致なので、provider 無しの `model: qwen` はクラウドのモデルに解決され、
+> API キーが無いとしてターンが失敗します。指定しておけば、エンドポイントが扱える ID なら models.json
+> を編集せず `model:` だけで選べます。1 つの `mlx_lm.server` で全モデルを賄えるのはこのためです。
+>
+> 同じ拡張が、Pi に無い 2 つのツールも追加します。Pi の組み込みツールは `bash` / `read` / `write` /
+> `edit` / `ls` / `grep` / `find` だけなので、`web_fetch` と `web_search` をゲートと同じ拡張に同梱して
+> います。claude の `WebFetch` / `WebSearch` と同じ形にしてあるため、既存の権限ルールがそのまま効きます。
+> `web_fetch` は設定不要です。`web_search` は実際の検索 API を呼ぶ必要があり（claude と codex のそれは
+> 推論 API の内部で実行されるサーバーサイド機能で、ローカルエンドポイントには相当物がありません）、
+> `BRAVE_SEARCH_API_KEY` / `TAVILY_API_KEY` / `SEARXNG_URL` のいずれかを設定します。どれも無い場合、
+> このツールは登録されません。詳細は
+> [handbook/configuration.md](handbook/configuration.md) の "Pi: web tools" を参照してください。
 
 </details>
 
