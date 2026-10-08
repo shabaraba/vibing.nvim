@@ -90,10 +90,7 @@ end
 --- @param name string
 --- @return any
 local function codex_option(name)
-  local ok, config = pcall(function()
-    return require("vibing.config").get()
-  end)
-  return ok and vim.tbl_get(config or {}, "backends", "codex", name) or nil
+  return vim.tbl_get(require("vibing.config").get() or {}, "backends", "codex", name)
 end
 
 --- Whether `backends.codex.auto_approve` is on.
@@ -137,7 +134,13 @@ function M.handle(record, msg)
   if M.auto_approve_enabled() and not Rules.must_ask(msg.method, params, changes, M.auto_approve_ask()) then
     local decision = Decisions.auto_choice(options)
     if decision ~= nil then
-      return reply(record.job_id, msg.id, decision)
+      -- `handled`, not `written`: the decision is made either way, and a failed write means the
+      -- channel is already dead -- the same case `pending_native_approvals.resolve` treats as
+      -- answered rather than retrying. Returning the write's own boolean here would send a second
+      -- reply for the same `rpc_id` through `NativeApproval.refuse` and escalate a dead channel
+      -- into a turn failure that the human-prompt path never raises for the identical write.
+      reply(record.job_id, msg.id, decision)
+      return true
     end
   end
 
