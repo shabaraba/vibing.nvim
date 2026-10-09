@@ -367,7 +367,7 @@ function M._register_commands()
   })
 
   vim.api.nvim_create_user_command("VibingDeleteChats", function(opts)
-    require("vibing.presentation.chat.deletion_controller").handle_delete_command(opts, M.config)
+    require("vibing.presentation.chat.deletion_controller").handle_delete_command(opts, M.config.chat)
   end, {
     nargs = "?",
     desc = "Delete chat files (use --unrenamed to delete all unrenamed files)",
