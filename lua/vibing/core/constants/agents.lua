@@ -103,6 +103,34 @@ M.AGENTS = {
         values = { "", "on-request", "on-failure", "never" },
         default = "",
       },
+      -- Answer codex's own sandbox-escape requests with `accept` instead of drawing a prompt.
+      --
+      -- The two gates ask different questions, but by the time one of these arrives the first has
+      -- already said yes: the PreToolUse hook runs first and codex sends no approval request at all
+      -- when it denies (`codex_native_approval.lua`). So what this turns off is the **second** ask
+      -- about a call `permissions` already allowed — `permissions.ask` / `deny` still prompt and
+      -- still refuse, one layer up, which is where the dangerous-command rules live.
+      --
+      -- Default `false`, because the two questions are not the same one: a user may want `Bash`
+      -- allowed inside the sandbox and gated on the way out of it. Turning this on says they do not.
+      auto_approve = {
+        kind = "boolean",
+        default = false,
+      },
+      -- The exceptions to `auto_approve`, as ordinary permission patterns (`Bash(git push:*)`).
+      -- A request matching one of these is drawn for a human even while `auto_approve` is on.
+      --
+      -- A **separate list from `permissions.ask`**, because the two answer different questions.
+      -- `permissions.ask` decides whether the tool may run at all and has already said yes by the
+      -- time this list is consulted; this one decides whether running it *outside codex's sandbox*
+      -- is something to look at. A command can be fine inside the workspace and worth a glance on
+      -- the way out of it, which is the whole reason the second gate exists.
+      --
+      -- Ignored entirely when `auto_approve` is off, where every request is drawn anyway.
+      auto_approve_ask = {
+        kind = "string_list",
+        default = {},
+      },
       -- Project-local OS sandbox profile; `false` disables loading it.
       profile_file = {
         kind = "path_or_false",

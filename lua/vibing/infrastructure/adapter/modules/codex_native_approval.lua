@@ -9,11 +9,18 @@
 ---
 --- The reply is the JSON-RPC response to the request codex sent, so it is owed exactly once and
 --- forever; `rpc/pending_native_approvals.lua` holds that obligation and its five exits.
+---
+--- `backends.codex.auto_approve` answers the request from configuration instead of from a human.
+--- What makes that defensible is the ordering above: the hook has already allowed this call, so the
+--- flag removes a **second** ask about something `permissions` passed, not the only one. It stays
+--- off the registry entirely -- an answered request is owed nothing, and opening an entry only to
+--- close it in the same tick would arm the wait limit against a decision already written.
 --- @module vibing.infrastructure.adapter.modules.codex_native_approval
 
 local Decisions = require("vibing.infrastructure.adapter.modules.codex_native_decisions")
 local Process = require("vibing.infrastructure.adapter.modules.duplex_process")
 local Request = require("vibing.infrastructure.adapter.modules.codex_native_request")
+local Rules = require("vibing.infrastructure.adapter.modules.codex_auto_approve_rules")
 
 local M = {}
 
@@ -74,6 +81,31 @@ function M.resolved(record, params)
   return require("vibing.infrastructure.rpc.pending_native_approvals").forget(M.request_id(record, rpc_id))
 end
 
+--- One `backends.codex.*` option.
+---
+--- Read per request rather than captured once: these are ordinary `setup()` values, and a setting
+--- that only took effect after a Neovim restart would be indistinguishable from one that silently
+--- did nothing. Reading `backends.codex` by name is this module's own business -- it is the codex
+--- one.
+--- @param name string
+--- @return any
+local function codex_option(name)
+  return vim.tbl_get(require("vibing.config").get() or {}, "backends", "codex", name)
+end
+
+--- Whether `backends.codex.auto_approve` is on.
+--- @return boolean
+function M.auto_approve_enabled()
+  return codex_option("auto_approve") == true
+end
+
+--- The patterns that send a request to a human anyway. Empty unless the user listed any.
+--- @return string[]
+function M.auto_approve_ask()
+  local value = codex_option("auto_approve_ask")
+  return type(value) == "table" and value or {}
+end
+
 --- Whether this request is one we answer with a decision.
 --- @param method string
 --- @return boolean
@@ -91,6 +123,27 @@ end
 --- @return boolean handled
 function M.handle(record, msg)
   local rpc = record._rpc or {}
+  local params = type(msg.params) == "table" and msg.params or {}
+  local options = Decisions.options(params.availableDecisions)
+  local changes = params.itemId and (rpc.file_changes or {})[params.itemId] or nil
+
+  -- **Before the turn is resolved, deliberately.** Everything below this needs a chat to draw in and
+  -- a turn allowed to hold the request open; answering by configuration needs neither, so a request
+  -- that would otherwise be declined for want of somewhere to ask (`can_wait_for_native_approval`
+  -- false, or no chat) is answered here instead of refused.
+  if M.auto_approve_enabled() and not Rules.must_ask(msg.method, params, changes, M.auto_approve_ask()) then
+    local decision = Decisions.auto_choice(options)
+    if decision ~= nil then
+      -- `handled`, not `written`: the decision is made either way, and a failed write means the
+      -- channel is already dead -- the same case `pending_native_approvals.resolve` treats as
+      -- answered rather than retrying. Returning the write's own boolean here would send a second
+      -- reply for the same `rpc_id` through `NativeApproval.refuse` and escalate a dead channel
+      -- into a turn failure that the human-prompt path never raises for the identical write.
+      reply(record.job_id, msg.id, decision)
+      return true
+    end
+  end
+
   local turn_id = record._turn and record._turn.turn_id or nil
   local turn = turn_id and require("vibing.infrastructure.adapter.modules.turn_registry").get(turn_id) or nil
   local chat_bufnr = turn and turn.process and turn.process.chat_bufnr or nil
@@ -99,10 +152,7 @@ function M.handle(record, msg)
     return false
   end
 
-  local params = type(msg.params) == "table" and msg.params or {}
-  local changes = params.itemId and (rpc.file_changes or {})[params.itemId] or nil
   local tool, input = Request.describe(msg.method, params, changes)
-  local options = Decisions.options(params.availableDecisions)
   local request_id = M.request_id(record, msg.id)
   -- Both captured as scalars, so the closure below holds nothing but what the reply needs.
   local rpc_id, job_id = msg.id, record.job_id

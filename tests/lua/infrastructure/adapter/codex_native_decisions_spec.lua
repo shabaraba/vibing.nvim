@@ -98,6 +98,35 @@ describe("codex native decisions", function()
     end)
   end)
 
+  describe("what auto_approve answers with", function()
+    it("takes plain accept over a variant that would remember something", function()
+      -- The variants outlive this call: the amendment writes a command pattern into codex's own
+      -- policy. A human choosing one has read what it remembers; a flag has not.
+      local amendment = { acceptWithExecpolicyAmendment = { execpolicy_amendment = { "/bin/zsh" } } }
+
+      assert.equals("accept", Decisions.auto_choice(Decisions.options({ amendment, "accept", "cancel" })))
+    end)
+
+    it("falls back to the first accept variant when plain accept was not offered", function()
+      local amendment = { acceptWithExecpolicyAmendment = { execpolicy_amendment = { "/bin/zsh" } } }
+
+      assert.same(amendment, Decisions.auto_choice(Decisions.options({ amendment, "cancel" })))
+    end)
+
+    it("answers a request that listed nothing, which is every fileChange approval", function()
+      -- `options(nil)` implies `{accept, decline}`, so the file-change path is auto-answerable too.
+      assert.equals("accept", Decisions.auto_choice(Decisions.options(nil)))
+    end)
+
+    it("returns nil when no option would let the call run, so the human is still asked", function()
+      -- Not `decline`: refusing here would make turning the flag on lose an approval the user
+      -- could otherwise have granted by hand.
+      assert.is_nil(Decisions.auto_choice(Decisions.options({ "cancel" })))
+      assert.is_nil(Decisions.auto_choice({}))
+      assert.is_nil(Decisions.auto_choice(nil))
+    end)
+  end)
+
   describe("the value is safe to interpolate into a Lua pattern", function()
     it("folds everything outside [a-z0-9] into underscores", function()
       -- `approval_parser.action_pattern` puts this straight into a Lua pattern, where a `-` is a

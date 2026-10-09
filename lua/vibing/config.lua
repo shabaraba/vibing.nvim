@@ -209,7 +209,7 @@
 ---バックエンドごとの設定。`backends.<agent id>` の下に、そのバックエンドが
 ---`core/constants/agents.lua` の `config_fields` で宣言した項目だけを持つ（ADR 009）。
 ---項目と既定値と検証はそこから導かれるので、このファイルはバックエンド名を知らない。
----@field codex { profile_file: string|false?, profile_content: string?, allow_tracked_profile: boolean?, provider_notice: boolean? }?
+---@field codex { process: string?, approval_policy: string?, auto_approve: boolean?, auto_approve_ask: string[]?, profile_file: string|false?, profile_content: string?, allow_tracked_profile: boolean?, provider_notice: boolean? }?
 ---@field grok { executable: string? }?
 
 ---@class Vibing.SubagentConfig
@@ -578,6 +578,14 @@ local function backend_defaults()
     for name, field in pairs(Agents.config_fields(def.id)) do
       if field.default_module then
         fields[name] = require(field.default_module)[field.default_field]
+      elseif type(field.default) == "table" then
+        -- Decoupled from the literal in `agents.lua`, which is a module-level constant every reader
+        -- of that file shares. It does **not** decouple `M.defaults` from the live options: with no
+        -- `backends` key in `opts`, `setup`'s `tbl_deep_extend` hands the whole subtree over by
+        -- reference, so `options.backends.<id>` *is* this table. That aliasing is older than this
+        -- field and applies to every table default (`permissions.allow` among them); it is not
+        -- fixed here.
+        fields[name] = vim.deepcopy(field.default)
       else
         fields[name] = field.default
       end
@@ -671,6 +679,25 @@ local function validate_backend_options(options)
         if type(value) ~= "boolean" then
           notify.warn(string.format("Invalid %s: expected a boolean. Resetting to %s.", label, tostring(default)))
           values[name] = default
+        end
+      elseif field.kind == "string_list" then
+        -- Rejected whole rather than filtered: a list this one holds permission rules, and dropping
+        -- the one bad entry would leave a shorter list that still looks like the user's own. The
+        -- reset is a fresh copy for the reason in `backend_defaults`.
+        -- `#value == tbl_count` rejects a map-shaped table, which would otherwise pass `ipairs`
+        -- silently as an empty list.
+        local valid = type(value) == "table" and #value == vim.tbl_count(value)
+        if valid then
+          for _, entry in ipairs(value) do
+            if type(entry) ~= "string" or entry == "" then
+              valid = false
+              break
+            end
+          end
+        end
+        if not valid then
+          notify.warn(string.format("Invalid %s: expected a list of non-empty strings. Resetting.", label))
+          values[name] = vim.deepcopy(default)
         end
       elseif field.kind == "executable_or_auto" then
         -- The command builder tells the user to set this option when the binary is missing, so

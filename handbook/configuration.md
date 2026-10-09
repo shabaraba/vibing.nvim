@@ -165,6 +165,14 @@ backends = {
                             -- decides; on duplex it sends "never" instead.
                             -- "on-request" | "on-failure" | "never".
                             -- See "Codex's own approval requests" below.
+    auto_approve = false,   -- Answer Codex's own sandbox-escape requests with `accept`
+                            -- instead of drawing a prompt. The PreToolUse hook has
+                            -- already allowed the call by then, so this removes the
+                            -- second ask, not the only one.
+                            -- See "Codex's own approval requests" below.
+    auto_approve_ask = {},  -- The exceptions to it, as permission patterns
+                            -- (`Bash(git push)`). Matching requests are drawn for a
+                            -- human anyway. Ignored when auto_approve is off.
     profile_file = ".vibing/codex-permissions.toml",
                             -- Project-local OS sandbox profile; false disables loading it.
                             -- See "Project-local Codex permission profiles" below.
@@ -1771,6 +1779,75 @@ past the evidence.
 
 Both prompts can appear for one command, in sequence: the hook asks first, and only if it allows
 does Codex get as far as asking about its sandbox. A hook denial means Codex never asks at all.
+
+#### Answering them without a human
+
+```lua
+backends = {
+  codex = {
+    auto_approve = true,
+  },
+}
+```
+
+`auto_approve` replies `accept` to these requests instead of drawing a prompt. What makes that a
+defensible default to _choose_ — it is still `false` out of the box — is the sequence just above:
+by the time one of these arrives, vibing.nvim's own gate has already allowed the call. So the flag
+removes the **second** ask about something `permissions` passed, not the only one.
+`permissions.ask` and `permissions.deny` keep prompting and keep refusing, one layer up, which is
+where a rule like `Bash(rm:*)` lives.
+
+It is off by default because the two questions are genuinely different: a user may want `Bash`
+allowed inside the sandbox and gated on the way **out** of it — a worktree chat reaching into the
+main checkout is the usual shape. Turning this on says that distinction is not one you want to be
+asked about.
+
+Three things it deliberately does not do:
+
+- **It prefers plain `accept` over every other `accept…`.** The variants outlive the call —
+  `accept_with_execpolicy_amendment` writes a command pattern into Codex's own policy and
+  `accept_for_session` grants the rest of the thread. A human picking one of those has read what it
+  would remember; a flag has not, so it takes the narrowest option that lets the call run.
+- **A request offering no `accept…` at all still reaches you.** It is not turned into a `decline`;
+  turning the flag on must not _lose_ an approval you could have granted by hand.
+- **It grants nothing in `permissions.allow`**, exactly as answering one by hand grants nothing.
+
+Because it needs no chat to draw in, it also answers requests the human path would have had to
+decline for want of somewhere to ask — a wait budget longer than the backend was measured to
+tolerate, or a turn whose chat has gone away.
+
+##### Keeping some of them
+
+`auto_approve_ask` is the exception list, written in the same grammar as `permissions.ask` and
+evaluated by the same `matchers.matches_permission`:
+
+```lua
+backends = {
+  codex = {
+    auto_approve = true,
+    auto_approve_ask = { "Bash(git push)", "Bash(rm:*)" },
+  },
+}
+```
+
+It is a **separate list from `permissions.ask`** because the two answer different questions.
+`permissions.ask` decides whether the tool may run at all, and has already said yes by the time
+this one is consulted; this one decides whether running it _outside Codex's sandbox_ is worth a
+look. A command can be fine inside the workspace and worth a glance on the way out of it — which
+is the entire reason there is a second gate to configure.
+
+Every entry can only ever send a request **to** a human; there is no entry that approves one. So a
+rule that fails to match costs exactly what `auto_approve` already cost, and the failure direction
+of a mistake in this list is one extra prompt. For a file change, **every** path in the patch is
+tested rather than the first — matching only the first is evadable by patch ordering — and each
+path is tested under both `Edit` and `Write`, since the request does not say which one Codex would
+have called it.
+
+**`Tool(x:*)` compares only the command's first word.** So `Bash(git push:*)` matches nothing,
+ever; the form that works is `Bash(git push)`, which matches that prefix. This is a property of
+`matchers.lua` shared with `permissions.allow` / `ask` / `deny`, where widening it would start
+_allowing_ calls an existing rule does not allow today — so it is not changed here. A rule in this
+list that cannot fire is warned about once instead of failing silently.
 
 The policy travels as a `-c` override fixed at process spawn, so on `process = "duplex"` changing
 it reaches the next process rather than the next turn — the argv is the reuse key, so a changed

@@ -126,6 +126,31 @@ function M.options(available)
   return options
 end
 
+--- The decision `backends.codex.auto_approve` answers with, or `nil` if this request offers none.
+---
+--- Plain `accept` is preferred over every other `accept…`, and that is the whole of the rule. The
+--- variants carry a **side effect beyond this call**: `accept_with_execpolicy_amendment` writes a
+--- command pattern into codex's own policy and `accept_for_session` grants the rest of the thread.
+--- A human choosing one of those has read what it would remember; a flag that said "approve this"
+--- has not, so it takes the narrowest option that lets the call run and leaves the broader ones to
+--- the human path. `nil` means **fall back to asking** -- never to refusing: a request offering no
+--- `accept…` at all is one this flag has nothing to say about, and silently declining it would make
+--- turning the flag on *lose* an approval the user could have granted by hand.
+--- @param options Vibing.CodexDecisionOption[]
+--- @return any|nil raw the body for `{ decision = raw }`
+function M.auto_choice(options)
+  local fallback = nil
+  for _, option in ipairs(options or {}) do
+    if option.is_allow then
+      if option.value == "accept" then
+        return option.raw
+      end
+      fallback = fallback == nil and option.raw or fallback
+    end
+  end
+  return fallback
+end
+
 --- The reply body for a decision that nobody chose.
 ---
 --- One place, because three exits need it — the wait limit, the chat closing and Neovim exiting —
