@@ -870,8 +870,9 @@ from about 67k tokens to 11k with a profile like the one above. `tools`,
 `agent`, `model` and `effort` from a profile.
 
 `nvim_chat_create`'s `profile` argument or
-`agent.orchestration.worker_defaults` sets it at creation, and
-`nvim_chat_list` shows an orchestrator which profiles exist. |/profile|
+`agent.orchestration.worker_defaults` sets it at creation. An orchestrator
+sees the configured profiles in `nvim_chat_create`'s own `profile` argument
+and in `nvim_chat_list`. |/profile|
 switches it later, with the session and history intact. What follows the
 switch is decided by the CLI: Claude records the system prompt on a chat's
 first message and replays it on every later one, so `instructions` and

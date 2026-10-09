@@ -116,8 +116,9 @@ nvim_chat_create({
 - `position: "back"` (the default) creates the buffer without opening a window, so the user's
   layout is untouched. Don't use a split position for workers unless the user asked to watch them.
 - `working_dir` is relative to the git root and must already exist — create the worktree first.
-- **Pick the worker's profile and model.** `nvim_chat_list` returns `profiles`: the kinds of worker
-  the user configured, each with what it is for and the model it runs on. A configured kind
+- **Pick the worker's profile and model.** The kinds of worker the user configured are listed in
+  `nvim_chat_create`'s own `profile` argument (and in `nvim_chat_list`'s `profiles`), each with
+  what it is for and the model it runs on. A configured kind
   usually loads a fraction of a normal chat on every request (no project rules, a few tools), so
   prefer the one that fits the task; with none configured, pass `profile: "worker"`. Without a
   `model` (from the profile or yours) a worker runs on the user's default — usually as expensive

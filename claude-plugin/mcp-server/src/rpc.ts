@@ -3,7 +3,7 @@ import { listLiveInstances } from './instance-registry.js';
 import { READ_ONLY_METHODS } from './read-only-methods.js';
 
 const NVIM_RPC_TIMEOUT = parseInt(process.env.VIBING_RPC_TIMEOUT || '30000', 10); // Default 30 seconds
-const RPC_PORT_ENV = 'VIBING_NVIM_RPC_PORT';
+export const RPC_PORT_ENV = 'VIBING_NVIM_RPC_PORT';
 
 let requestId = 0;
 

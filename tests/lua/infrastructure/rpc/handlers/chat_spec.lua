@@ -297,6 +297,17 @@ describe("rpc handlers: create_chat", function()
         assert.is_truthy(tostring(err):find("agent.profiles.broken.effort", 1, true))
       end)
 
+      -- What the MCP server reads to put the names into nvim_chat_create's own schema, so an
+      -- orchestrator sees them without having to call anything first.
+      it("answers list_profiles with the configured profiles, sorted", function()
+        local names = vim.tbl_map(function(profile)
+          return profile.name
+        end, handler.list_profiles({}).profiles)
+
+        assert.same({ "default", "implementer", "worker" }, names)
+        assert.is_not_nil(require("vibing.infrastructure.rpc.handlers").list_profiles)
+      end)
+
       it("lists the profiles on nvim_chat_list, with the model each one runs on", function()
         local listed = handler.list_chats({})
 
