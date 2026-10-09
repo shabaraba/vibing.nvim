@@ -4,6 +4,7 @@
 local M = {}
 
 local ChatBuffer = require("vibing.presentation.chat.buffer")
+local FileBuffer = require("vibing.core.utils.file_buffer")
 local notify = require("vibing.core.utils.notify")
 
 ---現在アクティブなチャットバッファ（:VibingChatで作成）
@@ -14,6 +15,63 @@ M._current_buffer = nil
 ---@type table<number, Vibing.ChatBuffer>
 M._attached_buffers = {}
 
+---位置指定が指定されている場合はこのバッファに限ってオーバーライドする。
+---ChatBuffer:new はグローバル設定テーブルへの参照をそのまま持つので、`window`テーブルまで
+---差し替えないと `:VibingChat back` 1回でユーザーの既定位置が永久にbackになる。
+---tbl_deep_extendでは足りない: 空テーブルをベースにすると衝突が起きず、ネストした値は
+---参照のまま代入されるので `config.window` は同じテーブルのままになる（実測でConfig.defaults
+---まで書き換わった）。nvim_chat_createはワーカーを常にbackで作るため、この漏れは致命的になる
+---@param chat_buf Vibing.ChatBuffer
+---@param position string?
+local function apply_position(chat_buf, position)
+  if not position then
+    return
+  end
+
+  chat_buf.config = vim.tbl_extend("force", {}, chat_buf.config, {
+    window = vim.tbl_extend("force", {}, chat_buf.config.window, { position = position }),
+  })
+end
+
+---そのファイルのバッファが既にあるときの描画。
+---
+---`ChatBuffer:_create_buffer` は毎回 `nvim_buf_set_name` するので、同じ名前のバッファが
+---残っていると `E95: Buffer with this name already exists` で落ちる。踏む経路は
+---`:VibingChat <path>` と `:VibingChatSearch` の両方にあり、後者は裏に読み込んだチャットを
+---次の検索で選ぶだけで必ず踏む。
+---
+---**ファイルの中身は読み直さない。** 既に開いているバッファには未保存の編集がありうる。
+---**既にChatBufferが付いているなら、その状態には触らない。** 実行中のターンを持っている
+---かもしれず、`session` を差し替えるのはそれを黙って奪うこと
+---@param bufnr integer
+---@param session Vibing.ChatSession
+---@param position string?
+---@param opts {background?: boolean}?
+---@return Vibing.ChatBuffer
+function M._render_existing(bufnr, session, position, opts)
+  local chat_buf = M.get_chat_buffer(bufnr)
+
+  if not chat_buf then
+    chat_buf = M.attach_to_buffer(bufnr, session.file_path)
+    chat_buf.session = session
+    if session.session_id and session.session_id ~= "" then
+      chat_buf.session_id = session.session_id
+    end
+  end
+
+  apply_position(chat_buf, position)
+
+  if not (opts and opts.background) then
+    M._current_buffer = chat_buf
+  end
+
+  chat_buf:open()
+  M._attached_buffers[bufnr] = chat_buf
+  M._apply_chat_buffer_settings(bufnr)
+
+  return chat_buf
+end
+
 ---セッションをチャットバッファに描画
 ---@param session Vibing.ChatSession
 ---@param position? string 位置指定（core/constants/chat.lua の POSITIONS）
@@ -22,6 +80,11 @@ M._attached_buffers = {}
 function M.render(session, position, opts)
   local vibing = require("vibing")
   local config = vibing.get_config()
+
+  local existing = FileBuffer.find(session.file_path)
+  if existing then
+    return M._render_existing(existing, session, position, opts)
+  end
 
   -- 毎回新規バッファを作成（既存バッファを再利用しない）
   local chat_buf = ChatBuffer:new(config.chat)
@@ -48,17 +111,7 @@ function M.render(session, position, opts)
   end
   -- NOTE: cwdはfrontmatterのworking_dirから算出されるため、ここでの転送は不要
 
-  -- 位置指定が指定されている場合はこのバッファに限ってオーバーライドする。
-  -- ChatBuffer:new はグローバル設定テーブルへの参照をそのまま持つので、`window`テーブルまで
-  -- 差し替えないと `:VibingChat back` 1回でユーザーの既定位置が永久にbackになる。
-  -- tbl_deep_extendでは足りない: 空テーブルをベースにすると衝突が起きず、ネストした値は
-  -- 参照のまま代入されるので `config.window` は同じテーブルのままになる（実測でConfig.defaults
-  -- まで書き換わった）。nvim_chat_createはワーカーを常にbackで作るため、この漏れは致命的になる
-  if position then
-    chat_buf.config = vim.tbl_extend("force", {}, chat_buf.config, {
-      window = vim.tbl_extend("force", {}, chat_buf.config.window, { position = position }),
-    })
-  end
+  apply_position(chat_buf, position)
 
   chat_buf:open()
 
