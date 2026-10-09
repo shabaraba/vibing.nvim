@@ -34,6 +34,7 @@ require("vibing").setup({
     default_effort = "default",
     utility_effort = "low",
     setting_sources = { "user", "project", "local" },
+    profiles = {},
     mcp = { user_servers = true },
     git_instructions = false,
     subagent = { enabled = false, show_prefix = false },
@@ -250,6 +251,37 @@ agent = {
                             -- every chat, reducing fixed per-session token cost.
                             -- Note: does not affect MCP server loading — that is
                             -- agent.mcp.user_servers, right below.
+
+  profiles = {},            -- What a chat loads on every request, per kind of chat. A chat
+                            -- picks one with `profile:` frontmatter, /profile, or
+                            -- nvim_chat_create's `profile`. Built in: "default" (everything)
+                            -- and "worker" (drops the instructions that need someone watching
+                            -- the editor). Any name added here is a new kind; reusing a
+                            -- built-in name extends it. Every field is optional:
+                            --
+                            --   implementer = {
+                            --     description = "Implements a fully specified change",
+                            --                       -- shown to orchestrators by nvim_chat_list
+                            --     agent = "claude", model = "sonnet", effort = "low",
+                            --                       -- what nvim_chat_create gives a chat on it
+                            --     instructions = "worker",  -- "full" | "worker"
+                            --     tools = { "Bash", "Read", "Edit", "Write", "Glob", "Grep" },
+                            --                       -- Claude's built-in tools; ToolSearch is
+                            --                       -- always added so MCP tools stay deferred
+                            --     setting_sources = { "user", "local" },
+                            --                       -- without "project": no CLAUDE.md, rules,
+                            --                       -- skills, agents or .claude/settings.json
+                            --     context_files = { ".vibing/implementer.md" },
+                            --                       -- appended to the system prompt instead
+                            --   }
+                            --
+                            -- Measured here: ~67k tokens per request for a default chat, ~11k
+                            -- for the profile above. tools / setting_sources / context_files are
+                            -- Claude-only. On a switch, tools and setting_sources apply from the
+                            -- next message; instructions and context_files stay as the chat
+                            -- started (Claude records the system prompt on the first message).
+                            -- An invalid field is dropped with a warning, so a typo loads more,
+                            -- never less. handbook/architecture/orchestration.md has the numbers
 
   mcp = {                   -- Which MCP servers an ordinary turn loads. Claude backend only.
                             -- Not to be confused with the top-level `mcp` block, which

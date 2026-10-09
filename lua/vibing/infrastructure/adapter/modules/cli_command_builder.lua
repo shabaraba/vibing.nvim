@@ -151,7 +151,28 @@ function M.setting_source_args(ctx)
   if ctx.opts.lightweight then
     return { "--setting-sources", "", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}' }
   end
+  -- A profile's own list replaces the configured one outright — an empty list included, which is
+  -- "no CLAUDE.md, no project settings" and a deliberate choice, not a malformed value.
+  local _, profile = Profiles.resolve(ctx.opts.profile, ctx.config)
+  if profile.setting_sources then
+    return { "--setting-sources", table.concat(profile.setting_sources, ",") }
+  end
   return { "--setting-sources", table.concat(M.resolve_setting_sources(ctx.config), ",") }
+end
+
+--- `--tools` for a profile that names its built-in tools; nothing otherwise, which is the CLI's
+--- full set. The flag only narrows built-ins — MCP tools, vibing-nvim's report tool among them,
+--- stay reachable (measured: `nvim_chat_send_message` found under `--tools Read,Bash`).
+--- @param ctx Vibing.RequestContext
+--- @return string[]
+function M.profile_tool_args(ctx)
+  local _, profile = Profiles.resolve(ctx.opts.profile, ctx.config)
+  -- A subagent-bound chat exists to call Agent/SendMessage (see `permission_args`); a tool list
+  -- written for implementation work would leave it unable to do the one thing it is for.
+  if not profile.tools or ctx.opts._subagent_id then
+    return {}
+  end
+  return { "--tools", table.concat(profile.tools, ",") }
 end
 
 --- The `--append-system-prompt` block: worktree convention, MCP tool guidance, the chat buffer
@@ -168,6 +189,7 @@ function M.system_prompt_args(ctx)
   -- Lightweight calls have no tools/MCP servers at all, so tool-usage instructions below would
   -- just be wasted prompt tokens describing capabilities that don't exist.
   local system_prompt_lines = {}
+  local _, profile = Profiles.resolve(opts.profile, config)
 
   if not opts.lightweight then
     table.insert(
@@ -200,7 +222,7 @@ function M.system_prompt_args(ctx)
     -- Both lines describe what to do for someone watching the editor. A `worker` chat is driven by
     -- another chat and read afterwards, so on one they are re-read on every request for nothing
     -- (`core/constants/profiles.lua`).
-    if Profiles.resolve(opts.profile) ~= Profiles.WORKER then
+    if profile.instructions ~= "worker" then
       table.insert(
         system_prompt_lines,
         "When the user asks to see code, show it rather than describing where it lives: call "
@@ -318,9 +340,26 @@ function M.system_prompt_args(ctx)
     -- An unedited file keeps the block byte-for-byte identical across turns.
     -- Resolved against `opts.cwd` (the chat's `working_dir`, e.g. a worktree) first,
     -- like every other cwd-sensitive part of the request, then the Neovim root.
-    local project_prompt = require("vibing.core.utils.project_system_prompt").read_for_cwd(opts.cwd)
+    local ProjectPrompt = require("vibing.core.utils.project_system_prompt")
+    local project_prompt = ProjectPrompt.read_for_cwd(opts.cwd)
     if project_prompt then
       table.insert(system_prompt_lines, project_prompt)
+    end
+
+    -- The profile's stand-in for what its `setting_sources` left out. Recorded by the CLI with the
+    -- rest of this block on the conversation's first request, so an edit reaches new chats only
+    -- (`core/constants/profiles.lua`). A missing file is said out loud: a worker that silently
+    -- lost the invariants it was meant to carry fails in the work, far from the cause.
+    for _, file in ipairs(profile.context_files or {}) do
+      local content = ProjectPrompt.read_relative_for_cwd(file, opts.cwd)
+      if content then
+        table.insert(system_prompt_lines, content)
+      else
+        require("vibing.core.utils.notify").warn(
+          string.format("Profile context file %s is missing or empty", file),
+          "Chat"
+        )
+      end
     end
   end
 

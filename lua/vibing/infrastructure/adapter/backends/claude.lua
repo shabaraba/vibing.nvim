@@ -41,6 +41,8 @@ local M = {
       -- block execution, and --permission-mode plan leaks plan-mode meta-commentary into the
       -- generated title). It names nothing, so unlike a denylist it cannot drift (#488).
       { kind = "args", "--tools", "", when = "lightweight" },
+      -- A chat profile that names its built-in tools (`core/constants/profiles.lua`).
+      { kind = "extra", fn = CLICommandBuilder.profile_tool_args, unless = "lightweight" },
       { kind = "extra", fn = CLICommandBuilder.permission_args, unless = "lightweight" },
       { kind = "hook_arg", flag = "--settings", unless = "lightweight" },
       -- Without this the CLI swallows everything a subagent says and only its final tool_result

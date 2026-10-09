@@ -239,6 +239,77 @@ describe("rpc handlers: create_chat", function()
       end)
     end
 
+    describe("with a configured profile", function()
+      local agent_config, saved_profiles
+
+      before_each(function()
+        agent_config = require("vibing").get_config().agent
+        saved_profiles = agent_config.profiles
+        agent_config.profiles = {
+          implementer = { model = "sonnet", effort = "low", agent = "claude" },
+        }
+      end)
+
+      after_each(function()
+        agent_config.profiles = saved_profiles
+      end)
+
+      it("takes the model a chat on that profile runs on from the profile", function()
+        local result = handler.create_chat({ profile = "implementer" })
+
+        local fm = frontmatter_on_disk(result.file_path)
+        assert.equals("implementer", fm.profile)
+        assert.equals("sonnet", fm.model)
+        assert.equals("low", fm.effort)
+      end)
+
+      it("lets an explicit argument beat the profile", function()
+        local result = handler.create_chat({ profile = "implementer", model = "haiku" })
+
+        assert.equals("haiku", frontmatter_on_disk(result.file_path).model)
+      end)
+
+      -- The profile names a kind of worker; worker_defaults applies to every kind, so the more
+      -- specific one wins.
+      it("lets the profile beat worker_defaults", function()
+        orchestration.worker_defaults = { model = "opus", profile = "implementer" }
+
+        local result = handler.create_chat({})
+
+        local fm = frontmatter_on_disk(result.file_path)
+        assert.equals("implementer", fm.profile)
+        assert.equals("sonnet", fm.model)
+      end)
+
+      it("names the configured profiles when given one that does not exist", function()
+        local ok, err = pcall(handler.create_chat, { profile = "lean" })
+
+        assert.is_false(ok)
+        assert.is_truthy(tostring(err):find("implementer", 1, true))
+      end)
+
+      it("names the profile when its own model value is unusable", function()
+        agent_config.profiles = { broken = { effort = "extreme" } }
+
+        local ok, err = pcall(handler.create_chat, { profile = "broken" })
+
+        assert.is_false(ok)
+        assert.is_truthy(tostring(err):find("agent.profiles.broken.effort", 1, true))
+      end)
+
+      it("lists the profiles on nvim_chat_list, with the model each one runs on", function()
+        local listed = handler.list_chats({})
+
+        local by_name = {}
+        for _, profile in ipairs(listed.profiles) do
+          by_name[profile.name] = profile
+        end
+        assert.equals("sonnet", by_name.implementer.model)
+        assert.is_not_nil(by_name.default)
+        assert.is_not_nil(by_name.worker)
+      end)
+    end)
+
     it("names worker_defaults in the error when the bad value came from the config", function()
       orchestration.worker_defaults = { profile = "lean" }
 

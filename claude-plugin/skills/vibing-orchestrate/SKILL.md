@@ -116,13 +116,18 @@ nvim_chat_create({
 - `position: "back"` (the default) creates the buffer without opening a window, so the user's
   layout is untouched. Don't use a split position for workers unless the user asked to watch them.
 - `working_dir` is relative to the git root and must already exist — create the worktree first.
-- **Pick the worker's model, and pass `profile: "worker"`.** Without `model` a worker runs on the
-  user's default — usually as expensive as you. A worker whose brief is complete rarely needs your
-  model: give it `model` (and `agent` for another CLI, e.g. `agent: "codex"`), and keep the design
-  decisions in your own chat. `profile: "worker"` drops prompt lines only a human watching the
-  editor needs. The returned `agent` / `model` / `profile` are what was actually written — check
-  them, since the user's `worker_defaults` fill whatever you leave out. The user can take a worker
-  over with `/profile default`.
+- **Pick the worker's profile and model.** `nvim_chat_list` returns `profiles`: the kinds of worker
+  the user configured, each with what it is for and the model it runs on. A configured kind
+  usually loads a fraction of a normal chat on every request (no project rules, a few tools), so
+  prefer the one that fits the task; with none configured, pass `profile: "worker"`. Without a
+  `model` (from the profile or yours) a worker runs on the user's default — usually as expensive
+  as you. A worker whose brief is complete rarely needs your model: give it `model` (and `agent`
+  for another CLI, e.g. `agent: "codex"`), and keep the design decisions in your own chat.
+- **A narrowed profile may not load the project's rules**, so the brief has to carry the
+  invariants the task touches — state them as checked facts, not as "see CLAUDE.md".
+- The returned `agent` / `model` / `profile` are what was actually written — check them, since
+  the profile and the user's `worker_defaults` fill whatever you leave out. The user can take a
+  worker over with `/profile default`.
 - **Always pass `from_bufnr`**: the exact "Current vibing.nvim chat buffer number" from your
   system prompt. It records the relationship in both chat files' frontmatter (`orchestrated` here,
   `orchestrated_by` on the worker), which is what makes it survive a rename or a restart.

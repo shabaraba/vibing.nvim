@@ -45,10 +45,8 @@ function M.setup()
   commands.register({
     name = "profile",
     handler = require("vibing.application.chat.handlers.profile"),
-    description = string.format(
-      "Set chat profile: /profile <%s>",
-      table.concat(require("vibing.core.constants.profiles").VALUES, "|")
-    ),
+    -- Static text: the names come from `agent.profiles` and are completed at the prompt instead.
+    description = "Set chat profile: /profile <name>",
   })
 
   commands.register({

@@ -112,10 +112,12 @@ export const chatTools: Tool[] = [
         profile: {
           type: 'string',
           description:
-            '"worker" drops system-prompt lines that only matter while a human watches the ' +
-            'editor, which every later request of that chat would re-read; "default" keeps the ' +
-            'full set. Pass "worker" for a chat you drive. The user can switch it back with ' +
-            '/profile default. Omitted: worker_defaults, else "default".',
+            'What the new chat loads on every request, by name: "default" (everything), ' +
+            '"worker" (drops lines only a human watching the editor needs), or a kind the user ' +
+            'configured — nvim_chat_list returns them, with the model each one runs on. A ' +
+            "configured kind can cut a chat's fixed per-request cost several-fold; its " +
+            'agent/model/effort fill any you leave out. Omitted: worker_defaults, else ' +
+            '"default". The user can widen a chat later with /profile default.',
         },
       }),
       required: [],
@@ -353,7 +355,9 @@ export const chatTools: Tool[] = [
       'orchestrator is also open in this session, omitted otherwise). Use this to check on ' +
       'several worker chats at once in a multi-agent workflow (see the vibing-orchestrate ' +
       'skill). Only chats currently open in this Neovim session are listed — a chat file that ' +
-      'was never opened this session is not included.',
+      'was never opened this session is not included. Also returns profiles: the worker kinds ' +
+      'the user configured (name, description, and the agent/model a chat created on it gets) — ' +
+      "pick one for nvim_chat_create's profile.",
     inputSchema: {
       type: 'object',
       properties: withRpcPort({}),

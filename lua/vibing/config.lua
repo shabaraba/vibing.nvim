@@ -128,13 +128,24 @@
 ---@field worker_defaults Vibing.WorkerDefaults? `nvim_chat_create`で作るチャットのfrontmatterの既定値
 ---  （デフォルト: `{}` = 通常の新規チャットと同じ）。呼び出しの同名引数が優先する
 
+---@class Vibing.Profile
+---どれも省略可。`tools` / `setting_sources` / `context_files` はClaude backendのみ
+---@field description string? 一行の説明。`nvim_chat_list` の `profiles` でオーケストレーターに見せる
+---@field agent string? このprofileで`nvim_chat_create`したチャットのbackend
+---@field model string? 同じくモデル
+---@field effort string? 同じく推論量
+---@field instructions ("full"|"worker")? vibing.nvim自身の指示ブロック（既定: "full"）
+---@field tools string[]? `--tools`に渡す組み込みツール。`ToolSearch`は常に足す（MCPツールを遅延のままにするため）
+---@field setting_sources string[]? このprofileの`--setting-sources`。"project"を外すとCLAUDE.md・rules・skills・`.claude/settings.json`が載らない
+---@field context_files string[]? system promptに追記するファイル（gitルートからの相対パス）。`setting_sources`で外したものの代わり
+
 ---@class Vibing.WorkerDefaults
 ---オーケストレーターがモデルを渡し忘れたワーカーを、オーケストレーター自身と同じ高価なモデルで
 ---走らせないための既定値。どれも省略でき、省略したキーは通常の新規チャットの既定値になる
 ---@field agent string? backend id（`core/constants/agents.lua`）
 ---@field model string? そのbackendに渡すモデル
 ---@field effort string? `core/constants/modes.lua`の`EFFORT_VALUES`
----@field profile string? `core/constants/profiles.lua`の`VALUES`
+---@field profile string? 組み込みの`default`/`worker`か`agent.profiles`の名前
 
 ---@class Vibing.AgentConfig
 ---エージェント設定
@@ -146,6 +157,11 @@
 ---@field utility_effort ("default"|"low"|"medium"|"high"|"xhigh"|"max")? タイトル生成・要約等の軽量呼び出しの推論量（デフォルト: "low"）
 ---@field setting_sources string[]? Claude CLIの`--setting-sources`に渡す設定読み込み元リスト（例: {"project", "local"}、デフォルト: {"user", "project", "local"}）。MCPサーバーの読み込みには影響しない（`agent.mcp`参照）
 ---@field mcp Vibing.AgentMcpConfig? 通常のチャットターンにどのMCPサーバーを載せるかの設定
+---@field profiles table<string, Vibing.Profile>? チャットの用途ごとに毎リクエスト読み込むものを決める
+---  名前付きの定義（frontmatter `profile:` / `nvim_chat_create` の `profile`）。組み込みの
+---  `default` と `worker` に加えて任意の名前を定義でき、同名なら組み込みを上書きする
+---  （デフォルト: `{}`）。各フィールドの意味と「途中で切り替えたとき何が効くか」は
+---  `core/constants/profiles.lua` のモジュールコメント
 ---@field git_instructions boolean? trueでClaude CLI組み込みのgitステータスブロック（ブランチ名・
 ---  直近コミット・`git status --short`）とcommit/PRワークフロー指示をsystem promptに載せる
 ---  （デフォルト: false）。どちらの値でも`CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS`を明示的に書く
@@ -353,6 +369,16 @@ M.defaults = {
     default_effort = "default",
     utility_effort = "low",
     setting_sources = { "user", "project", "local" },
+    -- 用途ごとの読み込み内容。組み込みは default（全部）と worker（人間がエディタを見ている
+    -- 前提の指示だけ外す）。例: 実装担当を6ツール・プロジェクト設定なしで走らせる
+    --   implementer = {
+    --     description = "Implements a fully specified change",
+    --     model = "sonnet",
+    --     tools = { "Bash", "Read", "Edit", "Write", "Glob", "Grep" },
+    --     setting_sources = { "user", "local" },
+    --     context_files = { ".vibing/implementer.md" },
+    --   }
+    profiles = {},
     mcp = {
       -- 既定はtrue（現状維持）。`--setting-sources user,project,local` が `~/.claude.json` の
       -- MCPサーバーを全部載せるのは、ユーザーのcommands/skills/subagentをそのまま使えるように

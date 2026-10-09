@@ -54,13 +54,12 @@ function M.create_chat(params)
   -- agent/model/effort/profile も作る**前**に解決する。不正値はここでエラーにして、空のワーカーと
   -- そのファイルを残さない（理由は`resolve_frontmatter`のコメント）
   local CreateChat = require("vibing.application.chat.use_cases.create_chat")
-  local orchestration = (require("vibing").get_config().agent or {}).orchestration or {}
   local frontmatter, frontmatter_err = CreateChat.resolve_frontmatter({
     agent = params.agent,
     model = params.model,
     effort = params.effort,
     profile = params.profile,
-  }, orchestration.worker_defaults)
+  }, require("vibing").get_config())
   if not frontmatter then
     error(frontmatter_err)
   end
@@ -254,7 +253,7 @@ end
 ---RPCポーラーで迂回した）。列挙元は `view.list_chat_buffers()` 一択 — 「いま何本開いているか」
 ---を知る手段はそれしかない（`application/chat/concurrency.lua` も同じものを読む）ので、
 ---閉じたまま残っているチャットファイルはここには載らない
----@return {chats: {bufnr: number, file_path: string?, chat_status: string?, waiting_approvals: table[]?, context_size: number?, updated_at: string?, orchestrated_by: string[], task: string?}[]}
+---@return {chats: {bufnr: number, file_path: string?, chat_status: string?, waiting_approvals: table[]?, context_size: number?, updated_at: string?, orchestrated_by: string[], task: string?}[], profiles: table[]}
 function M.list_chats(_)
   local view = require("vibing.presentation.chat.view")
   local ChatStatus = require("vibing.presentation.chat.modules.chat_status")
@@ -287,7 +286,12 @@ function M.list_chats(_)
 
   project_tasks(buffers, bufnrs, by_absolute_path)
 
-  return { chats = chats }
+  -- The worker kinds the user configured (`agent.profiles`). Here because this is the call an
+  -- orchestrator makes before it dispatches, and the names cannot live in a static tool
+  -- description: they are whatever this user's config says.
+  local profiles = require("vibing.core.constants.profiles").catalog(require("vibing").get_config())
+
+  return { chats = chats, profiles = profiles }
 end
 
 ---mainリポジトリで解決できる基準ブランチ名を返す。全worktreeでrefは共有されるので、

@@ -128,7 +128,7 @@ describe("vibing.application.chat.init", function()
         summarize = "Summarize conversation",
         model = "Set AI model: /model <model>",
         effort = string.format("Set reasoning effort: /effort <%s>", table.concat(Modes.EFFORT_VALUES, "|")),
-        profile = "Set chat profile: /profile <default|worker>",
+        profile = "Set chat profile: /profile <name>",
       }
 
       for cmd_name, expected_desc in pairs(cmd_descriptions) do
