@@ -33,11 +33,7 @@ local function resolve_path(path, chat_dir, cwd)
   return nil
 end
 
----@param value any
----@return string
-local function one_line(value)
-  return type(value) == "string" and (vim.trim(value):gsub("%s*\n%s*", " ")) or ""
-end
+local one_line = BackgroundAgent.one_line
 
 ---@param text string?
 ---@param chat_dir string

@@ -16,11 +16,7 @@ local BACKENDS = { claude = true, codex = true }
 ---@field summary string
 ---@field group string
 
----@param value any
----@return string
-local function one_line(value)
-  return type(value) == "string" and (vim.trim(value):gsub("%s*\n%s*", " ")) or ""
-end
+local one_line = BackgroundAgent.one_line
 
 ---@param session table
 ---@param label string

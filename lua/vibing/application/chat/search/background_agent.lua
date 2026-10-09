@@ -26,6 +26,14 @@ function M.tool_label(tool, input)
   return string.format("%s(%s)", tool, detail)
 end
 
+---複数行の値を1行に畳む。エージェントの答え（`chat_answer.lua` / `session_answer.lua`）が
+---ラベルや要約に使う、文字列以外やnilは空文字として扱う
+---@param value any
+---@return string
+function M.one_line(value)
+  return type(value) == "string" and (vim.trim(value):gsub("%s*\n%s*", " ")) or ""
+end
+
 ---設定された言語の名前（"Japanese" 等）。未設定なら nil
 ---@return string?
 function M.language_name()
@@ -67,7 +75,8 @@ function M.opts(agent, cwd, tools, on_tool)
     cwd = cwd,
     permission_mode = "dontAsk",
     permissions_allow = vim.deepcopy(tools),
-    exclusive_tools = vim.deepcopy(tools),    on_tool_use_full = function(tool, input)
+    exclusive_tools = vim.deepcopy(tools),
+    on_tool_use_full = function(tool, input)
       on_tool(M.tool_label(tool, input or {}))
     end,
   }
