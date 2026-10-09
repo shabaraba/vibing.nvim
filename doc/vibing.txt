@@ -315,6 +315,25 @@ section is not kept in sync field by field.
     Pick chat files to delete. With `--unrenamed`, delete every chat that
     still has its generated filename.
 
+                                                         *:VibingChatSearch*
+:VibingChatSearch [{query}]
+    Find past chats about {query} and open the ones you pick. With no
+    argument, prompts for the query.
+
+    The query is expanded into keywords, every chat file is searched for
+    them, and the surviving candidates are read back to decide which ones are
+    actually about the query. Each match is listed with its date and a
+    one-line summary of the relevant part. All three steps are utility calls
+    with no tools, like title generation.
+
+    With telescope.nvim the list is a float with a preview, `<Tab>` selects
+    several and `<CR>` opens them: the first is displayed, the rest are
+    loaded as chat buffers you can reach with |:bnext|. Without telescope it
+    falls back to |vim.ui.select()|, one chat at a time.
+
+    When the relevance step fails, the raw keyword matches are listed instead
+    with no summaries, and a warning says so.
+
                                                              *:VibingContext*
 :[range]VibingContext [{path}]
     Add a file to the context. With no argument, uses the current buffer — or

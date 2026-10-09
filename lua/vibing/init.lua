@@ -374,6 +374,13 @@ function M._register_commands()
     complete = complete_flags("delete_chats"),
   })
 
+  vim.api.nvim_create_user_command("VibingChatSearch", function(opts)
+    require("vibing.presentation.chat.search_controller").handle_search_command(opts, M.config.chat)
+  end, {
+    nargs = "*",
+    desc = "Search past chats by topic and open the matches (prompts when given no query)",
+  })
+
   -- mote統合（と :VibingCleanMote / :VibingMoteDir）は削除された。設定を残したまま
   -- アップデートした人がコマンドの消失に戸惑わないよう、代わりに何を見ればよいかを返す
   -- スタブだけ残す。
