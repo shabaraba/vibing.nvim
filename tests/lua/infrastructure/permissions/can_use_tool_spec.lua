@@ -324,4 +324,41 @@ describe("can_use_tool", function()
       assert.is_false(can_use_tool.is_vibing_nvim_mcp_tool("mcp__vibing-nvim__something_else"))
     end)
   end)
+
+  describe("a Bash prefix in the allow list", function()
+    local function decision(command, overrides)
+      return can_use_tool.can_use_tool(
+        "Bash",
+        { command = command },
+        make_config(vim.tbl_extend("force", {
+          allowed_tools = { "Bash(gh pr view:*)", "Bash(rg:*)" },
+        }, overrides or {}))
+      ).behavior
+    end
+
+    it("matches a multi-word prefix word for word", function()
+      assert.equals("allow", decision("gh pr view 876"))
+      assert.equals("allow", decision("gh  pr   view"))
+      assert.equals("ask", decision("gh pr merge 876"))
+      assert.equals("ask", decision("gh pr viewer"))
+    end)
+
+    it("still matches a single-word prefix only as a whole word", function()
+      assert.equals("allow", decision("rg -c foo"))
+      assert.equals("ask", decision("rgx foo"))
+    end)
+
+    it("counts as pre-approved in dontAsk mode", function()
+      assert.equals("allow", decision("gh pr view 876", { permission_mode = "dontAsk" }))
+      assert.equals("allow", decision("rg -c foo", { permission_mode = "dontAsk" }))
+      assert.equals("deny", decision("gh pr merge 876", { permission_mode = "dontAsk" }))
+    end)
+
+    it("is still taken back by the ask list in dontAsk mode", function()
+      assert.equals(
+        "deny",
+        decision("rg -c foo", { permission_mode = "dontAsk", asked_tools = { "Bash(rg:*)" } })
+      )
+    end)
+  end)
 end)

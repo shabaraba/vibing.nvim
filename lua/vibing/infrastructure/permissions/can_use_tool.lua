@@ -378,8 +378,8 @@ function M.can_use_tool(tool_name, input, config)
     end
 
     -- 9. Check allow list (with pattern support)
+    local is_allowed = false
     if #config.allowed_tools > 0 then
-      local is_allowed = false
       for _, pattern in ipairs(config.allowed_tools) do
         if matchers.matches_permission(tool_name, input, pattern) then
           is_allowed = true
@@ -413,7 +413,9 @@ function M.can_use_tool(tool_name, input, config)
       end
     end
 
-    if mode == "dontAsk" then
+    -- A tool the allow list named *is* pre-approved; only the ask list and the rules above may
+    -- still take it back.
+    if mode == "dontAsk" and not is_allowed then
       return deny(string.format("Tool %s is not pre-approved (dontAsk mode)", tool_name))
     end
     return allow(input)
