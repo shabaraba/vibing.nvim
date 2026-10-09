@@ -381,6 +381,13 @@ function M._register_commands()
     desc = "Search past chats by topic and open the matches (prompts when given no query)",
   })
 
+  vim.api.nvim_create_user_command("VibingSessionSearch", function(opts)
+    require("vibing.presentation.chat.search_controller").handle_session_search_command(opts)
+  end, {
+    nargs = "*",
+    desc = "Search past Claude/Codex CLI sessions and resume or hand one off (prompts when given no query)",
+  })
+
   -- mote統合（と :VibingCleanMote / :VibingMoteDir）は削除された。設定を残したまま
   -- アップデートした人がコマンドの消失に戸惑わないよう、代わりに何を見ればよいかを返す
   -- スタブだけ残す。

@@ -324,4 +324,77 @@ describe("can_use_tool", function()
       assert.is_false(can_use_tool.is_vibing_nvim_mcp_tool("mcp__vibing-nvim__something_else"))
     end)
   end)
+
+  describe("an exclusive tool set", function()
+    local function decision(tool, overrides, input)
+      return can_use_tool.can_use_tool(
+        tool,
+        input or {},
+        make_config(vim.tbl_extend("force", {
+          exclusive_tools = { "Grep", "mcp__vibing-nvim__nvim_session_read" },
+          mcp_enabled = true,
+        }, overrides or {}))
+      ).behavior
+    end
+
+    it("allows what it names", function()
+      assert.equals("allow", decision("Grep"))
+      assert.equals("allow", decision("mcp__vibing-nvim__nvim_session_read"))
+    end)
+
+    it("denies what is otherwise always allowed", function()
+      assert.equals("deny", decision("Read"))
+      assert.equals("deny", decision("Agent"))
+      assert.equals("deny", decision("mcp__vibing-nvim__nvim_execute"))
+    end)
+
+    it("holds even under bypassPermissions", function()
+      assert.equals("deny", decision("Bash", { permission_mode = "bypassPermissions" }, { command = "ls" }))
+    end)
+
+    it("does not lift a deny rule on a tool it names", function()
+      assert.equals("deny", decision("Grep", { denied_tools = { "Grep" } }))
+    end)
+
+    it("is absent from an ordinary chat", function()
+      assert.equals("allow", can_use_tool.can_use_tool("Read", {}, make_config({})).behavior)
+    end)
+  end)
+
+  describe("a Bash prefix in the allow list", function()
+    local function decision(command, overrides)
+      return can_use_tool.can_use_tool(
+        "Bash",
+        { command = command },
+        make_config(vim.tbl_extend("force", {
+          allowed_tools = { "Bash(gh pr view:*)", "Bash(rg:*)" },
+        }, overrides or {}))
+      ).behavior
+    end
+
+    it("matches a multi-word prefix word for word", function()
+      assert.equals("allow", decision("gh pr view 876"))
+      assert.equals("allow", decision("gh  pr   view"))
+      assert.equals("ask", decision("gh pr merge 876"))
+      assert.equals("ask", decision("gh pr viewer"))
+    end)
+
+    it("still matches a single-word prefix only as a whole word", function()
+      assert.equals("allow", decision("rg -c foo"))
+      assert.equals("ask", decision("rgx foo"))
+    end)
+
+    it("counts as pre-approved in dontAsk mode", function()
+      assert.equals("allow", decision("gh pr view 876", { permission_mode = "dontAsk" }))
+      assert.equals("allow", decision("rg -c foo", { permission_mode = "dontAsk" }))
+      assert.equals("deny", decision("gh pr merge 876", { permission_mode = "dontAsk" }))
+    end)
+
+    it("is still taken back by the ask list in dontAsk mode", function()
+      assert.equals(
+        "deny",
+        decision("rg -c foo", { permission_mode = "dontAsk", asked_tools = { "Bash(rg:*)" } })
+      )
+    end)
+  end)
 end)

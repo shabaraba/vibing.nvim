@@ -320,19 +320,46 @@ section is not kept in sync field by field.
     Find past chats about {query} and open the ones you pick. With no
     argument, prompts for the query.
 
-    The query is expanded into keywords, every chat file is searched for
-    them, and the surviving candidates are read back to decide which ones are
-    actually about the query. Each match is listed with its date and a
-    one-line summary of the relevant part. All three steps are utility calls
-    with no tools, like title generation.
+    The search is one agent turn in the background, on `agent.utility_model`,
+    with no chat buffer and no chat file. The agent greps the chat files,
+    rephrases and searches again when that finds nothing, and reads the
+    candidates to decide which ones are actually about the query. Given a
+    GitHub PR or issue URL, it looks up the title with `gh` and searches for
+    that too. The tool calls are shown in a small float while it works.
 
-    With telescope.nvim the list is a float with a preview, `<Tab>` selects
-    several and `<CR>` opens them: the first is displayed, the rest are
-    loaded as chat buffers you can reach with |:bnext|. Without telescope it
-    falls back to |vim.ui.select()|, one chat at a time.
+    The agent may only use Grep, Glob, Read, `rg`, `gh pr view` and
+    `gh issue view`. Anything else is refused without asking, since there is
+    no chat to show an approval in.
 
-    When the relevance step fails, the raw keyword matches are listed instead
-    with no summaries, and a warning says so.
+    Each match is listed with how it relates to the query (for example,
+    handled it directly or followed up on it), its date and a one or two line
+    summary. With telescope.nvim the list is a float with a preview, `<Tab>`
+    selects several and `<CR>` opens them: the first is displayed, the rest
+    are loaded as chat buffers you can reach with |:bnext|. Without telescope
+    it falls back to |vim.ui.select()|, one chat at a time.
+
+                                                      *:VibingSessionSearch*
+:VibingSessionSearch [{query}]
+    Find past Claude and Codex CLI sessions about {query}, including ones
+    started outside vibing.nvim, and continue the one you pick. With no
+    argument, prompts for the query.
+
+    It runs like |:VibingChatSearch|, but the agent reads the CLI's own JSONL
+    logs with the MCP tools `nvim_session_search` and `nvim_session_read`
+    (see "External Claude/Codex conversations" under |vibing-chat-file|), and
+    may use nothing else.
+
+    Each match is listed with how it relates to the query, its last update,
+    its CLI and a short title; the preview shows the summary, the session ID
+    and its working directory.
+    `<CR>`    Resume it: a new chat with its `session_id`, `agent` and
+            `working_dir`. Only for a session of the CLI new chats here run
+            on, started inside this repository; otherwise it says why.
+    `<C-h>`   Hand it off: a new chat with a request to read that session and
+            continue its work drafted in the input section. Works across
+            CLIs and repositories.
+    Without telescope, |vim.ui.select()| picks the session and then asks
+    which of the two.
 
                                                              *:VibingContext*
 :[range]VibingContext [{path}]
@@ -774,7 +801,8 @@ and remaining work here. This can hand off between Claude and Codex. To resume
 the original session instead, set its `session_id` in a new chat with the same
 `agent` and original working directory. IDs cannot be shared between CLIs.
 Open Neovim in the original repository if it is outside the current git root.
-The search/read tools do not attach or start sessions automatically.
+The search/read tools do not attach or start sessions automatically;
+|:VibingSessionSearch| finds a session and opens either kind of chat for it.
 
 `effort` is translated to Claude's `--effort`, Codex's one-shot
 `model_reasoning_effort` override or duplex `turn/start` field, or Grok's

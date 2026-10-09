@@ -1,5 +1,6 @@
 ---@class Vibing.UI.ChatSearchPicker
----チャット検索の結果を、日付・タイトル・要約の一覧として出すピッカー。
+---チャット検索の結果を、分類・日付・タイトル・要約の一覧として出すピッカー。
+---並びはエージェントが返した分類の順（関連の強い分類が先）のまま。
 ---
 ---Telescope があればプレビュー付きのフロートで `<Tab>` の複数選択が使える。無い環境では
 ---`vim.ui.select` に落ちるので1件ずつになる（`chat_deletion_picker` と同じ構え）。
@@ -8,7 +9,7 @@ local M = {}
 local notify = require("vibing.core.utils.notify")
 local ChatOpener = require("vibing.presentation.chat.modules.chat_opener")
 
----要約が空（判定まで届かなかった）ときに代わりに出す文言
+---要約が空のときに代わりに出す文言
 local NO_SUMMARY = "(no summary)"
 
 ---@param result Vibing.Chat.Search.Result
@@ -62,8 +63,9 @@ function M._show_telescope(query, results)
   local displayer = entry_display.create({
     separator = " ",
     items = {
+      { width = 24 }, -- 分類
       { width = 19 }, -- 日時
-      { width = 36 }, -- タイトル
+      { width = 32 }, -- タイトル
       { remaining = true }, -- 要約
     },
   })
@@ -78,9 +80,10 @@ function M._show_telescope(query, results)
           return {
             value = result,
             path = entity.path,
-            ordinal = entity:get_display_name() .. " " .. result.summary,
+            ordinal = table.concat({ result.group, entity:get_display_name(), result.summary }, " "),
             display = function(entry)
               return displayer({
+                { entry.value.group, "TelescopeResultsComment" },
                 { entry.value.entity:get_formatted_date(), "TelescopeResultsNumber" },
                 { entry.value.entity:get_display_name(), "TelescopeResultsIdentifier" },
                 { summary_of(entry.value), "TelescopeResultsString" },
@@ -120,7 +123,8 @@ function M._show_native(query, results)
     prompt = string.format("Chats matching: %s", query),
     format_item = function(result)
       return string.format(
-        "%s  %s - %s",
+        "[%s] %s  %s - %s",
+        result.group,
         result.entity:get_formatted_date(),
         result.entity:get_display_name(),
         summary_of(result)

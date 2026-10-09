@@ -225,8 +225,8 @@ agent = {
                             -- Codex example: "gpt-5.6-terra"
 
   utility_model = "haiku",  -- Model used for lightweight utility calls (AI title
-                            -- generation, chat summaries, daily summaries, and the two
-                            -- calls :VibingChatSearch makes per search).
+                            -- generation, chat summaries, daily summaries), and for the
+                            -- tool-using search agent :VibingChatSearch runs.
                             -- Takes priority over the chat's model for those calls.
                             -- Set to "sonnet" if generated titles start naming the wrong
                             -- thing: haiku picks the subject of a noisy transcript wrong
