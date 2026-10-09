@@ -15,7 +15,7 @@
 --- Deliberately narrow, for the same reason `auto_resume` is -- every path here spends tokens on
 --- a turn the user did not ask for:
 ---
----   * opt-in (`agent.token_usage.auto_compact.enabled`, default false)
+---   * opt-in (`chat.context.compaction.enabled`, default false)
 ---   * **manual sends and deliveries from other chats only.** Never a scheduled request or an
 ---     auto-resume. That is why neither hook is inside `ChatBuffer:send_message()`, which every
 ---     one of those paths also goes through: the manual one is on the `<CR>` keymap, inside
@@ -61,8 +61,7 @@ local cooldown = {}
 --- @return table
 local function options()
   local config = require("vibing.config").get()
-  local token_usage = config.agent and config.agent.token_usage or {}
-  return token_usage.auto_compact or {}
+  return vim.tbl_get(config, "chat", "context", "compaction") or {}
 end
 
 --- The message that gets sent as a turn.
@@ -116,7 +115,7 @@ M._rewrite_unsent_body = rewrite_unsent_body
 --- `ChatBuffer:can_defer_send`, which the caller consults. This is the third interception on the
 --- `<CR>` path and the third to need exactly that judgement, so re-deriving it here is how one of
 --- the three silently stops excluding an approval answer.
---- @param opts table `agent.token_usage.auto_compact`
+--- @param opts table `chat.context.compaction`
 --- @param agent string The backend this chat resolves to
 --- @param context number|nil The last reported context size, if any
 --- @param on_cooldown boolean Whether the previous manual send already inserted a compaction
@@ -127,7 +126,7 @@ function M.should_compact(opts, agent, context, on_cooldown)
   end
 
   local TokenUsage = require("vibing.core.utils.token_usage")
-  local at = tonumber(opts.at) or TokenUsage.DEFAULT_AUTO_COMPACT_AT
+  local at = tonumber(opts.threshold_tokens) or TokenUsage.DEFAULT_AUTO_COMPACT_AT
   -- `at <= 0` reads as "off" rather than "always", matching how `warn_context = 0` silences the
   -- warning instead of firing it on every turn.
   if at <= 0 or not context then
@@ -163,7 +162,7 @@ end
 --- is consumed here, and a send that was never a candidate must not spend it.
 --- @param chat_buf table
 --- @param bufnr number
---- @param opts table `agent.token_usage.auto_compact`
+--- @param opts table `chat.context.compaction`
 --- @return number? context
 local function decide(chat_buf, bufnr, opts)
   local on_cooldown = cooldown[bufnr] == true

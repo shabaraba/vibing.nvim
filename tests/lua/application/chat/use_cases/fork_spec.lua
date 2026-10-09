@@ -9,16 +9,17 @@ local function make_chat_buffer(opts)
   local buf = vim.api.nvim_create_buf(false, true)
   local file_path = opts.file_path or (vim.fn.tempname() .. ".md")
 
-  local frontmatter = opts.frontmatter or {
-    ["vibing.nvim"] = true,
-    session_id = opts.session_id or "test-session-123",
-    created_at = "2025-01-01T00:00:00",
-    mode = "code",
-    model = "sonnet",
-    permission_mode = "acceptEdits",
-    permissions_allow = { "Read", "Edit" },
-    permissions_deny = {},
-  }
+  local frontmatter = opts.frontmatter
+    or {
+      ["vibing.nvim"] = true,
+      session_id = opts.session_id or "test-session-123",
+      created_at = "2025-01-01T00:00:00",
+      mode = "code",
+      model = "sonnet",
+      permission_mode = "acceptEdits",
+      permissions_allow = { "Read", "Edit" },
+      permissions_deny = {},
+    }
 
   local body = opts.body or "\n## 2025-01-01 00:00:00 User\n\nHello\n\n## 2025-01-01 00:01:00 Assistant\n\nHi there!\n"
   local content = Frontmatter.serialize(frontmatter, body)
@@ -45,9 +46,18 @@ local function setup_config()
   package.loaded["vibing"] = {
     get_config = function()
       return {
-        agent = { default_mode = "code", default_model = "sonnet" },
+        ai = {
+          chat = {
+            model = "sonnet",
+          },
+        },
         permissions = { mode = "acceptEdits", allow = { "Read" }, deny = {} },
-        chat = { save_location_type = "custom", save_dir = tmp_dir },
+        chat = {
+          storage = {
+            location = "custom",
+            path = tmp_dir,
+          },
+        },
       }
     end,
   }

@@ -15,7 +15,12 @@ describe("ui.apply_fold_config", function()
     package.loaded["vibing.config"] = {
       get = function()
         -- `wrap = "nvim"` so the wrap half of apply_window_config touches nothing here.
-        return { ui = { wrap = "nvim", fold = { enabled = enabled } } }
+        return {
+          ui = {
+            wrap = "nvim",
+            fold = { enabled = enabled },
+          },
+        }
       end,
     }
     package.loaded["vibing.infrastructure.treesitter"] = {

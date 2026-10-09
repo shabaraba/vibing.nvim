@@ -6,7 +6,6 @@
 
 local CLICommandBuilder = require("vibing.infrastructure.adapter.modules.cli_command_builder")
 local CLIEventProcessor = require("vibing.infrastructure.adapter.modules.cli_event_processor")
-local AgentEnvironment = require("vibing.infrastructure.adapter.modules.agent_environment")
 local TokenUsage = require("vibing.core.utils.token_usage")
 local ClaudeSubagentTranscript = require("vibing.infrastructure.adapter.modules.claude_subagent_transcript")
 
@@ -27,6 +26,7 @@ local M = {
   -- `effort`, `resume` and `prompt` are resolved by request_builder; the extras are the parts
   -- composed from several sources, named here so they are listed rather than buried.
   request = {
+    agent_id = "claude",
     binary = CLICommandBuilder.BINARY,
     parts = {
       { kind = "args", "-p", "--output-format", "stream-json", "--verbose", "--include-partial-messages" },
@@ -45,7 +45,12 @@ local M = {
       { kind = "hook_arg", flag = "--settings", unless = "lightweight" },
       -- Without this the CLI swallows everything a subagent says and only its final tool_result
       -- surfaces. Opt-in because it makes long delegated turns much noisier.
-      { kind = "args", "--forward-subagent-text", unless = "lightweight", when = { config = "agent.subagent.enabled" } },
+      {
+        kind = "args",
+        "--forward-subagent-text",
+        unless = "lightweight",
+        when = { config = "ui.subagents.show_output" },
+      },
       { kind = "extra", fn = CLICommandBuilder.plugin_dir_args, unless = "lightweight" },
       { kind = "extra", fn = CLICommandBuilder.mcp_config_args, unless = "lightweight" },
       { kind = "extra", fn = CLICommandBuilder.system_prompt_args },
@@ -104,7 +109,6 @@ local M = {
 
     -- Ahead of the git-instructions default below, so a declared variable reads exactly like one
     -- the user exported: the default still sees "already set, leave it alone".
-    AgentEnvironment.apply(env, config, opts)
 
     -- The CLI computes a git status block (branch, `git status --short`, recent commits) once per
     -- process and puts it at the top of the system prompt, ahead of the whole conversation. A
@@ -120,7 +124,8 @@ local M = {
     -- promises for a user who has that key set to false. A value already in the environment wins
     -- over both.
     if env.CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS == nil then
-      local git_instructions = config.agent and config.agent.git_instructions
+      local git_instructions = config
+        and vim.tbl_get(config, "ai", "agents", "claude", "extensions", "git_instructions")
       env.CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS = git_instructions and "0" or "1"
     end
 
@@ -129,7 +134,9 @@ local M = {
     -- 一発起動向けで、対話チャットの subagent は普通に超える。失われるのが黙って起きる以上、
     -- 既定を広げるのは安全側。環境に既にあればそちらが勝つ（ユーザーの export が最終決定）
     if env.CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS == nil then
-      local sec = config.backends and config.backends.claude and config.backends.claude.background_wait_sec
+      local sec = vim.tbl_get(config, "ai", "agents")
+        and vim.tbl_get(config, "ai", "agents", "claude")
+        and vim.tbl_get(config, "ai", "agents", "claude", "extensions", "background_wait_sec")
       if type(sec) == "number" then
         env.CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS = tostring(math.floor(sec * 1000))
       end
@@ -150,7 +157,7 @@ local M = {
   stdin = nil,
   -- The most capable process model this CLI can run, not the one it will: the default stays
   -- `oneshot` for every chat, and a resident process is reached only through
-  -- `backends.claude.process` or a chat's `process:` frontmatter (`process_model.lua`).
+  -- `ai.agents.claude.process` or a chat's `process:` frontmatter (`process_model.lua`).
   process = "duplex",
 }
 

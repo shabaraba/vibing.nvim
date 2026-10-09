@@ -23,6 +23,7 @@ local M = {
   -- `grok --single=<prompt> --output-format streaming-json`, prompt first as one argv token so a
   -- hyphen-leading prompt is not misparsed as flags by clap.
   request = {
+    agent_id = "grok",
     binary = GrokCommandBuilder.BINARY,
     parts = {
       { kind = "prompt", flag_eq = "--single=" },
@@ -32,7 +33,12 @@ local M = {
       { kind = "resume", flag = "--resume", fork = "--fork-session" },
       vim.tbl_extend("force", { kind = "args", when = "lightweight" }, GrokLightweight.ARGS),
       -- Grok has no `auto`; it falls back to asking rather than forwarding an unsupported value.
-      { kind = "permission_mode", flag = "--permission-mode", map = GrokCommandBuilder.PERMISSION_MODE_FALLBACK, unless = "lightweight" },
+      {
+        kind = "permission_mode",
+        flag = "--permission-mode",
+        map = GrokCommandBuilder.PERMISSION_MODE_FALLBACK,
+        unless = "lightweight",
+      },
       { kind = "extra", fn = GrokCommandBuilder.cwd_args },
       { kind = "extra", fn = GrokCommandBuilder.rules_args },
     },

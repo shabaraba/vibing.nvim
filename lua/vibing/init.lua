@@ -47,7 +47,16 @@ function M._shutdown()
       end
     end,
     function()
-      if M.config and M.config.mcp and M.config.mcp.enabled then
+      if M._helper_adapter then
+        M._helper_adapter:cancel()
+      end
+    end,
+    function()
+      if
+        M.config
+        and vim.tbl_get(M.config, "integrations", "nvim")
+        and vim.tbl_get(M.config, "integrations", "nvim", "enabled")
+      then
         require("vibing.infrastructure.rpc.server").stop()
       end
     end,
@@ -64,6 +73,7 @@ end
 ---@param opts? Vibing.Config ユーザー設定オブジェクト（nilの場合はデフォルト設定のみ使用）
 function M.setup(opts)
   Config.setup(opts)
+  M._helper_adapter = nil
   M.config = Config.get()
 
   -- Projects created by older vibing.nvim versions already have `.vibing/` but not every file a
@@ -111,16 +121,16 @@ function M.setup(opts)
   -- 同一コールバック内で順に実行するので、RPCサーバーが受信可能になった時点でadapterは必ず存在する。
   -- また後続の vim.schedule(auto_resume.restore 等) より先に登録されるため、実行順も従来通り。
   vim.schedule(function()
-    if M.config.mcp and M.config.mcp.enabled then
+    if vim.tbl_get(M.config, "integrations", "nvim") and vim.tbl_get(M.config, "integrations", "nvim", "enabled") then
       local rpc_server = require("vibing.infrastructure.rpc.server")
-      local port = rpc_server.start(M.config.mcp.rpc_port)
+      local port = rpc_server.start(vim.tbl_get(M.config, "integrations", "nvim", "rpc_port"))
       if port > 0 then
         notify.info(string.format("MCP RPC server started on port %d", port))
       end
     end
 
     local adapter_factory = require("vibing.infrastructure.adapter.factory")
-    M.adapter = adapter_factory.create(M.config.adapter, M.config)
+    M.adapter = adapter_factory.create(vim.tbl_get(M.config, "ai", "chat", "agent"), M.config)
   end)
 
   -- Cleanup stale hook communication directories from previous sessions.
@@ -185,10 +195,10 @@ function M.setup(opts)
 
   -- nvim-dapの停止イベントを購読する。nvim-dapがまだロードされていない可能性があるので
   -- VimEnter後に遅らせる（未インストールならsetup側がfalseを返して何もしない）
-  if M.config.dap and M.config.dap.enabled then
+  if vim.tbl_get(M.config, "integrations", "dap") and vim.tbl_get(M.config, "integrations", "dap", "enabled") then
     vim.schedule(function()
       pcall(function()
-        require("vibing.application.debug.analyze").setup(M.config.dap)
+        require("vibing.application.debug.analyze").setup(vim.tbl_get(M.config, "integrations", "dap"))
       end)
     end)
   end
@@ -551,8 +561,7 @@ function M._register_commands()
     end
 
     local AutoResume = require("vibing.application.chat.auto_resume")
-    local agent = M.config.agent or {}
-    local grace = (agent.auto_resume_on_limit and agent.auto_resume_on_limit.grace_sec) or 10
+    local grace = vim.tbl_get(M.config, "automation", "limits", "grace_sec") or 10
 
     local fire_at, reason
     if opts.args ~= "" then
@@ -761,8 +770,19 @@ end
 
 ---現在の設定を取得
 ---setup()で初期化された設定を返す
+--- Resolve the adapter for auxiliary work independently of chat frontmatter.
+function M.get_helper_adapter()
+  local config = M.config or Config.get()
+  local selection = require("vibing.core.utils.ai_config").resolve(config, nil, true)
+  if not M._helper_adapter or M._helper_adapter_config ~= config then
+    M._helper_adapter = require("vibing.infrastructure.adapter.factory").create(selection.agent, config)
+    M._helper_adapter_config = config
+  end
+  return M._helper_adapter
+end
+
 ---setup()未実行の場合はデフォルト設定を返す
----@return Vibing.Config 現在の設定オブジェクトまたはデフォルト設定
+---@return Vibing.Config
 function M.get_config()
   return M.config or Config.defaults
 end

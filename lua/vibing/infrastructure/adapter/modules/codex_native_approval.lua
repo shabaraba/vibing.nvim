@@ -10,7 +10,7 @@
 --- The reply is the JSON-RPC response to the request codex sent, so it is owed exactly once and
 --- forever; `rpc/pending_native_approvals.lua` holds that obligation and its five exits.
 ---
---- `backends.codex.auto_approve` answers the request from configuration instead of from a human.
+--- `ai.agents.codex.extensions.auto_approve` answers the request from configuration instead of from a human.
 --- What makes that defensible is the ordering above: the hook has already allowed this call, so the
 --- flag removes a **second** ask about something `permissions` passed, not the only one. It stays
 --- off the registry entirely -- an answered request is owed nothing, and opening an entry only to
@@ -90,10 +90,10 @@ end
 --- @param name string
 --- @return any
 local function codex_option(name)
-  return vim.tbl_get(require("vibing.config").get() or {}, "backends", "codex", name)
+  return vim.tbl_get(require("vibing.config").get() or {}, "ai", "agents", "codex", "extensions", name)
 end
 
---- Whether `backends.codex.auto_approve` is on.
+--- Whether `ai.agents.codex.extensions.auto_approve` is on.
 --- @return boolean
 function M.auto_approve_enabled()
   return codex_option("auto_approve") == true

@@ -16,7 +16,7 @@ local Git = require("vibing.core.utils.git")
 ---@return string? working_dir git ルートからの相対パス
 ---@return string? reason resume できない理由
 function M.resume_target(result)
-  local adapter = require("vibing").get_config().adapter or "claude"
+  local adapter = require("vibing").get_config().ai.chat.agent or "claude"
   if result.backend ~= adapter then
     return nil, string.format("it was started on %s, and new chats here run on %s", result.backend, adapter)
   end

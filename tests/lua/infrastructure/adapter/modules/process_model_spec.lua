@@ -19,7 +19,15 @@ end
 --- @param value string?
 --- @return table
 local function config_with(value)
-  return { backends = { claude = { process = value } } }
+  return {
+    ai = {
+      agents = {
+        claude = {
+          process = value,
+        },
+      },
+    },
+  }
 end
 
 describe("process_model.resolve", function()
@@ -61,7 +69,7 @@ describe("process_model.resolve", function()
     -- stdin must not be handed one because a config key said so.
     --
     -- Announced because this refusal is invisible everywhere else. `config.lua`'s validation walks
-    -- only *declared* fields, so `backends.codex.process = "duplex"` is not even rejected there --
+    -- only *declared* fields, so `ai.agents.codex.process = "duplex"` is not even rejected there --
     -- the chat would run exactly as before and the user would measure a feature they never got.
     assert.equals("oneshot", ProcessModel.resolve(INCAPABLE, opts({ process = "duplex" }), config_with("duplex")))
     assert.equals(1, #notified)
@@ -86,7 +94,8 @@ describe("process_model.resolve", function()
     -- core/types.lua's bargain -- no tools, no project config, no user MCP servers, no hooks,
     -- utility_model -- is not something a process serving a chat can also be keeping. Silent
     -- because this is title generation and /summarize, not a chat anyone is watching for speed.
-    local resolved = ProcessModel.resolve(CAPABLE, opts({ process = "duplex", lightweight = true }), config_with("duplex"))
+    local resolved =
+      ProcessModel.resolve(CAPABLE, opts({ process = "duplex", lightweight = true }), config_with("duplex"))
     assert.equals("oneshot", resolved)
     assert.same({}, notified)
   end)
@@ -95,7 +104,8 @@ describe("process_model.resolve", function()
     -- A subagent chat shares its parent's session permanently, and a resident process holds its
     -- `--resume` for its whole life: two of them would sit on one transcript indefinitely. Unlike
     -- the lightweight case this is a chat the user opened and is watching.
-    local resolved = ProcessModel.resolve(CAPABLE, opts({ process = "duplex", _subagent_id = "sub-1" }), config_with("duplex"))
+    local resolved =
+      ProcessModel.resolve(CAPABLE, opts({ process = "duplex", _subagent_id = "sub-1" }), config_with("duplex"))
     assert.equals("oneshot", resolved)
     assert.equals(1, #notified)
     assert.matches("subagent", notified[1].message)
@@ -117,7 +127,7 @@ describe("process_model.resolve", function()
   end)
 
   it("does not read the backend setting past a bad frontmatter value", function()
-    -- Falling through to `backends.claude.process = "duplex"` after refusing the chat's own value
+    -- Falling through to `ai.agents.claude.process = "duplex"` after refusing the chat's own value
     -- would give the chat the opposite of the safe answer for a typo.
     assert.equals("oneshot", ProcessModel.resolve(CAPABLE, opts({ process = "" }), config_with("duplex")))
   end)

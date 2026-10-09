@@ -27,7 +27,13 @@ describe("session opener", function()
 
     package.loaded["vibing"] = {
       get_config = function()
-        return { adapter = "claude" }
+        return {
+          ai = {
+            chat = {
+              agent = "claude",
+            },
+          },
+        }
       end,
     }
     package.loaded["vibing.application.chat.use_case"] = {

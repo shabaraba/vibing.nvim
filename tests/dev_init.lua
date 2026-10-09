@@ -23,9 +23,10 @@ vim.opt.backup = false
 vim.opt.number = true
 
 require("vibing").setup({
-  -- The MCP server is a separate build artifact (`./build.sh`) that a fresh worktree does not
-  -- have, and enabling it here would also fight the developer's real Neovim for the RPC port.
-  -- Nothing in the diff viewer path needs it.
-  mcp = { enabled = false },
+  integrations = {
+    nvim = {
+      enabled = false,
+    },
+  },
   permissions = { mode = "acceptEdits" },
 })

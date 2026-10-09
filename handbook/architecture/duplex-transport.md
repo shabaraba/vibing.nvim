@@ -1,6 +1,6 @@
 # The Duplex Transport: one resident CLI process per chat
 
-Opt-in for Claude and Codex, default off. Turn it on with `backends.claude.process = "duplex"` or a chat's
+Opt-in for Claude and Codex, default off. Turn it on with `ai.agents.claude.process = "duplex"` or a chat's
 own `process: duplex` frontmatter. Why it exists, what it cost, and the five things that had to move
 before it could work at all.
 
@@ -362,7 +362,7 @@ unrelated `transport` in the same descriptor is how a branch ends up reading the
 
 ## Codex app-server
 
-Set `backends.codex.process = "duplex"`, or `process: duplex` in a Codex chat.
+Set `ai.agents.codex.process = "duplex"`, or `process: duplex` in a Codex chat.
 The existing per-chat pool, process/turn registries, five-minute idle reclamation and
 interrupt watchdog also serve Codex. Lightweight calls and subagent chats remain oneshot.
 

@@ -34,8 +34,15 @@ describe("delegated approval, end to end", function()
   ---@param enabled boolean|"scoped"
   local function configure(enabled)
     local cfg = vim.tbl_deep_extend("force", vim.deepcopy(Config.defaults), {
-      chat = { save_location_type = "custom", save_dir = save_dir },
-      agent = { orchestration = { delegated_approval = enabled } },
+      chat = {
+        storage = {
+          location = "custom",
+          path = save_dir,
+        },
+      },
+      permissions = {
+        delegated_approval = enabled,
+      },
     })
     Config.get = function()
       return cfg

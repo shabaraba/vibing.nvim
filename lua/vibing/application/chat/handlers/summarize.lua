@@ -16,12 +16,18 @@ return function(_, chat_buffer)
     return false
   end
 
-  local summary_prompt = "Please summarize the above conversation in a concise manner, highlighting key points and decisions."
+  local summary_prompt =
+    "Please summarize the above conversation in a concise manner, highlighting key points and decisions."
 
   -- セッションIDがあれば --resume --fork-session で履歴をプロンプトキャッシュ参照させ、
   -- 履歴の平文再送を避ける（新規セッションでのフルプライス送信を防ぐ）
   local vibing = require("vibing")
-  local session_id = chat_buffer:get_session_id()
+  local config = vibing.get_config()
+  local frontmatter = chat_buffer.parse_frontmatter and chat_buffer:parse_frontmatter() or {}
+  local source_agent = require("vibing.core.constants.modes").resolve_agent(frontmatter, config)
+  local helper_agent = require("vibing.core.utils.ai_config").resolve(config, nil, true).agent
+  -- Session IDs belong to the agent that created them. A different helper receives transcript text.
+  local session_id = source_agent == helper_agent and chat_buffer:get_session_id() or nil
   local full_prompt
   -- Summarization is a lightweight utility call: no tools/CLAUDE.md/MCP needed
   local opts = {
@@ -41,7 +47,7 @@ return function(_, chat_buffer)
     full_prompt = table.concat(conversation_text, "\n\n") .. "\n\n" .. summary_prompt
   end
 
-  local adapter = vibing.get_adapter()
+  local adapter = vibing.get_helper_adapter()
 
   if not adapter then
     notify.error("No adapter configured")
@@ -50,8 +56,7 @@ return function(_, chat_buffer)
 
   notify.info("Generating summary...")
 
-  adapter:stream(full_prompt, opts, function(chunk)
-  end, function(response)
+  adapter:stream(full_prompt, opts, function(chunk) end, function(response)
     if response.error then
       notify.error(string.format("Summarization failed: %s", response.error))
       return

@@ -149,7 +149,7 @@ function M.execute(adapter, callbacks, message, config)
   local language_utils = require("vibing.core.utils.language")
   local lang_code = frontmatter.language
   if not lang_code then
-    lang_code = language_utils.get_language_code(config.language, "chat")
+    lang_code = language_utils.get_language_code(vim.tbl_get(config, "chat", "language"), "chat")
   end
 
   -- Get cwd from frontmatter working_dir
@@ -187,8 +187,6 @@ function M.execute(adapter, callbacks, message, config)
     mode = M._validate_frontmatter_mode(frontmatter.mode),
     model = frontmatter.model,
     effort = frontmatter.effort,
-    -- What the chat asked for, untouched. `process_model.resolve` decides what this turn actually
-    -- runs under, because a lightweight call and a subagent chat cannot honour `duplex` at all.
     process = frontmatter.process,
     permissions_allow = frontmatter.permissions_allow,
     permissions_deny = frontmatter.permissions_deny,
@@ -199,18 +197,7 @@ function M.execute(adapter, callbacks, message, config)
     env = frontmatter.env,
     language = lang_code,
     cwd = session_cwd,
-    -- ツリースナップショット差分の帰属判定に使う。アダプタはこれをそのまま
-    -- TurnRegistry のエントリに載せるだけで、git を呼ばない（`stream()` は同期I/Oを
-    -- 増やさない）。
-    --
-    -- ここは `rev-parse --show-toplevel` 1回ぶんメインループを止める。
-    -- handbook/architecture/plugin-and-commands.md の「Startup Cost」が同期I/Oに神経質なのに
-    -- 対して意図的に許容している箇所で、根拠は
-    -- 呼ばれる回数のほう: git_snapshot 側でcwd単位にキャッシュされるので、1つのcwdにつき
-    -- 最初の送信の1回だけで、以降はゼロ。setup() と違ってNeovim起動時には走らない
     _worktree_root = require("vibing.core.utils.git_snapshot").worktree_root(session_cwd),
-    -- Canonical tool names on every backend (event_renderer.lua canonicalises through the
-    -- backend's vocabulary), and one call per file for a tool that touches several.
     on_tool_use = function(tool, file_path, _command)
       if (tool == "Write" or tool == "Edit" or tool == "MultiEdit" or tool == "NotebookEdit") and file_path then
         modified_file_paths[file_path] = true
@@ -235,11 +222,6 @@ function M.execute(adapter, callbacks, message, config)
         callbacks.show_pending_prompts()
       end
     end,
-    -- 常駐プロセス（duplex）が回収され、まだ報告していない background subagent を連れていった
-    -- ときの起床（#840）。`adapter/` から `application/` を require しないための経路 —
-    -- 「このチャットにターンが必要か」はアダプタの問いではない（`outstanding_subagents.lua`）。
-    -- ここだけ `on_insert_choices` などと違ってターンをまたいで生き残る: プロセスはターンより
-    -- 長生きするので、これを呼ぶのは「これを渡したターン」ではなく、そのプロセスの最後のターン
     on_subagents_orphaned = function(unreported, recovered, subagents_lost)
       require("vibing.application.chat.outstanding_subagents").wake_orphaned(
         bufnr,
@@ -611,16 +593,14 @@ end
 ---@param config Vibing.Config|nil
 ---@param started_fresh_session boolean|nil ターン開始時点で session_id が無かったか
 function M._report_token_usage(response, callbacks, config, started_fresh_session)
-  local settings = config and config.agent and config.agent.token_usage or nil
-  if settings and settings.enabled == false then
-    return
-  end
+  local settings = vim.tbl_get(config or {}, "chat", "context")
+  local show_usage = vim.tbl_get(config or {}, "ui", "usage", "enabled") ~= false
 
   local TokenUsage = require("vibing.core.utils.token_usage")
   -- Luaでは 0 が truthy なので、`warn_context = 0` はここで既定値に差し替えられずそのまま
   -- 通る。それが意図で、`TokenUsage.warning` 側の `warn_context <= 0` が「警告だけ止めて
   -- 内訳は出す」という指定として受ける。`or` が拾うのは未設定と数値でない値だけ
-  local warn_context = (settings and tonumber(settings.warn_context)) or TokenUsage.DEFAULT_WARN_CONTEXT
+  local warn_context = (settings and tonumber(settings.warn_tokens)) or TokenUsage.DEFAULT_WARN_CONTEXT
 
   local acc = response._token_usage
   if TokenUsage.is_cumulative(acc) then
@@ -629,7 +609,7 @@ function M._report_token_usage(response, callbacks, config, started_fresh_sessio
     acc = TokenUsage.cumulative_delta(acc, previous, started_fresh_session)
 
     local section = TokenUsage.section(acc)
-    if section then
+    if section and show_usage then
       callbacks.append_chunk("\n\n" .. section)
     end
     return
@@ -651,7 +631,11 @@ function M._report_token_usage(response, callbacks, config, started_fresh_sessio
   -- 警告は章の中に含まれる。通知ではなくバッファに残すのは、`vim.notify` は次のターンを
   -- 読む頃には消えていて、読み手がコストを実際に見ている唯一の瞬間（この章）に何も
   -- 無いことになるため
-  local section = TokenUsage.section(acc, warn_context, extras)
+  local section = show_usage and TokenUsage.section(acc, warn_context, extras)
+    or TokenUsage.warning(acc.context, warn_context)
+  if not show_usage and section then
+    section = "### Tokens <!-- context=" .. tostring(acc.context or 0) .. " -->\n" .. section
+  end
   if section then
     callbacks.append_chunk("\n\n" .. section)
   end
@@ -765,7 +749,7 @@ end
 ---@param progressed boolean|nil 弾かれたターンが途中まで進んでいたか（M._turn_progressed）
 ---@return boolean rescheduled 予約に切り替えられたか
 function M._reschedule_rejected_message(callbacks, chat_file_path, info, message, config, progressed)
-  local opts = (config.agent and config.agent.scheduled_requests) or {}
+  local opts = (config and vim.tbl_get(config, "automation", "limits", "queue")) or {}
   if not opts.enabled then
     return false
   end
@@ -799,8 +783,7 @@ function M._reschedule_rejected_message(callbacks, chat_file_path, info, message
   local retry_count = (existing and existing.retry_count or 0) + 1
 
   local AutoResume = require("vibing.application.chat.auto_resume")
-  local grace = (config.agent and config.agent.auto_resume_on_limit and config.agent.auto_resume_on_limit.grace_sec)
-    or 10
+  local grace = (config and vim.tbl_get(config, "automation", "limits", "grace_sec")) or 10
 
   local ok, reason = AutoResume.schedule_request(chat_file_path, info.resets_at + grace, {
     limit_type = info.limit_type,
@@ -809,11 +792,7 @@ function M._reschedule_rejected_message(callbacks, chat_file_path, info, message
   })
   if not ok then
     vim.notify(
-      string.format(
-        "[vibing] Not re-scheduling %s: %s",
-        vim.fn.fnamemodify(chat_file_path, ":t"),
-        tostring(reason)
-      ),
+      string.format("[vibing] Not re-scheduling %s: %s", vim.fn.fnamemodify(chat_file_path, ":t"), tostring(reason)),
       vim.log.levels.WARN
     )
     return false
@@ -830,10 +809,7 @@ end
 ---@param config table
 ---@return string
 function M._continuation_prompt(config)
-  local prompt = config
-    and config.agent
-    and config.agent.auto_resume_on_limit
-    and config.agent.auto_resume_on_limit.prompt
+  local prompt = config and config.automation and vim.tbl_get(config, "automation", "limits", "continue_prompt")
   if type(prompt) == "string" and vim.trim(prompt) ~= "" then
     return prompt
   end
@@ -913,8 +889,7 @@ function M._finalize_snapshot_diff(callbacks, turn_id, modified_file_paths)
   local GitSnapshot = require("vibing.core.utils.git_snapshot")
 
   local base_dir = GitSnapshot.get_root(turn_id) or vim.fn.getcwd()
-  local files, abs_files, patch_content, ok, extra_only =
-    GitSnapshot.generate(turn_id, modified_file_paths)
+  local files, abs_files, patch_content, ok, extra_only = GitSnapshot.generate(turn_id, modified_file_paths)
   GitSnapshot.clear(turn_id)
 
   if not ok then

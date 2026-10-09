@@ -60,7 +60,7 @@ local function requested(descriptor_id, opts, config)
   local candidates = {
     { value = opts.process, label = "the chat's `process:` frontmatter" },
     {
-      value = vim.tbl_get(config or {}, "backends", descriptor_id, "process"),
+      value = vim.tbl_get(config or {}, "ai", "agents", descriptor_id, "process"),
       label = string.format("backends.%s.process", descriptor_id),
     },
   }
@@ -87,7 +87,7 @@ end
 --- rather than caution:
 ---
 --- * **A lightweight call** owes the bargain in `core/types.lua` — no tools, no project config, no
----   user MCP servers, no hooks, `utility_model`. A resident process serving a chat has all five,
+---   user MCP servers, no hooks, `ai.helpers.model`. A resident process serving a chat has all five,
 ---   and one process cannot hold both sets at once. Not announced: this is internal machinery
 ---   (title generation, `/summarize`), not a chat anyone is watching for speed.
 --- * **A subagent chat** shares its parent's `session_id` permanently (`chat-lineage.md`). A

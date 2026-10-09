@@ -1,7 +1,16 @@
 local NonClaudeModel = require("vibing.infrastructure.adapter.modules.non_claude_model")
 
 describe("non_claude_model", function()
-  local CONFIG = { agent = { default_model = "gpt-5-codex", utility_model = "gpt-5-mini" } }
+  local CONFIG = {
+    ai = {
+      chat = {
+        model = "gpt-5-codex",
+      },
+      helpers = {
+        model = "gpt-5-mini",
+      },
+    },
+  }
 
   it("uses default_model for an ordinary call", function()
     assert.equals("gpt-5-codex", NonClaudeModel.resolve({}, CONFIG))
@@ -28,13 +37,29 @@ describe("non_claude_model", function()
 
   it("drops the Claude-named default of utility_model rather than forwarding it", function()
     -- utility_model defaults to "haiku", which none of these backends has.
-    local config = { agent = { default_model = "gpt-5-codex", utility_model = "haiku" } }
+    local config = {
+      ai = {
+        chat = {
+          model = "gpt-5-codex",
+        },
+        helpers = {
+          model = "haiku",
+        },
+      },
+    }
     assert.is_nil(NonClaudeModel.resolve({ lightweight = true }, config))
   end)
 
   it("returns nil when nothing is configured", function()
     assert.is_nil(NonClaudeModel.resolve({}, {}))
     assert.is_nil(NonClaudeModel.resolve({ lightweight = true }, {}))
+  end)
+  it("never leaks the chat model into helpers with no configured helper model", function()
+    local config = { ai = { chat = { agent = "codex", model = "large-model" } } }
+    assert.is_nil(
+      NonClaudeModel.resolve({ lightweight = true, model = "chat-frontmatter-model", _agent_id = "codex" }, config)
+    )
+    assert.is_nil(NonClaudeModel.resolve({ _ai_purpose = "helpers", _agent_id = "codex" }, config))
   end)
 end)
 
@@ -70,7 +95,17 @@ describe("every non-claude command builder honours utility_model", function()
         return original_exepath(name)
       end
 
-      local config = { agent = { default_model = "big-model", utility_model = "small-model" } }
+      local config = {
+        ai = {
+          chat = {
+            model = "big-model",
+          },
+          helpers = {
+            model = "small-model",
+          },
+        },
+      }
+      config.ai.chat.agent = backend.name
       local cmd = builder.build("hi", { lightweight = true }, nil, config, nil)
 
       assert.is_true(vim.tbl_contains(cmd, "small-model"), backend.name .. " did not pass utility_model")

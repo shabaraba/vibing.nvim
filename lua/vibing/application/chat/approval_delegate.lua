@@ -7,7 +7,7 @@
 ---「どのチャットが何で止まっているか」を言うところまでしかできない
 ---（`delivery_message.lua` の `waiting_approval` の説明文）。
 ---
----`agent.orchestration.delegated_approval` を true にすると、オーケストレーターが4択に無条件で
+---`permissions.delegated_approval` を true にすると、オーケストレーターが4択に無条件で
 ---代理で答えられるようになる。**opt-in なのは、買っているのが「エージェントが別のエージェントの
 ---承認ゲートを外せる」状態そのものだから**で、実装上の都合ではない。
 ---
@@ -65,14 +65,14 @@ local function action_offered(pending, action)
   return type(action) == "string" and vim.tbl_contains(offered_actions(pending), action)
 end
 
----`agent.orchestration.delegated_approval` の実効値
+---`permissions.delegated_approval` の実効値
 ---
 ---`concurrency.limit()` と同じ理由で型を見る: `orchestration = true` のような壊れた設定で、
 ---`setup()` 後のあらゆる代理応答が落ちるのではなく「無効」に倒れてほしい
 ---@return boolean|"scoped"
 function M.mode()
   local config = require("vibing.config").get()
-  local orchestration = config.agent and config.agent.orchestration
+  local orchestration = config.permissions
   if type(orchestration) ~= "table" then
     return false
   end
@@ -173,7 +173,7 @@ function M.answer(params)
       "Delegated tool approval is disabled. Only the user can answer this chat's tool-approval "
         .. "prompt: say which chat is blocked and on which tool, and let the user answer it in "
         .. "that chat. (The user can enable it with "
-        .. "agent.orchestration.delegated_approval = true (or \"scoped\") in their vibing.nvim "
+        .. 'permissions.delegated_approval = true (or "scoped") in their vibing.nvim '
         .. "setup.)"
     )
   end
@@ -292,15 +292,14 @@ function M.answer(params)
   -- そのワーカーは既に走っていて枠を1つ占有している。ここで断ると、既に数えられている枠を
   -- 理由に承認を拒否することになり、しかも断られたワーカーは承認待ちのまま — 枠が上限なら、
   -- 答えることで枠を空けることもできない。ほぼデッドロックになる
-  local starts_new_turn = not require("vibing.application.chat.approval_decision").blocked_for_request(
-    pending.request_id
-  )
+  local starts_new_turn =
+    not require("vibing.application.chat.approval_decision").blocked_for_request(pending.request_id)
   local Concurrency = require("vibing.application.chat.concurrency")
   if starts_new_turn and Concurrency.at_capacity() then
     error(
       string.format(
         "%d chats and %d of their subagents are already in flight, at or above the configured "
-          .. "limit (agent.orchestration.max_concurrent = %d, max_concurrent_subagents = %d). "
+          .. "limit (automation.orchestration.max_concurrent = %d, max_concurrent_subagents = %d). "
           .. "The approval prompt is still pending — answer it again once one of them finishes.",
         Concurrency.responding_count(),
         Concurrency.subagent_count(),

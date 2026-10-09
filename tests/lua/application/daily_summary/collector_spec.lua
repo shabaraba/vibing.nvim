@@ -23,8 +23,10 @@ describe("vibing.application.daily_summary.collector", function()
         local save_dir = vim.fn.tempname() .. "/test-save"
         local config = {
           chat = {
-            save_location_type = "custom",
-            save_dir = save_dir,
+            storage = {
+              location = "custom",
+              path = save_dir,
+            },
           },
         }
 
@@ -63,7 +65,6 @@ describe("vibing.application.daily_summary.collector", function()
         end
 
         local config = {
-          daily_summary = {},
           chat = {},
         }
 
@@ -88,8 +89,10 @@ describe("vibing.application.daily_summary.collector", function()
         vim.fn.mkdir(test_dir, "p")
 
         local config = {
-          daily_summary = {
-            search_dirs = { test_dir },
+          chat = {
+            daily_summary = {
+              search_dirs = { test_dir },
+            },
           },
         }
 
@@ -113,8 +116,10 @@ describe("vibing.application.daily_summary.collector", function()
         vim.fn.mkdir(test_dir, "p")
 
         local config = {
-          daily_summary = {
-            search_dirs = { "~" .. leaf },
+          chat = {
+            daily_summary = {
+              search_dirs = { "~" .. leaf },
+            },
           },
         }
 
@@ -140,8 +145,10 @@ describe("vibing.application.daily_summary.collector", function()
         vim.fn.mkdir(test_dir, "p")
 
         local config = {
-          daily_summary = {
-            search_dirs = { test_dir, 123, nil, true },
+          chat = {
+            daily_summary = {
+              search_dirs = { test_dir, 123, nil, true },
+            },
           },
         }
 
@@ -170,8 +177,10 @@ describe("vibing.application.daily_summary.collector", function()
         vim.fn.mkdir(test_dir, "p")
 
         local config = {
-          daily_summary = {
-            search_dirs = { test_dir, "" },
+          chat = {
+            daily_summary = {
+              search_dirs = { test_dir, "" },
+            },
           },
         }
 
@@ -197,8 +206,10 @@ describe("vibing.application.daily_summary.collector", function()
         end
 
         local config = {
-          daily_summary = {
-            search_dirs = { "/non/existent/directory" },
+          chat = {
+            daily_summary = {
+              search_dirs = { "/non/existent/directory" },
+            },
           },
         }
 
@@ -219,8 +230,10 @@ describe("vibing.application.daily_summary.collector", function()
         vim.fn.mkdir(test_dir2, "p")
 
         local config = {
-          daily_summary = {
-            search_dirs = { test_dir1, test_dir2 },
+          chat = {
+            daily_summary = {
+              search_dirs = { test_dir1, test_dir2 },
+            },
           },
         }
 
@@ -241,8 +254,10 @@ describe("vibing.application.daily_summary.collector", function()
         vim.fn.mkdir(test_dir, "p")
 
         local config = {
-          daily_summary = {
-            search_dirs = { test_dir .. "/" },
+          chat = {
+            daily_summary = {
+              search_dirs = { test_dir .. "/" },
+            },
           },
         }
 
@@ -258,9 +273,6 @@ describe("vibing.application.daily_summary.collector", function()
 
       it("should fallback to default when search_dirs is empty array", function()
         local config = {
-          daily_summary = {
-            search_dirs = {},
-          },
           chat = {},
         }
 
@@ -268,7 +280,6 @@ describe("vibing.application.daily_summary.collector", function()
 
         -- Get expected default behavior
         local expected_defaults = collector.get_search_directories(true, {
-          daily_summary = nil,
           chat = {},
         })
 

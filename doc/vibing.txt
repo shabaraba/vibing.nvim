@@ -95,7 +95,8 @@ skipped, so the template costs no context and never reaches the `/` picker.
 Renaming a plugin to `_name` is also how you park one without deleting it.
 
 A plugin may declare `mcpServers`, so one committed to a repository you cloned
-can start a process on your machine — set `agent.plugins.project_dir = false`
+can start a process on your machine — set `integrations.plugins.project_dir =
+false`
 for repositories you do not trust.
 
 The codex backend loads the same plugins without a `--plugin-dir`: each MCP
@@ -114,44 +115,25 @@ Upgrading from a version that installed itself into Claude Code's user scope:
 `require("vibing").setup()` works with no arguments. The options people
 actually tend to change: >lua
     require("vibing").setup({
-      adapter = "claude",               -- "claude" | "codex"
-      chat = {
-        window = {
-          -- "current" | "right" | "left" | "top" | "bottom" | "back"
-          -- | "float"
-          position = "current",
-          -- ratio below 1, absolute columns at 1 and above
-          width = 0.4,
+      ai = {
+        chat = { agent = "claude", model = "sonnet", effort = "default" },
+        helpers = { model = "haiku", effort = "low" },
+        agents = {
+          claude = { process = "oneshot", env = {} },
+          codex = {
+            extensions = {
+              approval_policy = "",
+              profile_file = ".vibing/codex-permissions.toml",
+              allow_tracked_profile = false,
+            },
+          },
+          -- path omitted: find grok on PATH
+          grok = {},
         },
-        save_location_type = "project",  -- "project" | "user" | "custom"
       },
-      agent = {
-        -- "sonnet" | "opus" | "haiku" | "fable"
-        default_model = "sonnet",
-      },
-      permissions = {
-        -- "default" | "acceptEdits" | "plan" | "auto" | "dontAsk"
-        -- | "bypassPermissions"
-        mode = "acceptEdits",
-        -- omit allow/deny to keep the shipped defaults
-        deny = { "Bash" },
-      },
-      -- per-backend options; see handbook/configuration.md
-      backends = {
-        codex = {
-          -- when Codex itself asks before running something; ""
-          -- (default) leaves it to your config.toml, or "never"
-          -- on duplex, where an unasked request is declined
-          approval_policy = "",
-          -- auto-generated sandbox profile; false disables it
-          profile_file = ".vibing/codex-permissions.toml",
-          -- true explicitly trusts a Git-tracked profile
-          allow_tracked_profile = false,
-        },
-        grok = { executable = "auto" },
-      },
-      -- "ja", or { default = "ja", chat = "ja" }
-      language = nil,
+      chat = { storage = { location = "project" }, language = "ja" },
+      ui = { window = { position = "current", width = 0.4 } },
+      permissions = { mode = "acceptEdits", deny = { "Bash" } },
     })
 <
 The permissions above are only a starting point for new chat files. What
@@ -160,9 +142,14 @@ frontmatter — see |vibing-chat-file|.
 
 For the full list — window details, UI and tool markers, diff backends,
 granular permission rules, MCP, Node.js executable, auto-resume on usage
-limit, daily summary — read handbook/configuration.md. It is generated
-against lua/vibing/config.lua and is the only complete reference; this
+limit, daily summary — read handbook/configuration.md. Defaults are defined
+in lua/vibing/config.lua and is the only complete reference; this
 section is not kept in sync field by field.
+
+This redesign breaks old setup() keys. Unknown or removed options report
+their paths and fail before applying. Objects merge, lists replace (even
+empty lists). See handbook/configuration-redesign.md for the migration map.
+The chat frontmatter permissions remain tool-based and unchanged.
 
 ==============================================================================
 5. COMMANDS                                                  *vibing-commands*
@@ -171,7 +158,7 @@ section is not kept in sync field by field.
 :VibingChat [{position}|{file}]
     Create a new chat. {position} is one of `current` (replace the current
     window), `right`, `left`, `top`, `bottom` (splits sized by
-    `chat.window.width`/`height`) or `back` (buffer only, no window).
+    `ui.window.width`/`height`) or `back` (buffer only, no window).
     Passing a path opens that saved chat file instead of creating one.
 
                                                           *:VibingToggleChat*
@@ -320,7 +307,7 @@ section is not kept in sync field by field.
     Find past chats about {query} and open the ones you pick. With no
     argument, prompts for the query.
 
-    The search is one agent turn in the background, on `agent.utility_model`,
+    The search is one agent turn in the background, on `ai.helpers.model`,
     with no chat buffer and no chat file. The agent greps the chat files,
     rephrases and searches again when that finds nothing, and reads the
     candidates to decide which ones are actually about the query. Given a
@@ -424,7 +411,7 @@ section is not kept in sync field by field.
 
     Claude backend only — `/compact` is the CLI's own command. Refuses
     while an unsent message is waiting, since this command means exactly
-    one turn. `agent.token_usage.auto_compact` in |vibing-configuration|
+    one turn. `chat.context.compaction` in |vibing-configuration|
     also supports Codex by configuring its native automatic compaction;
     that does not make this manual command available on Codex.
 
@@ -629,7 +616,8 @@ Codex's own sandbox approvals~
 Codex has a second approval channel of its own. vibing.nvim's own gate decides
 whether a tool may run at all; Codex's asks whether a call may leave Codex's
 sandbox, which is the only way to reach something the sandbox blocks. Turn it
-on with `backends.codex.approval_policy = "on-request"`. Unset (the default) a
+on with `ai.agents.codex.extensions.approval_policy = "on-request"`. Unset
+(the default) a
 one-shot call passes no override and your own Codex `config.toml` decides,
 while a duplex chat sends `never` — a request it cannot put in front of you is
 declined, so leaving the policy open there would refuse the call in silence.
@@ -726,8 +714,9 @@ does.
 `<CR>` asks before sending in two cases, and sends normally otherwise. While
 the project has a usage limit on record it offers to park the message until
 the reset (see |:VibingSchedule|). And when the chat has been idle past
-`agent.token_usage.cache_ttl_sec` (default 55 minutes) *and* its last turn
-reported a context at or above `warn_context`, the prompt cache has expired,
+`chat.context.cache_ttl_sec` (default 55 minutes) *and* its last turn
+reported a context at or above `chat.context.warn_tokens`, the prompt cache
+has expired,
 so sending rewrites the whole conversation at cache-creation price: it offers
 to send anyway, to move the message into a new chat, or to cancel. Set
 `cache_ttl_sec = 0` to turn that off. Only a `<CR>` you typed is affected —
@@ -807,13 +796,13 @@ The search/read tools do not attach or start sessions automatically;
 `effort` is translated to Claude's `--effort`, Codex's one-shot
 `model_reasoning_effort` override or duplex `turn/start` field, or Grok's
 `--effort`. New chats use `default`, which selects the CLI/model default.
-An omitted field uses `agent.default_effort` when configured, otherwise the
+An omitted field uses `ai.chat.effort` when configured, otherwise the
 CLI/model default. Available levels can depend on the selected model.
 |/effort| updates this frontmatter field.
 
 In a Codex chat, `model: default` selects the CLI's configured model even when
-`agent.default_model` is set. An omitted `model` still uses
-`agent.default_model`.
+`ai.chat.model` is set. An omitted `model` still uses
+`ai.chat.model`.
 Codex duplex sends the resolved model and effort on each turn, so changing
 either setting does not restart the resident process; `default` restores the
 CLI or selected model's default after an earlier explicit override.
@@ -822,13 +811,13 @@ explicit effort or initially leaves it to Codex. Restoring an unknown default
 after an explicit effort requires choosing an effort explicitly.
 
 `process` chooses how the CLI is run for this chat, overriding
-`backends.<agent>.process` (Claude and Codex). `oneshot` (the default) starts
+`ai.agents.<agent>.process` (Claude and Codex). `oneshot` (the default) starts
 a CLI process per message and lets it exit when the answer is done. `duplex`
 starts one process for the chat and feeds every later message to it on its
 stdin, so the CLI's startup — plugins, MCP servers, CLAUDE.md, the system
 prompt — is paid once instead of once per message; the process is stopped
 after five idle minutes, when the chat's buffer is unloaded, or when Neovim
-exits. Supported by Claude and Codex; ignored on other backends. Claude holds
+exits. Supported by Claude and Codex; rejected on other agents. Claude holds
 about 200MB while idle, which is why it is opt-in. Codex uses app-server and
 requires its staged PreToolUse hook to be trusted in Codex. An untrusted or
 modified hook stops startup with a message before inference; use `process:
@@ -865,7 +854,7 @@ is touched; nothing writes the pipe form any more.
 `delegated_scope` lists tool/command patterns (same syntax as
 `permissions_allow`, e.g. `Bash(npm:*)`) that an orchestrator may auto-approve
 on this chat's behalf via `nvim_chat_answer_approval`, when
-`agent.orchestration.delegated_approval = "scoped"`. It is declared with
+`permissions.delegated_approval = "scoped"`. It is declared with
 `nvim_chat_create`'s `delegated_scope` argument and written on the chat's own
 frontmatter (not the orchestrator's). A denial can always be delegated
 regardless of scope, since denying grants nothing; only `allow_once` /
@@ -873,7 +862,8 @@ regardless of scope, since denying grants nothing; only `allow_once` /
 vibing-orchestrate skill for how to declare it.
 
 `env` lists `KEY=VALUE` environment variables for this chat's CLI process,
-overriding `agent.env` from |vibing.setup()|. It is for the cost knobs Claude
+overriding the selected agent's `ai.agents.<agent>.env` from |vibing.setup()|.
+It is for the cost knobs Claude
 Code exposes only through the environment — `BASH_MAX_OUTPUT_LENGTH`,
 `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE`, `CLAUDE_CODE_SUBAGENT_MODEL` — so one chat
 can be tuned without touching the rest. Claude backend only. `CLAUDECODE` and

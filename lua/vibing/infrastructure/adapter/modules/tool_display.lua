@@ -24,7 +24,7 @@ function M.get_markers_config()
   local ok, config_mod = pcall(require, "vibing.config")
   if ok then
     local config = config_mod.get()
-    return config.ui and config.ui.tool_markers
+    return config.ui and vim.tbl_get(config, "ui", "tools", "markers")
   end
   return nil
 end
@@ -46,7 +46,7 @@ function M.get_display_mode()
   local ok, config_mod = pcall(require, "vibing.config")
   if ok then
     local config = config_mod.get()
-    return config.ui and config.ui.tool_result_display or "compact"
+    return config.ui and vim.tbl_get(config, "ui", "tools", "results") or "compact"
   end
   return "compact"
 end

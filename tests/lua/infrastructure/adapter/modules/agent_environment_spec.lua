@@ -1,4 +1,4 @@
---- The rules `agent.env` / frontmatter `env:` are merged under, away from the spawn.
+--- The rules `ai.agents.claude.env` / frontmatter `env:` are merged under, away from the spawn.
 ---
 --- `claude_cli_spec` asserts the same feature through a real `stream()` call, which is what the
 --- acceptance criteria ask for; this file is where the branches that never reach a spawn live --
@@ -6,16 +6,20 @@
 
 local AgentEnvironment = require("vibing.infrastructure.adapter.modules.agent_environment")
 
---- @param agent_env table? config.agent.env
+--- @param agent_env table? config.ai.agents.claude.env
 --- @param frontmatter_env any? the raw `env` frontmatter value
 --- @param opts table? extra adapter opts
 local function apply(agent_env, frontmatter_env, opts)
   local env = { PATH = "/usr/bin" }
-  AgentEnvironment.apply(
-    env,
-    { agent = { env = agent_env } },
-    vim.tbl_extend("force", { env = frontmatter_env }, opts or {})
-  )
+  AgentEnvironment.apply(env, {
+    ai = {
+      agents = {
+        claude = {
+          env = agent_env,
+        },
+      },
+    },
+  }, vim.tbl_extend("force", { env = frontmatter_env }, opts or {}))
   return env
 end
 
@@ -33,6 +37,20 @@ describe("agent_environment", function()
 
   after_each(function()
     vim.notify = original_notify
+  end)
+
+  it("uses the environment of each selected agent for conversations and helpers", function()
+    local config = { ai = { agents = {} } }
+    for _, id in ipairs(require("vibing.core.constants.agents").ORDER) do
+      config.ai.agents[id] = { env = { SELECTED_AGENT = id } }
+    end
+    for _, id in ipairs(require("vibing.core.constants.agents").ORDER) do
+      for _, lightweight in ipairs({ false, true }) do
+        local env = {}
+        AgentEnvironment.apply(env, config, { lightweight = lightweight }, id)
+        assert.equals(id, env.SELECTED_AGENT)
+      end
+    end
   end)
 
   it("leaves the environment untouched when nothing is declared", function()
@@ -94,11 +112,10 @@ describe("agent_environment", function()
     assert.equals(1, #warnings)
   end)
 
-  it("passes nothing to a lightweight call", function()
+  it("applies agent env to helpers while excluding frontmatter env", function()
     -- No tools and no resumed session, so autocompaction, Bash output length and the subagent
     -- model have nothing to act on.
-    local env =
-      apply({ BASH_MAX_OUTPUT_LENGTH = "10000" }, { "MAX_THINKING_TOKENS=4096" }, { lightweight = true })
-    assert.same({ PATH = "/usr/bin" }, env)
+    local env = apply({ BASH_MAX_OUTPUT_LENGTH = "10000" }, { "MAX_THINKING_TOKENS=4096" }, { lightweight = true })
+    assert.same({ PATH = "/usr/bin", BASH_MAX_OUTPUT_LENGTH = "10000" }, env)
   end)
 end)

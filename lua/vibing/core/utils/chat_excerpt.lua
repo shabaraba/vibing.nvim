@@ -8,7 +8,7 @@
 ---このモジュールは描画ノイズを落として「人間が書いた／読んだ文」だけを残す。
 local M = {}
 
--- Fallback marker glyphs. 実際のマーカーは config.ui.tool_markers でユーザーが差し替えるので、
+-- Fallback marker glyphs. 実際のマーカーは vim.tbl_get(config, "ui", "tools", "markers") でユーザーが差し替えるので、
 -- 構造マッチ（`<記号> ToolName(`）と設定値の両方を併用する。
 local BUILTIN_MARKERS = { "⏺", "📄", "💻", "🔧", "✳", "☒", "☐", "⎿", "→", "▶" }
 
@@ -36,8 +36,8 @@ local function is_boilerplate(cleaned)
     return false
   end
   local ok_get, config = pcall(config_mod.get)
-  local agent = ok_get and config and config.agent
-  local prompt = agent and agent.auto_resume_on_limit and agent.auto_resume_on_limit.prompt
+  local agent = ok_get and config and vim.tbl_get(config, "ui", "tools")
+  local prompt = ok_get and config and vim.tbl_get(config, "automation", "limits", "continue_prompt")
   return type(prompt) == "string" and vim.trim(prompt):lower() == lowered
 end
 
@@ -52,7 +52,7 @@ local function marker_glyphs()
   local ok, config_mod = pcall(require, "vibing.config")
   if ok then
     local ok_get, config = pcall(config_mod.get)
-    local markers = ok_get and config and config.ui and config.ui.tool_markers
+    local markers = ok_get and config and config.ui and vim.tbl_get(config, "ui", "tools", "markers")
     if type(markers) == "table" then
       for _, g in pairs(markers) do
         if type(g) == "string" and g ~= "" and not seen[g] then
@@ -73,7 +73,7 @@ end
 ---非ASCIIを要求するのが肝。ここを「英数字を含まない先頭トークン」まで緩めると、
 ---`- fix parse(input)` のような markdown 箇条書きがツール行と誤判定され、
 ---ユーザーの依頼そのものが抜粋から消える。ASCII記号のマーカーを使う人は
----`config.ui.tool_markers` に載っているので glyphs 側で拾える。
+---`vim.tbl_get(config, "ui", "tools", "markers")` に載っているので glyphs 側で拾える。
 ---
 ---`allow_glyph_prefix` は「マーカーで始まるだけ」の緩い判定を使うかどうか。構造マッチと違って
 ---行の中身を一切見ないので、user の発言に対しては使ってはいけない: `→ ログインを直して` や
@@ -341,10 +341,7 @@ function M.build(conversation)
   for _, msg in ipairs(conversation or {}) do
     -- マーカー前方一致による除去は assistant 側だけ。user の発言に効かせると、記号を
     -- 箇条書き代わりに使った依頼文がそのまま消える。
-    local cleaned = msg.content
-        and msg.content ~= ""
-        and clean_with(msg.content, glyphs, msg.role ~= "user")
-      or ""
+    local cleaned = msg.content and msg.content ~= "" and clean_with(msg.content, glyphs, msg.role ~= "user") or ""
     if cleaned ~= "" and not is_boilerplate(cleaned) then
       if msg.role == "user" then
         users[#users + 1] = cleaned

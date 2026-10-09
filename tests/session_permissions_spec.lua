@@ -17,42 +17,68 @@ describe("ChatBuffer session permissions", function()
 
     -- Mock dependencies
     package.loaded["vibing.presentation.chat.modules.window_manager"] = {
-      create_window = function() return 1 end,
+      create_window = function()
+        return 1
+      end,
       apply_window_config = function() end,
     }
     package.loaded["vibing.presentation.chat.modules.file_manager"] = {
-      get_save_directory = function() return "/tmp/" end,
-      generate_unique_filename = function() return "test.md" end,
-      load_from_file = function() return true end,
+      get_save_directory = function()
+        return "/tmp/"
+      end,
+      generate_unique_filename = function()
+        return "test.md"
+      end,
+      load_from_file = function()
+        return true
+      end,
       update_filename_from_message = function() end,
     }
     package.loaded["vibing.presentation.chat.modules.frontmatter_handler"] = {
-      parse = function() return {} end,
+      parse = function()
+        return {}
+      end,
       update_session_id = function() end,
-      update_field = function() return true end,
-      update_list = function() return true end,
-      get_list = function() return {} end,
+      update_field = function()
+        return true
+      end,
+      update_list = function()
+        return true
+      end,
+      get_list = function()
+        return {}
+      end,
     }
     package.loaded["vibing.presentation.chat.modules.renderer"] = {
-      init_content = function() return 1 end,
+      init_content = function()
+        return 1
+      end,
       moveCursorToEnd = function() end,
       addUserSection = function() end,
       updateContextLine = function() end,
     }
     package.loaded["vibing.presentation.chat.modules.streaming_handler"] = {
       start_response = function() end,
-      flush_chunks = function(_, _, buffer) return buffer end,
+      flush_chunks = function(_, _, buffer)
+        return buffer
+      end,
     }
     package.loaded["vibing.presentation.chat.modules.conversation_extractor"] = {
-      extract_conversation = function() return {} end,
-      extract_user_message = function() return "test" end,
+      extract_conversation = function()
+        return {}
+      end,
+      extract_user_message = function()
+        return "test"
+      end,
       commit_user_message = function() end,
     }
     package.loaded["vibing.presentation.chat.modules.keymap_handler"] = {
       setup = function() end,
     }
     package.loaded["vibing.application.context.manager"] = {
-      get_all = function() return {} end,
+      get_all = function()
+        return {}
+      end,
     }
 
     mock_config = {
@@ -66,7 +92,9 @@ describe("ChatBuffer session permissions", function()
         cancel = "<C-c>",
       },
       chat = {
-        save_location_type = "user",
+        storage = {
+          location = "user",
+        },
       },
     }
 

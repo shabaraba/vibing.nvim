@@ -34,7 +34,13 @@ describe("send_message._reschedule_rejected_message", function()
   end)
 
   local function make_config(enabled, max_retries)
-    return { agent = { scheduled_requests = { enabled = enabled, max_retries = max_retries } } }
+    return {
+      automation = {
+        limits = {
+          queue = { enabled = enabled, max_retries = max_retries },
+        },
+      },
+    }
   end
 
   it("returns false when scheduled_requests is disabled", function()
@@ -53,13 +59,8 @@ describe("send_message._reschedule_rejected_message", function()
 
   it("returns false when the rate-limit info has no resets_at", function()
     local captured = {}
-    local ok = SendMessage._reschedule_rejected_message(
-      make_callbacks(captured),
-      chat_path,
-      {},
-      "hello",
-      make_config(true, 3)
-    )
+    local ok =
+      SendMessage._reschedule_rejected_message(make_callbacks(captured), chat_path, {}, "hello", make_config(true, 3))
 
     assert.is_false(ok)
     assert.is_nil(captured.text)
@@ -173,7 +174,7 @@ describe("send_message._reschedule_rejected_message", function()
     -- re-sending the same body would hand the model the same request twice.
     local captured = {}
     local config = make_config(true, 3)
-    config.agent.auto_resume_on_limit = { prompt = "Keep going." }
+    config.automation.limits.continue_prompt = "Keep going."
 
     local ok = SendMessage._reschedule_rejected_message(
       make_callbacks(captured),

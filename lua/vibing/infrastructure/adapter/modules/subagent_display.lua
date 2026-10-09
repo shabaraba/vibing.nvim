@@ -15,7 +15,7 @@ function M.get_show_prefix()
     return false
   end
   local config = config_mod.get()
-  local subagent = config.agent and config.agent.subagent
+  local subagent = vim.tbl_get(config, "ui", "subagents")
   return (subagent and subagent.show_prefix) == true
 end
 

@@ -28,7 +28,7 @@ allow list permits everything except denied tools.
   the worker's unsent section and calls `ChatBuffer:send_message()`, so
   `update_session_permissions`, the `:once` bookkeeping and the retry-message substitution all run
   once, in one place. A second implementation of "what an approval means" is the failure this
-  shape exists to prevent. Refused unless `agent.orchestration.delegated_approval` is set.
+  shape exists to prevent. Refused unless `permissions.delegated_approval` is set.
 - **The Permission Builder must not offer an argument to a tool `matchers.lua` cannot parse.**
   `Skill` / `StructuredOutput` take none; anything else is classified `unknown_pattern` and never
   matches, so a `Skill(x)` rule would silently never fire.

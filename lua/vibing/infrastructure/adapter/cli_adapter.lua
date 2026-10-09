@@ -155,6 +155,7 @@ function M.define(descriptor)
     -- spec branches on it (`--input-format`, and whether the prompt goes into the argv at all), and
     -- re-deriving it there would let the argv and the transport disagree. `opts.process` stays as
     -- the chat wrote it.
+    opts = vim.tbl_extend("force", {}, opts, { _agent_id = descriptor.id })
     local process_model = ProcessModel.resolve(descriptor, opts, self.config)
     opts._process_model = process_model
     local is_duplex = process_model == ProcessModel.DUPLEX
@@ -253,6 +254,7 @@ function M.define(descriptor)
     end
 
     local env = vim.fn.environ()
+    require("vibing.infrastructure.adapter.modules.agent_environment").apply(env, self.config, opts, descriptor.id)
     -- Backend edits first, so a variable the user declared reads exactly like one they exported:
     -- the `VIBING_*` binding below still overwrites it.
     if descriptor.apply_env then
@@ -387,8 +389,6 @@ function M.define(descriptor)
     -- begin and end together, so both are torn down together below.
     local process = {
       process_id = ids.process_id,
-      -- Only where the nvim_ask_user_question route is wired: registering a value nothing
-      -- consumes would only look like a working route (see features.md → AskUserQuestion).
       chat_bufnr = descriptor.register_chat_bufnr and opts.chat_bufnr or nil,
       session_id = opts._session_id,
       adapter = self,
@@ -412,18 +412,25 @@ function M.define(descriptor)
       ProcessRegistry.unregister(ids.process_id)
     end
 
-    local started = CliRuntime.spawn(self._processes, ids, cmd, {
-      text = true,
-      stdin = descriptor.stdin,
-      cwd = cwd,
-      env = env,
-      stdout = StreamHandler.create_stdout_handler(descriptor.event_processor, event_context, function()
-        return self._processes[ids.process_id] == nil
+    local started = CliRuntime.spawn(
+      self._processes,
+      ids,
+      cmd,
+      {
+        text = true,
+        stdin = descriptor.stdin,
+        cwd = cwd,
+        env = env,
+        stdout = StreamHandler.create_stdout_handler(descriptor.event_processor, event_context, function()
+          return self._processes[ids.process_id] == nil
+        end),
+        stderr = stderr_handler(descriptor, error_output),
+      },
+      StreamHandler.create_exit_handler(ids, self._processes, output, error_output, finish, function()
+        return event_context.resultErrors
       end),
-      stderr = stderr_handler(descriptor, error_output),
-    }, StreamHandler.create_exit_handler(ids, self._processes, output, error_output, finish, function()
-      return event_context.resultErrors
-    end), finish)
+      finish
+    )
 
     if not started then
       return ids.turn_id, ids.process_id

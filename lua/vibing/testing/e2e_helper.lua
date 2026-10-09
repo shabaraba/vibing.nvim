@@ -116,7 +116,7 @@ end
 --- needs to change one setting. Both go through here because **`config.setup()` replaces the whole
 --- options table** — it merges the caller's options onto the defaults, never onto what a previous
 --- call left. So a spec calling `setup({ ... })` directly to flip one flag silently drops
---- `chat.save_dir` with it, and the run writes real chat files into the repository's own
+--- `chat.storage.path` with it, and the run writes real chat files into the repository's own
 --- `.vibing/chat/` — the exact thing the throwaway directory exists to prevent, and invisible
 --- afterwards because `.vibing/` is git-ignored.
 ---
@@ -126,20 +126,16 @@ end
 function M.child_config(chat_dir, overrides)
   return vim.tbl_deep_extend("force", {
     chat = {
-      save_location_type = "custom",
-      save_dir = chat_dir,
+      storage = {
+        location = "custom",
+        path = chat_dir,
+      },
     },
-    -- Already the default; stated because nvim_ask_user_question_spec exists to drive that tool
-    -- and a child without the RPC server could never pass it, so this is not safe to "tidy away".
-    -- Concurrent children do not collide — the server walks to the next free port when 9876 is
-    -- taken.
-    mcp = { enabled = true },
-    -- The child is a throwaway editor in a temp directory, and these specs are about UI plumbing,
-    -- not about permissions. It also has to be bypassPermissions to work at all: under acceptEdits
-    -- the CLI refuses the vibing-nvim MCP tool ("Claude requested permissions to use ..."), and
-    -- listing it in --allowedTools does not change that — verified with the exact tool name, the
-    -- `mcp__<server>__*` form and the bare `mcp__<server>` form. vibing's own PreToolUse hook
-    -- allows it; the CLI's gate is what refuses, and this is the only lever that clears it.
+    integrations = {
+      nvim = {
+        enabled = true,
+      },
+    },
     permissions = { mode = "bypassPermissions" },
   }, overrides or {})
 end
@@ -235,10 +231,7 @@ function M.send_keys(instance, keys)
 
   local ok, err = pcall(vim.fn.rpcrequest, instance.job_id, "nvim_input", keys)
   if not ok then
-    vim.notify(
-      string.format("[E2E Helper] Failed to send keys '%s': %s", keys, tostring(err)),
-      vim.log.levels.WARN
-    )
+    vim.notify(string.format("[E2E Helper] Failed to send keys '%s': %s", keys, tostring(err)), vim.log.levels.WARN)
     return false
   end
   return true
@@ -266,10 +259,7 @@ local function wait_for(instance, pattern, timeout, label, read)
   while (vim.loop.hrtime() - start_time) < timeout_ns do
     local ok, bufnr = pcall(vim.fn.rpcrequest, instance.job_id, "nvim_get_current_buf")
     if not ok then
-      vim.notify(
-        string.format("[E2E Helper] RPC failed to get buffer: %s", tostring(bufnr)),
-        vim.log.levels.WARN
-      )
+      vim.notify(string.format("[E2E Helper] RPC failed to get buffer: %s", tostring(bufnr)), vim.log.levels.WARN)
       return false
     end
 

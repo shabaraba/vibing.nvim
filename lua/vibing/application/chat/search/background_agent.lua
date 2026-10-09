@@ -38,7 +38,7 @@ end
 ---@return string?
 function M.language_name()
   local language_utils = require("vibing.core.utils.language")
-  local code = language_utils.get_language_code(require("vibing").get_config().language, "chat")
+  local code = language_utils.get_language_code(require("vibing").get_config().chat.language, "chat")
   return code and language_utils.language_names[code]
 end
 
@@ -70,8 +70,9 @@ end
 ---@return Vibing.AdapterOpts
 function M.opts(agent, cwd, tools, on_tool)
   return {
-    model = agent.utility_model,
-    effort = agent.utility_effort,
+    _ai_purpose = "helpers",
+    model = agent.model,
+    effort = agent.effort,
     cwd = cwd,
     permission_mode = "dontAsk",
     permissions_allow = vim.deepcopy(tools),
@@ -100,7 +101,7 @@ end
 ---@param callback fun(text: string?, error: string?)
 function M.run(prompt, tools, on_tool, callback)
   local vibing = require("vibing")
-  local adapter = vibing.get_adapter()
+  local adapter = vibing.get_helper_adapter()
   if not adapter then
     callback(nil, "No adapter configured")
     return
@@ -111,7 +112,12 @@ function M.run(prompt, tools, on_tool, callback)
 
   turn_id = adapter:stream(
     prompt,
-    M.opts(vibing.get_config().agent or {}, vim.fn.getcwd(), tools, on_tool),
+    M.opts(
+      require("vibing.core.utils.ai_config").resolve(vibing.get_config(), nil, true),
+      vim.fn.getcwd(),
+      tools,
+      on_tool
+    ),
     function(chunk)
       collected[#collected + 1] = chunk
     end,

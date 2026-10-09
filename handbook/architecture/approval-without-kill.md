@@ -852,7 +852,7 @@ Everything else in that message — a per-server `timeout` in milliseconds, a gl
 hypothesis and not evidence** (the same shape as the binary string in "How this was measured wrong
 twice"). None of it was tried, and two of the three could not be reached from here anyway:
 `cli_mcp_config.spec()` carries `command` / `args` / `env` only, it emits nothing at all unless
-`agent.mcp.user_servers = false`, and on the normal path vibing's server arrives through
+`ai.agents.claude.mcp.inherit_cli_servers = false`, and on the normal path vibing's server arrives through
 `--plugin-dir` reading `claude-plugin/.claude-plugin/plugin.json`. Raising the ceiling would mean
 writing a `timeout` into two places and trusting a claim.
 
@@ -1113,7 +1113,7 @@ is nothing to measure there yet.
 
 ## The third channel: a CLI asking for itself (#861)
 
-Under `backends.codex.process = "duplex"` the CLI is a resident `codex app-server`, and it can send
+Under `ai.agents.codex.process = "duplex"` the CLI is a resident `codex app-server`, and it can send
 **its own** approval requests over the open connection — `item/commandExecution/requestApproval`
 and `item/fileChange/requestApproval`. Before #861 every one of them was answered
 `{decision="decline"}` on arrival, so `approval_policy = "on-request"` had nowhere to put a human.

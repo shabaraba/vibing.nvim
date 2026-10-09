@@ -10,7 +10,7 @@ local ProjectCodexPermissions = require("vibing.core.utils.project_codex_permiss
 --- @param config Vibing.Config|nil
 --- @return string|nil
 local function profile_content(config)
-  return vim.tbl_get(config or {}, "backends", "codex", "profile_content")
+  return vim.tbl_get(config or {}, "ai", "agents", "codex", "extensions", "profile_content")
 end
 
 ---@type Vibing.BackendDescriptor
@@ -30,6 +30,7 @@ local M = {
 
   -- `codex exec --json`, with `resume <id>` as a subcommand and permissions as `-c` overrides.
   request = {
+    agent_id = "codex",
     binary = CodexCommandBuilder.BINARY,
     parts = {
       -- app-server does not implement exec's hook-trust bypass; verify trust over RPC.
@@ -137,7 +138,7 @@ local M = {
   -- Absent config reads as enabled, not disabled: the default is on (`config_fields` in
   -- core/constants/agents.lua).
   after_spawn = function(cmd, cwd, opts, config)
-    local notice_enabled = vim.tbl_get(config or {}, "backends", "codex", "provider_notice") ~= false
+    local notice_enabled = vim.tbl_get(config or {}, "ai", "agents", "codex", "extensions", "provider_notice") ~= false
     if notice_enabled and opts.lightweight and vim.tbl_contains(cmd, "--ignore-user-config") then
       CodexProviderNotice.check(cmd[1], cwd)
     end

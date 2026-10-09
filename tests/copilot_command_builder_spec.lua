@@ -84,8 +84,15 @@ describe("copilot_command_builder", function()
       assert.is_nil(value_after(cmd, "--model"))
     end)
 
-    it("falls back to config.agent.default_model", function()
-      local cmd = Builder.build("hi", {}, nil, { agent = { default_model = "claude-opus-5" } })
+    it("falls back to config.ai.chat.model", function()
+      local cmd = Builder.build("hi", {}, nil, {
+        ai = {
+          chat = {
+            agent = "copilot",
+            model = "claude-opus-5",
+          },
+        },
+      })
       assert.are.equal("claude-opus-5", value_after(cmd, "--model"))
     end)
 
@@ -155,12 +162,16 @@ describe("copilot_command_builder", function()
     end)
 
     it("prefixes a language instruction", function()
-      local cmd = Builder.build("hi", { language = "ja" }, nil, {})
+      local cmd = Builder.build("hi", {
+        language = "ja",
+      }, nil, {})
       assert.are.equal("Always respond in Japanese (ja).\n\nhi", cmd[#cmd])
     end)
 
     it("skips the language instruction for en", function()
-      local cmd = Builder.build("hi", { language = "en" }, nil, {})
+      local cmd = Builder.build("hi", {
+        language = "en",
+      }, nil, {})
       assert.are.equal("hi", cmd[#cmd])
     end)
 
@@ -221,8 +232,7 @@ describe("copilot_command_builder", function()
     it("stays tool-free even when the chat is in bypassPermissions", function()
       -- The user put the chat in that mode; a title generated behind their back is not the call
       -- they made, so the utility call does not inherit it.
-      local cmd =
-        Builder.build("hi", { lightweight = true, permission_mode = "bypassPermissions" }, nil, {})
+      local cmd = Builder.build("hi", { lightweight = true, permission_mode = "bypassPermissions" }, nil, {})
       assert.is_false(contains(cmd, "--allow-all"))
       assert.is_not_nil(available_tools(cmd))
     end)
@@ -246,7 +256,17 @@ describe("copilot_command_builder", function()
     end)
 
     it("uses utility_model rather than default_model", function()
-      local config = { agent = { default_model = "gpt-5", utility_model = "gpt-5-mini" } }
+      local config = {
+        ai = {
+          chat = {
+            agent = "copilot",
+            model = "gpt-5",
+          },
+          helpers = {
+            model = "gpt-5-mini",
+          },
+        },
+      }
       local cmd = Builder.build("hi", { lightweight = true }, nil, config)
       assert.are.equal("gpt-5-mini", value_after(cmd, "--model"))
     end)

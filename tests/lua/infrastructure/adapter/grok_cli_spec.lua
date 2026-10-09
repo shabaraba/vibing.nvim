@@ -11,7 +11,13 @@ local helper = require("tests.helpers.adapter_stream")
 local GrokSettingsGenerator = require("vibing.infrastructure.hooks.grok_settings_generator")
 local grok = require("vibing.infrastructure.adapter.grok_cli")
 
-local CONFIG = { agent = { default_model = "sonnet" } }
+local CONFIG = {
+  ai = {
+    chat = {
+      model = "sonnet",
+    },
+  },
+}
 
 describe("grok_cli hook registration", function()
   local system, adapter, ensure_calls, original_ensure, original_executable

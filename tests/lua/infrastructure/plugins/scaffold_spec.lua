@@ -10,17 +10,13 @@ describe("plugins scaffold", function()
     return project_root .. "/.vibing/plugins"
   end
 
-  --- An empty table means "no agent.plugins at all", which disables project_dir. Real callers
+  --- An empty table means "no integrations.plugins at all", which disables project_dir. Real callers
   --- always pass a resolved config, so the tests spell the relevant part out.
   --- @param overrides table|nil
   local function config(overrides)
     return {
-      agent = {
-        plugins = vim.tbl_extend(
-          "force",
-          { self = false, project_dir = ".vibing/plugins" },
-          overrides or {}
-        ),
+      integrations = {
+        plugins = vim.tbl_extend("force", { self = false, project_dir = ".vibing/plugins" }, overrides or {}),
       },
     }
   end
@@ -47,9 +43,7 @@ describe("plugins scaffold", function()
 
       assert.equals(
         1,
-        vim.fn.filereadable(
-          plugins_dir() .. "/" .. ScaffoldFiles.TEMPLATE_DIR .. "/.claude-plugin/plugin.json"
-        )
+        vim.fn.filereadable(plugins_dir() .. "/" .. ScaffoldFiles.TEMPLATE_DIR .. "/.claude-plugin/plugin.json")
       )
     end)
 
@@ -103,10 +97,7 @@ describe("plugins scaffold", function()
     it("seeds the template too, for a first run that skipped the chat", function()
       Scaffold.create("my-plugin", project_root, config())
 
-      assert.equals(
-        1,
-        vim.fn.isdirectory(plugins_dir() .. "/" .. ScaffoldFiles.TEMPLATE_DIR)
-      )
+      assert.equals(1, vim.fn.isdirectory(plugins_dir() .. "/" .. ScaffoldFiles.TEMPLATE_DIR))
     end)
 
     it("refuses to overwrite an existing plugin", function()

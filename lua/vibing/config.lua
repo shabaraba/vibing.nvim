@@ -1,524 +1,102 @@
----@class Vibing.DiffConfig
----diff表示設定
----ファイル変更のdiff表示に使用するツールを制御
----@field tool "git"|"auto" 使用するdiffツール（現在は同義。リクエストごとにワーキングツリーの
----  gitツリースナップショットを取り、その差分をパッチとして保存する。`gd` はそのパッチを、
----  無ければ通常の git diff を表示する）
----@field layout "split"|"unified" フロートを開いた時の表示形式（既定: "split"）。"split" は
----  Before/After を並べる。"unified" は統一diff1枚。フロート内の `s` で切り替えられ、
----  切り替えた側がそのNeovimのあいだ覚えられる
----@field fill_char string diffモードで削除行を埋める文字（既定: "╱"）。Neovimの既定は "-" で
----  画面が横線で埋まる。フォントに無ければ "" で無効化するか好きな1文字に変える
----@field highlights boolean フロートのdiffペインを独自配色にする（既定: true）。前景色を触らず
----  背景だけを着色するので構文ハイライトが残り、左が赤・右が緑になる。`winhighlight` で
----  ペインにだけ当てるため、カラースキームには影響しない。false でカラースキームの
----  `DiffAdd` / `DiffChange` / `DiffText` をそのまま使う
-
----@class Vibing.GradientConfig
----グラデーションアニメーション設定
----AI応答中に行番号をグラデーションアニメーションで視覚的にフィードバック
----@field enabled boolean グラデーションアニメーション有効化（trueで応答中に行番号がアニメーション）
----@field colors string[] グラデーション色の配列（2色指定: {開始色, 終了色}、例: {"#cc3300", "#fffe00"}）
----@field interval number アニメーション更新間隔（ミリ秒、デフォルト: 100）
----@field waiting_color? string 承認・質問で人間の答えを待っている間の行番号の色（hex、デフォルト: "#3fa9f5"）
-
----@class Vibing.ToolMarkersConfig
----ツールマーカー設定
----チャット出力でツール実行時に表示する視覚的マーカーをカスタマイズ
----ツール名 → マーカー文字列のフラットな対応表。マーカーの解決にはツール名しか渡らないため、
----コマンド内容による出し分け（Bashの`^npm`だけ別マーカー等）は行えない
----@field Task? string Taskツールのマーカー（デフォルト: "▶"）
----@field default? string 個別指定のないツール用マーカー（デフォルト: "⏺"）
----@field [string]? string ツール名をキーとしたマーカー文字列
-
----@class Vibing.UiConfig
----UI設定
----全UIコンポーネント（Chat、Output）に適用される表示設定
----@field wrap "nvim"|"on"|"off" 行の折り返し設定（"nvim": Neovimデフォルト、"on": wrap+linebreak有効、"off": wrap無効）
----@field gradient Vibing.GradientConfig グラデーションアニメーション設定（応答中の視覚的フィードバック）
----@field tool_result_display "none"|"compact"|"full" ツール実行結果の表示モード（"none": 非表示、"compact": 数行のみ、"full": 全文表示）
----@field tool_markers? Vibing.ToolMarkersConfig ツールマーカー設定（ツール実行時の視覚的マーカー）
-
----@class Vibing.Config
----vibing.nvimプラグインの設定オブジェクト
----アダプター選択、チャットウィンドウ、キーマップ、ツール権限を統合管理
----@field adapter? "claude"|"codex"|"copilot"|"grok" バックエンドアダプター選択（デフォルト: "claude"）
----@field agent Vibing.AgentConfig エージェント設定（モード、モデル）
----@field chat Vibing.ChatConfig チャットウィンドウ設定（位置、サイズ、自動コンテキスト、保存先）
----@field ui Vibing.UiConfig UI設定（wrap等）
----@field keymaps Vibing.KeymapConfig キーマップ設定（送信、キャンセル、コンテキスト追加）
----@field diff Vibing.DiffConfig diff表示設定（使用ツール）
----@field permissions Vibing.PermissionsConfig ツール権限設定（許可/拒否リスト）
----@field backends Vibing.BackendsConfig バックエンドごとの設定（`backends.<id>.*`）
----@field mcp Vibing.McpConfig MCP統合設定（RPCポート、自動起動）
----@field language? string|Vibing.LanguageConfig AI応答のデフォルト言語（"ja", "en"等、またはLanguageConfig）
----@field daily_summary? Vibing.DailySummaryConfig Daily Summary機能設定
----@field dap? Vibing.DapConfig nvim-dap連携設定
-
----@class Vibing.PermissionRule
----粒度の細かい権限制御ルール
----ツール入力パラメータに基づいて許可/拒否を制御
----@field tools string[] 対象ツール名のリスト（例: {"Read", "Write"}）
----@field paths string[]? ファイルパスのglobパターンリスト（例: {"src/**", "tests/**"}）
----@field commands string[]? Bashコマンド名のリスト（例: {"npm", "yarn"}）
----@field patterns string[]? Bashコマンドパターン（**Lua pattern**であって正規表現ではない）のリスト（例: {"^rm%s+%-rf", "^sudo%f[%W]"}）。`-`は量指定子なのでリテラルは`%-`とエスケープすること
----@field domains string[]? 許可/拒否するドメインリスト（例: {"github.com", "*.example.com"}）
----@field action "allow"|"deny" ルールのアクション（"allow": 許可、"deny": 拒否）
----@field message string? 拒否時のメッセージ（actionが"deny"の場合に表示）
-
----@class Vibing.PermissionsConfig
----ツール権限設定
----CLIに対してClaudeが使用可能なツールを制御（Read, Edit, Write, Bash等）
----allowで許可、denyで拒否、askで確認を要求し、セキュリティと機能のバランスを調整
----@field mode "default"|"acceptEdits"|"bypassPermissions"|"plan"|"dontAsk"|"auto" 権限モード
----@field allow string[] 許可するツールリスト（例: {"Read", "Edit", "Write"}）
----@field deny string[] 拒否するツールリスト（例: {"Bash"}、危険なツールを明示的に禁止）
----@field ask string[] 確認が必要なツールリスト（例: {"Bash"}、使用前に承認を要求）
----@field rules Vibing.PermissionRule[]? 粒度の細かい権限制御ルール（オプション）
----@field default_deny_rules boolean? 破壊的Bashコマンド（`rm -rf /`、`sudo`、`dd`、`chmod -R 777`、main/masterへのforce push等）の同梱denyルールを有効にするか（デフォルト: true）。`core/constants/destructive_commands.lua`を参照
----@field approval_wait_sec number? ツール承認プロンプトを開いたまま待つ上限（秒、デフォルト: 900）。
----  この1つの値から`bin/hooks/pre-tool-use.sh`の待ち時間と各backendのhook timeoutが導出される
----  （`infrastructure/hooks/wait_budget.lua`）。上限に達したら vibing.nvim 自身がdenyを書いて
----  hookを正常終了させる——CLI側のtimeoutは実測でfail open（判定なしにツールが走る）なので、
----  そこへ到達させてはいけない。backendごとに違う値にはしない
----  （handbook/architecture/approval-without-kill.md）
-
----@class Vibing.AutoResumeOnLimitConfig
----使用量リミット自動継続設定
----使用量リミットで応答が弾かれたとき、リセット時刻を待って自動で継続リクエストを送る
----@field enabled boolean リミット時に自動で継続リクエストを送るか（デフォルト: false、無人でトークンを消費するため）
----@field max_retries number 1回のリミットヒットにつき許可する自動再送の回数（再送がまたリミットに当たった時点で打ち切り）
----@field prompt string 再送する継続プロンプト（セッションはresumeされるので文脈の再説明は不要）。予約リクエスト（Vibing.ScheduledRequestsConfig）が途中まで進んだターンを再開するときも同じ文言を使う
----@field fallback_delay_sec number リセット時刻が取得できなかった場合の待ち時間（秒）
----@field grace_sec number リセット時刻からの上乗せ秒数（境界ぴったりで再送して弾かれるのを防ぐ）
-
----@class Vibing.ScheduledRequestsConfig
----予約リクエスト設定
----使用量リミット中に送信しようとしたリクエストを、リセット後に送る予約に切り替える
----途中まで進んだターンが弾かれた場合だけは本文ではなく継続文言（auto_resume_on_limit.prompt）を予約する
----@field enabled boolean リミット中のリクエストを予約に切り替えるか（デフォルト: true、リミット中のリクエストはどのみち失敗するため）
----@field max_retries number 予約したリクエストがまた弾かれたときに許可する再予約の回数
-
----@class Vibing.ChatNotificationsConfig
----チャット間の完了通知設定
----別チャットに送ったリクエストの完了を、送信元のチャットに通知する
----通知は送信元の新しいターンとして届くため、無人でトークンを消費する
----@field enabled boolean 普通に止まっただけのチャットについての watchdog 通知を配達するか
----  （デフォルト: false、無人でトークンを消費するため）。質問・承認待ち・エラーで止まった
----  チャットの通知はこの設定に依らず配られる（自力では抜けられず、自分で報告もできないため）
----@field max_round_trips number 2チャット間（無向ペア）で連続して配達してよい通知の数。手動送信（<CR>）でリセットされる
----@field max_wakes number 手動送信を挟まずに配達してよい通知の総数。ツリー全体の暴走に対する最終防壁
-
----@class Vibing.OrchestrationConfig
----チャット網の走らせ方に関する設定
----@field max_concurrent number 同時に応答中にできるチャットの本数。0で無制限（デフォルト: 0）。
----  見るのは機械が始める送信（`nvim_chat_send_message`とキューの配達）だけで、人間の<CR>は止めない。
----  各チャットが内部で起動しているサブエージェント数もこの合計に含まれる（#701）
----@field max_concurrent_subagents number 全チャット合計で同時に起動していてよいサブエージェント
----  （Task/Agentツール呼び出し）の本数。0で無制限（デフォルト: 0）。`max_concurrent`が
----  「チャット+サブエージェントの合計」を見るのに対し、こちらはサブエージェントの本数単独を
----  締めるつまみ
----@field delegated_approval (boolean|"scoped")? 別のチャットが`nvim_chat_answer_approval`でツール承認
----  プロンプトに代理で答えられるようにするか（デフォルト: false）。承認ゲートはユーザーのために
----  あるので、エージェントが別のエージェントのゲートを外せる状態は権限モデルそのものの変更であり、
----  既定にはしない。`true`は無条件で全権委任、`"scoped"`はワーカーのfrontmatterの
----  `delegated_scope`（`permissions_allow`と同じパターン構文の文字列リスト）に一致する許可
----  （allow_once/allow_for_session）だけを通す — 拒否は範囲を問わず常に委任できる（権限を
----  広げない）。`delegated_scope`は`nvim_chat_create`の同名引数で宣言する
-
----@class Vibing.AgentConfig
----エージェント設定
----チャットのモード（code/plan/explore）と、各CLI backendへ渡すモデルIDを指定
----@field default_mode "code"|"plan"|"explore" 新規チャットのfrontmatterに記録される`mode`の既定値（意味は core/constants/modes.lua の M.AGENT_MODES 参照）
----@field default_model string デフォルトモデル。Claude短縮名（sonnet/opus/haiku/fable）または選択中backendのモデルID
----@field utility_model string タイトル生成・要約等の軽量ユーティリティ呼び出しと、チャット検索のエージェントが使うモデル（デフォルト: "haiku"）
----@field default_effort ("default"|"low"|"medium"|"high"|"xhigh"|"max")? 推論量の既定値（"default"ならCLIの既定に任せる）
----@field utility_effort ("default"|"low"|"medium"|"high"|"xhigh"|"max")? タイトル生成・要約等の軽量呼び出しの推論量（デフォルト: "low"）
----@field setting_sources string[]? Claude CLIの`--setting-sources`に渡す設定読み込み元リスト（例: {"project", "local"}、デフォルト: {"user", "project", "local"}）。MCPサーバーの読み込みには影響しない（`agent.mcp`参照）
----@field mcp Vibing.AgentMcpConfig? 通常のチャットターンにどのMCPサーバーを載せるかの設定
----@field git_instructions boolean? trueでClaude CLI組み込みのgitステータスブロック（ブランチ名・
----  直近コミット・`git status --short`）とcommit/PRワークフロー指示をsystem promptに載せる
----  （デフォルト: false）。どちらの値でも`CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS`を明示的に書く
----  （true→"0"、false→"1"）ので settings.json の`includeGitInstructions`より優先される。
----  ただしユーザーが既に環境変数を立てている場合はそちらを尊重して触らない
----@field env table<string, string|number>? Claude backend専用。CLI子プロセスへ渡す追加の環境変数
----  （デフォルト: `{}`）。Claude Codeにはコスト系のつまみが環境変数でしか触れないものがあり
----  （`CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` / `BASH_MAX_OUTPUT_LENGTH` /
----  `CLAUDE_CODE_SUBAGENT_MODEL` など。一覧と推奨値は handbook/configuration.md →
----  "Claude CLI Environment Variables"）、`vim.env`に書くとターミナルの`claude`にも効いて
----  しまうため、vibing.nvim経由の呼び出しにだけ効かせる口としてここを用意している。
----  値は文字列化して渡す。チャットのfrontmatter `env:`（`KEY=VALUE`の並び）が個別に上書きする。
----  `CLAUDECODE`と`VIBING_*`はvibing.nvim自身がフック往復に使うので、書いても無視して警告する。
----  軽量ユーティリティ呼び出しには渡さない（ツールもresumeも無く効く先が無い）
----@field subagent Vibing.SubagentConfig? subagent（Task/Agentツール）の出力表示設定
----@field auto_resume_on_limit Vibing.AutoResumeOnLimitConfig 使用量リミット自動継続設定
----@field scheduled_requests Vibing.ScheduledRequestsConfig 予約リクエスト設定
----@field chat_notifications Vibing.ChatNotificationsConfig チャット間の完了通知設定
----@field orchestration Vibing.OrchestrationConfig チャット網の並列度設定
----@field token_usage Vibing.TokenUsageConfig ターンごとのトークン内訳表示とコンテキスト肥大警告の設定
----@field plugins Vibing.PluginsConfig? `--plugin-dir`で読み込むClaude Codeプラグインの設定
-
----@class Vibing.TokenUsageConfig
----ターンごとのトークン内訳をチャットに出す。Claudeではコンテキストサイズ・リクエスト数・
----キャッシュ読取/作成を出し、コンテキストが育ったら警告する。CodexではCLIが返す
----input/cached/output/reasoningの累計差分を出す（現行JSONLにcontext使用量は無い）。
----
----backends.codex.provider_notice と同じ理由で既定で有効: トークンを一切使わず、無効だと当の問題
----（チャットが育っていることに気づけない）がそのまま残る通知だから。
----@field enabled boolean? falseで表示と警告を止める（デフォルト: true）
----@field warn_context number? この値を超えている間、各ターンの内訳行の直下に警告を書く（デフォルト: 150000）
----@field cache_ttl_sec number? 最終ターンからこの秒数以上空いた手動送信で、送信前に確認を出す。
----  0で無効。`warn_context` 未満のチャットでは出ない（デフォルト: 3300 = 55分）
----@field auto_compact Vibing.AutoCompactConfig? 閾値を超えた会話をバックエンド固有の方法で自動圧縮する設定
-
----@class Vibing.AutoCompactConfig
----Claudeでは直近ターンのcontextが`at`以上なら次の手動送信前に`/compact`を1ターン挟む。
----Codexでは通常の`codex exec`と`resume`に`model_auto_compact_token_limit=at`を渡し、CLI自身に
----圧縮のタイミングを管理させる（CodexのJSONLはcontext使用量をvibing.nvimへ返さないため）。
----
----既定で無効。無効時はバックエンド自身の既定の自動圧縮を止めず、vibing.nvimから閾値を
----上書きしない。copilot/grokには適用しない。
----@field enabled boolean? trueで有効（デフォルト: false）
----@field at number? 圧縮を始めるcontextのトークン数。0以下で無効（デフォルト: 200000）
----@field focus string? Claudeで`/compact <focus>`として渡す指示。Codexでは未使用（デフォルト: 無し）
-
----@class Vibing.AgentMcpConfig
----通常のチャットターンに載せるMCPサーバーの範囲（claudeバックエンドのみ）
----`Vibing.McpConfig`（`config.mcp`）とは別物: あちらはvibing.nvim自身のRPCサーバーの設定
----@field user_servers boolean? falseでCLIに`--strict-mcp-config`を渡し、vibing.nvim自身が
----  `--plugin-dir`で持ち込んだプラグインのMCPサーバーだけを`--mcp-config`で明示的に載せ直す
----  （デフォルト: true）。`--strict-mcp-config`はall-or-nothingなので、`~/.claude.json`の
----  ユーザースコープだけでなくプロジェクトの`.mcp.json`やlocalスコープのサーバーも一緒に落ちる。
----  残したい外部サーバーは`.vibing/plugins/<name>/.claude-plugin/plugin.json`の`mcpServers`に
----  書けば載る。codex/copilot/grokには該当する実行時フラグが無いため効かない
-
----@class Vibing.PluginsConfig
----セッション限りで読み込むClaude Codeプラグインのディレクトリ設定
----`--plugin-dir`はユーザーのグローバル状態に何も書かずにプラグインを読む。vibing.nvim自身の
----`claude-plugin/`もこれで渡すため、MCPサーバーとバンドルskillは常に「いま動いているcheckout」の
----ものになる（worktreeを含む）。codexバックエンドには`--plugin-dir`がないので、同じ解決結果を
----`-c mcp_servers.*`（MCPサーバー）と`-c developer_instructions`（skill一覧）で渡す。`agents/`は
----codexに相当物がなく渡らない（handbook/architecture/plugin-and-commands.md → "Codex"）。
----@field self boolean? falseでvibing.nvim自身のclaude-plugin/を渡さなくなる。nvim_*のMCPツールと
----  バンドルskillが全て消えるのでデバッグ用の逃げ道であり、通常は触らない（デフォルト: true）
----@field project_dir string|false? プロジェクトルートからの相対パス。この直下の各ディレクトリを
----  プラグインとして渡す。falseで無効化（デフォルト: ".vibing/plugins"）
----@field extra string[]? 任意の追加パス。絶対パス、`~`始まり、またはリクエストのcwd相対（デフォルト: {}）
-
----@class Vibing.BackendsConfig
----バックエンドごとの設定。`backends.<agent id>` の下に、そのバックエンドが
----`core/constants/agents.lua` の `config_fields` で宣言した項目だけを持つ（ADR 009）。
----項目と既定値と検証はそこから導かれるので、このファイルはバックエンド名を知らない。
----@field codex { process: string?, approval_policy: string?, auto_approve: boolean?, auto_approve_ask: string[]?, profile_file: string|false?, profile_content: string?, allow_tracked_profile: boolean?, provider_notice: boolean? }?
----@field grok { executable: string? }?
-
----@class Vibing.SubagentConfig
----subagentが喋った内容をチャットに出すかどうかの設定
----既定では subagent の中身は隠され、ツール結果だけが見える（従来の挙動）
----@field enabled boolean? trueでCLIに`--forward-subagent-text`を渡し、subagentの本文をチャットに表示する（デフォルト: false）
----@field show_prefix boolean? 各行に`[subagent_type]`のラベルを付けるか（デフォルト: false）
-
----@class Vibing.McpConfig
----MCP統合設定
----Neovim RPC ServerとMCPサーバーの連携を制御
----@field enabled boolean MCP統合の有効化（trueでRPCサーバーを起動）
----@field rpc_port number RPCサーバーのポート番号（デフォルト: 9876）
-
----@class Vibing.ChatConfig
----チャット機能設定
----ウィンドウ位置・サイズ、自動コンテキスト、保存先、コンテキスト挿入位置を管理
----@field window Vibing.WindowConfig ウィンドウ表示設定（位置、幅、枠線）
----@field auto_context boolean 自動コンテキスト有効化（trueで開いているバッファを自動的にコンテキストに含める）
----@field save_location_type "project"|"user"|"custom" 保存先タイプ（"project": プロジェクト内、"user": ユーザーディレクトリ、"custom": カスタムパス）
----@field save_dir string カスタム保存先ディレクトリ（save_location_type="custom"時に使用）
-
----@class Vibing.WindowConfig
----チャットウィンドウ表示設定
----位置、幅、高さ、枠線スタイルを制御
----@field position "right"|"left"|"top"|"bottom"|"back"|"current"|"float" ウィンドウ位置（"right": 右分割、"left": 左分割、"top": 上分割、"bottom": 下分割、"back": バッファのみ作成、"current": 現在のウィンドウ、"float": フローティング）
----@field width number ウィンドウ幅（0-1の小数で画面比率、1以上で絶対カラム数。right/left/floatで使用）。境界に注意: `1`は100%ではなく1カラム
----@field height number? ウィンドウ高さ（0-1の小数で画面比率、1以上で絶対行数。top/bottom/floatで使用。`1`は100%ではなく1行）。未指定時の既定値は位置により異なり、分割は0.4、floatは0.8
----@field border string 枠線スタイル（"rounded", "single", "double", "none"等）。floatのみ有効で、値は`nvim_open_win`にそのまま渡される（vibing.nvim側の検証はしない）
-
----@class Vibing.KeymapConfig
----キーマップ設定
----チャットバッファ内での操作キーを定義
----@field send string メッセージ送信キー（デフォルト: "<CR>"）
----@field cancel string 実行キャンセルキー（デフォルト: "<C-c>"）
----@field add_context string コンテキスト追加キー（デフォルト: "<C-a>"）
----@field open_diff string `/name` 上でその定義ファイル、それ以外ではdiff表示キー（デフォルト: "gd"）。Markdownリンク記法の中ならどこでも効く
----@field open_file string ファイルパス上でファイルを開くキー（デフォルト: "gf"）。Markdownリンク記法の中ならどこでも効く
----@field open_url string カーソル行のURLをブラウザで、カーソル下の画像・動画パスを既定のアプリケーションで開くキー（デフォルト: "gx"）
----@field cycle_enum_next string frontmatterのenum値を次の候補にするキー（デフォルト: "]v"）
----@field cycle_enum_prev string frontmatterのenum値を前の候補にするキー（デフォルト: "[v"）
-
----@class Vibing.LanguageConfig
----言語設定（詳細）
----アクションごとに異なる言語を指定可能
----@field default? string デフォルト言語（"ja", "en", "zh", "ko", "fr", "de", "es"等）
----@field chat? string chatアクションでの言語（指定されていない場合はdefaultを使用）
-
----@alias Vibing.FileFinderStrategy "auto"|"fd"|"find"|"locate"|"ripgrep"
-
----@class Vibing.DapConfig
----nvim-dap連携設定
----デバッガが停止したときに、その状態をエージェントに解析させる
----nvim-dapは任意依存。未インストールなら各機能は「入っていない」と報告して何もしない
----@field enabled boolean? 停止イベントの購読を有効にするか（デフォルト: false）
----@field auto_analyze_on_error boolean? 例外で止まったとき自動で解析を投げるか（デフォルト: true）
----@field auto_analyze_on_breakpoint boolean? ブレークポイントで止まったとき自動で投げるか（デフォルト: false）
-
----@class Vibing.DailySummaryConfig
----Daily Summary機能設定
----当日のチャットファイルから日報を生成する機能の設定
----@field save_dir? string サマリー保存先ディレクトリ（nilの場合はチャット保存先の/daily/サブディレクトリ）
----@field search_dirs string[] VibingDailySummaryAllで検索するディレクトリのリスト（空配列の場合はデフォルトディレクトリを検索、要素が存在する場合はそのリストのみを再帰検索）
----@field file_finder_strategy? Vibing.FileFinderStrategy ファイル検索戦略（"auto": 最適なツールを自動選択、"fd": fd使用、"find": find使用、"locate": locate/plocate使用、"ripgrep": rg使用）
-
-local notify = require("vibing.core.utils.notify")
-
-local tools_const = require("vibing.core.constants.tools")
-local language_utils = require("vibing.core.utils.language")
-local token_usage = require("vibing.core.utils.token_usage")
-
+--- Public configuration. Objects merge recursively; lists replace, including empty lists.
+local Agents = require("vibing.core.constants.agents")
+local Tools = require("vibing.core.constants.tools")
+local Usage = require("vibing.core.utils.token_usage")
+local Notify = require("vibing.core.utils.notify")
 local M = {}
 
----Validate tool_markers configuration
----Markers are a flat "tool name -> marker string" table.
----@param markers table Tool markers config to validate
----@return table Validated markers config
-local function validate_tool_markers(markers)
-  local validated = {}
+---@class Vibing.AiSelection
+---@field agent? string
+---@field model? string
+---@field effort? string
+---@class Vibing.AgentOptions
+---@field path? string Executable path; absent means PATH lookup.
+---@field process? "oneshot"|"duplex"
+---@field env? table<string, string|number>
+---@field settings? table
+---@field mcp? table
+---@field extensions? table
+---@class Vibing.WindowConfig
+---@field position "current"|"right"|"left"|"top"|"bottom"|"back"|"float"
+---@field width number
+---@field height? number
+---@field border string
+---@class Vibing.ChatConfig
+---@field language? string|{default?: string, chat?: string}
+---@field storage {location: "project"|"user"|"custom", path: string}
+---@field context {auto_include: boolean, warn_tokens: number, cache_ttl_sec: number, compaction: {enabled: boolean, threshold_tokens: number, focus?: string}}
+---@field daily_summary Vibing.DailySummaryConfig
+---@class Vibing.DailySummaryConfig
+---@field save_dir? string
+---@field search_dirs string[]
+---@field file_finder_strategy "auto"|"fd"|"find"|"locate"|"ripgrep"
+---@class Vibing.DiffConfig
+---@field layout "split"|"unified"
+---@field fill_char string
+---@field highlights boolean
+---@class Vibing.UiConfig
+---@field window Vibing.WindowConfig
+---@field wrap "on"|"off"|"nvim"
+---@field gradient {enabled: boolean, colors: string[], interval_ms: number, waiting_color: string}
+---@field tools {results: "compact"|"full"|"none", markers: table<string, string>}
+---@field subagents {show_output: boolean, show_prefix: boolean}
+---@field usage {enabled: boolean}
+---@field fold {enabled: boolean}
+---@field diff Vibing.DiffConfig
+---@class Vibing.PermissionRule
+---@field tools string[]
+---@field action "allow"|"deny"
+---@field paths? string[]
+---@field commands? string[]
+---@field patterns? string[]
+---@field domains? string[]
+---@field message? string
+---@class Vibing.PermissionsConfig
+---@field mode string
+---@field allow string[]
+---@field deny string[]
+---@field ask string[]
+---@field rules Vibing.PermissionRule[]
+---@field default_deny_rules boolean
+---@field approval_wait_sec number
+---@field delegated_approval boolean|"scoped"
+---@class Vibing.McpConfig
+---@field enabled boolean
+---@field port integer
+---@class Vibing.DapConfig
+---@field enabled boolean
+---@field auto_analyze_on_error boolean
+---@field auto_analyze_on_breakpoint boolean
+---@class Vibing.Config
+---@field ai {chat: Vibing.AiSelection, helpers: Vibing.AiSelection, agents: table<string, Vibing.AgentOptions>}
+---@field chat Vibing.ChatConfig
+---@field ui Vibing.UiConfig
+---@field keymaps table<string, string>
+---@field permissions Vibing.PermissionsConfig
+---@field automation table Limit handling and orchestration.
+---@field integrations table Neovim, plugins and DAP.
 
-  for key, marker in pairs(markers) do
-    if type(marker) == "string" then
-      if marker == "" then
-        notify.warn(string.format("ui.tool_markers.%s is empty string - will use default", key))
-      else
-        validated[key] = marker
-      end
-    elseif type(marker) == "table" then
-      -- Legacy `{ default = "x", patterns = {...} }`. `patterns` was documented but never
-      -- implemented — resolution only ever receives a tool name, never the command string — so
-      -- the whole form is dropped loudly rather than silently ignored. See issue #502.
-      -- Name `patterns` only when the user actually wrote it: mentioning a feature they never
-      -- used reads like a warning about something else.
-      local detail = marker.patterns ~= nil and "; patterns never had any effect and is dropped"
-        or ""
-      notify.warn(
-        string.format("ui.tool_markers.%s: give the marker string directly%s", key, detail)
-      )
-      if type(marker.default) == "string" and marker.default ~= "" then
-        validated[key] = marker.default
-      end
-    else
-      notify.warn(
-        string.format("Invalid ui.tool_markers.%s: must be a string, got %s", key, type(marker))
-      )
-    end
-  end
-
-  return validated
-end
-
----@type Vibing.Config
 M.defaults = {
-  adapter = "claude",
-  agent = {
-    default_mode = "code",
-    default_model = "sonnet",
-    -- haiku: the cheapest of the Claude short names, chosen deliberately over sonnet.
-    --
-    -- The cost that argued for sonnet has grown: `:VibingChatSearch` runs a whole tool-using
-    -- agent turn on this model (grep, read, re-search), which is a different shape from the
-    -- one-off title call the earlier choice was measured on.
-    --
-    -- What that measurement found still stands, so read it before moving this back and forth:
-    -- on a noisy chat transcript haiku picks the wrong subject more often than sonnet does — it
-    -- titles a chat after the last step or after the commands that ran. Set this to "sonnet" if
-    -- generated titles start naming the wrong thing.
-    utility_model = "haiku",
-    -- `default` is written to new chat frontmatter but passed to no CLI. This preserves the exact
-    -- pre-effort behaviour while making the choice visible and editable per chat.
-    default_effort = "default",
-    utility_effort = "low",
-    setting_sources = { "user", "project", "local" },
-    mcp = {
-      -- 既定はtrue（現状維持）。`--setting-sources user,project,local` が `~/.claude.json` の
-      -- MCPサーバーを全部載せるのは、ユーザーのcommands/skills/subagentをそのまま使えるように
-      -- するための代償であって、意図した設定ではない。切りたい人だけが切る。
-      user_servers = true,
-    },
-    -- CLIはプロセス起動ごとにgitステータスブロックを1回計算してsystem promptの先頭に埋める。
-    -- vibing.nvimはターンごとにCLIを起動し直すので、tree を触ったターンの次はそのバイト列が
-    -- 変わり、system prompt以降＝全履歴がキャッシュミスになる。既定でoffにする理由はそれで、
-    -- ブランチ名や直近コミットが要るときはモデルに `git status` / `git log` を1回呼ばせれば済む。
-    git_instructions = false,
-    -- CLI子プロセスに足す環境変数。空が既定で、空なら子プロセスのenvは従来と1バイトも変わらない。
-    -- 何を入れると効くかは handbook/configuration.md の表を見る。
-    env = {},
-    subagent = {
-      enabled = false,
-      show_prefix = false,
-    },
-    -- 使用量リミットで応答が弾かれたとき、リセット時刻を待って自動で継続リクエストを送る。
-    -- 無人でトークンを消費するため既定は無効。
-    auto_resume_on_limit = {
-      enabled = false,
-      -- 1回のリミットヒットにつき許可する自動再送の回数。
-      -- 再送がまたリミットに当たった時点で打ち切られる。
-      max_retries = 1,
-      -- 再送する継続プロンプト。セッションはresumeされるので文脈の再説明は不要。
-      -- scheduled_requests 側も、途中まで進んだターンを再開するときはこの文言を使う。
-      prompt = "Continue from where you left off.",
-      -- リセット時刻が取得できなかった場合の待ち時間（秒）。
-      fallback_delay_sec = 300,
-      -- リセット時刻からの上乗せ秒数。境界ぴったりで再送して弾かれるのを防ぐ。
-      grace_sec = 10,
-    },
-    -- 使用量リミット中に送信しようとしたリクエストを、リセット後に送る予約に切り替える。
-    -- リミット中のリクエストはどのみち失敗するため既定で有効。
-    -- :VibingSchedule による明示的な予約はこのフラグに関係なく常に動く。
-    --
-    -- 予約する本文は、弾かれたターンが何も出力せず終わったなら元の本文、途中まで進んでいたなら
-    -- auto_resume_on_limit.prompt。進んでいた分はセッションのtranscriptに残っているので、
-    -- 同じ依頼を送り直すと済んだ作業をやり直させることになる。
-    scheduled_requests = {
-      enabled = true,
-      -- 予約したリクエストがまた弾かれたときに許可する再予約の回数。
-      -- これがループの唯一の歯止めなので 0 未満にはしない。
-      max_retries = 3,
-    },
-    -- 別チャットに送ったリクエストの完了を、送信元のチャットに通知する。
-    -- 通知は送信元の新しいターンとして届くため無人でトークンを消費する。既定は無効で、
-    -- これは subagent / auto_resume_on_limit / dap と同じ基準（トークンを使う機能は既定で切る）。
-    -- scheduled_requests や backends.codex.provider_notice が既定で有効なのはトークンを使わないからで、
-    -- こちらには当てはまらない。
-    --
-    -- 無効でも止まるのは watchdog の配達だけ。`orchestrated` / `orchestrated_by` の記録も、
-    -- ワーカーに「誰に報告すればいいか」を伝えるシステムプロンプトの1行も、`queue_if_busy` の
-    -- 配達も、質問・承認待ち・エラーで止まったチャットの通知も、設定に依らず動く。
-    -- 無効化が消すのは「普通に止まっただけのチャットについて自発的に声をかける」ぶんだけで、
-    -- ワーカーが自分から報告する経路と、自力では抜けられない止まり方の検知は残る。
-    chat_notifications = {
-      enabled = false,
-      -- 通知が連鎖して自走するのを止める上限は2段。A→B→A→B の往復は正当なユースケース
-      -- （Bの質問にAが答える）なので、循環検出ではなく回数で止める。どちらも<CR>による
-      -- 手動送信で0に戻る。
-      --
-      -- 上限を「起こされた回数」のグローバルカウンタから (A,B) ペア単位に変えたのは、
-      -- 止めたいのが A⇄B の無限往復であって扇状の受信数ではないため。子N人からの完了通知を
-      -- 受けるだけで上限に当たるのは、正当なオーケストレータを止めていた（#644）。
-      max_round_trips = 8,
-      -- 配達が多くのペアに散ってペア上限に当たらない形（扇、長い循環）への最終防壁なので、
-      -- 通常の運用では届かない大きさにしてある。
-      max_wakes = 50,
-    },
-    orchestration = {
-      -- 同時に応答中にできるチャットの本数。0は無制限で、既定で無効なのは、有効にすると
-      -- 既存のオーケストレーションの配達順が黙って変わるため。扇の幅がレート制限に
-      -- 当たるようになったら締めるつまみ（application/chat/concurrency.lua）。
-      --
-      -- 上限に当たった送信は捨てられずキューに残り、枠が空いた完了イベントで配り直される。
-      -- 人間の<CR>はこの上限を見ない。
-      -- 各チャットが内部で起動しているサブエージェント（Task/Agentツール）もこの合計に含まれる。
-      max_concurrent = 0,
-      -- 全チャット合計で同時に起動していてよいサブエージェントの本数。0は無制限（既定）。
-      -- `max_concurrent`が「チャット+サブエージェントの合計」を見るのに対し、こちらは
-      -- サブエージェントの本数だけを単独で締めるつまみ（application/chat/concurrency.lua）。
-      max_concurrent_subagents = 0,
-      -- ワーカーが `ask` 対象のツールに当たると、そのチャットは `waiting_approval` で止まり、
-      -- 自力では抜けられない。既定ではそれを外せるのはユーザーだけで、オーケストレーターは
-      -- 「どのチャットが何で止まっているか」を言うところまでしかできない。
-      --
-      -- true にすると、オーケストレーターは `nvim_chat_answer_approval` で4択
-      -- （allow_once / deny_once / allow_for_session / deny_for_session）に無条件で代理で答えられる。
-      -- "scoped" にすると、そのワーカーが`nvim_chat_create`の`delegated_scope`引数で宣言した
-      -- パターン（frontmatterの`delegated_scope`、`permissions_allow`と同じ構文）に一致する
-      -- allow系の答えだけを通す。拒否は範囲を問わず常に通す — 拒否は権限を広げないため。
-      -- 扇の全員が同じ承認で止まる運用では `true` が唯一の現実解だが、買っているのは
-      -- 「エージェントが別のエージェントの承認ゲートを外せる」状態そのものなので、
-      -- opt-in にしてある。答えは配達セクション（`## Request <!-- ... from ... -->`）として
-      -- ワーカーのtranscriptに残るので、誰が許可したかは後から読める。
-      delegated_approval = false,
-    },
-    -- ターンのコストは「返答の長さ」ではなく「リクエスト数 × コンテキストサイズ」で決まる。
-    -- ツール1回ごとにAPIリクエストが1本増え、そのたびに会話全体を読み直すため。
-    --
-    -- 自動コンパクトはこれを救わない。発火はコンテキスト上限の手前（このリポジトリのログで
-    -- 実測して約93万トークン）で、そこまで登る間の全リクエストは育ったサイズのまま課金される。
-    -- つまりコンパクトは溢れないための救命装置であって、コスト対策ではない。
-    --
-    -- 既定値は実測から取った。プレフィックスキャッシュを引き当てられず同じ内容を作成価格で
-    -- 書き直す率が、30k未満で0%、30〜80kで1.1%、80〜150kで4.8%、150k超で6.9%。この境目から
-    -- 先は読取量と書き直しの確率が両方効いてくる。
-    --
-    -- 値そのものは token_usage 側から借りる。`config` が未設定のとき（テストや手組みの
-    -- config テーブル）に使われるフォールバックが同じモジュールにあり、2箇所に同じ数字を
-    -- 置くと片方だけ動かして既定値が食い違う
-    --
-    -- cache_ttl_sec は同じ話の「時間」側で、warn_context と AND を取る。片方だけで出すと、
-    -- 小さいチャットの再開や連続した送信のたびに確認が挟まって邪魔になる。
-    token_usage = {
-      enabled = true,
-      warn_context = token_usage.DEFAULT_WARN_CONTEXT,
-      cache_ttl_sec = token_usage.DEFAULT_CACHE_TTL_SEC,
-      -- 既定で無効。Claudeではターンを1本使い、CodexではCLI固有の閾値を上書きする。
-      -- `at` を warn_context より上に置いてあるのは、Claudeで警告を見て自分で`/compact`や
-      -- `:VibingChatHandoff`を選ぶ余地を先に残すため。無効でもCLI自身の既定の圧縮は止めない。
-      auto_compact = {
-        enabled = false,
-        at = token_usage.DEFAULT_AUTO_COMPACT_AT,
-        -- focus はClaude専用で未設定が既定。何を残すべきかはプロジェクトごとに違うので、
-        -- 既定文を置くと外れたときに黙って効く
-      },
-    },
-    -- `--plugin-dir` で読み込むプラグイン。self → project_dir → extra の順で渡す。
-    --
-    -- 順序は意味を持つ。同名プラグインを複数渡すと**先に渡した方が勝つ**（claude 2.1.231で実測）。
-    -- self を先頭に置いているので、プロジェクト側のプラグインが名前を合わせて vibing.nvim 自身を
-    -- 乗っ取ることはできない。
-    --
-    -- project_dir を既定で読むのは利便性を取った判断で、リスクは受容している。プラグインは
-    -- mcpServers を宣言できるため、クローンしたリポジトリに仕込まれた `.vibing/plugins/` は
-    -- 最初のチャット送信時に任意のプロセスを起動しうる。信用できないリポジトリでは false にする。
-    plugins = {
-      self = true,
-      project_dir = ".vibing/plugins",
-      extra = {},
-    },
-  },
+  ai = { chat = { agent = Agents.DEFAULT, effort = "default" }, helpers = { effort = "low" }, agents = {} },
   chat = {
-    window = {
-      position = "current",
-      width = 0.4,
-      -- heightは意図的に未設定。既定値がpositionごとに違うのでwindow_manager側で解決する
-      -- （handbook/configuration.md の chat.window.height 参照）
-      border = "rounded",
+    storage = { location = "project", path = vim.fn.stdpath("data") .. "/vibing/chats" },
+    context = {
+      auto_include = true,
+      warn_tokens = Usage.DEFAULT_WARN_CONTEXT,
+      cache_ttl_sec = Usage.DEFAULT_CACHE_TTL_SEC,
+      compaction = { enabled = false, threshold_tokens = Usage.DEFAULT_AUTO_COMPACT_AT },
     },
-    auto_context = true,
-    save_location_type = "project",
-    save_dir = vim.fn.stdpath("data") .. "/vibing/chats",
+    daily_summary = { search_dirs = {}, file_finder_strategy = "auto" },
   },
   ui = {
+    window = { position = "current", width = 0.4, border = "rounded" },
     wrap = "on",
-    gradient = {
-      enabled = true,
-      colors = { "#cc3300", "#fffe00" },
-      interval = 100,
-      waiting_color = "#3fa9f5",
-    },
-    tool_result_display = "compact",
-    tool_markers = {
-      Task = "▶",
-      default = "⏺",
-    },
-    -- Rendered tool calls and reasoning start folded, so a chat window opens on the answer.
-    -- Which nodes fold is `queries/vibing/folds.scm`, overridable per user the ordinary Neovim
-    -- way with `after/queries/vibing/folds.scm`.
-    fold = {
-      enabled = true,
-    },
+    gradient = { enabled = true, colors = { "#cc3300", "#fffe00" }, interval_ms = 100, waiting_color = "#3fa9f5" },
+    tools = { results = "compact", markers = { Task = "▶", default = "⏺" } },
+    fold = { enabled = true },
+    subagents = { show_output = false, show_prefix = false },
+    usage = { enabled = true },
+    diff = { layout = "split", fill_char = "╱", highlights = true },
   },
   keymaps = {
     send = "<CR>",
@@ -530,497 +108,332 @@ M.defaults = {
     cycle_enum_next = "]v",
     cycle_enum_prev = "[v",
   },
-  diff = {
-    tool = "auto",
-    layout = "split",
-    fill_char = "╱",
-    highlights = true,
-  },
   permissions = {
     mode = "acceptEdits",
-    allow = vim.deepcopy(tools_const.DEFAULT_ALLOWED_TOOLS),
+    allow = vim.deepcopy(Tools.DEFAULT_ALLOWED_TOOLS),
     deny = { "Bash" },
     ask = {},
     rules = {},
     default_deny_rules = true,
     approval_wait_sec = 900,
+    delegated_approval = false,
   },
-  -- Per-backend options, one table per registered agent id. The fields and their defaults are
-  -- declared next to the backend in `core/constants/agents.lua` (`config_fields`), so this file
-  -- names no backend; `backend_defaults()` below reads them.
-  backends = nil, -- filled in below
-  mcp = {
-    enabled = true,
-    rpc_port = 9876,
+  automation = {
+    limits = {
+      continue_prompt = "Continue from where you left off.",
+      fallback_delay_sec = 300,
+      grace_sec = 10,
+      resume = { enabled = false, max_retries = 1 },
+      queue = { enabled = true, max_retries = 3 },
+    },
+    orchestration = {
+      max_concurrent = 0,
+      max_concurrent_subagents = 0,
+      notifications = { enabled = false, max_round_trips = 8, max_wakes = 50 },
+    },
   },
-  language = nil,
-  daily_summary = {
-    save_dir = nil,
-    search_dirs = {},
-    file_finder_strategy = "auto",
-  },
-  -- nvim-dapで止まったときの自動解析。既定は無効で、有効にしても既定はエラー時のみ。
-  -- ブレークポイントは意図して置くものなので、止まるたびに無人でトークンを使われると邪魔になる
-  dap = {
-    enabled = false,
-    auto_analyze_on_error = true,
-    auto_analyze_on_breakpoint = false,
+  integrations = {
+    nvim = { enabled = true, port = 9876 },
+    plugins = { self = true, project_dir = ".vibing/plugins", extra = {} },
+    dap = { enabled = false, auto_analyze_on_error = true, auto_analyze_on_breakpoint = false },
   },
 }
 
---- The defaults for `backends.<id>`, from each agent's declared `config_fields`.
---- @return table<string, table>
-local function backend_defaults()
-  local Agents = require("vibing.core.constants.agents")
+for _, def in ipairs(Agents.list()) do
+  local extensions = {}
+  for name, field in pairs(Agents.config_fields(def.id)) do
+    do
+      extensions[name] =
+        vim.deepcopy(field.default_module and require(field.default_module)[field.default_field] or field.default)
+    end
+  end
+  M.defaults.ai.agents[def.id] = { process = "oneshot", env = {}, settings = {}, mcp = {}, extensions = extensions }
+  local support = def.config_support or {}
+  if support.settings_sources then
+    M.defaults.ai.agents[def.id].settings.sources = { "user", "project", "local" }
+  end
+  if support.inherit_cli_servers then
+    M.defaults.ai.agents[def.id].mcp.inherit_cli_servers = true
+  end
+end
+
+local function enum(values)
+  return { kind = "enum", values = values }
+end
+local function list(item)
+  return { kind = "list", item = item or "string" }
+end
+local function map(item)
+  return { kind = "map", item = item }
+end
+local function number(min, integer)
+  return { kind = "number", min = min, integer = integer }
+end
+local nonempty = { kind = "nonempty" }
+local environment = { kind = "env_value" }
+local path_or_false = { kind = "path_or_false" }
+local color = { kind = "color" }
+
+local function inferred(value)
+  if type(value) ~= "table" then
+    return type(value)
+  end
+  if vim.islist(value) and next(value) then
+    return list()
+  end
   local out = {}
-  for _, def in ipairs(Agents.list()) do
-    local fields = {}
-    for name, field in pairs(Agents.config_fields(def.id)) do
-      if field.default_module then
-        fields[name] = require(field.default_module)[field.default_field]
-      elseif type(field.default) == "table" then
-        -- Decoupled from the literal in `agents.lua`, which is a module-level constant every reader
-        -- of that file shares. It does **not** decouple `M.defaults` from the live options: with no
-        -- `backends` key in `opts`, `setup`'s `tbl_deep_extend` hands the whole subtree over by
-        -- reference, so `options.backends.<id>` *is* this table. That aliasing is older than this
-        -- field and applies to every table default (`permissions.allow` among them); it is not
-        -- fixed here.
-        fields[name] = vim.deepcopy(field.default)
-      else
-        fields[name] = field.default
+  for k, v in pairs(value) do
+    out[k] = inferred(v)
+  end
+  return out
+end
+local schema = inferred(M.defaults)
+schema.ai.chat.agent = enum(Agents.ORDER)
+schema.ai.chat.model = nonempty
+schema.ai.chat.effort = enum(require("vibing.core.constants.modes").EFFORT_VALUES)
+schema.ai.helpers = vim.deepcopy(schema.ai.chat)
+schema.chat.language = { kind = "language" }
+schema.chat.storage.location = enum({ "project", "user", "custom" })
+schema.chat.storage.path = nonempty
+schema.chat.daily_summary.save_dir = nonempty
+schema.chat.daily_summary.search_dirs = list(nonempty)
+schema.chat.daily_summary.file_finder_strategy = enum({ "auto", "fd", "find", "locate", "ripgrep" })
+schema.chat.context.compaction.focus = "string"
+schema.ui.window.height = number(0)
+schema.ui.window.width = number(0)
+schema.ui.window.position = enum({ "right", "left", "top", "bottom", "back", "current", "float" })
+schema.ui.wrap = enum({ "nvim", "on", "off" })
+schema.ui.tools.results = enum({ "none", "compact", "full" })
+schema.ui.tools.markers = map(nonempty)
+schema.ui.diff.layout = enum({ "split", "unified" })
+schema.permissions.mode = enum(require("vibing.core.constants.modes").PERMISSION_MODES)
+schema.permissions.delegated_approval = { kind = "delegation" }
+schema.permissions.allow = list(nonempty)
+schema.permissions.deny = list(nonempty)
+schema.permissions.ask = list(nonempty)
+schema.permissions.rules = list({
+  tools = list(nonempty),
+  paths = list(nonempty),
+  commands = list(nonempty),
+  patterns = list(nonempty),
+  domains = list(nonempty),
+  action = enum({ "allow", "deny" }),
+  message = "string",
+})
+schema.integrations.plugins.self = "boolean"
+schema.integrations.plugins.project_dir = path_or_false
+schema.integrations.plugins.extra = list(nonempty)
+schema.integrations.nvim.port = number(1, true)
+schema.ui.gradient.interval_ms = number(1)
+schema.ui.gradient.colors = list(color)
+schema.ui.gradient.waiting_color = color
+schema.automation.limits.resume.max_retries = number(0, true)
+schema.automation.limits.queue.max_retries = number(0, true)
+schema.permissions.approval_wait_sec = number(0)
+for _, key in ipairs({ "warn_tokens", "cache_ttl_sec" }) do
+  schema.chat.context[key] = number(0)
+end
+schema.chat.context.compaction.threshold_tokens = number(0)
+for _, def in ipairs(Agents.list()) do
+  local common = schema.ai.agents[def.id]
+  common.path = nonempty
+  common.process = enum({ "oneshot", "duplex" })
+  common.env = map(environment)
+  common.settings = { sources = list(enum({ "user", "project", "local" })) }
+  common.mcp = { inherit_cli_servers = "boolean" }
+  for name, field in pairs(Agents.config_fields(def.id)) do
+    do
+      local rule = field.kind
+      if rule == "string_list" then
+        rule = list(nonempty)
+      elseif rule == "path_or_false" then
+        rule = path_or_false
+      elseif rule == "number" then
+        rule = number(field.min)
+      elseif field.values then
+        rule = enum(field.values)
+      end
+      common.extensions[name] = rule
+    end
+  end
+end
+
+local removed = {
+  adapter = "ai.chat.agent",
+  agent = "ai.chat / ai.helpers / ai.agents / automation / ui",
+  backends = "ai.agents",
+  diff = "ui.diff (diff.tool was removed)",
+  mcp = "integrations.nvim",
+  language = "chat.language",
+  daily_summary = "chat.daily_summary",
+  dap = "integrations.dap",
+  ["chat.window"] = "ui.window",
+  ["chat.auto_context"] = "chat.context.auto_include",
+  ["chat.save_dir"] = "chat.storage.path",
+  ["chat.save_location_type"] = "chat.storage.location",
+  ["chat.mode"] = "removed: mode never changed execution",
+  ["ui.tool_markers"] = "ui.tools.markers",
+  ["ui.tool_result_display"] = "ui.tools.results",
+  ["ui.gradient.interval"] = "ui.gradient.interval_ms",
+}
+
+local function validate(value, rule, path, errors)
+  local function fail(expected)
+    errors[#errors + 1] = path .. ": expected " .. expected
+  end
+  if type(rule) == "string" then
+    if type(value) ~= rule then
+      fail(rule)
+    end
+    return
+  end
+  local kind = rule.kind
+  if kind == "enum" then
+    if not vim.tbl_contains(rule.values, value) then
+      fail(table.concat(rule.values, " | "))
+    end
+  elseif kind == "nonempty" then
+    if type(value) ~= "string" or value == "" then
+      fail("a non-empty string")
+    end
+  elseif kind == "color" then
+    if type(value) ~= "string" or not value:match("^#%x%x%x%x%x%x$") then
+      fail("a hex color like #ff0000")
+    end
+  elseif kind == "path_or_false" then
+    if value ~= false then
+      validate(value, nonempty, path, errors)
+    end
+  elseif kind == "env_value" then
+    if type(value) ~= "string" and type(value) ~= "number" then
+      fail("a string or number")
+    end
+  elseif kind == "delegation" then
+    if type(value) ~= "boolean" and value ~= "scoped" then
+      fail('a boolean or "scoped"')
+    end
+  elseif kind == "number" then
+    if
+      type(value) ~= "number"
+      or value ~= value
+      or value == math.huge
+      or value == -math.huge
+      or (rule.min and value < rule.min)
+      or (rule.integer and value % 1 ~= 0)
+    then
+      fail("a valid number" .. (rule.min and " >= " .. rule.min or ""))
+    end
+  elseif kind == "language" then
+    if type(value) ~= "string" then
+      validate(value, { default = nonempty, chat = nonempty }, path, errors)
+    end
+  elseif type(value) ~= "table" then
+    fail("a table")
+  elseif kind == "list" then
+    if not vim.islist(value) then
+      fail("a list")
+    else
+      for i, item in ipairs(value) do
+        validate(item, rule.item, path .. "[" .. i .. "]", errors)
       end
     end
-    out[def.id] = fields
+  elseif kind == "map" then
+    for key, item in pairs(value) do
+      if type(key) ~= "string" then
+        fail("string keys")
+      else
+        validate(item, rule.item, path .. "." .. key, errors)
+      end
+    end
+  else
+    for key, item in pairs(value) do
+      local label = path == "" and tostring(key) or path .. "." .. tostring(key)
+      if not rule[key] then
+        errors[#errors + 1] = label .. (removed[label] and ": moved to " .. removed[label] or ": unknown option")
+      else
+        validate(item, rule[key], label, errors)
+      end
+    end
+  end
+end
+
+--- Merge according to the schema, so an empty list replaces its default.
+local function merge(base, opts, rule)
+  local out = vim.deepcopy(base)
+  for key, value in pairs(opts) do
+    local r = rule[key]
+    if type(value) == "table" and type(r) == "table" and r.kind == "map" then
+      out[key] = vim.tbl_extend("force", vim.deepcopy(base[key] or {}), vim.deepcopy(value))
+    elseif type(value) == "table" and type(r) == "table" and not r.kind then
+      out[key] = merge(type(out[key]) == "table" and out[key] or {}, value, r)
+    else
+      out[key] = vim.deepcopy(value)
+    end
   end
   return out
 end
 
-M.defaults.backends = backend_defaults()
-
---- Move options from where they lived before ADR 009 (`permissions.codex_*`, `grok.executable`)
---- to `backends.<id>.<field>`, warning once per key so the user updates their setup().
----
---- Works on a copy so the caller's table is not edited under them. An option set in both places
---- keeps the new one.
---- @param opts table user options
---- @return table
-local function migrate_legacy_backend_options(opts)
-  local Agents = require("vibing.core.constants.agents")
-  local migrated = vim.deepcopy(opts)
-  for _, def in ipairs(Agents.list()) do
-    for name, field in pairs(Agents.config_fields(def.id)) do
-      if field.legacy then
-        local value = vim.tbl_get(migrated, unpack(field.legacy))
-        if value ~= nil then
-          migrated.backends = migrated.backends or {}
-          migrated.backends[def.id] = migrated.backends[def.id] or {}
-          if migrated.backends[def.id][name] == nil then
-            migrated.backends[def.id][name] = value
-          end
-          -- Removed so the stale key does not survive the merge into a table nothing reads.
-          local parent = vim.tbl_get(migrated, unpack(vim.list_slice(field.legacy, 1, #field.legacy - 1)))
-          if type(parent) == "table" then
-            parent[field.legacy[#field.legacy]] = nil
-          end
-          notify.warn(
-            string.format(
-              "%s moved to backends.%s.%s; update your setup(). The old key still works for now.",
-              table.concat(field.legacy, "."),
-              def.id,
-              name
-            )
-          )
-        end
-      end
-    end
-  end
-  return migrated
-end
-
---- Validate `backends.<id>.<field>` against its declared kind, resetting what cannot be used.
---- @param options table the merged options
-local function validate_backend_options(options)
-  local Agents = require("vibing.core.constants.agents")
-  options.backends = type(options.backends) == "table" and options.backends or {}
-  for _, def in ipairs(Agents.list()) do
-    local values = options.backends[def.id]
-    if type(values) ~= "table" then
-      values = {}
-      options.backends[def.id] = values
-    end
-    for name, field in pairs(Agents.config_fields(def.id)) do
-      local default = M.defaults.backends[def.id][name]
-      local value = values[name]
-      local label = string.format("backends.%s.%s", def.id, name)
-      if field.kind == "path_or_false" then
-        if value ~= false and (type(value) ~= "string" or value == "") then
-          notify.warn(string.format("Invalid %s: expected a non-empty path or false. Resetting to default.", label))
-          values[name] = default
-        end
-      elseif field.kind == "string" then
-        -- A field that declares `values` is an enum. Checked here rather than where it is read,
-        -- so a typo is reported once at setup() instead of once per turn.
-        local expected = field.values and ("one of " .. table.concat(field.values, ", ")) or "a string"
-        if type(value) ~= "string" or (field.values and not vim.tbl_contains(field.values, value)) then
-          notify.warn(string.format("Invalid %s: expected %s. Resetting to default.", label, expected))
-          values[name] = default
-        end
-      elseif field.kind == "number" then
-        -- 宣言できるのは下限だけ。上限は今のところどのフィールドも要求していない
-        local floor = field.min
-        if type(value) ~= "number" or (floor and value < floor) then
-          local expected = floor and string.format("a number >= %d", floor) or "a number"
-          notify.warn(
-            string.format("Invalid %s: expected %s. Resetting to %s.", label, expected, tostring(default))
-          )
-          values[name] = default
-        end
-      elseif field.kind == "boolean" then
-        if type(value) ~= "boolean" then
-          notify.warn(string.format("Invalid %s: expected a boolean. Resetting to %s.", label, tostring(default)))
-          values[name] = default
-        end
-      elseif field.kind == "string_list" then
-        -- Rejected whole rather than filtered: a list this one holds permission rules, and dropping
-        -- the one bad entry would leave a shorter list that still looks like the user's own. The
-        -- reset is a fresh copy for the reason in `backend_defaults`.
-        -- `#value == tbl_count` rejects a map-shaped table, which would otherwise pass `ipairs`
-        -- silently as an empty list.
-        local valid = type(value) == "table" and #value == vim.tbl_count(value)
-        if valid then
-          for _, entry in ipairs(value) do
-            if type(entry) ~= "string" or entry == "" then
-              valid = false
-              break
-            end
-          end
-        end
-        if not valid then
-          notify.warn(string.format("Invalid %s: expected a list of non-empty strings. Resetting.", label))
-          values[name] = vim.deepcopy(default)
-        end
-      elseif field.kind == "executable_or_auto" then
-        -- The command builder tells the user to set this option when the binary is missing, so
-        -- a bad value has to be validated -- otherwise the advice leads to a setting nothing
-        -- checks. A missing binary is NOT reset to "auto": having asked for a specific binary,
-        -- silently falling back to whatever is on PATH would be worse than failing.
-        if type(value) ~= "string" or value == "" then
-          notify.warn(
-            string.format(
-              "Invalid %s value '%s'. Must be 'auto' or a path to the binary. Resetting to 'auto'.",
-              label,
-              tostring(value)
-            )
-          )
-          values[name] = "auto"
-        elseif value ~= "auto" and vim.fn.executable(value) == 0 then
-          notify.warn(
-            string.format("%s CLI not found at '%s'. Chats on that backend will fail until this is corrected.", def.id, value)
-          )
-        end
-      end
-    end
-  end
-end
-
----@type Vibing.Config?
-M.options = nil
-
----vibing.nvimプラグインの設定を初期化
----ユーザー設定とデフォルト設定をマージし、ツール権限の妥当性を検証
----permissionsで指定されたツール名が有効かチェックし、無効な場合は警告を出力
----@param opts? Vibing.Config ユーザー設定オブジェクト（nilの場合はデフォルト設定のみ使用）
+---@param opts? Vibing.Config
 function M.setup(opts)
-  M.options = vim.tbl_deep_extend("force", {}, M.defaults, migrate_legacy_backend_options(opts or {}))
-  validate_backend_options(M.options)
-
-  -- Auto-add "Skill" to permissions.allow if not already present and not in deny/ask lists
-  if M.options.permissions and M.options.permissions.allow then
-    local has_skill = false
-    local is_denied = false
-    local is_ask = false
-
-    -- Check if Skill is already in allow list
-    for _, tool in ipairs(M.options.permissions.allow) do
-      if tool == "Skill" then
-        has_skill = true
-        break
-      end
+  if opts == nil then
+    opts = {}
+  end
+  local errors = {}
+  validate(opts, schema, "", errors)
+  if #errors > 0 then
+    error("Invalid vibing configuration:\n" .. table.concat(errors, "\n"), 2)
+  end
+  for id, options in pairs(vim.tbl_get(opts, "ai", "agents") or {}) do
+    local support = Agents.get(id).config_support or {}
+    if options.settings and options.settings.sources ~= nil and not support.settings_sources then
+      errors[#errors + 1] = "ai.agents." .. id .. ".settings.sources: unsupported by this agent"
     end
-
-    -- Check if Skill is in deny list
-    if M.options.permissions.deny then
-      for _, tool in ipairs(M.options.permissions.deny) do
-        if tool == "Skill" then
-          is_denied = true
-          break
-        end
-      end
+    if options.mcp and options.mcp.inherit_cli_servers ~= nil and not support.inherit_cli_servers then
+      errors[#errors + 1] = "ai.agents." .. id .. ".mcp.inherit_cli_servers: unsupported by this agent"
     end
-
-    -- Check if Skill is in ask list (user wants confirmation before use)
-    if M.options.permissions.ask then
-      for _, tool in ipairs(M.options.permissions.ask) do
-        if tool == "Skill" then
-          is_ask = true
-          break
-        end
-      end
-    end
-
-    -- Add Skill if not present and not denied and not in ask list
-    if not has_skill and not is_denied and not is_ask then
-      table.insert(M.options.permissions.allow, "Skill")
+    if options.process == "duplex" and require(Agents.get(id).descriptor_module).process ~= "duplex" then
+      errors[#errors + 1] = "ai.agents." .. id .. ".process: duplex is unsupported by this agent"
     end
   end
-
-  if M.options.permissions then
-    -- Validate permission mode
-    local valid_modes = {
-      default = true,
-      acceptEdits = true,
-      bypassPermissions = true,
-      plan = true,
-      dontAsk = true,
-      auto = true,
-    }
-    local mode = M.options.permissions.mode
-    if mode and not valid_modes[mode] then
-      notify.warn(string.format(
-        "Invalid permissions.mode '%s'. Valid values: default, acceptEdits, bypassPermissions, plan, dontAsk, auto",
-        mode
-      ))
-    end
-
-    -- Helper: Validate tool name or Bash pattern
-    local function is_valid_tool(tool_str)
-      -- Check for Bash pattern: Bash(command:*)
-      if tool_str:match("^Bash%([^:]+:%*%)$") then
-        return true
-      end
-      -- Check for MCP tool: mcp__server__tool
-      if tool_str:match("^mcp__") then
-        return true
-      end
-      -- Check built-in tools
-      return tools_const.VALID_TOOLS_MAP[tool_str] ~= nil
-    end
-
-    -- Validate tool names
-    for _, tool in ipairs(M.options.permissions.allow or {}) do
-      if not is_valid_tool(tool) then
-        notify.warn(string.format("Unknown tool '%s' in permissions.allow", tool))
-      end
-    end
-    for _, tool in ipairs(M.options.permissions.deny or {}) do
-      if not is_valid_tool(tool) then
-        notify.warn(string.format("Unknown tool '%s' in permissions.deny", tool))
-      end
-    end
-    for _, tool in ipairs(M.options.permissions.ask or {}) do
-      if not is_valid_tool(tool) then
-        notify.warn(string.format("Unknown tool '%s' in permissions.ask", tool))
+  if #errors > 0 then
+    error("Invalid vibing configuration:\n" .. table.concat(errors, "\n"), 2)
+  end
+  local options = merge(M.defaults, opts, schema)
+  -- Keep the existing Skill floor and tool-name diagnostics.
+  local p = options.permissions
+  if
+    not vim.tbl_contains(p.allow, "Skill")
+    and not vim.tbl_contains(p.deny, "Skill")
+    and not vim.tbl_contains(p.ask, "Skill")
+  then
+    p.allow[#p.allow + 1] = "Skill"
+  end
+  for _, name in ipairs({ "allow", "deny", "ask" }) do
+    for _, tool in ipairs(p[name]) do
+      if not Tools.VALID_TOOLS_MAP[tool] and not tool:match("^mcp__") and not tool:match("^Bash%([^:]+:%*%)$") then
+        Notify.warn("Unknown tool '" .. tool .. "' in permissions." .. name)
       end
     end
   end
-
-  local function validate_enum(value, valid_values, field_name, default)
-    if value and not valid_values[value] then
-      -- tbl_keysの順序は不定なので、警告文が実行ごとに変わらないようソートする
-      local keys = vim.tbl_keys(valid_values)
-      table.sort(keys)
-      local valid_list = table.concat(keys, ", ")
-      notify.warn(string.format(
-        "Invalid %s value '%s'. Valid values: %s. Falling back to '%s'.",
-        field_name, value, valid_list, default
-      ))
-      return default
-    end
-    return value
+  if #options.ui.gradient.colors ~= 2 then
+    error("ui.gradient.colors requires exactly two colors", 2)
   end
-
-  if M.options.ui then
-    M.options.ui.wrap = validate_enum(
-      M.options.ui.wrap,
-      { nvim = true, on = true, off = true },
-      "ui.wrap",
-      "on"
-    )
-    M.options.ui.tool_result_display = validate_enum(
-      M.options.ui.tool_result_display,
-      { none = true, compact = true, full = true },
-      "ui.tool_result_display",
-      "compact"
-    )
+  if vim.fn.strchars(options.ui.diff.fill_char) > 1 then
+    error('ui.diff.fill_char must be one character or ""', 2)
   end
-
-  if M.options.diff then
-    -- mote統合は削除された。`"mote"` を弾いてデフォルトに戻すと、明示的にmoteを選んで
-    -- いたユーザーが「なぜか設定が無視される」状態になるので、名指しで案内して "git" に倒す。
-    --
-    -- 正規化した値は `M.options` にしか書かないので、ユーザーの `opts` テーブルには古い設定が
-    -- 残ったまま。setup()を2回以上呼ぶ構成（設定の再読み込み等）だと、そのたびに同じ警告が
-    -- 出ることになる。削除された設定の案内はどれも `notify.warn_once` に乗せて1回に抑える。
-    if M.options.diff.tool == "mote" then
-      notify.warn_once(
-        "config.diff.tool",
-        "diff.tool = \"mote\" is no longer supported and is being treated as \"git\". "
-          .. "mote integration was removed: diffs now come from a git tree snapshot taken per "
-          .. "request, which also catches Bash-driven file changes. Remove the setting."
-      )
-      M.options.diff.tool = "git"
-    end
-    if M.options.diff.mote ~= nil then
-      notify.warn_once("config.diff.mote", "diff.mote is no longer used and can be removed from your setup() call.")
-      M.options.diff.mote = nil
-    end
-    M.options.diff.tool = validate_enum(
-      M.options.diff.tool,
-      { git = true, auto = true },
-      "diff.tool",
-      "auto"
-    )
-    if M.options.diff.viewer ~= nil then
-      notify.warn_once(
-        "config.diff.viewer",
-        "diff.viewer is no longer used: the mini.diff inline view was removed and `gd` always "
-          .. "opens the patch viewer. Remove the setting."
-      )
-      M.options.diff.viewer = nil
-    end
-    M.options.diff.layout = validate_enum(
-      M.options.diff.layout,
-      { split = true, unified = true },
-      "diff.layout",
-      "split"
-    )
-    -- 'fillchars' の `diff:` は1文字しか受け付けない。2文字以上だと 'E474' で
-    -- ペインの設定が丸ごと失敗するので、ここで既定に戻す
-    local fill_char = M.options.diff.fill_char
-    if type(fill_char) ~= "string" or vim.fn.strchars(fill_char) > 1 then
-      if fill_char ~= nil then
-        notify.warn_once("config.diff.fill_char", "diff.fill_char must be a single character or \"\". Using the default.")
-      end
-      M.options.diff.fill_char = "╱"
+  if options.integrations.nvim.port > 65535 then
+    error("integrations.nvim.port must be <= 65535", 2)
+  end
+  for _, rule in ipairs(p.rules) do
+    if not rule.tools or not rule.action then
+      error("permissions.rules requires tools and action", 2)
     end
   end
-
-  if M.options.agent then
-    -- `max_hops`（起こされた回数のグローバルカウンタ）は (A,B) ペアの往復カウンタと
-    -- 全体予算に置き換わった。黙って無視すると「上限を下げたはずなのに効いていない」に
-    -- 気づけないので、`diff.tool = "mote"` と同じく名指しで案内する
-    -- 型を見るのは、`chat_notifications = true` のような壊れた設定でも `setup()` を落とさない
-    -- ため。`vim.tbl_deep_extend("force", ...)` は非テーブルで既定値ごと置き換えるので、素朴に
-    -- 索引すると boolean を index して落ちる。この経路は今回追加したものなので、少なくとも
-    -- 変更前より壊れやすくはしない
-    local notifications = M.options.agent.chat_notifications
-    if type(notifications) == "table" and notifications.max_hops ~= nil then
-      notify.warn_once(
-        "config.agent.chat_notifications.max_hops",
-        "agent.chat_notifications.max_hops is no longer used and is being ignored. "
-          .. "The chain is now bounded per chat pair by max_round_trips (default 8), with "
-          .. "max_wakes (default 50) as a whole-tree budget. Remove the setting."
-      )
-      notifications.max_hops = nil
-    end
-
-    local modes = require("vibing.core.constants.modes")
-    local valid_agent_modes = {}
-    for _, mode in ipairs(modes.AGENT_MODES) do
-      valid_agent_modes[mode] = true
-    end
-    M.options.agent.default_mode =
-      validate_enum(M.options.agent.default_mode, valid_agent_modes, "agent.default_mode", "code")
-  end
-
-  if M.options.ui and M.options.ui.gradient then
-    local gradient = M.options.ui.gradient
-
-    if gradient.colors then
-      if type(gradient.colors) ~= "table" or #gradient.colors ~= 2 then
-        notify.warn("Invalid ui.gradient.colors: must be an array of exactly 2 hex color strings.")
-        M.options.ui.gradient.colors = { "#cc3300", "#fffe00" }
-      else
-        for i, color in ipairs(gradient.colors) do
-          if type(color) ~= "string" or not color:match("^#%x%x%x%x%x%x$") then
-            notify.warn(string.format(
-              "Invalid color format at ui.gradient.colors[%d]: '%s'. Expected hex format like '#ff0000'.",
-              i, tostring(color)
-            ))
-          end
-        end
-      end
-    end
-
-    if gradient.interval and (type(gradient.interval) ~= "number" or gradient.interval <= 0) then
-      notify.warn("Invalid ui.gradient.interval: must be a positive number.")
-      M.options.ui.gradient.interval = 100
-    end
-
-    if gradient.waiting_color ~= nil
-      and (type(gradient.waiting_color) ~= "string" or not gradient.waiting_color:match("^#%x%x%x%x%x%x$"))
-    then
-      notify.warn(string.format(
-        "Invalid ui.gradient.waiting_color: '%s'. Expected hex format like '#3fa9f5'.",
-        tostring(gradient.waiting_color)
-      ))
-      M.options.ui.gradient.waiting_color = "#3fa9f5"
-    end
-  end
-
-  if M.options.ui and M.options.ui.tool_markers then
-    M.options.ui.tool_markers = validate_tool_markers(M.options.ui.tool_markers)
-  end
-
-  if M.options.language then
-    local function validate_lang_code(code, field_name)
-      if code and code ~= "" and code ~= "en" and not language_utils.language_names[code] then
-        local supported = table.concat(vim.tbl_keys(language_utils.language_names), ", ")
-        notify.warn(string.format("Unknown language code '%s' in %s. Supported: %s", code, field_name, supported))
-      end
-    end
-
-    if type(M.options.language) == "string" then
-      validate_lang_code(M.options.language, "language")
-    elseif type(M.options.language) == "table" then
-      validate_lang_code(M.options.language.default, "language.default")
-      validate_lang_code(M.options.language.chat, "language.chat")
-    end
-  end
-
-  -- Validate daily_summary.search_dirs
-  if M.options.daily_summary and M.options.daily_summary.search_dirs then
-    local search_dirs = M.options.daily_summary.search_dirs
-    if type(search_dirs) ~= "table" then
-      notify.warn(string.format(
-        "Invalid daily_summary.search_dirs: expected table, got %s. Resetting to default.",
-        type(search_dirs)
-      ))
-      M.options.daily_summary.search_dirs = {}
-    else
-      local valid_dirs = {}
-      for i, dir in ipairs(search_dirs) do
-        if type(dir) ~= "string" or dir == "" then
-          notify.warn(string.format(
-            "Invalid daily_summary.search_dirs[%d]: expected non-empty string, got %s. Skipping.",
-            i, type(dir)
-          ))
-        else
-          table.insert(valid_dirs, dir)
-        end
-      end
-      M.options.daily_summary.search_dirs = valid_dirs
-    end
-  end
-
+  M.options = options
 end
 
----現在の設定を取得
----setup()で初期化された設定オブジェクトを返す
----setup()が未実行の場合はデフォルト設定を返す
----@return Vibing.Config 現在の設定オブジェクト
+---@return Vibing.Config
 function M.get()
   return M.options or M.defaults
 end
-
 return M

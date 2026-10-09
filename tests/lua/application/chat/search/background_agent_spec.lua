@@ -53,7 +53,7 @@ describe("background agent", function()
   describe("opts", function()
     it("runs on the utility model, with exactly the tools it was given", function()
       local tools = { "Grep" }
-      local opts = BackgroundAgent.opts({ utility_model = "haiku", utility_effort = "low" }, "/repo", tools, function() end)
+      local opts = BackgroundAgent.opts({ model = "haiku", effort = "low" }, "/repo", tools, function() end)
 
       assert.are.equal("haiku", opts.model)
       assert.are.equal("low", opts.effort)
@@ -98,9 +98,15 @@ describe("background agent", function()
 
       package.loaded["vibing"] = {
         get_config = function()
-          return { agent = { utility_model = "haiku" } }
+          return {
+            ai = {
+              helpers = {
+                model = "haiku",
+              },
+            },
+          }
         end,
-        get_adapter = function()
+        get_helper_adapter = function()
           return {
             stream = function(_, prompt, opts, on_chunk, on_done)
               streamed[#streamed + 1] = { prompt = prompt, opts = opts }
@@ -157,7 +163,7 @@ describe("background agent", function()
     end)
 
     it("reports a missing adapter", function()
-      package.loaded["vibing"].get_adapter = function()
+      package.loaded["vibing"].get_helper_adapter = function()
         return nil
       end
 

@@ -1,5 +1,5 @@
 ---@diagnostic disable: undefined-field
---- `backends.codex.auto_approve`: answering codex's own sandbox-escape request from configuration.
+--- `ai.agents.codex.extensions.auto_approve`: answering codex's own sandbox-escape request from configuration.
 ---
 --- The flag removes the **second** ask about a call vibing's PreToolUse hook already allowed — codex
 --- sends no approval request at all when that hook denies — so these assertions guard three things:
@@ -21,7 +21,13 @@ describe("codex native approval, auto_approve", function()
     written, opened = {}, {}
     package.loaded["vibing.config"] = {
       get = function()
-        return { backends = { codex = codex } }
+        return {
+          ai = {
+            agents = {
+              codex = { extensions = codex },
+            },
+          },
+        }
       end,
     }
     package.loaded["vibing.infrastructure.adapter.modules.duplex_process"] = {
