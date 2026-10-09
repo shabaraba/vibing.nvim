@@ -156,15 +156,31 @@ function M.run(prompt, tools, on_tool, callback, schema)
     opts.on_structured_output = function(value)
       structured = value
     end
-    opts.exclusive_tools[#opts.exclusive_tools + 1] = "StructuredOutput"
-    opts.permissions_allow[#opts.permissions_allow + 1] = "StructuredOutput"
-    prompt = prompt
-      .. "\nStructured output is configured: submit the final result with StructuredOutput instead of a JSON code block."
+    if adapter:supports("structured_output_file") then
+      opts.output_schema_path = vim.fn.tempname() .. ".json"
+      local ok, err = pcall(vim.fn.writefile, { vim.json.encode(schema) }, opts.output_schema_path)
+      if not ok or err ~= 0 then
+        vim.fn.delete(opts.output_schema_path)
+        callback(nil, "Could not write the output schema: " .. tostring(err))
+        return
+      end
+    end
+    if adapter:supports("structured_output_tool") then
+      opts.exclusive_tools[#opts.exclusive_tools + 1] = "StructuredOutput"
+      opts.permissions_allow[#opts.permissions_allow + 1] = "StructuredOutput"
+      prompt = prompt .. "\nSubmit the final result with StructuredOutput instead of a JSON code block."
+    else
+      prompt = prompt
+        .. "\nAn output schema is configured: return the final result in that schema, without Markdown fences."
+    end
   end
 
   turn_id = adapter:stream(prompt, opts, function(chunk)
     collected[#collected + 1] = chunk
   end, function(response)
+    if opts.output_schema_path then
+      vim.fn.delete(opts.output_schema_path)
+    end
     release_turn(turn_id)
 
     if response.error then

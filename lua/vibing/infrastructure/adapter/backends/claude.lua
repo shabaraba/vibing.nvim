@@ -22,6 +22,7 @@ local M = {
     session = true,
     dynamic_permissions = true,
     structured_output = true,
+    structured_output_tool = true,
   },
 
   -- `claude -p`, in the order the CLI has always been given it. The values behind `model`,

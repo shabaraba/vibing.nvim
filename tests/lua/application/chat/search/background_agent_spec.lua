@@ -185,7 +185,7 @@ describe("background agent", function()
     it("uses the structured payload instead of streamed prose", function()
       local adapter = package.loaded["vibing"].get_adapter()
       adapter.supports = function(_, feature)
-        return feature == "structured_output"
+        return feature == "structured_output" or feature == "structured_output_tool"
       end
       local stream = adapter.stream
       adapter.stream = function(self, prompt, opts, on_chunk, on_done)
@@ -225,6 +225,35 @@ describe("background agent", function()
         return err ~= nil
       end)
       assert.are.equal("the search agent returned no structured result", err)
+    end)
+
+    it("writes a file schema for Codex and removes it when the turn ends", function()
+      local adapter = package.loaded["vibing"].get_adapter()
+      adapter.supports = function(_, feature)
+        return feature == "structured_output" or feature == "structured_output_file"
+      end
+      local schema_path
+      local stream = adapter.stream
+      adapter.stream = function(self, prompt, opts, on_chunk, on_done)
+        schema_path = opts.output_schema_path
+        assert.are.same({ type = "object" }, vim.json.decode(table.concat(vim.fn.readfile(schema_path), "\n")))
+        assert.is_false(vim.tbl_contains(opts.exclusive_tools, "StructuredOutput"))
+        assert.is_nil(prompt:find("with StructuredOutput", 1, true))
+        opts.on_structured_output({ groups = {} })
+        return stream(self, prompt, opts, on_chunk, on_done)
+      end
+      package.loaded["vibing"].get_adapter = function()
+        return adapter
+      end
+      local text
+      BackgroundAgent.run("prompt", {}, function() end, function(t)
+        text = t
+      end, { type = "object" })
+      vim.wait(1000, function()
+        return text ~= nil
+      end)
+      assert.are.same({ groups = {} }, vim.json.decode(text))
+      assert.are.equal(0, vim.fn.filereadable(schema_path))
     end)
 
     it("reports a missing adapter", function()

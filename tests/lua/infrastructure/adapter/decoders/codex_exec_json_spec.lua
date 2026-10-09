@@ -2,6 +2,23 @@
 local Decoder = require("vibing.infrastructure.adapter.decoders.codex_exec_json")
 
 describe("decoders.codex_exec_json", function()
+  it("uses only the final agent message as the structured result", function()
+    local state = {}
+    Decoder.decode({ type = "item.completed", item = { type = "agent_message", text = "Searching" } }, state)
+    Decoder.decode({ type = "item.completed", item = { type = "agent_message", text = '{"groups": []}' } }, state)
+    assert.are.same(
+      { { kind = "structured_output", value = { groups = {} } } },
+      Decoder.decode({ type = "turn.completed" }, state)
+    )
+    assert.are.same({}, Decoder.decode({ type = "turn.completed" }, state))
+  end)
+
+  it("does not use an earlier JSON message when the final message is malformed", function()
+    local state = {}
+    Decoder.decode({ type = "item.completed", item = { type = "agent_message", text = '{"groups": []}' } }, state)
+    Decoder.decode({ type = "item.completed", item = { type = "agent_message", text = '{"groups": [' } }, state)
+    assert.are.same({}, Decoder.decode({ type = "turn.completed" }, state))
+  end)
   local function decode(state, msg)
     return Decoder.decode(msg, state)
   end
@@ -25,11 +42,19 @@ describe("decoders.codex_exec_json", function()
     local state = {}
     decode(state, {
       type = "item.started",
-      item = { id = "i2", type = "file_change", changes = { { path = "a.lua", kind = "update" }, { path = "b.lua", kind = "add" } } },
+      item = {
+        id = "i2",
+        type = "file_change",
+        changes = { { path = "a.lua", kind = "update" }, { path = "b.lua", kind = "add" } },
+      },
     })
     local events = decode(state, {
       type = "item.completed",
-      item = { id = "i2", type = "file_change", changes = { { path = "a.lua", kind = "update" }, { path = "b.lua", kind = "add" } } },
+      item = {
+        id = "i2",
+        type = "file_change",
+        changes = { { path = "a.lua", kind = "update" }, { path = "b.lua", kind = "add" } },
+      },
     })
     assert.same({ { kind = "tool_end", id = "i2", result = "modified a.lua\ncreated b.lua" } }, events)
   end)
@@ -48,7 +73,13 @@ describe("decoders.codex_exec_json", function()
   it("names an MCP call the way claude's stream would", function()
     local events = decode({}, {
       type = "item.completed",
-      item = { id = "i4", type = "mcp_tool_call", server = "vibing_nvim", tool = "nvim_list_windows", result = { content = { { text = "ok" } } } },
+      item = {
+        id = "i4",
+        type = "mcp_tool_call",
+        server = "vibing_nvim",
+        tool = "nvim_list_windows",
+        result = { content = { { text = "ok" } } },
+      },
     })
     assert.equals("mcp__vibing_nvim__nvim_list_windows", events[1].name)
     assert.same({ kind = "tool_end", id = "i4", result = "ok" }, events[2])
@@ -64,8 +95,14 @@ describe("decoders.codex_exec_json", function()
   end)
 
   it("streams agent text and reasoning", function()
-    assert.same({ { kind = "text", delta = "hi" } }, decode({}, { type = "item.completed", item = { type = "agent_message", text = "hi" } }))
-    assert.same({ { kind = "thinking", delta = "hm" } }, decode({}, { type = "item.completed", item = { type = "reasoning", text = "hm" } }))
+    assert.same(
+      { { kind = "text", delta = "hi" } },
+      decode({}, { type = "item.completed", item = { type = "agent_message", text = "hi" } })
+    )
+    assert.same(
+      { { kind = "thinking", delta = "hm" } },
+      decode({}, { type = "item.completed", item = { type = "reasoning", text = "hm" } })
+    )
   end)
 
   it("tags turn.completed usage as a whole-turn accumulator", function()

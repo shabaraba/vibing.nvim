@@ -30,6 +30,7 @@
 
 ---@class Vibing.AdapterOpts
 ---@field output_schema table? JSON Schema for backends supporting structured_output
+---@field output_schema_path string? Temporary schema file for backends requiring a file
 ---@field on_structured_output fun(value: table)? Validated structured result
 ---@field streaming boolean?
 ---@field action_type "chat"?
