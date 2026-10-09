@@ -137,7 +137,8 @@ end
 ---@param tools string[]
 ---@param on_tool fun(label: string)
 ---@param callback fun(text: string?, error: string?)
-function M.run(prompt, tools, on_tool, callback)
+---@param schema table? JSON Schema used when the backend supports structured output
+function M.run(prompt, tools, on_tool, callback, schema)
   local vibing = require("vibing")
   local adapter = vibing.get_adapter()
   if not adapter then
@@ -147,25 +148,42 @@ function M.run(prompt, tools, on_tool, callback)
 
   local collected = {}
   local turn_id
-
-  turn_id = adapter:stream(
-    prompt,
-    M.opts(vibing.get_config().agent or {}, vim.fn.getcwd(), tools, on_tool),
-    function(chunk)
-      collected[#collected + 1] = chunk
-    end,
-    function(response)
-      release_turn(turn_id)
-
-      if response.error then
-        callback(nil, response.error)
-        return
-      end
-
-      local text = table.concat(collected)
-      callback(text ~= "" and text or (response.content or ""), nil)
+  local structured
+  local opts = M.opts(vibing.get_config().agent or {}, vim.fn.getcwd(), tools, on_tool)
+  local use_schema = schema and adapter.supports and adapter:supports("structured_output")
+  if use_schema then
+    opts.output_schema = schema
+    opts.on_structured_output = function(value)
+      structured = value
     end
-  )
+    opts.exclusive_tools[#opts.exclusive_tools + 1] = "StructuredOutput"
+    opts.permissions_allow[#opts.permissions_allow + 1] = "StructuredOutput"
+    prompt = prompt
+      .. "\nStructured output is configured: submit the final result with StructuredOutput instead of a JSON code block."
+  end
+
+  turn_id = adapter:stream(prompt, opts, function(chunk)
+    collected[#collected + 1] = chunk
+  end, function(response)
+    release_turn(turn_id)
+
+    if response.error then
+      callback(nil, response.error)
+      return
+    end
+
+    if use_schema then
+      if type(structured) ~= "table" then
+        callback(nil, "the search agent returned no structured result")
+      else
+        callback(vim.json.encode(structured), nil)
+      end
+      return
+    end
+
+    local text = table.concat(collected)
+    callback(text ~= "" and text or (response.content or ""), nil)
+  end)
 end
 
 return M

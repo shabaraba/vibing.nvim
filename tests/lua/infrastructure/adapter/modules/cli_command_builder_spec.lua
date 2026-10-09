@@ -34,6 +34,12 @@ describe("cli_command_builder", function()
   end
 
   describe("system prompt", function()
+    it("encodes the requested output schema as a CLI argument", function()
+      local schema = require("vibing.application.chat.search.chat_schema")
+      local cmd = cli_command_builder.build("search", { output_schema = schema }, nil, {}, nil)
+      assert.are.same(schema, vim.json.decode(cmd[find_flag(cmd, "--json-schema") + 1]))
+      assert.is_nil(find_flag(cli_command_builder.build("chat", {}, nil, {}, nil), "--json-schema"))
+    end)
     it("always appends the worktree directory convention instruction", function()
       local cmd = cli_command_builder.build("hello", {}, nil, {}, nil)
       local idx = find_flag(cmd, "--append-system-prompt")
@@ -127,8 +133,13 @@ describe("cli_command_builder", function()
     it("still names an orchestrator whose chat is closed", function()
       -- The restart case #641 exists for: the path is all there is, and dropping the line would
       -- leave the worker with no way to reach back.
-      local cmd =
-        cli_command_builder.build("hello", { orchestrators = { { path = ".vibing/chat/boss.md" } } }, nil, {}, nil)
+      local cmd = cli_command_builder.build(
+        "hello",
+        { orchestrators = { { path = ".vibing/chat/boss.md" } } },
+        nil,
+        {},
+        nil
+      )
       local prompt_text = cmd[find_flag(cmd, "--append-system-prompt") + 1]
       assert.is_true(prompt_text:find("started by vibing.nvim chat .vibing/chat/boss.md", 1, true) ~= nil)
       assert.is_nil(prompt_text:find("currently buffer", 1, true))
@@ -278,7 +289,10 @@ describe("cli_command_builder", function()
       local cmd1 = cli_command_builder.build("hello", opts, nil, {}, nil)
       local cmd2 = cli_command_builder.build("hello again", opts, "session-1", {}, nil)
 
-      assert.equals(cmd1[find_flag(cmd1, "--append-system-prompt") + 1], cmd2[find_flag(cmd2, "--append-system-prompt") + 1])
+      assert.equals(
+        cmd1[find_flag(cmd1, "--append-system-prompt") + 1],
+        cmd2[find_flag(cmd2, "--append-system-prompt") + 1]
+      )
     end)
 
     it("picks up an edit on the next request", function()
@@ -405,7 +419,13 @@ describe("cli_command_builder", function()
     end)
 
     it("does not pass --permission-mode even when opts.permission_mode is set", function()
-      local cmd = cli_command_builder.build("hello", { lightweight = true, permission_mode = "acceptEdits" }, nil, {}, nil)
+      local cmd = cli_command_builder.build(
+        "hello",
+        { lightweight = true, permission_mode = "acceptEdits" },
+        nil,
+        {},
+        nil
+      )
       assert.is_nil(find_flag(cmd, "--permission-mode"))
     end)
 
@@ -432,14 +452,7 @@ describe("cli_command_builder", function()
     end)
 
     it("omits the worktree and ask_user_question tool instructions from the system prompt", function()
-      local cmd = cli_command_builder.build(
-        "hello",
-        { lightweight = true, chat_bufnr = 12 },
-        nil,
-        {},
-        nil,
-        9878
-      )
+      local cmd = cli_command_builder.build("hello", { lightweight = true, chat_bufnr = 12 }, nil, {}, nil, 9878)
       local idx = find_flag(cmd, "--append-system-prompt")
       assert.is_not_nil(idx)
       local prompt_text = cmd[idx + 1]

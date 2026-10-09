@@ -182,6 +182,51 @@ describe("background agent", function()
       assert.are.equal("rate limited", err)
     end)
 
+    it("uses the structured payload instead of streamed prose", function()
+      local adapter = package.loaded["vibing"].get_adapter()
+      adapter.supports = function(_, feature)
+        return feature == "structured_output"
+      end
+      local stream = adapter.stream
+      adapter.stream = function(self, prompt, opts, on_chunk, on_done)
+        assert.are.same({ type = "object" }, opts.output_schema)
+        assert.is_true(vim.tbl_contains(opts.exclusive_tools, "StructuredOutput"))
+        opts.on_structured_output({ groups = {} })
+        return stream(self, prompt, opts, on_chunk, on_done)
+      end
+      package.loaded["vibing"].get_adapter = function()
+        return adapter
+      end
+      reply.chunks = { "not JSON" }
+      local text
+      BackgroundAgent.run("prompt", {}, function() end, function(t)
+        text = t
+      end, { type = "object" })
+      vim.wait(1000, function()
+        return text ~= nil
+      end)
+      assert.are.same({ groups = {} }, vim.json.decode(text))
+    end)
+
+    it("reports missing structured output instead of accepting prose", function()
+      local adapter = package.loaded["vibing"].get_adapter()
+      adapter.supports = function()
+        return true
+      end
+      package.loaded["vibing"].get_adapter = function()
+        return adapter
+      end
+      reply.chunks = { '{"groups": []}' }
+      local err
+      BackgroundAgent.run("prompt", {}, function() end, function(_, e)
+        err = e
+      end, { type = "object" })
+      vim.wait(1000, function()
+        return err ~= nil
+      end)
+      assert.are.equal("the search agent returned no structured result", err)
+    end)
+
     it("reports a missing adapter", function()
       package.loaded["vibing"].get_adapter = function()
         return nil
