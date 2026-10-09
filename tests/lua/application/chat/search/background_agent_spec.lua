@@ -41,6 +41,27 @@ describe("background agent", function()
       assert.are.equal(3, BackgroundAgent.last_json('done: {"n": 3}').n)
     end)
 
+    it("recovers omitted closing containers in a fenced result", function()
+      local decoded = BackgroundAgent.last_json('```json\n{"groups": [{"label": "g", "chats": []}]\n```')
+      assert.are.equal("g", decoded.groups[1].label)
+      local nested = BackgroundAgent.last_json('```json\n{"groups": [{"label": "g", "chats": []\n```')
+      assert.are.same({}, nested.groups[1].chats)
+    end)
+
+    it("ignores brackets and escaped quotes inside strings when closing containers", function()
+      local text = vim.json.encode({ summary = 'a } [ "quoted" text' }):sub(1, -2)
+      local decoded = BackgroundAgent.last_json("```json\n" .. text .. "\n```")
+      assert.are.equal('a } [ "quoted" text', decoded.summary)
+    end)
+
+    it("rejects incomplete values, unterminated strings and mismatched containers", function()
+      for _, block in ipairs({ '{"groups":', '{"groups": ["unfinished', '{"groups": [}', '{"groups": [],' }) do
+        local decoded, err = BackgroundAgent.last_json("```json\n" .. block .. "\n```")
+        assert.is_nil(decoded)
+        assert.is_not_nil(err)
+      end
+    end)
+
     it("reports an answer with no JSON, or a malformed one", function()
       local _, missing = BackgroundAgent.last_json("nothing here")
       local _, malformed = BackgroundAgent.last_json("```json\n{oops\n```")
@@ -53,7 +74,12 @@ describe("background agent", function()
   describe("opts", function()
     it("runs on the utility model, with exactly the tools it was given", function()
       local tools = { "Grep" }
-      local opts = BackgroundAgent.opts({ utility_model = "haiku", utility_effort = "low" }, "/repo", tools, function() end)
+      local opts = BackgroundAgent.opts(
+        { utility_model = "haiku", utility_effort = "low" },
+        "/repo",
+        tools,
+        function() end
+      )
 
       assert.are.equal("haiku", opts.model)
       assert.are.equal("low", opts.effort)
