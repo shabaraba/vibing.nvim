@@ -188,7 +188,7 @@ function M._capture_baselines(turn_id, cwd, tool_name, tool_input)
     require("vibing.core.utils.git_snapshot").ensure_baseline(turn_id, cwd, tool_name)
   end)
   pcall(function()
-    require("vibing.core.utils.request_diff").capture(turn_id, tool_name, tool_input)
+    require("vibing.core.utils.request_diff").capture(turn_id, tool_name, tool_input, cwd)
   end)
   pcall(function()
     -- ここも「ツールが走る前」であることが要る。worktreeを作るコマンドの前後を比べるので、
@@ -230,7 +230,7 @@ function M.normalize_hook_input(hook_input, vocabulary)
     tool_name = vocabulary.to_canonical(tool_name) or tool_name
   end
   if vocabulary and vocabulary.normalize_input then
-    tool_input = vocabulary.normalize_input(tool_input)
+    tool_input = vocabulary.normalize_input(tool_input, tool_name)
   end
   return tool_name, tool_input
 end

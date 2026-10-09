@@ -104,10 +104,10 @@ over every registered descriptor.
   reporting a spawn error. Keep staging synchronous and atomic; if it fails, omit the hook rather
   than registering a command that cannot run. Keep the hook in `bypassPermissions`: that mode
   bypasses the decision, not the git-snapshot baseline carried by the same PreToolUse round trip.
-- **`codex_tool_vocabulary.lua` has no `normalize_input`, deliberately.** A codex edit carries no
-  path in `tool_input` — the paths are inside the apply_patch envelope in `command`, and there may
-  be several. So granular `paths` rules do not match codex edits. Filling `file_path` from the
-  first path would let a deny rule be evaded by patch ordering; the fix belongs in `matchers.lua`.
+- **Codex patch targets travel as `_diff_paths`, separate from `file_path`.** The vocabulary
+  extracts all targets from the apply_patch envelope, including both sides of a move, for the
+  request-diff backup. Resolve relative paths against the chat cwd. Granular `paths` rules still
+  read a single `file_path`; never fill it from the first patch target.
 
 Why each seam exists and which CLI version each shape was captured from:
 `handbook/architecture/cli-integration.md` → "Backend Seams".
