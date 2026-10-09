@@ -59,6 +59,12 @@ function M.init_content(buf, session)
   local effort = frontmatter.effort or (config.agent and config.agent.default_effort) or Modes.DEFAULT_EFFORT
   table.insert(lines, "effort: " .. effort)
 
+  -- Written only when something chose it (`nvim_chat_create`'s `profile`), unlike effort: an
+  -- ordinary chat keeps the file shape it has always had.
+  if frontmatter.profile then
+    table.insert(lines, "profile: " .. frontmatter.profile)
+  end
+
   -- permission_mode
   local permission_mode = frontmatter.permission_mode or (config.permissions and config.permissions.mode)
   if permission_mode then

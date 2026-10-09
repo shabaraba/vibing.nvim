@@ -6,8 +6,8 @@ local ChatConstants = require("vibing.core.constants.chat")
 local FileManager = require("vibing.presentation.chat.modules.file_manager")
 
 ---新しいチャットバッファを作成する
----@param params {position?: string, working_dir?: string, from_bufnr?: number, task?: string, delegated_scope?: string[]}
----@return {bufnr: number, file_path: string, working_dir: string?, position: string, saved: boolean}
+---@param params {position?: string, working_dir?: string, from_bufnr?: number, task?: string, delegated_scope?: string[], agent?: string, model?: string, effort?: string, profile?: string}
+---@return {bufnr: number, file_path: string, working_dir: string?, agent: string?, model: string?, effort: string?, profile: string, position: string, saved: boolean}
 function M.create_chat(params)
   params = params or {}
 
@@ -51,8 +51,23 @@ function M.create_chat(params)
     end
   end
 
-  local session = require("vibing.application.chat.use_cases.create_chat").execute({
+  -- agent/model/effort/profile も作る**前**に解決する。不正値はここでエラーにして、空のワーカーと
+  -- そのファイルを残さない（理由は`resolve_frontmatter`のコメント）
+  local CreateChat = require("vibing.application.chat.use_cases.create_chat")
+  local orchestration = (require("vibing").get_config().agent or {}).orchestration or {}
+  local frontmatter, frontmatter_err = CreateChat.resolve_frontmatter({
+    agent = params.agent,
+    model = params.model,
+    effort = params.effort,
+    profile = params.profile,
+  }, orchestration.worker_defaults)
+  if not frontmatter then
+    error(frontmatter_err)
+  end
+
+  local session = CreateChat.execute({
     working_dir = params.working_dir,
+    frontmatter = frontmatter,
   })
   -- background: ワーカーはユーザーが開いたチャットではないので、`view._current_buffer`
   -- （:VibingCancel などのフォールバック先）を奪わない
@@ -96,6 +111,12 @@ function M.create_chat(params)
     bufnr = chat_buf.buf,
     file_path = chat_buf.file_path,
     working_dir = session.working_dir,
+    -- 実際に書かれた値。省略した引数が`worker_defaults`や通常の既定値でどう埋まったかを、
+    -- 呼び出し元がファイルを読まずに確かめられる
+    agent = session.frontmatter.agent,
+    model = session.frontmatter.model,
+    effort = session.frontmatter.effort,
+    profile = session.frontmatter.profile or require("vibing.core.constants.profiles").DEFAULT,
     position = position,
     -- リンク書き込みはバッファを変更して保存し直すので、`saved` はその**後**に見る。
     -- 先にスナップショットすると、リンクの無いディスク上のコピーに対して true を返しうる

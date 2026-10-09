@@ -360,6 +360,16 @@ agent = {
                             -- not a convenience. The answer is written into the worker's
                             -- transcript as `## Request ... from <that chat>`, so who granted
                             -- what is readable afterwards
+    worker_defaults = {},
+                            -- Frontmatter for chats created with nvim_chat_create, for any key
+                            -- the call itself leaves out: agent, model, effort, profile. Lets a
+                            -- planner on an expensive model hand implementation to a cheaper one
+                            -- without having to remember to say so on every call, e.g.
+                            --   worker_defaults = { model = "sonnet", profile = "worker" }
+                            -- An argument on the call wins. Empty (the default) leaves a created
+                            -- chat exactly like a :VibingChat one. An invalid value here makes
+                            -- nvim_chat_create fail and names this key, rather than silently
+                            -- running the worker on the default model
   },
 
   token_usage = {           -- Per-turn token breakdown in the chat. Claude also warns when the

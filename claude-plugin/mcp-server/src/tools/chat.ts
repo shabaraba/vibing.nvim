@@ -89,6 +89,34 @@ export const chatTools: Tool[] = [
             'allow_for_session answers are checked against it. Has no effect unless ' +
             'delegated_approval is "scoped" (and none at all if it is unset or true/false).',
         },
+        agent: {
+          type: 'string',
+          description:
+            'CLI backend for the new chat: "claude", "codex", "copilot" or "grok". Use it with ' +
+            "model to hand implementation to a cheaper model than yours. Omitted: the user's " +
+            'worker_defaults, else the default backend. An unknown value fails the call.',
+        },
+        model: {
+          type: 'string',
+          description:
+            'Model for the new chat, in that backend\'s own naming (e.g. "sonnet", "haiku" on ' +
+            "claude). Omitted: worker_defaults, else the user's default model — often as " +
+            'expensive as yours, so pass it when the work does not need your model.',
+        },
+        effort: {
+          type: 'string',
+          description:
+            'Reasoning effort: "default", "low", "medium", "high", "xhigh" or "max". Omitted: ' +
+            "worker_defaults, else the user's default.",
+        },
+        profile: {
+          type: 'string',
+          description:
+            '"worker" drops system-prompt lines that only matter while a human watches the ' +
+            'editor, which every later request of that chat would re-read; "default" keeps the ' +
+            'full set. Pass "worker" for a chat you drive. The user can switch it back with ' +
+            '/profile default. Omitted: worker_defaults, else "default".',
+        },
       }),
       required: [],
     },

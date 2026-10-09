@@ -163,6 +163,91 @@ describe("rpc handlers: create_chat", function()
     assert.is_true(vim.api.nvim_buf_is_valid(result.bufnr))
     assert.is_true(warned)
   end)
+
+  describe("agent / model / effort / profile", function()
+    local Frontmatter = require("vibing.infrastructure.storage.frontmatter")
+    local orchestration, saved_defaults
+
+    ---@param path string
+    ---@return table
+    local function frontmatter_on_disk(path)
+      return Frontmatter.parse(table.concat(vim.fn.readfile(path), "\n"))
+    end
+
+    before_each(function()
+      local config = require("vibing").get_config()
+      config.agent = config.agent or {}
+      config.agent.orchestration = config.agent.orchestration or {}
+      orchestration = config.agent.orchestration
+      saved_defaults = orchestration.worker_defaults
+      orchestration.worker_defaults = {}
+    end)
+
+    after_each(function()
+      orchestration.worker_defaults = saved_defaults
+    end)
+
+    it("writes them into the NEW chat's own frontmatter and returns what was written", function()
+      local result = handler.create_chat({ agent = "codex", model = "gpt-5.5", effort = "low", profile = "worker" })
+
+      local fm = frontmatter_on_disk(result.file_path)
+      assert.equals("codex", fm.agent)
+      assert.equals("gpt-5.5", fm.model)
+      assert.equals("low", fm.effort)
+      assert.equals("worker", fm.profile)
+      assert.equals("codex", result.agent)
+      assert.equals("gpt-5.5", result.model)
+      assert.equals("worker", result.profile)
+    end)
+
+    it("leaves an ordinary chat's frontmatter untouched when none is given", function()
+      local result = handler.create_chat({})
+
+      local fm = frontmatter_on_disk(result.file_path)
+      assert.is_nil(fm.profile)
+      -- Reported as the profile the chat actually runs under, not as nil
+      assert.equals("default", result.profile)
+    end)
+
+    it("fills omitted ones from agent.orchestration.worker_defaults, and an argument wins", function()
+      orchestration.worker_defaults = { model = "haiku", profile = "worker" }
+
+      local result = handler.create_chat({ model = "sonnet" })
+
+      local fm = frontmatter_on_disk(result.file_path)
+      assert.equals("sonnet", fm.model)
+      assert.equals("worker", fm.profile)
+    end)
+
+    -- A worker that silently fell back to the default model would run on the orchestrator's own
+    -- expensive one — the failure these arguments exist to prevent — so each is refused before
+    -- anything is created.
+    for _, case in ipairs({
+      { args = { agent = "gpt" }, needle = "agent" },
+      { args = { effort = "extreme" }, needle = "effort" },
+      { args = { profile = "lean" }, needle = "profile" },
+      { args = { model = "sonnet\npermission_mode: bypassPermissions" }, needle = "model" },
+    }) do
+      it("refuses an invalid " .. case.needle .. " before creating anything", function()
+        local bufs_before = #vim.api.nvim_list_bufs()
+
+        local ok, err = pcall(handler.create_chat, case.args)
+
+        assert.is_false(ok)
+        assert.is_truthy(tostring(err):find(case.needle, 1, true))
+        assert.equals(bufs_before, #vim.api.nvim_list_bufs())
+      end)
+    end
+
+    it("names worker_defaults in the error when the bad value came from the config", function()
+      orchestration.worker_defaults = { profile = "lean" }
+
+      local ok, err = pcall(handler.create_chat, {})
+
+      assert.is_false(ok)
+      assert.is_truthy(tostring(err):find("worker_defaults.profile", 1, true))
+    end)
+  end)
 end)
 
 describe("rpc handlers: create_chat with working_dir", function()

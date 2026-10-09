@@ -37,7 +37,7 @@ local function create_default_frontmatter(config)
 end
 
 ---新しいチャットセッションを作成
----@param opts? {working_dir?: string} working_dirはgitルートからの相対パス（省略時はcwdから算出）
+---@param opts? {working_dir?: string, frontmatter?: table<string, string>} working_dirはgitルートからの相対パス（省略時はcwdから算出）。frontmatterは既定値に上書きする検証済みの値
 ---@return Vibing.ChatSession
 function M.create_new(opts)
   local vibing = require("vibing")
@@ -55,6 +55,11 @@ function M.create_new(opts)
   local working_dir = (explicit and explicit ~= "") and explicit or Git.get_relative_path(vim.fn.getcwd())
 
   local frontmatter = create_default_frontmatter(config)
+  -- `create_chat.resolve_frontmatter`が検証済みの値。既定値の**上に**載せるので、渡さなかった
+  -- キーは通常の新規チャットと同じになる
+  for key, value in pairs(opts and opts.frontmatter or {}) do
+    frontmatter[key] = value
+  end
   if working_dir then
     frontmatter.working_dir = working_dir
   end

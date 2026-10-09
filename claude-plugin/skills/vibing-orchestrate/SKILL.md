@@ -116,6 +116,13 @@ nvim_chat_create({
 - `position: "back"` (the default) creates the buffer without opening a window, so the user's
   layout is untouched. Don't use a split position for workers unless the user asked to watch them.
 - `working_dir` is relative to the git root and must already exist — create the worktree first.
+- **Pick the worker's model, and pass `profile: "worker"`.** Without `model` a worker runs on the
+  user's default — usually as expensive as you. A worker whose brief is complete rarely needs your
+  model: give it `model` (and `agent` for another CLI, e.g. `agent: "codex"`), and keep the design
+  decisions in your own chat. `profile: "worker"` drops prompt lines only a human watching the
+  editor needs. The returned `agent` / `model` / `profile` are what was actually written — check
+  them, since the user's `worker_defaults` fill whatever you leave out. The user can take a worker
+  over with `/profile default`.
 - **Always pass `from_bufnr`**: the exact "Current vibing.nvim chat buffer number" from your
   system prompt. It records the relationship in both chat files' frontmatter (`orchestrated` here,
   `orchestrated_by` on the worker), which is what makes it survive a rename or a restart.

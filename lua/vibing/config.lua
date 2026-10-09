@@ -125,6 +125,16 @@
 ---  `delegated_scope`（`permissions_allow`と同じパターン構文の文字列リスト）に一致する許可
 ---  （allow_once/allow_for_session）だけを通す — 拒否は範囲を問わず常に委任できる（権限を
 ---  広げない）。`delegated_scope`は`nvim_chat_create`の同名引数で宣言する
+---@field worker_defaults Vibing.WorkerDefaults? `nvim_chat_create`で作るチャットのfrontmatterの既定値
+---  （デフォルト: `{}` = 通常の新規チャットと同じ）。呼び出しの同名引数が優先する
+
+---@class Vibing.WorkerDefaults
+---オーケストレーターがモデルを渡し忘れたワーカーを、オーケストレーター自身と同じ高価なモデルで
+---走らせないための既定値。どれも省略でき、省略したキーは通常の新規チャットの既定値になる
+---@field agent string? backend id（`core/constants/agents.lua`）
+---@field model string? そのbackendに渡すモデル
+---@field effort string? `core/constants/modes.lua`の`EFFORT_VALUES`
+---@field profile string? `core/constants/profiles.lua`の`VALUES`
 
 ---@class Vibing.AgentConfig
 ---エージェント設定
@@ -441,6 +451,10 @@ M.defaults = {
       -- opt-in にしてある。答えは配達セクション（`## Request <!-- ... from ... -->`）として
       -- ワーカーのtranscriptに残るので、誰が許可したかは後から読める。
       delegated_approval = false,
+      -- `nvim_chat_create`で作るワーカーの既定のagent/model/effort/profile。例:
+      --   worker_defaults = { model = "sonnet", profile = "worker" }
+      -- 呼び出しが同名の引数を渡せばそちらが勝つ。空なら通常の新規チャットと同じ既定値
+      worker_defaults = {},
     },
     -- ターンのコストは「返答の長さ」ではなく「リクエスト数 × コンテキストサイズ」で決まる。
     -- ツール1回ごとにAPIリクエストが1本増え、そのたびに会話全体を読み直すため。
