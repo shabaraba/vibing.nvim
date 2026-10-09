@@ -125,19 +125,28 @@ end
 --- Keep the multi-file diff targets separate from the single-path permission contract.
 --- Never manufacture file_path from the first patch header: that would misrepresent a multi-file
 --- edit to granular permission rules. Those rules still need their own set-of-paths support.
+---
+--- Copies only when there is something to add — every Bash/MCP call through this vocabulary would
+--- otherwise pay for a table copy of its `tool_input` (command strings included) on every
+--- PreToolUse hook, for fields that only an apply_patch or view_image call ever needs.
 ---@param tool_input table
 ---@param tool_name? string canonical tool name
----@return table normalized copy (the original is never mutated)
+---@return table normalized copy when changed, the original table otherwise (never mutated)
 function M.normalize_input(tool_input, tool_name)
   if type(tool_input) ~= "table" then
     return tool_input
   end
+  local diff_paths = tool_name == "Edit" and patch_paths(tool_input.command) or nil
+  local needs_file_path = not tool_input.file_path and tool_input.path
+  if not needs_file_path and not diff_paths then
+    return tool_input
+  end
   local normalized = vim.tbl_extend("force", {}, tool_input)
-  if not normalized.file_path and normalized.path then
+  if needs_file_path then
     normalized.file_path = normalized.path
   end
-  if tool_name == "Edit" then
-    normalized._diff_paths = patch_paths(tool_input.command)
+  if diff_paths then
+    normalized._diff_paths = diff_paths
   end
   return normalized
 end
