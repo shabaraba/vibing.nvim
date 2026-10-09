@@ -15,8 +15,8 @@ local M = {}
 ---
 --- Claude's short names (sonnet/opus/haiku/fable) are filtered out rather than forwarded: these
 --- backends have their own model catalogues and would reject them. That is also what makes the
---- lightweight branch safe -- `utility_model` defaults to `sonnet`, so on these backends it
---- resolves to nil and the CLI's own default applies.
+--- lightweight branch safe -- `utility_model` defaults to a Claude short name (`haiku`), so on
+--- these backends it resolves to nil and the CLI's own default applies.
 ---
 --- @param opts Vibing.AdapterOpts
 --- @param config Vibing.Config

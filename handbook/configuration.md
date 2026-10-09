@@ -30,7 +30,7 @@ require("vibing").setup({
   agent = {
     default_mode = "code",
     default_model = "sonnet",
-    utility_model = "sonnet",
+    utility_model = "haiku",
     default_effort = "default",
     utility_effort = "low",
     setting_sources = { "user", "project", "local" },
@@ -216,11 +216,13 @@ agent = {
                             -- Claude examples: "sonnet", "opus", "haiku", "fable"
                             -- Codex example: "gpt-5.6-terra"
 
-  utility_model = "sonnet", -- Model used for lightweight utility calls
-                            -- (AI title generation, chat summaries, daily summaries).
+  utility_model = "haiku",  -- Model used for lightweight utility calls (AI title
+                            -- generation, chat summaries, daily summaries, and the two
+                            -- calls :VibingChatSearch makes per search).
                             -- Takes priority over the chat's model for those calls.
-                            -- Set to "haiku" for the cheapest option: it costs less but
-                            -- picks the wrong subject noticeably more often.
+                            -- Set to "sonnet" if generated titles start naming the wrong
+                            -- thing: haiku picks the subject of a noisy transcript wrong
+                            -- noticeably more often.
 
   default_effort = "default",
                             -- Reasoning effort recorded in new chat frontmatter.
