@@ -325,6 +325,42 @@ describe("can_use_tool", function()
     end)
   end)
 
+  describe("an exclusive tool set", function()
+    local function decision(tool, overrides, input)
+      return can_use_tool.can_use_tool(
+        tool,
+        input or {},
+        make_config(vim.tbl_extend("force", {
+          exclusive_tools = { "Grep", "mcp__vibing-nvim__nvim_session_read" },
+          mcp_enabled = true,
+        }, overrides or {}))
+      ).behavior
+    end
+
+    it("allows what it names", function()
+      assert.equals("allow", decision("Grep"))
+      assert.equals("allow", decision("mcp__vibing-nvim__nvim_session_read"))
+    end)
+
+    it("denies what is otherwise always allowed", function()
+      assert.equals("deny", decision("Read"))
+      assert.equals("deny", decision("Agent"))
+      assert.equals("deny", decision("mcp__vibing-nvim__nvim_execute"))
+    end)
+
+    it("holds even under bypassPermissions", function()
+      assert.equals("deny", decision("Bash", { permission_mode = "bypassPermissions" }, { command = "ls" }))
+    end)
+
+    it("does not lift a deny rule on a tool it names", function()
+      assert.equals("deny", decision("Grep", { denied_tools = { "Grep" } }))
+    end)
+
+    it("is absent from an ordinary chat", function()
+      assert.equals("allow", can_use_tool.can_use_tool("Read", {}, make_config({})).behavior)
+    end)
+  end)
+
   describe("a Bash prefix in the allow list", function()
     local function decision(command, overrides)
       return can_use_tool.can_use_tool(

@@ -4,6 +4,7 @@
 --- Permission evaluation order (highest to lowest priority):
 --- 1. Neovim-owned background-job policy (when MCP is enabled)
 --- 2. Session-level deny list (immediate block)
+--- 2.5. Exclusive tool set (a background agent's whole toolset; everything else is denied)
 --- 3. Internal tools (always allowed, e.g. ToolSearch, Agent)
 --- 4. bypassPermissions mode (bypasses the configurable deny list too)
 --- 5. Deny list (deny takes precedence over allow)
@@ -46,6 +47,7 @@ local BACKGROUND_JOB_MESSAGE = "Shell backgrounding is disabled in vibing.nvim b
 --- @field permission_mode "default"|"acceptEdits"|"bypassPermissions"|"plan"|"dontAsk"|"auto"
 --- @field mcp_enabled boolean
 --- @field is_always_allowed? fun(tool_name: string): boolean Backend-specific always-allowed tools
+--- @field exclusive_tools? string[] When set, the only tools the turn may use at all
 
 --- Check whether a tool name is a vibing-nvim MCP tool, regardless of how the MCP server was
 --- registered (plain user-level server vs. Claude Code plugin — see the call site for details).
@@ -286,6 +288,18 @@ function M.can_use_tool(tool_name, input, config)
     local session_deny_result = check_session_list(tool_name, input, config.session_denied_tools, "deny")
     if session_deny_result then
       return session_deny_result
+    end
+
+    -- 2.5. A turn that names its whole tool set may use nothing else — not an internal tool, not a
+    -- vibing-nvim MCP tool, whatever the mode. Only a background agent with no chat to ask in sets
+    -- this, so there is no approval to fall back to.
+    if config.exclusive_tools then
+      local listed = vim.iter(config.exclusive_tools):any(function(pattern)
+        return matchers.matches_permission(tool_name, input, pattern)
+      end)
+      if not listed then
+        return deny(string.format("Tool %s is not available to this task", tool_name))
+      end
     end
 
     -- 3. Always allow Claude Code internal tools

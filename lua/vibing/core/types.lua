@@ -41,6 +41,7 @@
 ---@field permissions_deny string[]?
 ---@field permissions_ask string[]?
 ---@field permission_mode string?
+---@field exclusive_tools string[]? チャットを持たない裏のエージェントが使えるツールの全部。これ以外はフックが拒否する
 ---@field env string[]? チャットのfrontmatter `env:` に書かれた`KEY=VALUE`の並び。`agent.env`より優先される（`infrastructure/adapter/modules/agent_environment.lua`）
 ---@field cwd string? Effective working directory used for project-local configuration
 ---@field on_tool_use fun(tool: string, file_path: string?)?

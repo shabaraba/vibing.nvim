@@ -72,6 +72,17 @@ evaluating it first would let one approved `Bash` call whitelist every later one
 after the tool-level lists. Full field/matching table and the rest of the ordering:
 `handbook/configuration.md` → "Granular Permission Rules". `patterns` are **Lua patterns, not regex**.
 
+**A turn with no chat names its whole toolset.** `:VibingChatSearch` and `:VibingSessionSearch`
+run an agent turn with no chat buffer, so there is nowhere to show an approval. They pass
+`exclusive_tools`, and `can_use_tool` denies everything outside it right after the session deny
+list — ahead of the internal tools, `bypassPermissions` and the vibing-nvim MCP grant, all of which
+would otherwise let `Agent` or `nvim_execute` through. The CLI side runs in `dontAsk` with the same
+list as `--allowedTools`. A user's own deny list still applies inside the set.
+
+A `Bash(<prefix>:*)` entry matches its prefix word for word, so `Bash(gh pr view:*)` covers
+`gh pr view 876`; until this was fixed only the first word was compared and every multi-word prefix
+silently matched nothing. In `dontAsk`, a tool the allow list names counts as pre-approved.
+
 **Default deny rules:** `permissions.default_deny_rules` (default `true`) prepends bundled deny
 rules for destructive Bash commands, defined in
 `lua/vibing/core/constants/destructive_commands.lua`. The blocked list and its known gaps live in

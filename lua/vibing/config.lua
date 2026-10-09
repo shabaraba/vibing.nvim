@@ -131,7 +131,7 @@
 ---チャットのモード（code/plan/explore）と、各CLI backendへ渡すモデルIDを指定
 ---@field default_mode "code"|"plan"|"explore" 新規チャットのfrontmatterに記録される`mode`の既定値（意味は core/constants/modes.lua の M.AGENT_MODES 参照）
 ---@field default_model string デフォルトモデル。Claude短縮名（sonnet/opus/haiku/fable）または選択中backendのモデルID
----@field utility_model string タイトル生成・要約・チャット検索等の軽量ユーティリティ呼び出し専用モデル（デフォルト: "haiku"）
+---@field utility_model string タイトル生成・要約等の軽量ユーティリティ呼び出しと、チャット検索のエージェントが使うモデル（デフォルト: "haiku"）
 ---@field default_effort ("default"|"low"|"medium"|"high"|"xhigh"|"max")? 推論量の既定値（"default"ならCLIの既定に任せる）
 ---@field utility_effort ("default"|"low"|"medium"|"high"|"xhigh"|"max")? タイトル生成・要約等の軽量呼び出しの推論量（デフォルト: "low"）
 ---@field setting_sources string[]? Claude CLIの`--setting-sources`に渡す設定読み込み元リスト（例: {"project", "local"}、デフォルト: {"user", "project", "local"}）。MCPサーバーの読み込みには影響しない（`agent.mcp`参照）
@@ -329,9 +329,9 @@ M.defaults = {
     default_model = "sonnet",
     -- haiku: the cheapest of the Claude short names, chosen deliberately over sonnet.
     --
-    -- The cost that argued for sonnet has grown: `:VibingChatSearch` spends two of these per
-    -- search (keyword expansion, then a relevance pass over every candidate's excerpt), which is
-    -- a different shape from the one-off title call the earlier choice was measured on.
+    -- The cost that argued for sonnet has grown: `:VibingChatSearch` runs a whole tool-using
+    -- agent turn on this model (grep, read, re-search), which is a different shape from the
+    -- one-off title call the earlier choice was measured on.
     --
     -- What that measurement found still stands, so read it before moving this back and forth:
     -- on a noisy chat transcript haiku picks the wrong subject more often than sonnet does — it

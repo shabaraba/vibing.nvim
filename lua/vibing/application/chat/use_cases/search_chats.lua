@@ -1,96 +1,39 @@
 ---@class Vibing.Application.Chat.UseCases.SearchChats
 ---自然文のクエリで過去のチャットを探す。
 ---
----`vibing-chat-search` スキルと同じ3段構え（キーワード展開 → grep で候補を絞る → 読ませて
----関連判定と要約）を、メインモデルではなく軽量呼び出し（utility_model・ツールなし）で回す。
+---`vibing-chat-search` スキルの手順を、チャットバッファを持たないエージェントのターン1回に
+---任せる。スキルとの違いは、結果を本文ではなく JSON で返させてピッカーに渡すことだけ。
 local M = {}
 
-local KeywordExpander = require("vibing.application.chat.search.keyword_expander")
-local CandidateFinder = require("vibing.application.chat.search.candidate_finder")
-local RelevanceJudge = require("vibing.application.chat.search.relevance_judge")
-
----進捗表示の行。番号は `on_step` が渡す index と同じ並びで、定義はここ1箇所
-M.STEPS = {
-  "Expanding the query into keywords",
-  "Searching the chat files",
-  "Reading the candidates",
-}
-
----@class Vibing.Chat.Search.Result
----@field entity Vibing.Domain.Chat.FileEntity
----@field summary string 関連部分の1行要約。判定に失敗したときは空
----@field hits integer
+local BackgroundAgent = require("vibing.application.chat.search.background_agent")
+local ChatPrompt = require("vibing.application.chat.search.chat_prompt")
+local ChatAnswer = require("vibing.application.chat.search.chat_answer")
 
 ---@class Vibing.Chat.Search.Outcome
 ---@field results Vibing.Chat.Search.Result[]
----@field keywords string[] 実際に grep したキーワード
----@field degraded string? 判定まで届かなかった理由。設定時、results は grep の結果そのもの
-
----判定を諦めて grep の結果をそのまま返す。
----要約は付かないが、「見つからなかった」と言うよりは使える
----@param candidates Vibing.Chat.Search.Candidate[]
----@return Vibing.Chat.Search.Result[]
-local function as_unjudged(candidates)
-  local results = {}
-  for _, candidate in ipairs(candidates) do
-    results[#results + 1] = { entity = candidate.entity, summary = "", hits = candidate.hits }
-  end
-  return results
-end
-
----@class Vibing.Chat.Search.RunOpts
----@field on_step fun(index: integer)? その段に取りかかったことを知らせる
----@field on_step_done fun(index: integer, ok: boolean)? その段の決着を知らせる
-
----@param opts Vibing.Chat.Search.RunOpts?
----@param name "on_step"|"on_step_done"
----@return fun(...)
-local function reporter(opts, name)
-  local fn = opts and opts[name]
-  return function(...)
-    if fn then
-      fn(...)
-    end
-  end
-end
+---@field error string? 結果を得られなかった理由。設定時、results は空
 
 ---@param query string
 ---@param save_dir string
 ---@param callback fun(outcome: Vibing.Chat.Search.Outcome)
----@param opts Vibing.Chat.Search.RunOpts?
-function M.run(query, save_dir, callback, opts)
-  local step = reporter(opts, "on_step")
-  local step_done = reporter(opts, "on_step_done")
+---@param on_tool fun(label: string)? エージェントがツールを呼ぶたびに呼ばれる
+function M.run(query, save_dir, callback, on_tool)
+  local chat_dir = vim.fn.fnamemodify(save_dir, ":p"):gsub("/$", "")
+  local cwd = vim.fn.getcwd()
 
-  step(1)
-  KeywordExpander.expand(query, function(keywords, expand_error)
-    step_done(1, expand_error == nil)
-
-    step(2)
-    local candidates = CandidateFinder.find(save_dir, keywords)
-    step_done(2, #candidates > 0)
-
-    if #candidates == 0 then
-      callback({ results = {}, keywords = keywords, degraded = expand_error })
-      return
-    end
-
-    step(3)
-    RelevanceJudge.judge(query, candidates, function(results, judge_error)
-      step_done(3, judge_error == nil)
-
-      if judge_error then
-        callback({
-          results = as_unjudged(candidates),
-          keywords = keywords,
-          degraded = judge_error,
-        })
+  BackgroundAgent.run(
+    ChatPrompt.build(query, chat_dir, BackgroundAgent.language_name()),
+    ChatPrompt.TOOLS,
+    on_tool or function() end,
+    function(text, err)
+      if err then
+        callback({ results = {}, error = err })
         return
       end
-
-      callback({ results = results, keywords = keywords, degraded = expand_error })
-    end)
-  end)
+      local results, parse_error = ChatAnswer.parse(text, chat_dir, cwd)
+      callback({ results = results or {}, error = parse_error })
+    end
+  )
 end
 
 return M
