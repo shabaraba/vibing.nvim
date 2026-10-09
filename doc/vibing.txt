@@ -761,6 +761,21 @@ Note the singular `permission_mode`; the permissions lists are plural. Reopen
 a chat with |:VibingChat| {file} or plain |:edit| — the session resumes from
 `session_id`, and `working_dir` decides where the CLI runs.
 
+External Claude/Codex conversations can be found with the MCP tools
+`nvim_session_search` (literal text, CLI, session ID or cwd filters) and read
+with `nvim_session_read` (paged user/assistant messages). They read actual
+JSONL logs, including conversations started outside vibing.nvim; they do not
+search chat Markdown files. Defaults are `~/.claude/projects` and
+`~/.codex/sessions` plus `~/.codex/archived_sessions`; `CLAUDE_CONFIG_DIR` and
+`CODEX_HOME` override the respective roots on the MCP server host.
+
+Ask the agent to find an earlier CLI conversation and summarize its decisions
+and remaining work here. This can hand off between Claude and Codex. To resume
+the original session instead, set its `session_id` in a new chat with the same
+`agent` and original working directory. IDs cannot be shared between CLIs.
+Open Neovim in the original repository if it is outside the current git root.
+The search/read tools do not attach or start sessions automatically.
+
 `effort` is translated to Claude's `--effort`, Codex's one-shot
 `model_reasoning_effort` override or duplex `turn/start` field, or Grok's
 `--effort`. New chats use `default`, which selects the CLI/model default.
