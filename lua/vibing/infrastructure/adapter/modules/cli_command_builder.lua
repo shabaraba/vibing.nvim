@@ -267,7 +267,10 @@ function M.system_prompt_args(ctx)
     -- still gets the line — `nvim_chat_send_message` opens the chat file itself.
     --
     -- The frontmatter is written once at creation, so in the ordinary case the line stays
-    -- byte-stable across turns and the cached system prefix (#469) survives. It is not a
+    -- byte-stable across turns and the cached system prefix (#469) survives. It is also only ever
+    -- read once: claude records the system prompt on a conversation's first request and replays
+    -- it on every resume, so an orchestrator linked later is not in it. That case is carried by the
+    -- delivered request itself (`delivery_message.reply_instructions`). It is not a
     -- guarantee, and the bufnr half is the weaker one: closing or reopening the orchestrator
     -- changes it, as does `:VibingSetFileTitle` renaming the orchestrator (which moves the path
     -- too, via `OrchestrationChatScanner`). Each costs one cache miss.

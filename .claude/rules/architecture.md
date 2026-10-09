@@ -343,7 +343,10 @@ One chat can create and drive others: `nvim_chat_create` (MCP) → `rpc/handlers
   to its system prompt on every turn (`cli_command_builder.lua`), pointing at the
   `claude-plugin/skills/vibing-worker/SKILL.md` skill for the rest. Skill discovery by description
   match is probabilistic, so this line — not the orchestrator's brief text — is the one place a
-  worker is guaranteed to be told where and how to report.
+  worker is guaranteed to be told where and how to report. **It is repeated at the end of every
+  delivered `## Request` body** (`delivery_message.reply_instructions`): claude replays the system
+  prompt recorded on a chat's first request, so an `orchestrated_by` added after that never reaches
+  the system line. Never on an answer to a blocked question — that body is the human's answer.
 - **A worker's tool-approval prompt is the user's to clear unless the user says otherwise**
   (`agent.orchestration.delegated_approval`, default `false`).
 - **A message delivered from another chat gets its own section kind** — `## Request`, `## Report`

@@ -167,10 +167,12 @@ back to ALPHA — the record is not replaced. So for a profile switch:
 That is why `/profile default` on a worker is the direction that works, and why a profile is
 chosen at creation rather than toggled to save tokens on a running chat.
 
-The same recording makes two older statements false on this CLI version, and they are left for a
-fix of their own: `.vibing/system-prompt.md` is not read "on every request" as far as the model is
-concerned (an edit reaches new chats only), and an `orchestrated_by` entry added **after** a chat's
-first message — a chat later messaged by a second orchestrator — never reaches its report line.
+The same recording broke two older assumptions. An `orchestrated_by` entry added **after** a chat's
+first message — a chat later messaged by a second orchestrator — never reached its report line;
+every delivered `## Request` now ends with where and how to report
+(`delivery_message.reply_instructions`), since the per-turn body is the one thing the recording
+does not freeze. `.vibing/system-prompt.md` is still not read "on every request" as far as the
+model is concerned: an edit reaches new chats only, and that is left for a fix of its own.
 
 ## Task assignment (`orchestrated`'s `task`, #696)
 
