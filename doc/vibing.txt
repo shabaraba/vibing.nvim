@@ -496,6 +496,7 @@ Type these on their own line in a chat buffer and send with `<CR>`:
                         (e.g. sonnet or gpt-5.6-terra)
 /effort <level>         Set Claude/Codex/Grok reasoning effort
                         (default|low|medium|high|xhigh|max)
+/profile <profile>      Set the chat profile (default|worker)
 /help                   List the available slash commands
 /permissions, /perm     Interactive permission builder
 /allow [tool]           Add to the allow list, or show it
@@ -769,7 +770,8 @@ with YAML frontmatter: >
     model: sonnet
     effort: default                           # CLI/model default; or low..max
     process: duplex                           # optional: oneshot | duplex
-    env:                                      # optional: see below
+    profile: worker                           # optional: default | worker
+    env:                                   # optional: see below
       - BASH_MAX_OUTPUT_LENGTH=10000
     permission_mode: acceptEdits
     permissions_allow:
@@ -834,6 +836,26 @@ requires its staged PreToolUse hook to be trusted in Codex. An untrusted or
 modified hook stops startup with a message before inference; use `process:
 oneshot` meanwhile. Title generation and |:VibingSummarize| are always
 `oneshot`, and so is a subagent chat.
+
+`profile` says what the chat is for. `default` (or no field) is an ordinary
+chat. `worker` is a chat another chat drives through the MCP tools: it leaves
+out the system-prompt instructions that only matter while someone watches the
+editor (opening code in a window, annotating review findings), which every
+request of that chat would otherwise re-read. It keeps the rest, including
+the report protocol and `.vibing/system-prompt.md`. Codex, Copilot and Grok
+send none of those instructions, so the profile changes nothing there.
+`nvim_chat_create`'s `profile` argument or
+`agent.orchestration.worker_defaults` sets it at creation. |/profile| switches
+it either way at any time — `/profile default` takes a worker into ordinary
+use with its session and history intact. The new value applies from the next
+message, and because the system prompt changes, that one message is billed
+without the prompt cache.
+
+`nvim_chat_create` also takes `agent`, `model` and `effort` for the new chat,
+so a chat on an expensive model can hand implementation to a cheaper model or
+another CLI in a chat of its own, without switching its own model and losing
+its prompt cache. An unknown value fails the call instead of falling back to
+the default model.
 
 `orchestrated` and `orchestrated_by` record which chat drove which. They are
 written when one chat creates or messages another through the vibing-nvim MCP

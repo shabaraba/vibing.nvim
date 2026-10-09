@@ -217,6 +217,54 @@ describe("cli_command_builder", function()
     end)
   end)
 
+  describe("profile", function()
+    local function prompt_for(opts)
+      local cmd = cli_command_builder.build("hello", opts, nil, {}, nil)
+      return cmd[find_flag(cmd, "--append-system-prompt") + 1]
+    end
+
+    it("drops the watched-editor instructions on a worker chat", function()
+      local worker = prompt_for({ profile = "worker" })
+      assert.is_nil(worker:find("nvim_highlight_range", 1, true))
+      assert.is_nil(worker:find("nvim_annotate", 1, true))
+    end)
+
+    it("keeps everything that changes what a worker produces", function()
+      local worker = prompt_for({
+        profile = "worker",
+        chat_bufnr = 7,
+        orchestrators = { { path = ".vibing/chat/orchestrator.md", bufnr = 3 } },
+      })
+      assert.is_truthy(worker:find(".vibing/worktrees/", 1, true))
+      assert.is_truthy(worker:find("MUST use the vibing-nvim nvim_job_start", 1, true))
+      assert.is_truthy(worker:find("nvim_ask_user_question", 1, true))
+      -- The report protocol is the one line a worker is guaranteed to be told (#706)
+      assert.is_truthy(worker:find(".vibing/chat/orchestrator.md", 1, true))
+      assert.is_truthy(worker:find("nvim_chat_send_message", 1, true))
+    end)
+
+    it("is the ordinary block for profile 'default' and for no profile at all", function()
+      local none = prompt_for({})
+      assert.equals(none, prompt_for({ profile = "default" }))
+      assert.is_truthy(none:find("nvim_highlight_range", 1, true))
+      assert.is_truthy(none:find("nvim_annotate", 1, true))
+    end)
+
+    it("falls back to the full block for an unknown profile rather than trimming it", function()
+      local notify = require("vibing.core.utils.notify")
+      local original_warn = notify.warn
+      local warned = false
+      notify.warn = function()
+        warned = true
+      end
+      local unknown = prompt_for({ profile = "lean" })
+      notify.warn = original_warn
+
+      assert.is_true(warned)
+      assert.equals(prompt_for({}), unknown)
+    end)
+  end)
+
   describe("project-local system prompt (.vibing/system-prompt.md)", function()
     local project_root
     local original_getcwd

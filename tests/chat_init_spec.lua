@@ -94,7 +94,7 @@ describe("vibing.application.chat.init", function()
       assert.is_not_nil(cmd.description:match("model"))
     end)
 
-    it("should have exactly 14 commands after setup", function()
+    it("should have exactly 15 commands after setup", function()
       ChatInit.setup()
 
       local count = 0
@@ -102,7 +102,7 @@ describe("vibing.application.chat.init", function()
         count = count + 1
       end
 
-      assert.equals(14, count)
+      assert.equals(15, count)
     end)
 
     it("should be idempotent (can be called multiple times)", function()
@@ -114,7 +114,7 @@ describe("vibing.application.chat.init", function()
         count = count + 1
       end
 
-      assert.equals(14, count)
+      assert.equals(15, count)
     end)
 
     it("should register commands with correct descriptions", function()
@@ -128,6 +128,7 @@ describe("vibing.application.chat.init", function()
         summarize = "Summarize conversation",
         model = "Set AI model: /model <model>",
         effort = string.format("Set reasoning effort: /effort <%s>", table.concat(Modes.EFFORT_VALUES, "|")),
+        profile = "Set chat profile: /profile <default|worker>",
       }
 
       for cmd_name, expected_desc in pairs(cmd_descriptions) do
@@ -146,6 +147,7 @@ describe("vibing.application.chat.init", function()
       assert.is_true(Commands.is_command("/save"))
       assert.is_true(Commands.is_command("/summarize"))
       assert.is_true(Commands.is_command("/model sonnet"))
+      assert.is_true(Commands.is_command("/profile default"))
       assert.is_true(Commands.is_command("/help"))
       assert.is_true(Commands.is_command("/allow Read"))
       assert.is_true(Commands.is_command("/deny Bash"))
@@ -157,7 +159,7 @@ describe("vibing.application.chat.init", function()
 
       local list = Commands.list()
 
-      assert.equals(14, #list)
+      assert.equals(15, #list)
 
       -- Verify all command names are in the list
       local command_names = {}

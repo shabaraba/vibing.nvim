@@ -118,6 +118,7 @@ local KEY_ORDER = {
   "model",
   "effort",
   "process",
+  "profile",
   "env",
   "permission_mode",
   "permissions_allow",

@@ -14,6 +14,7 @@ local AskUserQuestionInstructions =
   require("vibing.infrastructure.adapter.modules.ask_user_question_instructions")
 local PluginDirs = require("vibing.infrastructure.plugins.plugin_dirs")
 local worktree_constants = require("vibing.core.constants.worktree")
+local Profiles = require("vibing.core.constants.profiles")
 
 local M = {}
 
@@ -196,23 +197,28 @@ function M.system_prompt_args(ctx)
         opts.chat_bufnr
       )
     )
-    table.insert(
-      system_prompt_lines,
-      "When the user asks to see code, show it rather than describing where it lives: call "
-        .. "mcp__vibing-nvim__nvim_list_windows to find a window that is not the chat, open the file "
-        .. "there with mcp__vibing-nvim__nvim_win_open_file, move to the line with "
-        .. "mcp__vibing-nvim__nvim_set_cursor, and point at the range with "
-        .. "mcp__vibing-nvim__nvim_highlight_range. Then explain the point in the chat. If the chat "
-        .. "is the only window, make one with mcp__vibing-nvim__nvim_execute and a split command. "
-        .. "Skip all of this when the user only wants a path or a name."
-    )
-    table.insert(
-      system_prompt_lines,
-      "When reviewing code, put each point next to the code it is about: load the file with "
-        .. "mcp__vibing-nvim__nvim_load_buffer and call mcp__vibing-nvim__nvim_annotate for every "
-        .. "finding, choosing severity info, warn or error. Keep the chat to the overall verdict "
-        .. "and the count, and mention that :VibingClearAnnotations removes the notes."
-    )
+    -- Both lines describe what to do for someone watching the editor. A `worker` chat is driven by
+    -- another chat and read afterwards, so on one they are re-read on every request for nothing
+    -- (`core/constants/profiles.lua`).
+    if Profiles.resolve(opts.profile) ~= Profiles.WORKER then
+      table.insert(
+        system_prompt_lines,
+        "When the user asks to see code, show it rather than describing where it lives: call "
+          .. "mcp__vibing-nvim__nvim_list_windows to find a window that is not the chat, open the file "
+          .. "there with mcp__vibing-nvim__nvim_win_open_file, move to the line with "
+          .. "mcp__vibing-nvim__nvim_set_cursor, and point at the range with "
+          .. "mcp__vibing-nvim__nvim_highlight_range. Then explain the point in the chat. If the chat "
+          .. "is the only window, make one with mcp__vibing-nvim__nvim_execute and a split command. "
+          .. "Skip all of this when the user only wants a path or a name."
+      )
+      table.insert(
+        system_prompt_lines,
+        "When reviewing code, put each point next to the code it is about: load the file with "
+          .. "mcp__vibing-nvim__nvim_load_buffer and call mcp__vibing-nvim__nvim_annotate for every "
+          .. "finding, choosing severity info, warn or error. Keep the chat to the overall verdict "
+          .. "and the count, and mention that :VibingClearAnnotations removes the notes."
+      )
+    end
 
     -- Constant for this buffer's whole life, so it does not churn the cached prefix across the
     -- buffer's own turns (#469). Switching between the parent chat and this one still re-diverges

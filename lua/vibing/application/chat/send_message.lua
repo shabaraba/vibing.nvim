@@ -190,6 +190,8 @@ function M.execute(adapter, callbacks, message, config)
     -- What the chat asked for, untouched. `process_model.resolve` decides what this turn actually
     -- runs under, because a lightweight call and a subagent chat cannot honour `duplex` at all.
     process = frontmatter.process,
+    -- Read per request, so editing it (or `/profile`) takes effect on the next send.
+    profile = frontmatter.profile,
     permissions_allow = frontmatter.permissions_allow,
     permissions_deny = frontmatter.permissions_deny,
     permissions_ask = frontmatter.permissions_ask,

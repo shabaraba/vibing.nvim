@@ -52,6 +52,55 @@ describe("send_message", function()
       vim.api.nvim_buf_delete(buf, { force = true })
     end)
 
+    -- `/profile default` is how a worker chat is taken back into ordinary use, and it only works
+    -- if the profile is read from the frontmatter on every send rather than fixed at creation.
+    it("passes the frontmatter profile through on every send, so switching it takes effect", function()
+      local buf = vim.api.nvim_create_buf(false, true)
+      vim.api.nvim_buf_set_name(buf, vim.fn.tempname() .. ".md")
+      local frontmatter = { profile = "worker" }
+      local captured = {}
+
+      local callbacks = {
+        get_bufnr = function()
+          return buf
+        end,
+        get_session_id = function()
+          return "test-session"
+        end,
+        parse_frontmatter = function()
+          return frontmatter
+        end,
+        extract_conversation = function()
+          return {}
+        end,
+        update_filename_from_message = function(_) end,
+        start_response = function() end,
+        get_session_allow = function()
+          return {}
+        end,
+        get_session_deny = function()
+          return {}
+        end,
+        add_user_section = function() end,
+      }
+      local adapter = {
+        supports = function()
+          return false
+        end,
+        execute = function(_, _, opts)
+          table.insert(captured, opts.profile)
+          return { content = "ok" }
+        end,
+      }
+
+      SendMessage.execute(adapter, callbacks, "first", {})
+      frontmatter.profile = "default"
+      SendMessage.execute(adapter, callbacks, "second", {})
+
+      assert.same({ "worker", "default" }, captured)
+      vim.api.nvim_buf_delete(buf, { force = true })
+    end)
+
     -- The choice list is only staged here; add_user_section() at the end of _handle_response is
     -- what renders it, and cancel() queues that completion. Deferring the staging by one tick put
     -- it after that completion, so the questions were consumed as nil and the turn ended with the

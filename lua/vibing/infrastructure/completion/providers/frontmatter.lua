@@ -29,6 +29,10 @@ local ENUMS = {
     { value = "oneshot", description = "One CLI process per turn (default)" },
     { value = "duplex", description = "One resident CLI process for the chat; faster turns, ~200MB while idle" },
   },
+  profile = {
+    { value = "default", description = "Ordinary chat: the full instruction block (default)" },
+    { value = "worker", description = "Driven by another chat: drops instructions only a watching human needs" },
+  },
   permission_mode = {
     { value = "default", description = "Ask for confirmation before each tool use" },
     { value = "acceptEdits", description = "Auto-approve Edit/Write, ask for others" },

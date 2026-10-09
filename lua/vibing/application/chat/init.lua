@@ -43,6 +43,15 @@ function M.setup()
   })
 
   commands.register({
+    name = "profile",
+    handler = require("vibing.application.chat.handlers.profile"),
+    description = string.format(
+      "Set chat profile: /profile <%s>",
+      table.concat(require("vibing.core.constants.profiles").VALUES, "|")
+    ),
+  })
+
+  commands.register({
     name = "help",
     handler = require("vibing.application.chat.handlers.help"),
     description = "Show available slash commands",
