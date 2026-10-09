@@ -333,7 +333,8 @@ section is not kept in sync field by field.
 
     Each match is listed with how it relates to the query (for example,
     handled it directly or followed up on it), its date and a one or two line
-    summary. With telescope.nvim the list is a float with a preview, `<Tab>`
+    summary. With telescope.nvim the list is on the left, the wrapped summary
+    on the upper right and the chat preview on the lower right. `<Tab>`
     selects several and `<CR>` opens them: the first is displayed, the rest
     are loaded as chat buffers you can reach with |:bnext|. Without telescope
     it falls back to |vim.ui.select()|, one chat at a time.
