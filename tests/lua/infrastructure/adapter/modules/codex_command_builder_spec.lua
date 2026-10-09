@@ -151,9 +151,9 @@ describe("codex_command_builder", function()
     end)
 
     it("passes no model when utility_model is a Claude name codex does not have", function()
-      -- utility_model defaults to "sonnet"; the existing filter turns it into codex's own default
+      -- utility_model defaults to "haiku"; the existing filter turns it into codex's own default
       -- instead of a model the CLI would reject.
-      local config = { agent = { default_model = "gpt-5-codex", utility_model = "sonnet" } }
+      local config = { agent = { default_model = "gpt-5-codex", utility_model = "haiku" } }
       local cmd = codex_command_builder.build("hi", { lightweight = true }, nil, config, nil)
       assert.is_nil(find_flag(cmd, "-m"))
     end)

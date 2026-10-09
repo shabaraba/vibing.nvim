@@ -367,11 +367,18 @@ function M._register_commands()
   })
 
   vim.api.nvim_create_user_command("VibingDeleteChats", function(opts)
-    require("vibing.presentation.chat.deletion_controller").handle_delete_command(opts, M.config)
+    require("vibing.presentation.chat.deletion_controller").handle_delete_command(opts, M.config.chat)
   end, {
     nargs = "?",
     desc = "Delete chat files (use --unrenamed to delete all unrenamed files)",
     complete = complete_flags("delete_chats"),
+  })
+
+  vim.api.nvim_create_user_command("VibingChatSearch", function(opts)
+    require("vibing.presentation.chat.search_controller").handle_search_command(opts, M.config.chat)
+  end, {
+    nargs = "*",
+    desc = "Search past chats by topic and open the matches (prompts when given no query)",
   })
 
   -- mote統合（と :VibingCleanMote / :VibingMoteDir）は削除された。設定を残したまま

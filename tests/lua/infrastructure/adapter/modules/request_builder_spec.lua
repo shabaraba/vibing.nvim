@@ -65,7 +65,7 @@ describe("request_builder", function()
       assert.same({ "/bin/fake-cli", "--model", "sonnet" }, build({ part }, "hi", { model = "sonnet" }, nil, config))
       assert.same({ "/bin/fake-cli", "--model", "opus" }, build({ part }, "hi", {}, nil, config))
       assert.same({ "/bin/fake-cli", "--model", "haiku" }, build({ part }, "hi", { lightweight = true, model = "opus" }, nil, config))
-      assert.same({ "/bin/fake-cli", "--model", "sonnet" }, build({ part }, "hi", { lightweight = true }, nil, {}))
+      assert.same({ "/bin/fake-cli", "--model", "haiku" }, build({ part }, "hi", { lightweight = true }, nil, {}))
     end)
 
     it("drops claude's short names for a native backend", function()

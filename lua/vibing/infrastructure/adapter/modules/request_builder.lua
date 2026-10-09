@@ -138,7 +138,7 @@ local function resolve_model(part, ctx)
   if part.names == "claude" then
     local agent = ctx.config.agent or {}
     if ctx.opts.lightweight then
-      return agent.utility_model or "sonnet"
+      return agent.utility_model or "haiku"
     end
     return ctx.opts.model or agent.default_model
   end

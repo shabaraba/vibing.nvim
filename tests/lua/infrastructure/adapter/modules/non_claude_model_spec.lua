@@ -26,9 +26,9 @@ describe("non_claude_model", function()
     end
   end)
 
-  it("drops the sonnet default of utility_model rather than forwarding it", function()
-    -- utility_model defaults to "sonnet", which none of these backends has.
-    local config = { agent = { default_model = "gpt-5-codex", utility_model = "sonnet" } }
+  it("drops the Claude-named default of utility_model rather than forwarding it", function()
+    -- utility_model defaults to "haiku", which none of these backends has.
+    local config = { agent = { default_model = "gpt-5-codex", utility_model = "haiku" } }
     assert.is_nil(NonClaudeModel.resolve({ lightweight = true }, config))
   end)
 

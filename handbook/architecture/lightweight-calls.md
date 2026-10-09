@@ -80,7 +80,7 @@ Three details there are not interchangeable. The restrictions are `-c` overrides
 `-s` flag because `/summarize` passes a session id and `codex exec resume` does not accept `-s`. The
 restriction ignores `permission_mode` entirely, `bypassPermissions` included: the user put the
 _chat_ in that mode, and a title generated behind their back is not the call they made. And
-`utility_model` still goes through the Claude-name filter, so its `sonnet` default becomes no
+`utility_model` still goes through the Claude-name filter, so its `haiku` default becomes no
 `-m` at all rather than a model codex would reject.
 
 **Copilot can remove the tools outright, and does it in one flag.** `--available-tools` is the
