@@ -97,6 +97,48 @@ the floor to matter — one without the other does not hold.
 `claude-plugin/skills/vibing-orchestrate/SKILL.md` → "Reuse a worker chat or start a new
 one?" carries the operating rule; this section is the reasoning and the measurement behind it.
 
+## What the floor is made of, and the `worker` profile
+
+The floor is re-read on **every request** of a worker, not paid once, so it is the multiplier the
+"new chat by default" rule above leaves on the table. `tests/perf/system_prompt_floor.lua` breaks
+it down by changing one flag at a time against the argv vibing.nvim actually builds. Measured on
+claude 2.1.295, haiku, in this repository, with `CLAUDE_CODE_REMOTE` unset (as on a local machine):
+
+| Variant                                    | Floor (tokens) | Delta   |
+| ------------------------------------------ | -------------- | ------- |
+| vibing chat, as sent                       | 66,134         | —       |
+| `profile: worker`                          | 65,814         | −320    |
+| no `--append-system-prompt` at all         | 65,352         | −782    |
+| no `--plugin-dir` (vibing skills, MCP)     | 64,194         | −1,940  |
+| `--setting-sources ""` (CLAUDE.md, rules)  | 36,055         | −30,079 |
+| `--exclude-dynamic-system-prompt-sections` | 66,135         | +1      |
+| bare `claude -p`, no vibing flags          | 61,846         | −4,288  |
+
+Two limits bound it. **The vibing-nvim MCP tools are not in any row.** The CLI connects plugin MCP
+servers asynchronously (`--mcp-config servers running fully async (nonblocking)` in its debug log),
+and a single `-p` turn ends before the server is up — the `init` event reports it `pending` or
+`failed` even with a working build. Measuring that share needs a second turn in the same session.
+And the `--strict-mcp-config` row is left out: in three attempts the model made 2–3 requests, so
+`usage` was a sum rather than a floor. The script prints `turns` so such a row is recognisable.
+So is the `--tools Bash,Read,Edit,Write,Glob,Grep` row (−14): the `init` event still listed 31
+tools, so the flag as passed narrowed nothing and the row measures nothing.
+
+What the numbers say:
+
+- **Everything vibing.nvim adds is ~4k of ~65k.** Its own instruction block is 782 tokens, so no
+  profile that trims it can be more than about 1% of the floor. `worker` trims the 320 that only
+  matter with someone watching the editor, and stops there: the rest is the worktree convention,
+  the job rule, the question route and the report protocol, each of which a worker without it
+  rediscovers by re-reading — the failure chat 882 above measured.
+- **The project's own CLAUDE.md and `.claude/rules/` are ~30k, almost half the floor**, in this
+  repository. That is the one large lever, and it is a correctness trade, not a free one: those
+  files are the invariants a worker would otherwise break. Not turned off by `worker` for that
+  reason. If it is ever offered, it belongs as a separate, explicit choice where the brief carries
+  the invariants the task touches.
+- **The larger saving is the price per token, not the token count.** `nvim_chat_create`'s `agent`
+  / `model` / `effort` let a planner keep its own model and prompt cache and hand implementation
+  to a cheaper model or another CLI — the same floor, read at a fraction of the rate.
+
 ## Task assignment (`orchestrated`'s `task`, #696)
 
 `nvim_chat_create` and `nvim_chat_send_message` both take an optional `task`: one free-text line
