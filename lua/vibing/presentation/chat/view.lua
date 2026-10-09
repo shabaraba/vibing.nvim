@@ -83,6 +83,12 @@ function M.render(session, position, opts)
 
   local existing = FileBuffer.find(session.file_path)
   if existing then
+    -- FileBufferはロード済みかどうかを問わず一致させるので、`bufadd`だけされた未ロードの
+    -- バッファはここでロードしておく。しないと`ChatBuffer:open`が行数0を「中身なし」と見て
+    -- 新規チャットの骨組みで上書きし、その後の保存で実際の会話が消える
+    if not vim.api.nvim_buf_is_loaded(existing) then
+      vim.fn.bufload(existing)
+    end
     return M._render_existing(existing, session, position, opts)
   end
 

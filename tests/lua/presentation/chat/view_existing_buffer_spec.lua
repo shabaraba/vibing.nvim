@@ -107,6 +107,16 @@ describe("view.render with the file already in a buffer", function()
     assert.are.equal("session-a", attached.session_id)
   end)
 
+  it("loads an unloaded buffer instead of rendering it as a fresh chat", function()
+    local path = write_chat(save_dir, "a")
+    local bufnr = vim.fn.bufadd(path)
+
+    local chat_buf = view.render(session_for(path))
+
+    assert.are.equal(bufnr, chat_buf.buf)
+    assert.are.same(vim.fn.readfile(path), vim.api.nvim_buf_get_lines(bufnr, 0, -1, false))
+  end)
+
   it("still creates a buffer when the file is in none", function()
     local path = write_chat(save_dir, "fresh")
 
