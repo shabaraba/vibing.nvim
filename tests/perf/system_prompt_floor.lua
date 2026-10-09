@@ -64,14 +64,15 @@ local function without(argv, flag)
   return out
 end
 
---- Insert flags just before the prompt, which `build` always places last.
+--- Insert flags right after the binary. Not before the prompt: `--tools <tools...>` is variadic and
+--- swallows the prompt that follows it, which once made a `--tools` row measure nothing at all.
 --- @param argv string[]
 --- @param flags string[]
 --- @return string[]
 local function with(argv, flags)
-  local out = vim.list_slice(argv, 1, #argv - 1)
+  local out = { argv[1] }
   vim.list_extend(out, flags)
-  table.insert(out, argv[#argv])
+  vim.list_extend(out, vim.list_slice(argv, 2))
   return out
 end
 
@@ -104,7 +105,26 @@ local VARIANTS = {
   },
   {
     name = "--tools: Bash,Read,Edit,Write,Glob,Grep",
-    argv = with(without(base, "--tools"), { "--tools", "Bash,Read,Edit,Write,Glob,Grep" }),
+    argv = with(base, { "--tools", "Bash,Read,Edit,Write,Glob,Grep" }),
+  },
+  {
+    name = "--tools: the six + Skill",
+    argv = with(base, { "--tools", "Bash,Read,Edit,Write,Glob,Grep,Skill" }),
+  },
+  {
+    name = "--tools: the six + Agent",
+    argv = with(base, { "--tools", "Bash,Read,Edit,Write,Glob,Grep,Agent" }),
+  },
+  {
+    name = "--tools: the six + ToolSearch",
+    argv = with(base, { "--tools", "Bash,Read,Edit,Write,Glob,Grep,ToolSearch" }),
+  },
+  {
+    name = "lean: six + ToolSearch, worker, no project",
+    argv = with(replacing(vibing_argv({ profile = "worker" }), "--setting-sources", "user,local"), {
+      "--tools",
+      "Bash,Read,Edit,Write,Glob,Grep,ToolSearch",
+    }),
   },
   { name = "+ --exclude-dynamic-system-prompt-sections", argv = with(base, { "--exclude-dynamic-system-prompt-sections" }) },
   {
