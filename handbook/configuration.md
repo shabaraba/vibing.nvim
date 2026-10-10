@@ -190,6 +190,11 @@ backends = {
   grok = {
     executable = "auto",    -- "auto": detect `grok` on PATH (default)
                             -- or an explicit path, e.g. "~/.grok/bin/grok"
+    process = "oneshot",    -- Set "duplex" to keep one `grok agent stdio` per chat.
+                            -- Chat frontmatter `process:` overrides this.
+                            -- This is the transport that reaches vibing.nvim's own MCP
+                            -- tools; the one-shot `grok --single` cannot.
+                            -- See "Grok's resident transport" below.
   },
 }
 ```
@@ -208,7 +213,32 @@ shared with unrelated tools.
 **Permission rules need a git repository.** Grok discovers the PreToolUse hook vibing.nvim installs
 (`<cwd>/.grok/hooks/`) only inside a git repo. Outside one the hook is written and never read, so
 `permissions.rules`, the `ask` list and the Tool Approval UI silently do nothing — vibing.nvim
-warns once per working directory when it detects this.
+warns once per working directory when it detects this. This applies to **both** transports: the
+resident one honours the same file, verified against grok 1.0.50.
+
+### Grok's resident transport
+
+`backends.grok.process = "duplex"` runs `grok agent stdio`, which speaks Agent Client Protocol
+JSON-RPC instead of printing a stream and exiting. It is not only a performance setting — it is the
+only grok transport that reaches vibing.nvim's own MCP tools, and therefore the only one where the
+`nvim_*` tools, the choice-list prompt (`nvim_ask_user_question`), Code Tour and the orchestration
+tools work at all. `grok --single` rejects `--plugin-dir`, and the servers travel in the protocol's
+`session/new`.
+
+Three things differ from the other backends' duplex, all measured rather than assumed:
+
+- **A turn ends on the reply to its own `session/prompt`**, not on a notification. The correlation
+  is the JSON-RPC request id, so grok cannot suffer the "whose turn just ended?" ambiguity that
+  claude's resident transport needs a guard for.
+- **Cancelling retires the process.** After a `session/cancel` grok answers the in-flight prompt in
+  about 2ms, but a prompt sent 16ms later got no reply for 65 seconds, while one sent 8 seconds
+  later completed normally. Rather than sleeping for a length nothing measured, vibing.nvim spends
+  one respawn on the next message — which is what cancelling cost before this transport existed. A
+  turn grok cancelled for its _own_ reasons (a rejected approval) keeps its process, because that
+  case is measurably reusable.
+- **`--permission-mode` is not passed**, because `grok agent` does not accept it. The gate there is
+  the project hook plus grok's own `session/request_permission`, which vibing.nvim answers with the
+  single-use option — the hook has already decided by then, and when it denies, grok never asks.
 
 ## Agent
 

@@ -203,6 +203,45 @@ M.BINARY = {
   reset = M._reset_path_cache,
 }
 
+--- The duplex transport's system prompt: the shared conventions **plus** the MCP tools that only
+--- this transport can reach.
+---
+--- `grok agent` accepts no `--rules`, so `grok_duplex_protocol` prepends this to the first prompt of
+--- a session instead. The conventions come from the same `build_rules` the flag uses, so what vibing
+--- tells grok has one definition whichever transport carries it.
+---
+--- The MCP half is **deliberately absent from `rules_args`**. `--rules` serves the one-shot path,
+--- which reaches no vibing-nvim MCP server at all (`grok --single` rejects `--plugin-dir`, and the
+--- servers travel in an ACP `session/new`), so naming `nvim_ask_user_question` there would name a
+--- tool grok cannot invoke — the reason `build_rules` was kept small in the first place.
+---
+--- The name has **no `mcp__` prefix**: grok qualifies an MCP tool as `server__tool`, measured
+--- against grok 1.0.50 from its own error text for an unqualified name.
+--- @param opts Vibing.AdapterOpts
+--- @param config Vibing.Config
+--- @return string|nil
+function M.rules_text(opts, config)
+  opts = opts or {}
+  local lines = {}
+  local shared = build_rules(opts, config or {})
+  if shared then
+    table.insert(lines, shared)
+  end
+
+  vim.list_extend(
+    lines,
+    require("vibing.infrastructure.adapter.modules.ask_user_question_instructions").lines(
+      "vibing-nvim__nvim_ask_user_question",
+      opts.chat_bufnr
+    )
+  )
+
+  if #lines == 0 then
+    return nil
+  end
+  return table.concat(lines, "\n")
+end
+
 --- `--rules`, or nothing when there is nothing to say.
 --- @param ctx Vibing.RequestContext
 --- @return string[]

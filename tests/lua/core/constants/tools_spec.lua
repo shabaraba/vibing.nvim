@@ -38,7 +38,16 @@ describe("tools constants", function()
       assert.is_true(vim.tbl_contains(Tools.VIBING_NVIM_MCP_TOOL_PATTERNS, "mcp__vibing-nvim__*"))
     end)
 
-    -- Every entry has to survive can_use_tool's suffix match too, or the two halves of the
+    -- grok 1.0.50 qualifies an MCP tool as `server__tool`, with no `mcp__` prefix at all. The
+    -- entry reaches no argv -- grok's descriptor builds no allow-list flag -- but it is what lets
+    -- the background search agent's `exclusive_tools` recognise grok's spelling of the two session
+    -- tools, and `matchers` folds `-` onto `_` only when both sides start with `mcp__`, so the
+    -- other two entries cannot cover it.
+    it("covers grok's unprefixed server__tool registration", function()
+      assert.is_true(vim.tbl_contains(Tools.VIBING_NVIM_MCP_TOOL_PATTERNS, "vibing-nvim__*"))
+    end)
+
+    -- Every entry has to survive can_use_tool's own recognition too, or the two halves of the
     -- grant disagree: --allowedTools would pre-approve a name the hook then refuses to allow.
     it("only lists prefixes the PreToolUse hook also recognises", function()
       local CanUseTool = require("vibing.infrastructure.permissions.can_use_tool")

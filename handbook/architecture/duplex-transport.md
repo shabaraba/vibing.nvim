@@ -405,3 +405,92 @@ Verification: adapter tests exercise two turns on one process, resume, early/for
 notifications, interrupt, failures, native request denial and replacement races. The
 local Codex app-server was probed without inference for initialization and hooks/list.
 Real model latency and full native approval UI parity have not been measured.
+
+## Grok ACP agent
+
+Set `backends.grok.process = "duplex"`, or `process: duplex` in a Grok chat. The argv is
+`grok agent --no-leader [--model …] [--effort …] stdio`; flags precede the subcommand
+because clap rejects them after it, and `--no-leader` is deliberate — the default shares
+one backend process between every grok client on the machine, and a chat's resident
+process must be the chat's own.
+
+Grok speaks Agent Client Protocol JSON-RPC. `grok_duplex_protocol.lua` performs
+initialize → `session/new` (or `session/load` when resuming) → `session/prompt`, and
+`grok_acp.lua` translates the `session/update` notifications. That decoder is a **second**
+grok decoder, not a replacement: `--output-format streaming-json` emits flat
+`{"type":"text","data":"hi"}` lines and has nothing structurally in common with ACP's
+`session/update` envelope, so the two formats need two decoders in the same way codex's
+`exec --json` and `app-server` do. The CLI's own `--help` calls the one-shot stream "one
+ACP session update per line", which describes its lineage and not its shape.
+
+**This is the only grok transport that reaches vibing.nvim's MCP tools.** `grok --single`
+rejects `--plugin-dir` outright, so the servers travel in the `mcpServers` field of
+`session/new` (`grok_mcp_config.lua`). That field is required, not optional — omitting it
+is an `Invalid params` error naming it. `grok agent --plugin-dir` is not the answer either:
+its help claims "hooks and MCP servers activate without a prompt", and only the first half
+is true. A throwaway plugin declaring a server both in its manifest and in a sibling
+`.mcp.json` had its hook fire while neither server appeared in `_x.ai/mcp/servers_updated`.
+Grok also names an MCP tool `server__tool` with no `mcp__` prefix, so vibing's own tools
+arrive as `vibing-nvim__nvim_get_info`; `can_use_tool.is_vibing_nvim_mcp_tool` anchors on
+that third spelling. Measured end to end: a session told to call it answered with this
+Neovim's own `rpc_port`, chat file path and `bufnr`, so the route is proven to execute and
+not only to register.
+
+### Where a tool's result text is
+
+`tool_call_update` carries a finished call's prose in three measured places, and **two of
+them are one level down**, under a key naming the variant that ran rather than the content:
+an edit answers `{ type = "SearchReplace", EditsApplied = { tool_output_for_prompt } }` and
+an MCP call `{ type = "MCP", output = { OkayOutput } }`, while only a failure states it at
+the top (`{ error, message }`). Reading the top level alone left every successful edit and
+every successful MCP call closing with nothing to show, so `grok_acp.lua` descends one level
+through its members, sorted. The same MCP frame also sends `"content": null`, which
+`vim.json.decode` makes `vim.NIL` — truthy in Lua and not iterable — so the decoder's object
+reads go through one `obj()` guard rather than `x or {}` (`features.md`).
+
+### Whose turn just ended
+
+Nobody has to ask. A turn ends on the JSON-RPC **reply** to its own `session/prompt`,
+carrying `stopReason` and a `_meta.promptId`, and a reply is matched to its request by id.
+So `grok_acp.lua` deliberately emits no `turn_end` at all and `duplex_turn.ends_this_turn`
+is never consulted here. The `turn_completed` notification does exist and does carry a
+`prompt_id`, but it also fires for turns grok ran for itself, which is exactly the shape
+that ends the user's turn on work nobody asked for.
+
+### Cancelling retires the process
+
+Measured against grok 1.0.50: after a `session/cancel`, grok answers the in-flight prompt
+in ~2ms, but a `session/prompt` sent 16ms later never got a reply at all — 65s, to the
+probe's own deadline — while one sent 8s later completed normally. The reply coming back is
+therefore **not** proof the session will accept another prompt, and the pool's reuse test
+(alive, same argv, no open turn) says yes exactly when it must not. The fix is to retire
+the process rather than to sleep for a length nothing measured: one respawn on the next
+message, which is what cancelling cost before this transport existed.
+
+It is keyed on **having sent the cancel**, never on `stopReason`. A rejected approval also
+ends a turn as `cancelled`, and that process is measurably reusable — three prompts in a row
+over one rejection are what the approval probe recorded.
+
+### The gate
+
+The hook is the one grok already had: `<cwd>/.grok/hooks/*.json`, discovered from the
+project tree. The resident transport honours it — a deny hook refused six tool calls in one
+ACP turn (`write`, `list_dir`, `grep`, `run_terminal_command`) and nothing was written — so
+duplex needed no second hook transport, which is just as well given `--plugin-dir` is the
+only per-run alternative. It is now kept in `bypassPermissions` for codex's reason: that
+mode bypasses the decision, but the same round trip is where `git_snapshot` takes the turn's
+baseline.
+
+`--permission-mode` is **not** in this argv, because `grok agent` does not accept one. What
+is left is grok's own `session/request_permission`, answered with the `allow_once` option
+(never `allow_always`, which would retire grok's gate for the rest of the chat). That is not
+blanket approval: the hook runs first, and when it denies, grok sends no permission request
+at all.
+
+Verification: `grok_duplex_spec.lua` exercises the handshake order, resume, two turns on one
+process, the foreign `turn_completed`, the interrupt-and-retire, the keep-on-foreign-cancel,
+the native approval answer and a JSON-RPC error; every assertion was mutation-tested.
+`tests/perf/grok_acp_probe.mjs` is the driver the protocol measurements came from.
+**Not yet measured:** the choice-list prompt end to end — `nvim_ask_user_question` is named
+in the session's first prompt and its tool route is proven by `nvim_get_info`, but no probe
+has driven a turn that asks a human and consumes the answer.
