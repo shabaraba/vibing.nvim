@@ -125,6 +125,27 @@
 ---  `delegated_scope`（`permissions_allow`と同じパターン構文の文字列リスト）に一致する許可
 ---  （allow_once/allow_for_session）だけを通す — 拒否は範囲を問わず常に委任できる（権限を
 ---  広げない）。`delegated_scope`は`nvim_chat_create`の同名引数で宣言する
+---@field worker_defaults Vibing.WorkerDefaults? `nvim_chat_create`で作るチャットのfrontmatterの既定値
+---  （デフォルト: `{}` = 通常の新規チャットと同じ）。呼び出しの同名引数が優先する
+
+---@class Vibing.Profile
+---`name`以外はどれも省略可（ここにないキーは無視する）。`tools` / `setting_sources` / `context_files` はClaude backendのみ
+---@field name string profileの名前（英数字・`_`・`-`）。frontmatter `profile:` / `/profile` / `nvim_chat_create` の `profile` はこの名前で選ぶ
+---@field description string? 一行の説明。`nvim_chat_list` の `profiles` でオーケストレーターに見せる
+---@field agent string? このprofileで`nvim_chat_create`したチャットのbackend
+---@field model string? 同じくモデル
+---@field effort string? 同じく推論量
+---@field tools string[]? `--tools`に渡す組み込みツール。`ToolSearch`は常に足す（MCPツールを遅延のままにするため）
+---@field setting_sources string[]? このprofileの`--setting-sources`。"project"を外すとCLAUDE.md・rules・skills・`.claude/settings.json`が載らない
+---@field context_files string[]? system promptに追記するファイル（gitルートからの相対パス）。`setting_sources`で外したものの代わり
+
+---@class Vibing.WorkerDefaults
+---オーケストレーターがモデルを渡し忘れたワーカーを、オーケストレーター自身と同じ高価なモデルで
+---走らせないための既定値。どれも省略でき、省略したキーは通常の新規チャットの既定値になる
+---@field agent string? backend id（`core/constants/agents.lua`）
+---@field model string? そのbackendに渡すモデル
+---@field effort string? `core/constants/modes.lua`の`EFFORT_VALUES`
+---@field profile string? 組み込みの`default`/`focused`/`reviewer`か`agent.profiles`の名前
 
 ---@class Vibing.AgentConfig
 ---エージェント設定
@@ -136,6 +157,13 @@
 ---@field utility_effort ("default"|"low"|"medium"|"high"|"xhigh"|"max")? タイトル生成・要約等の軽量呼び出しの推論量（デフォルト: "low"）
 ---@field setting_sources string[]? Claude CLIの`--setting-sources`に渡す設定読み込み元リスト（例: {"project", "local"}、デフォルト: {"user", "project", "local"}）。MCPサーバーの読み込みには影響しない（`agent.mcp`参照）
 ---@field mcp Vibing.AgentMcpConfig? 通常のチャットターンにどのMCPサーバーを載せるかの設定
+---@field profiles Vibing.Profile[]? チャットの用途ごとに毎リクエスト読み込むものを決める
+---  定義のリスト。各要素は`name`で名前を持つ（frontmatter `profile:` / `nvim_chat_create` の
+---  `profile`で選ぶ）。組み込みの`default`・`focused`・`reviewer`に加えて任意の名前を定義でき、組み込みと
+---  同名の要素はその組み込みをフィールド単位で上書きする。同名の要素が複数あれば最後のものが
+---  勝つ（警告あり）。`name`のない要素・テーブルでない要素は警告して無視する（デフォルト: `{}`）。
+---  各フィールドの意味と「途中で切り替えたとき何が効くか」は`core/constants/profiles.lua`の
+---  モジュールコメント
 ---@field git_instructions boolean? trueでClaude CLI組み込みのgitステータスブロック（ブランチ名・
 ---  直近コミット・`git status --short`）とcommit/PRワークフロー指示をsystem promptに載せる
 ---  （デフォルト: false）。どちらの値でも`CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS`を明示的に書く
@@ -343,6 +371,18 @@ M.defaults = {
     default_effort = "default",
     utility_effort = "low",
     setting_sources = { "user", "project", "local" },
+    -- 用途ごとの読み込み内容。組み込みは default（全部）、focused（組み込みツール6つ、
+    -- プロジェクト設定は載せる）、reviewer（Read/Glob/Grep/Bash、プロジェクト設定は載せる）。
+    -- 例: 実装担当を6ツール・プロジェクト設定なしで走らせる
+    --   {
+    --     name = "implementer",
+    --     description = "Implements a fully specified change",
+    --     model = "sonnet",
+    --     tools = { "Bash", "Read", "Edit", "Write", "Glob", "Grep" },
+    --     setting_sources = { "user", "local" },
+    --     context_files = { ".vibing/implementer.md" },
+    --   },
+    profiles = {},
     mcp = {
       -- 既定はtrue（現状維持）。`--setting-sources user,project,local` が `~/.claude.json` の
       -- MCPサーバーを全部載せるのは、ユーザーのcommands/skills/subagentをそのまま使えるように
@@ -441,6 +481,10 @@ M.defaults = {
       -- opt-in にしてある。答えは配達セクション（`## Request <!-- ... from ... -->`）として
       -- ワーカーのtranscriptに残るので、誰が許可したかは後から読める。
       delegated_approval = false,
+      -- `nvim_chat_create`で作るワーカーの既定のagent/model/effort/profile。例:
+      --   worker_defaults = { model = "sonnet", profile = "focused" }
+      -- 呼び出しが同名の引数を渡せばそちらが勝つ。空なら通常の新規チャットと同じ既定値
+      worker_defaults = {},
     },
     -- ターンのコストは「返答の長さ」ではなく「リクエスト数 × コンテキストサイズ」で決まる。
     -- ツール1回ごとにAPIリクエストが1本増え、そのたびに会話全体を読み直すため。

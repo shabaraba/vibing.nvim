@@ -217,6 +217,181 @@ describe("cli_command_builder", function()
     end)
   end)
 
+  describe("profile", function()
+    local function prompt_for_config(opts, config)
+      local cmd = cli_command_builder.build("hello", opts, nil, config, nil)
+      return cmd[find_flag(cmd, "--append-system-prompt") + 1]
+    end
+
+    local function prompt_for(opts)
+      return prompt_for_config(opts, {})
+    end
+
+    -- A profile narrows tools and setting sources, never the instruction block: it is under 1k
+    -- tokens, and the two editor-watching lines once dropped for orchestrated chats saved 320.
+    it("sends the same instruction block on every built-in profile", function()
+      local none = prompt_for({})
+      assert.equals(none, prompt_for({ profile = "focused" }))
+      assert.equals(none, prompt_for({ profile = "reviewer" }))
+      assert.is_truthy(none:find("nvim_highlight_range", 1, true))
+      assert.is_truthy(none:find("nvim_annotate", 1, true))
+    end)
+
+    it("passes each narrowed built-in's tools, keeping ToolSearch and the configured sources", function()
+      local function value_of(cmd, flag)
+        local idx = find_flag(cmd, flag)
+        return idx and cmd[idx + 1] or nil
+      end
+      local focused = cli_command_builder.build("hello", { profile = "focused" }, nil, {}, nil)
+      assert.equals("Bash,Read,Edit,Write,Glob,Grep,ToolSearch", value_of(focused, "--tools"))
+      assert.equals("user,project,local", value_of(focused, "--setting-sources"))
+
+      local reviewer = cli_command_builder.build("hello", { profile = "reviewer" }, nil, {}, nil)
+      assert.equals("Read,Glob,Grep,Bash,ToolSearch", value_of(reviewer, "--tools"))
+      assert.equals("user,project,local", value_of(reviewer, "--setting-sources"))
+    end)
+
+    it("keeps everything that changes what an orchestrated chat produces", function()
+      local worker = prompt_for({
+        profile = "focused",
+        chat_bufnr = 7,
+        orchestrators = { { path = ".vibing/chat/orchestrator.md", bufnr = 3 } },
+      })
+      assert.is_truthy(worker:find(".vibing/worktrees/", 1, true))
+      assert.is_truthy(worker:find("MUST use the vibing-nvim nvim_job_start", 1, true))
+      assert.is_truthy(worker:find("nvim_ask_user_question", 1, true))
+      -- The report protocol is the one line a worker is guaranteed to be told (#706)
+      assert.is_truthy(worker:find(".vibing/chat/orchestrator.md", 1, true))
+      assert.is_truthy(worker:find("nvim_chat_send_message", 1, true))
+    end)
+
+    it("is the ordinary block for profile 'default' and for no profile at all", function()
+      local none = prompt_for({})
+      assert.equals(none, prompt_for({ profile = "default" }))
+      assert.is_truthy(none:find("nvim_highlight_range", 1, true))
+      assert.is_truthy(none:find("nvim_annotate", 1, true))
+    end)
+
+    describe("configured in agent.profiles", function()
+      local Profiles = require("vibing.core.constants.profiles")
+      local implementer = {
+        agent = {
+          profiles = {
+            {
+              name = "implementer",
+              tools = { "Bash", "Read", "Edit" },
+              setting_sources = { "user", "local" },
+            },
+            { name = "bare", setting_sources = {} },
+          },
+        },
+      }
+
+      before_each(Profiles._reset_warnings)
+
+      local function value_of(cmd, flag)
+        local idx = find_flag(cmd, flag)
+        return idx and cmd[idx + 1] or nil
+      end
+
+      it("narrows the built-in tools, keeping ToolSearch so MCP tools stay deferred", function()
+        local cmd = cli_command_builder.build("hello", { profile = "implementer" }, nil, implementer, nil)
+        assert.equals("Bash,Read,Edit,ToolSearch", value_of(cmd, "--tools"))
+      end)
+
+      it("replaces the setting sources, an empty list included", function()
+        local cmd = cli_command_builder.build("hello", { profile = "implementer" }, nil, implementer, nil)
+        assert.equals("user,local", value_of(cmd, "--setting-sources"))
+
+        local bare = cli_command_builder.build("hello", { profile = "bare" }, nil, implementer, nil)
+        assert.equals("", value_of(bare, "--setting-sources"))
+      end)
+
+      it("leaves an ordinary chat on the CLI's full tool set and the configured sources", function()
+        local cmd = cli_command_builder.build("hello", {}, nil, implementer, nil)
+        assert.is_nil(find_flag(cmd, "--tools"))
+        assert.equals("user,project,local", value_of(cmd, "--setting-sources"))
+      end)
+
+      it("never narrows the tools of a subagent-bound chat", function()
+        local cmd = cli_command_builder.build(
+          "hello",
+          { profile = "implementer", _subagent_id = "agent-1" },
+          nil,
+          implementer,
+          nil
+        )
+        assert.is_nil(find_flag(cmd, "--tools"))
+      end)
+
+      it("keeps the prompt as the argument after the end-of-options marker", function()
+        -- `--tools` is variadic: without `--` in front of the prompt it would swallow it.
+        local cmd = cli_command_builder.build("hello", { profile = "implementer" }, nil, implementer, nil)
+        assert.equals("--", cmd[#cmd - 1])
+        assert.equals("hello", cmd[#cmd])
+      end)
+    end)
+
+    describe("context_files", function()
+      local Profiles = require("vibing.core.constants.profiles")
+      local root, original_getcwd
+
+      before_each(function()
+        Profiles._reset_warnings()
+        root = vim.fn.tempname()
+        Fs.ensure_dir(root .. "/.vibing")
+        vim.fn.writefile({ "IMPLEMENTER-INVARIANTS-MARKER" }, root .. "/.vibing/implementer.md")
+        original_getcwd = vim.fn.getcwd
+        vim.fn.getcwd = function()
+          return root
+        end
+      end)
+
+      after_each(function()
+        vim.fn.getcwd = original_getcwd
+        vim.fn.delete(root, "rf")
+      end)
+
+      local function config(files)
+        return { agent = { profiles = { { name = "implementer", context_files = files } } } }
+      end
+
+      it("appends each file to the system prompt", function()
+        local prompt = prompt_for_config({ profile = "implementer" }, config({ ".vibing/implementer.md" }))
+        assert.is_truthy(prompt:find("IMPLEMENTER-INVARIANTS-MARKER", 1, true))
+      end)
+
+      it("says so when a file is missing, instead of dropping it silently", function()
+        local notify = require("vibing.core.utils.notify")
+        local original_warn = notify.warn
+        local warned
+        notify.warn = function(message)
+          warned = message
+        end
+        prompt_for_config({ profile = "implementer" }, config({ ".vibing/nope.md" }))
+        notify.warn = original_warn
+
+        assert.is_truthy(warned and warned:find(".vibing/nope.md", 1, true))
+      end)
+    end)
+
+    it("falls back to the full block for an unknown profile rather than trimming it", function()
+      -- The warning is once per session, so an earlier spec in this process may have spent it.
+      require("vibing.core.constants.profiles")._reset_warnings()
+      local notify = require("vibing.core.utils.notify")
+      local original_warn = notify.warn
+      local warned = false
+      notify.warn = function()
+        warned = true
+      end
+      local unknown = prompt_for({ profile = "lean" })
+      notify.warn = original_warn
+
+      assert.is_true(warned)
+      assert.equals(prompt_for({}), unknown)
+    end)
+  end)
+
   describe("project-local system prompt (.vibing/system-prompt.md)", function()
     local project_root
     local original_getcwd

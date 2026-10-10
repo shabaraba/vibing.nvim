@@ -43,6 +43,13 @@ function M.setup()
   })
 
   commands.register({
+    name = "profile",
+    handler = require("vibing.application.chat.handlers.profile"),
+    -- Static text: the names come from `agent.profiles` and are completed at the prompt instead.
+    description = "Set chat profile: /profile <name>",
+  })
+
+  commands.register({
     name = "help",
     handler = require("vibing.application.chat.handlers.help"),
     description = "Show available slash commands",

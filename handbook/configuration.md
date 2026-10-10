@@ -34,6 +34,7 @@ require("vibing").setup({
     default_effort = "default",
     utility_effort = "low",
     setting_sources = { "user", "project", "local" },
+    profiles = {},
     mcp = { user_servers = true },
     git_instructions = false,
     subagent = { enabled = false, show_prefix = false },
@@ -251,6 +252,75 @@ agent = {
                             -- Note: does not affect MCP server loading — that is
                             -- agent.mcp.user_servers, right below.
 
+  profiles = {},            -- What a chat loads on every request, per kind of chat: a list,
+                            -- one table per profile, each named by its `name` field. A chat
+                            -- picks one by that name with `profile:` frontmatter, /profile, or
+                            -- nvim_chat_create's `profile`. Built in, none setting a model:
+                            --   "default"   everything
+                            --   "focused"   only Bash/Read/Edit/Write/Glob/Grep of Claude's built-in
+                            --               tools; project settings still load
+                            --   "reviewer"  only Read/Glob/Grep/Bash; project settings still load
+                            -- Neither narrowed built-in has Skill or Agent (no skills, no
+                            -- subagents). MCP tools are never narrowed, so any chat can still
+                            -- report and create chats of its own. Any other name is a new kind;
+                            -- an entry named after a built-in extends it field by field. Entries
+                            -- that are not tables or lack a valid name (letters, digits, _ and -)
+                            -- are ignored with a warning; for a duplicate name the last entry
+                            -- wins, also with a warning. Every field but `name` is optional, and
+                            -- any other key is ignored:
+                            --
+                            --   {
+                            --     name = "implementer",
+                            --     description = "Implements a fully specified change",
+                            --                       -- shown to orchestrators by nvim_chat_list
+                            --     agent = "claude", model = "sonnet", effort = "medium",
+                            --                       -- what nvim_chat_create gives a chat on it
+                            --     tools = { "Bash", "Read", "Edit", "Write", "Glob", "Grep" },
+                            --                       -- Claude's built-in tools; ToolSearch is
+                            --                       -- always added so MCP tools stay deferred
+                            --     setting_sources = { "user", "local" },
+                            --                       -- without "project": no CLAUDE.md, rules,
+                            --                       -- skills, agents or .claude/settings.json
+                            --     context_files = { ".vibing/implementer.md" },
+                            --                       -- appended to the system prompt instead
+                            --   },
+                            --   {
+                            --     name = "researcher",
+                            --     description = "Investigates code or the web and reports",
+                            --     model = "haiku", effort = "low",
+                            --     tools = { "Read", "Glob", "Grep", "WebSearch", "WebFetch" },
+                            --     setting_sources = { "user", "local" },
+                            --   },
+                            --   {
+                            --     name = "runner",
+                            --     description = "Runs tests or waits on CI and reports failures",
+                            --     model = "haiku", effort = "low",
+                            --     tools = { "Bash", "Read", "Glob", "Grep" },
+                            --     setting_sources = { "local" },  -- keeps settings.local.json
+                            --   },
+                            --   {
+                            --     name = "orchestrator",
+                            --     description = "Splits work and drives chats of its own",
+                            --     model = "opus", effort = "high",
+                            --     tools = { "Read", "Glob", "Grep", "Bash", "Write", "Skill" },
+                            --                       -- Skill to load vibing-orchestrate, Write
+                            --                       -- for its assignment table; project kept
+                            --   },
+                            --
+                            -- Per request, here (claude 2.1.295): default ~67k and focused ~37k
+                            -- measured; implementer ~11k measured (~11.6k estimated with the
+                            -- editor lines it was measured without), plus its context file.
+                            -- Estimated: reviewer ~36k, researcher ~11-13k, runner ~10-11k,
+                            -- orchestrator ~45-47k. Trade-offs: without "project" a chat loses
+                            -- the project's rules (the brief or context_files must carry them)
+                            -- and .claude/settings.json (more approval prompts); researcher
+                            -- cannot run code. tools / setting_sources / context_files are
+                            -- Claude-only. On a switch, tools and setting_sources apply from the
+                            -- next message; context_files stay as the chat started (Claude
+                            -- records the system prompt on the first message). An invalid field
+                            -- is dropped with a warning, so a typo loads more, never less.
+                            -- handbook/architecture/orchestration.md has the numbers
+
   mcp = {                   -- Which MCP servers an ordinary turn loads. Claude backend only.
                             -- Not to be confused with the top-level `mcp` block, which
                             -- configures vibing.nvim's own RPC server.
@@ -360,6 +430,16 @@ agent = {
                             -- not a convenience. The answer is written into the worker's
                             -- transcript as `## Request ... from <that chat>`, so who granted
                             -- what is readable afterwards
+    worker_defaults = {},
+                            -- Frontmatter for chats created with nvim_chat_create, for any key
+                            -- the call itself leaves out: agent, model, effort, profile. Lets a
+                            -- planner on an expensive model hand implementation to a cheaper one
+                            -- without having to remember to say so on every call, e.g.
+                            --   worker_defaults = { model = "sonnet", profile = "focused" }
+                            -- An argument on the call wins. Empty (the default) leaves a created
+                            -- chat exactly like a :VibingChat one. An invalid value here makes
+                            -- nvim_chat_create fail and names this key, rather than silently
+                            -- running the worker on the default model
   },
 
   token_usage = {           -- Per-turn token breakdown in the chat. Claude also warns when the

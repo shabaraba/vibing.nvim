@@ -6,8 +6,8 @@ local ChatConstants = require("vibing.core.constants.chat")
 local FileManager = require("vibing.presentation.chat.modules.file_manager")
 
 ---新しいチャットバッファを作成する
----@param params {position?: string, working_dir?: string, from_bufnr?: number, task?: string, delegated_scope?: string[]}
----@return {bufnr: number, file_path: string, working_dir: string?, position: string, saved: boolean}
+---@param params {position?: string, working_dir?: string, from_bufnr?: number, task?: string, delegated_scope?: string[], agent?: string, model?: string, effort?: string, profile?: string}
+---@return {bufnr: number, file_path: string, working_dir: string?, agent: string?, model: string?, effort: string?, profile: string, position: string, saved: boolean}
 function M.create_chat(params)
   params = params or {}
 
@@ -51,8 +51,22 @@ function M.create_chat(params)
     end
   end
 
-  local session = require("vibing.application.chat.use_cases.create_chat").execute({
+  -- agent/model/effort/profile も作る**前**に解決する。不正値はここでエラーにして、空のワーカーと
+  -- そのファイルを残さない（理由は`resolve_frontmatter`のコメント）
+  local CreateChat = require("vibing.application.chat.use_cases.create_chat")
+  local frontmatter, frontmatter_err = CreateChat.resolve_frontmatter({
+    agent = params.agent,
+    model = params.model,
+    effort = params.effort,
+    profile = params.profile,
+  }, require("vibing").get_config())
+  if not frontmatter then
+    error(frontmatter_err)
+  end
+
+  local session = CreateChat.execute({
     working_dir = params.working_dir,
+    frontmatter = frontmatter,
   })
   -- background: ワーカーはユーザーが開いたチャットではないので、`view._current_buffer`
   -- （:VibingCancel などのフォールバック先）を奪わない
@@ -96,6 +110,12 @@ function M.create_chat(params)
     bufnr = chat_buf.buf,
     file_path = chat_buf.file_path,
     working_dir = session.working_dir,
+    -- 実際に書かれた値。省略した引数が`worker_defaults`や通常の既定値でどう埋まったかを、
+    -- 呼び出し元がファイルを読まずに確かめられる
+    agent = session.frontmatter.agent,
+    model = session.frontmatter.model,
+    effort = session.frontmatter.effort,
+    profile = session.frontmatter.profile or require("vibing.core.constants.profiles").DEFAULT,
     position = position,
     -- リンク書き込みはバッファを変更して保存し直すので、`saved` はその**後**に見る。
     -- 先にスナップショットすると、リンクの無いディスク上のコピーに対して true を返しうる
@@ -233,7 +253,7 @@ end
 ---RPCポーラーで迂回した）。列挙元は `view.list_chat_buffers()` 一択 — 「いま何本開いているか」
 ---を知る手段はそれしかない（`application/chat/concurrency.lua` も同じものを読む）ので、
 ---閉じたまま残っているチャットファイルはここには載らない
----@return {chats: {bufnr: number, file_path: string?, chat_status: string?, waiting_approvals: table[]?, context_size: number?, updated_at: string?, orchestrated_by: string[], task: string?}[]}
+---@return {chats: {bufnr: number, file_path: string?, chat_status: string?, waiting_approvals: table[]?, context_size: number?, updated_at: string?, orchestrated_by: string[], task: string?}[], profiles: table[]}
 function M.list_chats(_)
   local view = require("vibing.presentation.chat.view")
   local ChatStatus = require("vibing.presentation.chat.modules.chat_status")
@@ -266,7 +286,23 @@ function M.list_chats(_)
 
   project_tasks(buffers, bufnrs, by_absolute_path)
 
-  return { chats = chats }
+  -- The profiles a new chat can run on: the built-ins plus `agent.profiles`. Here because this is the call an
+  -- orchestrator makes before it dispatches, and the names cannot live in a static tool
+  -- description: they are whatever this user's config says.
+  local profiles = require("vibing.core.constants.profiles").catalog(require("vibing").get_config())
+
+  return { chats = chats, profiles = profiles }
+end
+
+---設定済みのチャットprofile一覧（MCPサーバーの`tools/list`が読む）
+---
+---`nvim_chat_create`の`profile`引数のスキーマに名前と説明を埋めるためにある。ツールの説明文は
+---静的なので、ユーザーごとの`agent.profiles`をオーケストレーターに見せるには、MCPサーバーが
+---ツール一覧を返す時点でここに聞くしかない。並びは`Profiles.names`のソート順で固定 — ツール
+---定義はプロンプトキャッシュの先頭にあるので、設定が変わらない限り1バイトも動かしてはいけない
+---@return {profiles: {name: string, description: string?, agent: string?, model: string?, effort: string?}[]}
+function M.list_profiles(_)
+  return { profiles = require("vibing.core.constants.profiles").catalog(require("vibing").get_config()) }
 end
 
 ---mainリポジトリで解決できる基準ブランチ名を返す。全worktreeでrefは共有されるので、

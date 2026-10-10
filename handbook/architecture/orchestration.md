@@ -97,6 +97,99 @@ the floor to matter — one without the other does not hold.
 `claude-plugin/skills/vibing-orchestrate/SKILL.md` → "Reuse a worker chat or start a new
 one?" carries the operating rule; this section is the reasoning and the measurement behind it.
 
+## What the floor is made of, and profiles
+
+The floor is re-read on **every request** of a worker, not paid once, so it is the multiplier the
+"new chat by default" rule above leaves on the table. `tests/perf/system_prompt_floor.lua` breaks
+it down by changing one flag at a time against the argv vibing.nvim actually builds. Measured on
+claude 2.1.295, haiku, in this repository, with the vibing-nvim MCP server connected and
+`CLAUDE_CODE_REMOTE` unset (as on a local machine):
+
+| Variant                                           | Floor (tokens) | Delta   | Tools |
+| ------------------------------------------------- | -------------- | ------- | ----- |
+| vibing chat, as sent                              | 66,974         | —       | 80    |
+| without the two editor-watching lines             | 66,654         | −320    | 80    |
+| no `--append-system-prompt` at all                | 66,192         | −782    | 80    |
+| no `--plugin-dir` (vibing skills, MCP)            | 63,555         | −3,419  | 31    |
+| `--setting-sources ""` (CLAUDE.md, rules, skills) | 36,895         | −30,079 | 80    |
+| `--strict-mcp-config`, no servers                 | 65,274         | −1,700  | 31    |
+| `--tools` six built-ins, no ToolSearch            | 50,914         | −16,060 | 55    |
+| `--tools` six built-ins + Skill                   | 60,657         | −6,317  | 56    |
+| `--tools` six built-ins + Agent                   | 53,636         | −13,338 | 56    |
+| `--tools` six built-ins + ToolSearch              | 36,898         | −30,076 | 56    |
+| **six + ToolSearch, no editor lines, user,local** | **11,266**     | −55,708 | 56    |
+| bare `claude -p`, no vibing flags                 | 61,207         | −5,767  | 29    |
+
+And the first request of a **subagent**, launched from a bare `claude -p` (61k):
+
+| Subagent                                         | First request |
+| ------------------------------------------------ | ------------- |
+| `general-purpose`                                | 50,343        |
+| custom, `tools: [Read, Edit, Bash]` (`--agents`) | 29,392        |
+| `Explore`                                        | 13,024        |
+
+What the numbers say:
+
+- **vibing.nvim's own additions are small** — 782 tokens of instructions, ~1.7k for 49 deferred MCP
+  tools. Trimming them cannot be the lever: the two editor-watching lines (−320) were what an
+  earlier built-in `worker` profile dropped, and that profile was removed for saving nothing. A
+  profile narrows the tools and the setting sources instead; the instruction block is always sent.
+- **The two large parts are the built-in tool set and the project's own settings, ~30k each.**
+  The tool part is mostly not the six tools an implementer uses: the Skill tool's description
+  carries every skill (+9.7k on top of the six) and the other ~20 built-ins the rest. The settings
+  part is CLAUDE.md, `.claude/rules/` and the project's skills.
+- **`ToolSearch` must stay in a narrowed tool list.** Without it the CLI has nowhere to defer MCP
+  tools to and loads every schema (50.9k vs 36.9k, the same six tools). `--tools` narrows built-ins
+  only: `nvim_chat_send_message` stays reachable either way, so a narrowed worker can still report.
+- **A subagent is not free either.** `general-purpose` is ~50k, close to a chat; it is `Explore`
+  (read-only) that is cheap. A narrowed chat (11k) is cheaper than a `general-purpose` subagent and
+  can run on another CLI — which is what profiles are for.
+- **Dropping the project settings is a correctness trade.** Those files are the invariants a worker
+  would otherwise break, and a worker that has to rediscover one pays for it in re-reads (chat 882
+  above). `context_files` exists so a profile can carry the few that apply to its kind of work.
+
+What the built-in profiles come to, read off the table (the rows were measured before the
+profiles existed, with the flags each one now sends):
+
+| Profile    | Floor (tokens)                                                                |
+| ---------- | ----------------------------------------------------------------------------- |
+| `default`  | 66,974 measured ("as sent")                                                   |
+| `focused`  | 36,898 measured ("six + ToolSearch", the same `--tools` list)                 |
+| `reviewer` | ~36k **estimated**: four of the same tools, Edit and Write not measured apart |
+
+The 11,266 row is the `implementer` example in `handbook/configuration.md` (`focused`'s tools,
+`user,local`), measured without the two editor lines; with them it is ~11.6k **estimated**.
+`tests/perf/system_prompt_floor.lua` now has `profile: focused` / `profile: reviewer` rows and a
+`focused`-based lean row, not yet re-run.
+
+Two caveats bound the table: rows where the model made more than one request report a sum, not a
+floor (the script prints `turns`; the `--strict-mcp-config` row needed three attempts), and a
+plugin MCP server that is still connecting when a one-request run ends contributes nothing.
+
+### What a switch reaches: the system prompt is recorded
+
+`claude -p` records the system prompt on a conversation's **first** request and replays it on
+every resume (`--system-prompt-snapshot`, default `on`). Measured: a session started with
+`--append-system-prompt "codename ALPHA"` and resumed with `"codename BETA"` still answered ALPHA;
+a resume with `--system-prompt-snapshot off` saw the new text, and the next default resume went
+back to ALPHA — the record is not replaced. So for a profile switch:
+
+- `context_files` (inside `--append-system-prompt`) stay as the chat started.
+- `tools` and `setting_sources` are re-read per launch: a resume with the full tool set rose from
+  31.6k to 61.2k, and a CLAUDE.md fact unknown under `--setting-sources ""` was answered correctly
+  after a resume with `project`. Narrowing again did **not** shrink it (61.6k): what a request
+  loaded stays in the conversation's history.
+
+That is why `/profile default` on a narrowed chat is the direction that works, and why a profile is
+chosen at creation rather than toggled to save tokens on a running chat.
+
+The same recording broke two older assumptions. An `orchestrated_by` entry added **after** a chat's
+first message — a chat later messaged by a second orchestrator — never reached its report line;
+every delivered `## Request` now ends with where and how to report
+(`delivery_message.reply_instructions`), since the per-turn body is the one thing the recording
+does not freeze. `.vibing/system-prompt.md` is still not read "on every request" as far as the
+model is concerned: an edit reaches new chats only, and that is left for a fix of its own.
+
 ## Task assignment (`orchestrated`'s `task`, #696)
 
 `nvim_chat_create` and `nvim_chat_send_message` both take an optional `task`: one free-text line

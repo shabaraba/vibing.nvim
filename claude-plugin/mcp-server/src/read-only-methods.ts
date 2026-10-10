@@ -23,6 +23,7 @@ export const READ_ONLY_METHODS = new Set([
   'get_window_view',
   'list_buffers',
   'list_chats',
+  'list_profiles',
   'list_tabpages',
   'list_windows',
   'job_list',

@@ -14,6 +14,7 @@ local AskUserQuestionInstructions =
   require("vibing.infrastructure.adapter.modules.ask_user_question_instructions")
 local PluginDirs = require("vibing.infrastructure.plugins.plugin_dirs")
 local worktree_constants = require("vibing.core.constants.worktree")
+local Profiles = require("vibing.core.constants.profiles")
 
 local M = {}
 
@@ -23,6 +24,18 @@ local VALID_SETTING_SOURCES = { user = true, project = true, ["local"] = true }
 local RequestBuilder = require("vibing.infrastructure.adapter.modules.request_builder")
 
 M.BINARY = { name = "claude", missing = "Claude CLI not found in PATH. Please install Claude Code CLI." }
+
+--- `Profiles.resolve` for this request, cached on `ctx` -- several `extra` parts need the same
+--- profile and `ctx` is already the one object shared between them for this build.
+--- @param ctx Vibing.RequestContext
+--- @return table
+local function resolved_profile(ctx)
+  if not ctx._profile then
+    local _, profile = Profiles.resolve(ctx.opts.profile, ctx.config)
+    ctx._profile = profile
+  end
+  return ctx._profile
+end
 
 --- Resolve the `--setting-sources` list, falling back to the default when config
 --- is missing, malformed, or contains entries outside `user`/`project`/`local`.
@@ -150,7 +163,28 @@ function M.setting_source_args(ctx)
   if ctx.opts.lightweight then
     return { "--setting-sources", "", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}' }
   end
+  -- A profile's own list replaces the configured one outright — an empty list included, which is
+  -- "no CLAUDE.md, no project settings" and a deliberate choice, not a malformed value.
+  local profile = resolved_profile(ctx)
+  if profile.setting_sources then
+    return { "--setting-sources", table.concat(profile.setting_sources, ",") }
+  end
   return { "--setting-sources", table.concat(M.resolve_setting_sources(ctx.config), ",") }
+end
+
+--- `--tools` for a profile that names its built-in tools; nothing otherwise, which is the CLI's
+--- full set. The flag only narrows built-ins — MCP tools, vibing-nvim's report tool among them,
+--- stay reachable (measured: `nvim_chat_send_message` found under `--tools Read,Bash`).
+--- @param ctx Vibing.RequestContext
+--- @return string[]
+function M.profile_tool_args(ctx)
+  local profile = resolved_profile(ctx)
+  -- A subagent-bound chat exists to call Agent/SendMessage (see `permission_args`); a tool list
+  -- written for implementation work would leave it unable to do the one thing it is for.
+  if not profile.tools or ctx.opts._subagent_id then
+    return {}
+  end
+  return { "--tools", table.concat(profile.tools, ",") }
 end
 
 --- The `--append-system-prompt` block: worktree convention, MCP tool guidance, the chat buffer
@@ -167,6 +201,7 @@ function M.system_prompt_args(ctx)
   -- Lightweight calls have no tools/MCP servers at all, so tool-usage instructions below would
   -- just be wasted prompt tokens describing capabilities that don't exist.
   local system_prompt_lines = {}
+  local profile = resolved_profile(ctx)
 
   if not opts.lightweight then
     table.insert(
@@ -239,7 +274,10 @@ function M.system_prompt_args(ctx)
     -- still gets the line — `nvim_chat_send_message` opens the chat file itself.
     --
     -- The frontmatter is written once at creation, so in the ordinary case the line stays
-    -- byte-stable across turns and the cached system prefix (#469) survives. It is not a
+    -- byte-stable across turns and the cached system prefix (#469) survives. It is also only ever
+    -- read once: claude records the system prompt on a conversation's first request and replays
+    -- it on every resume, so an orchestrator linked later is not in it. That case is carried by the
+    -- delivered request itself (`delivery_message.reply_instructions`). It is not a
     -- guarantee, and the bufnr half is the weaker one: closing or reopening the orchestrator
     -- changes it, as does `:VibingSetFileTitle` renaming the orchestrator (which moves the path
     -- too, via `OrchestrationChatScanner`). Each costs one cache miss.
@@ -312,9 +350,26 @@ function M.system_prompt_args(ctx)
     -- An unedited file keeps the block byte-for-byte identical across turns.
     -- Resolved against `opts.cwd` (the chat's `working_dir`, e.g. a worktree) first,
     -- like every other cwd-sensitive part of the request, then the Neovim root.
-    local project_prompt = require("vibing.core.utils.project_system_prompt").read_for_cwd(opts.cwd)
+    local ProjectPrompt = require("vibing.core.utils.project_system_prompt")
+    local project_prompt = ProjectPrompt.read_for_cwd(opts.cwd)
     if project_prompt then
       table.insert(system_prompt_lines, project_prompt)
+    end
+
+    -- The profile's stand-in for what its `setting_sources` left out. Recorded by the CLI with the
+    -- rest of this block on the conversation's first request, so an edit reaches new chats only
+    -- (`core/constants/profiles.lua`). A missing file is said out loud: a worker that silently
+    -- lost the invariants it was meant to carry fails in the work, far from the cause.
+    for _, file in ipairs(profile.context_files or {}) do
+      local content = ProjectPrompt.read_relative_for_cwd(file, opts.cwd)
+      if content then
+        table.insert(system_prompt_lines, content)
+      else
+        require("vibing.core.utils.notify").warn(
+          string.format("Profile context file %s is missing or empty", file),
+          "Chat"
+        )
+      end
     end
   end
 

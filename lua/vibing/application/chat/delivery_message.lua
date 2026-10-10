@@ -261,6 +261,53 @@ function M.build(queue, cache)
   return table.concat(sections, "\n\n")
 end
 
+---依頼（`Request`）の本文の末尾に付ける「どこへ、どう報告するか」
+---
+---報告義務はシステムプロンプトの orchestrator 行（`cli_command_builder.lua`）でも伝えているが、
+---claude はシステムプロンプトを**会話の最初のリクエストで記録し、以降の再開でもそれを使い回す**
+---（`--system-prompt-snapshot`、2.1.295 で実測）。最初のメッセージより後に `orchestrated_by` に
+---加わった送り手 — あとから別のチャットに依頼されたチャット — はその行に永久に載らず、
+---ワーカーは報告先を知らないまま止まっていた。ターンごとの本文は記録の対象外なので、依頼の
+---本文そのものに書けば必ず届く。
+---
+---最初から orchestrator 行に載っている送り手にとっては重複になる（1依頼あたり約70トークン）。
+---それでも常に付けるのは、どの送り手が記録済みの行に載っているかをこちらから知る手段が
+---無いため。宛先番号は「いまの解決結果」で、プロンプトのキャッシュ前方一致には関わらない
+---@param queue Vibing.Application.MessageQueue.Item[]
+---@param to_bufnr number
+---@param cache table<number, string>
+---@return string? 付ける文。宛先にできる送り手が1つも無ければ nil
+function M.reply_instructions(queue, to_bufnr, cache)
+  local paths, seen = {}, {}
+  for _, item in ipairs(queue) do
+    if item.body and item.bufnr and not is_system_notice(item) then
+      local path = resolve_path(item.bufnr, cache)
+      if path and not seen[path] then
+        seen[path] = true
+        table.insert(paths, string.format('"%s"', path))
+      end
+    end
+  end
+  if #paths == 0 then
+    return nil
+  end
+
+  local target = #paths == 1 and ("file_path " .. paths[1])
+    or ("each of these file_paths in its own call: " .. table.concat(paths, ", "))
+  return table.concat({
+    "Report back through vibing.nvim, not only in this chat: when this is done, the moment you",
+    string.format(
+      "need a decision, or when you cannot proceed, call nvim_chat_send_message with %s,",
+      target
+    ),
+    string.format(
+      "from_bufnr %d and queue_if_busy true — the conclusion first, then only what is left open.",
+      to_bufnr
+    ),
+    "An answer written only in your own chat is never read. The vibing-worker skill has the rest.",
+  }, "\n")
+end
+
 ---1通にまとめて、宛先のチャットに新しいターンとして配達する
 ---
 ---`section_for` → `build` → 送信の順序をここが所有する。呼び出し側に並べさせていたころ、
@@ -293,6 +340,14 @@ function M.deliver(queue, to_bufnr, sender, opts)
     end
   end
   local text = M.build(queue, cache)
+  -- 質問への答えには付けない: その本文はモデルに「人間の答え」としてそのまま渡るので、
+  -- 末尾の指示まで答えの一部として読まれる
+  if section.kind == "Request" and not (opts and opts.answers_blocked_question) then
+    local reply = M.reply_instructions(queue, to_bufnr, cache)
+    if reply then
+      text = text .. "\n\n" .. reply
+    end
+  end
   local result =
     require("vibing.presentation.chat.modules.programmatic_sender").send(to_bufnr, text, sender, section, opts)
   -- `kind` は両方の出口に載せる。圧縮側で落とすと、呼び出し元は積み直したあとの `on_sent` で

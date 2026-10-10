@@ -63,6 +63,12 @@ vim.list_extend(TOOL_NAMES, tools_constants.VIBING_NVIM_MCP_TOOL_PATTERNS)
 ---@return Vibing.CompletionItem[]
 function M.get_enum_values(field)
   local values = ENUMS[field]
+  -- Profiles are the built-ins plus whatever `agent.profiles` names, so they are read per call.
+  if field == "profile" then
+    values = vim.tbl_map(function(profile)
+      return { value = profile.name, description = profile.description }
+    end, require("vibing.core.constants.profiles").catalog(require("vibing.config").get()))
+  end
   if not values then
     return {}
   end

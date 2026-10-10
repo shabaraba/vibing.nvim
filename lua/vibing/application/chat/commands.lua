@@ -252,6 +252,7 @@ function M.get_argument_completions(command_name, agent)
     permission = Modes.PERMISSION_MODES,
     model = models,
     effort = Modes.EFFORT_VALUES,
+    profile = require("vibing.core.constants.profiles").names(require("vibing.config").get()),
   }
   return completions[command_name]
 end
