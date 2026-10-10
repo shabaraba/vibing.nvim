@@ -238,9 +238,10 @@ ordering is the invariant: the supplement runs inside `_finalize_snapshot_diff`,
 `_handle_response` reaches `RequestDiff.clear`.
 
 What the supplement cannot save is a gitignored file with no backup — changed by Bash alone it
-produces no tool event and no list entry at all, and codex's `apply_patch` carries no path in
-`tool_input` so nothing was captured (see `architecture.md` → codex vocabulary). A file that is
-listed but could not get a section from either source is warned about (`vim.notify`) rather than
+produces no tool event and no list entry at all. Codex's `apply_patch` envelope is decoded into
+all diff targets, including both sides of a move, and resolved against the chat cwd before
+backup. These diff targets are separate from the single `file_path` used by permission rules.
+A file that is listed but could not get a section from either source is warned about (`vim.notify`) rather than
 silently rendered as list-only, the same no-silent-loss rule as the empty-turn warning above.
 Deliberate list-only cases — binary content, a path outside the base directory, an unchanged
 file — stay silent, since `request_diff.generate` treats them the same way.
