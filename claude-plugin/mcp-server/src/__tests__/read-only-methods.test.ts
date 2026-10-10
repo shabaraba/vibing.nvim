@@ -22,13 +22,19 @@ function handlersDir(): string {
 
 /**
  * Every method a handler asks for by name, taken from the source rather than a hand-kept list —
- * a new one has to be classified here before this file passes again.
+ * a new one has to be classified here before this file passes again. `index.ts` is scanned too:
+ * it asks for `list_profiles` itself, to fill `nvim_chat_create`'s schema on `tools/list`.
  */
 function calledMethods(): string[] {
   const found = new Set<string>();
   const dir = handlersDir();
-  for (const file of fs.readdirSync(dir).filter((f) => f.endsWith('.ts'))) {
-    const source = fs.readFileSync(path.join(dir, file), 'utf8');
+  const files = fs
+    .readdirSync(dir)
+    .filter((f) => f.endsWith('.ts'))
+    .map((f) => path.join(dir, f));
+  files.push(path.join(path.dirname(dir), 'index.ts'));
+  for (const file of files) {
+    const source = fs.readFileSync(file, 'utf8');
     for (const match of source.matchAll(/callNeovim\(\s*'([a-z_]+)'/g)) {
       found.add(match[1]);
     }
