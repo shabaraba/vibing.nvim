@@ -5,10 +5,10 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprot
 import { callNeovim, closeSocket, RPC_PORT_ENV } from './rpc.js';
 import { allTools } from './tools/index.js';
 import { withProfiles } from './tools/profiles.js';
+import { handlers } from './handlers/index.js';
 
 // A local socket round trip; long enough for a busy editor, short enough not to stall startup.
 const PROFILE_LOOKUP_TIMEOUT_MS = 2000;
-import { handlers } from './handlers/index.js';
 
 // MCP Server setup
 const server = new Server(

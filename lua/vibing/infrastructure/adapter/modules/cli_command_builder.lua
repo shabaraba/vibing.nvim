@@ -25,6 +25,18 @@ local RequestBuilder = require("vibing.infrastructure.adapter.modules.request_bu
 
 M.BINARY = { name = "claude", missing = "Claude CLI not found in PATH. Please install Claude Code CLI." }
 
+--- `Profiles.resolve` for this request, cached on `ctx` -- several `extra` parts need the same
+--- profile and `ctx` is already the one object shared between them for this build.
+--- @param ctx Vibing.RequestContext
+--- @return table
+local function resolved_profile(ctx)
+  if not ctx._profile then
+    local _, profile = Profiles.resolve(ctx.opts.profile, ctx.config)
+    ctx._profile = profile
+  end
+  return ctx._profile
+end
+
 --- Resolve the `--setting-sources` list, falling back to the default when config
 --- is missing, malformed, or contains entries outside `user`/`project`/`local`.
 ---
@@ -153,7 +165,7 @@ function M.setting_source_args(ctx)
   end
   -- A profile's own list replaces the configured one outright — an empty list included, which is
   -- "no CLAUDE.md, no project settings" and a deliberate choice, not a malformed value.
-  local _, profile = Profiles.resolve(ctx.opts.profile, ctx.config)
+  local profile = resolved_profile(ctx)
   if profile.setting_sources then
     return { "--setting-sources", table.concat(profile.setting_sources, ",") }
   end
@@ -166,7 +178,7 @@ end
 --- @param ctx Vibing.RequestContext
 --- @return string[]
 function M.profile_tool_args(ctx)
-  local _, profile = Profiles.resolve(ctx.opts.profile, ctx.config)
+  local profile = resolved_profile(ctx)
   -- A subagent-bound chat exists to call Agent/SendMessage (see `permission_args`); a tool list
   -- written for implementation work would leave it unable to do the one thing it is for.
   if not profile.tools or ctx.opts._subagent_id then
@@ -189,7 +201,7 @@ function M.system_prompt_args(ctx)
   -- Lightweight calls have no tools/MCP servers at all, so tool-usage instructions below would
   -- just be wasted prompt tokens describing capabilities that don't exist.
   local system_prompt_lines = {}
-  local _, profile = Profiles.resolve(opts.profile, config)
+  local profile = resolved_profile(ctx)
 
   if not opts.lightweight then
     table.insert(
