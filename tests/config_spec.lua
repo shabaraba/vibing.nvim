@@ -72,6 +72,20 @@ describe("vibing.config", function()
       assert.equals("code", result.agent.default_mode)
     end)
 
+    -- `agent.profiles` is a list; setup's deep merge must hand it over whole, in order, rather
+    -- than merging it index by index into anything.
+    it("keeps agent.profiles as the list the user gave", function()
+      config.setup({
+        agent = { profiles = { { name = "implementer", model = "sonnet" }, { name = "worker", model = "haiku" } } },
+      })
+
+      local profiles = config.get().agent.profiles
+      assert.equals(2, #profiles)
+      assert.equals("implementer", profiles[1].name)
+      assert.equals("worker", profiles[2].name)
+      assert.equals("haiku", profiles[2].model)
+    end)
+
     it("should warn about invalid tools in permissions", function()
       local user_config = {
         permissions = {

@@ -129,7 +129,8 @@
 ---  （デフォルト: `{}` = 通常の新規チャットと同じ）。呼び出しの同名引数が優先する
 
 ---@class Vibing.Profile
----どれも省略可。`tools` / `setting_sources` / `context_files` はClaude backendのみ
+---`name`以外はどれも省略可。`tools` / `setting_sources` / `context_files` はClaude backendのみ
+---@field name string profileの名前（英数字・`_`・`-`）。frontmatter `profile:` / `/profile` / `nvim_chat_create` の `profile` はこの名前で選ぶ
 ---@field description string? 一行の説明。`nvim_chat_list` の `profiles` でオーケストレーターに見せる
 ---@field agent string? このprofileで`nvim_chat_create`したチャットのbackend
 ---@field model string? 同じくモデル
@@ -157,11 +158,13 @@
 ---@field utility_effort ("default"|"low"|"medium"|"high"|"xhigh"|"max")? タイトル生成・要約等の軽量呼び出しの推論量（デフォルト: "low"）
 ---@field setting_sources string[]? Claude CLIの`--setting-sources`に渡す設定読み込み元リスト（例: {"project", "local"}、デフォルト: {"user", "project", "local"}）。MCPサーバーの読み込みには影響しない（`agent.mcp`参照）
 ---@field mcp Vibing.AgentMcpConfig? 通常のチャットターンにどのMCPサーバーを載せるかの設定
----@field profiles table<string, Vibing.Profile>? チャットの用途ごとに毎リクエスト読み込むものを決める
----  名前付きの定義（frontmatter `profile:` / `nvim_chat_create` の `profile`）。組み込みの
----  `default` と `worker` に加えて任意の名前を定義でき、同名なら組み込みを上書きする
----  （デフォルト: `{}`）。各フィールドの意味と「途中で切り替えたとき何が効くか」は
----  `core/constants/profiles.lua` のモジュールコメント
+---@field profiles Vibing.Profile[]? チャットの用途ごとに毎リクエスト読み込むものを決める
+---  定義のリスト。各要素は`name`で名前を持つ（frontmatter `profile:` / `nvim_chat_create` の
+---  `profile`で選ぶ）。組み込みの`default`と`worker`に加えて任意の名前を定義でき、組み込みと
+---  同名の要素はその組み込みをフィールド単位で上書きする。同名の要素が複数あれば最後のものが
+---  勝つ（警告あり）。`name`のない要素・テーブルでない要素は警告して無視する（デフォルト: `{}`）。
+---  各フィールドの意味と「途中で切り替えたとき何が効くか」は`core/constants/profiles.lua`の
+---  モジュールコメント
 ---@field git_instructions boolean? trueでClaude CLI組み込みのgitステータスブロック（ブランチ名・
 ---  直近コミット・`git status --short`）とcommit/PRワークフロー指示をsystem promptに載せる
 ---  （デフォルト: false）。どちらの値でも`CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS`を明示的に書く
@@ -371,13 +374,14 @@ M.defaults = {
     setting_sources = { "user", "project", "local" },
     -- 用途ごとの読み込み内容。組み込みは default（全部）と worker（人間がエディタを見ている
     -- 前提の指示だけ外す）。例: 実装担当を6ツール・プロジェクト設定なしで走らせる
-    --   implementer = {
+    --   {
+    --     name = "implementer",
     --     description = "Implements a fully specified change",
     --     model = "sonnet",
     --     tools = { "Bash", "Read", "Edit", "Write", "Glob", "Grep" },
     --     setting_sources = { "user", "local" },
     --     context_files = { ".vibing/implementer.md" },
-    --   }
+    --   },
     profiles = {},
     mcp = {
       -- 既定はtrue（現状維持）。`--setting-sources user,project,local` が `~/.claude.json` の

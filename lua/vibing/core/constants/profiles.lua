@@ -8,7 +8,15 @@
 --- on a different model, ...). Measured on claude 2.1.295 in this repository, a chat's floor is
 --- ~67k tokens and a narrowed one ~11k: `handbook/architecture/orchestration.md`.
 ---
---- Fields of a profile, every one optional:
+--- `agent.profiles` is a list, one table per profile, each naming itself with `name`:
+---   profiles = { { name = "implementer", model = "sonnet", tools = { ... } }, ... }
+--- An entry whose `name` is a built-in (`default`, `worker`) extends that built-in field by field
+--- instead of adding a profile. An entry that is not a table, or has no usable `name` (a non-empty
+--- string of letters, digits, `_` and `-`), is ignored with a warning; when two entries share a
+--- name the later one wins, also with a warning. A keyed table (`profiles = { worker = {...} }`)
+--- is not read at all: each such key is ignored with a warning naming the list form.
+---
+--- Fields of a profile besides `name`, every one optional:
 ---   description      one line, shown to an orchestrator by `nvim_chat_list`
 ---   agent/model/effort  frontmatter for a chat `nvim_chat_create` makes on this profile
 ---   instructions     "full" | "worker" — vibing.nvim's own instruction block
@@ -43,14 +51,22 @@ M.ALWAYS_TOOLS = { "ToolSearch" }
 
 local VALID_SETTING_SOURCES = { user = true, project = true, ["local"] = true }
 
---- @type table<string, Vibing.Profile>
+--- The built-ins, in the same shape as an `agent.profiles` entry.
+--- @type Vibing.Profile[]
 local BUILTIN = {
-  [M.DEFAULT] = { description = "Ordinary chat: everything loaded", instructions = "full" },
-  [M.WORKER] = {
+  { name = M.DEFAULT, description = "Ordinary chat: everything loaded", instructions = "full" },
+  {
+    name = M.WORKER,
     description = "Driven by another chat: drops instructions only a watching human needs",
     instructions = "worker",
   },
 }
+
+--- @type table<string, Vibing.Profile>
+local BUILTIN_BY_NAME = {}
+for _, entry in ipairs(BUILTIN) do
+  BUILTIN_BY_NAME[entry.name] = entry
+end
 
 --- Each problem is reported once per Neovim session, not once per request.
 local warned = {}
@@ -65,28 +81,80 @@ local function warn_once(key, message)
   require("vibing.core.utils.notify").warn(message, "Chat")
 end
 
---- @param config table|nil
---- @return table<string, table>
-local function configured(config)
-  local profiles = vim.tbl_get(config or {}, "agent", "profiles")
-  return type(profiles) == "table" and profiles or {}
-end
-
 --- @param value any
 --- @return boolean
 local function is_name(value)
   return type(value) == "string" and value:match("^[%w_%-]+$") ~= nil
 end
 
+--- How a warning or an error names one field of the user's profile: the entry is found by its
+--- `name`, not by its position in the list.
+--- @param name string
+--- @param field string
+--- @return string
+function M.field_label(name, field)
+  return string.format('agent.profiles[name="%s"].%s', name, field)
+end
+
+--- The user's `agent.profiles` list, keyed by each entry's `name`. Entries that cannot be used
+--- are skipped with a warning (see the module comment); a later duplicate replaces an earlier one.
+--- @param config table|nil
+--- @return table<string, table>
+local function configured(config)
+  local profiles = vim.tbl_get(config or {}, "agent", "profiles")
+  if type(profiles) ~= "table" then
+    return {}
+  end
+
+  for key in pairs(profiles) do
+    if type(key) ~= "number" then
+      warn_once(
+        "keyed." .. tostring(key),
+        string.format(
+          'agent.profiles must be a list like { { name = "%s", ... } }; ignoring key "%s"',
+          tostring(key),
+          tostring(key)
+        )
+      )
+    end
+  end
+
+  local by_name = {}
+  for index = 1, table.maxn(profiles) do
+    local entry = profiles[index]
+    if type(entry) ~= "table" then
+      warn_once("entry." .. index, string.format("agent.profiles[%d] is not a table; ignoring it", index))
+    elseif not is_name(entry.name) then
+      warn_once(
+        "name." .. index,
+        string.format(
+          "agent.profiles[%d].name must be a non-empty string of letters, digits, _ or -; ignoring the entry",
+          index
+        )
+      )
+    else
+      if by_name[entry.name] then
+        warn_once(
+          "duplicate." .. entry.name,
+          string.format('agent.profiles has more than one entry named "%s"; using the last one', entry.name)
+        )
+      end
+      by_name[entry.name] = entry
+    end
+  end
+  return by_name
+end
+
 --- Every profile name a chat may use: the built-ins plus `agent.profiles`, sorted.
 --- @param config table|nil
 --- @return string[]
 function M.names(config)
-  local set = { [M.DEFAULT] = true, [M.WORKER] = true }
+  local set = {}
+  for name in pairs(BUILTIN_BY_NAME) do
+    set[name] = true
+  end
   for name in pairs(configured(config)) do
-    if is_name(name) then
-      set[name] = true
-    end
+    set[name] = true
   end
   local names = vim.tbl_keys(set)
   table.sort(names)
@@ -122,10 +190,10 @@ end
 --- @param config table|nil
 --- @return Vibing.Profile
 local function definition(name, config)
-  local raw = vim.tbl_extend("force", {}, BUILTIN[name] or {}, configured(config)[name] or {})
+  local raw = vim.tbl_extend("force", {}, BUILTIN_BY_NAME[name] or {}, configured(config)[name] or {})
   local def = {}
   local function bad(field)
-    warn_once(name .. "." .. field, string.format("agent.profiles.%s.%s is invalid; ignoring it", name, field))
+    warn_once(name .. "." .. field, M.field_label(name, field) .. " is invalid; ignoring it")
   end
 
   for _, field in ipairs({ "description", "agent", "model", "effort" }) do

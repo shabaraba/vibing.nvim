@@ -102,7 +102,7 @@ function M.resolve_frontmatter(requested, config)
     if key ~= "profile" then
       local candidates = {
         { requested[key], key },
-        { profile_def[key], string.format("agent.profiles.%s.%s", tostring(profile), key) },
+        { profile_def[key], Profiles.field_label(tostring(profile), key) },
         { defaults[key], "agent.orchestration.worker_defaults." .. key },
       }
       for _, candidate in ipairs(candidates) do

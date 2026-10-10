@@ -29,7 +29,7 @@ describe("profiles", function()
   end)
 
   it("adds every configured name to the built-ins", function()
-    local cfg = config({ implementer = { model = "sonnet" } })
+    local cfg = config({ { name = "implementer", model = "sonnet" } })
 
     assert.same({ "default", "implementer", "worker" }, Profiles.names(cfg))
     assert.is_true(Profiles.is_valid("implementer", cfg))
@@ -57,15 +57,15 @@ describe("profiles", function()
   -- Without ToolSearch every MCP schema is loaded into the prompt instead of staying deferred
   -- (+14k measured), which would quietly undo most of what narrowing the tools saves.
   it("always adds ToolSearch to a tool list, once", function()
-    local _, def = Profiles.resolve("a", config({ a = { tools = { "Read", "Edit" } } }))
+    local _, def = Profiles.resolve("a", config({ { name = "a", tools = { "Read", "Edit" } } }))
     assert.same({ "Read", "Edit", "ToolSearch" }, def.tools)
 
-    local _, already = Profiles.resolve("b", config({ b = { tools = { "Read", "ToolSearch" } } }))
+    local _, already = Profiles.resolve("b", config({ { name = "b", tools = { "Read", "ToolSearch" } } }))
     assert.same({ "Read", "ToolSearch" }, already.tools)
   end)
 
   it("accepts an empty setting_sources list as a deliberate choice", function()
-    local _, def = Profiles.resolve("bare", config({ bare = { setting_sources = {} } }))
+    local _, def = Profiles.resolve("bare", config({ { name = "bare", setting_sources = {} } }))
 
     assert.same({}, def.setting_sources)
     assert.equals(0, #warnings)
@@ -81,7 +81,7 @@ describe("profiles", function()
     { field = "model", value = "" },
   }) do
     it("drops an invalid " .. case.field .. " with a warning", function()
-      local _, def = Profiles.resolve("p", config({ p = { [case.field] = case.value } }))
+      local _, def = Profiles.resolve("p", config({ { name = "p", [case.field] = case.value } }))
 
       if case.field == "instructions" then
         assert.equals("full", def.instructions)
@@ -89,19 +89,19 @@ describe("profiles", function()
         assert.is_nil(def[case.field])
       end
       assert.equals(1, #warnings)
-      assert.is_truthy(warnings[1]:find("agent.profiles.p." .. case.field, 1, true))
+      assert.is_truthy(warnings[1]:find('agent.profiles[name="p"].' .. case.field, 1, true))
     end)
   end
 
   it("lets a configured worker extend the built-in one", function()
-    local _, def = Profiles.resolve("worker", config({ worker = { model = "haiku" } }))
+    local _, def = Profiles.resolve("worker", config({ { name = "worker", model = "haiku" } }))
 
     assert.equals("worker", def.instructions)
     assert.equals("haiku", def.model)
   end)
 
   it("lists every profile with what a chat created on it runs on", function()
-    local catalog = Profiles.catalog(config({ implementer = { description = "Implements", model = "sonnet" } }))
+    local catalog = Profiles.catalog(config({ { name = "implementer", description = "Implements", model = "sonnet" } }))
 
     local by_name = {}
     for _, entry in ipairs(catalog) do
@@ -111,5 +111,60 @@ describe("profiles", function()
     assert.equals("Implements", by_name.implementer.description)
     assert.is_not_nil(by_name.default)
     assert.is_not_nil(by_name.worker)
+  end)
+
+  it("takes each entry's name from its name field, whatever its position", function()
+    local cfg = config({ { name = "zeta", model = "haiku" }, { name = "alpha", model = "sonnet" } })
+
+    assert.same({ "alpha", "default", "worker", "zeta" }, Profiles.names(cfg))
+    local name, def = Profiles.resolve("alpha", cfg)
+    assert.equals("alpha", name)
+    assert.equals("sonnet", def.model)
+    assert.equals(0, #warnings)
+  end)
+
+  it("does not treat the name field as a profile field", function()
+    local _, def = Profiles.resolve("a", config({ { name = "a", model = "haiku" } }))
+
+    assert.is_nil(def.name)
+  end)
+
+  it("ignores an entry without a usable name, with a warning", function()
+    local cfg = config({ { model = "haiku" }, { name = "", model = "haiku" }, { name = "has space" }, { name = 3 } })
+
+    assert.same({ "default", "worker" }, Profiles.names(cfg))
+    assert.equals(4, #warnings)
+    assert.is_truthy(warnings[1]:find("agent.profiles[1].name", 1, true))
+    assert.is_truthy(warnings[4]:find("agent.profiles[4].name", 1, true))
+  end)
+
+  it("ignores an entry that is not a table, with a warning", function()
+    local cfg = config({ "implementer", { name = "ok" } })
+
+    assert.same({ "default", "ok", "worker" }, Profiles.names(cfg))
+    assert.equals(1, #warnings)
+    assert.is_truthy(warnings[1]:find("agent.profiles[1] is not a table", 1, true))
+  end)
+
+  it("lets the last of two entries with the same name win, and warns once", function()
+    local cfg = config({ { name = "dup", model = "haiku" }, { name = "dup", model = "sonnet" } })
+
+    local _, def = Profiles.resolve("dup", cfg)
+    Profiles.resolve("dup", cfg)
+
+    assert.equals("sonnet", def.model)
+    assert.same({ "default", "dup", "worker" }, Profiles.names(cfg))
+    assert.equals(1, #warnings)
+    assert.is_truthy(warnings[1]:find('more than one entry named "dup"', 1, true))
+  end)
+
+  -- The keyed form an earlier draft of this feature read. Ignoring it loudly is the safe failure:
+  -- the chat loads the full default rather than a half-read profile.
+  it("ignores a keyed table, naming the list form", function()
+    local cfg = config({ implementer = { model = "sonnet" } })
+
+    assert.same({ "default", "worker" }, Profiles.names(cfg))
+    assert.equals(1, #warnings)
+    assert.is_truthy(warnings[1]:find('{ { name = "implementer"', 1, true))
   end)
 end)

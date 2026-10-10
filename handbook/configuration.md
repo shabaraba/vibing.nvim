@@ -252,14 +252,19 @@ agent = {
                             -- Note: does not affect MCP server loading — that is
                             -- agent.mcp.user_servers, right below.
 
-  profiles = {},            -- What a chat loads on every request, per kind of chat. A chat
-                            -- picks one with `profile:` frontmatter, /profile, or
+  profiles = {},            -- What a chat loads on every request, per kind of chat: a list,
+                            -- one table per profile, each named by its `name` field. A chat
+                            -- picks one by that name with `profile:` frontmatter, /profile, or
                             -- nvim_chat_create's `profile`. Built in: "default" (everything)
                             -- and "worker" (drops the instructions that need someone watching
-                            -- the editor). Any name added here is a new kind; reusing a
-                            -- built-in name extends it. Every field is optional:
+                            -- the editor). Any other name is a new kind; an entry named after
+                            -- a built-in extends it field by field. Entries that are not
+                            -- tables or lack a valid name (letters, digits, _ and -) are
+                            -- ignored with a warning; for a duplicate name the last entry
+                            -- wins, also with a warning. Every field but `name` is optional:
                             --
-                            --   implementer = {
+                            --   {
+                            --     name = "implementer",
                             --     description = "Implements a fully specified change",
                             --                       -- shown to orchestrators by nvim_chat_list
                             --     agent = "claude", model = "sonnet", effort = "low",
@@ -273,7 +278,7 @@ agent = {
                             --                       -- skills, agents or .claude/settings.json
                             --     context_files = { ".vibing/implementer.md" },
                             --                       -- appended to the system prompt instead
-                            --   }
+                            --   },
                             --
                             -- Measured here: ~67k tokens per request for a default chat, ~11k
                             -- for the profile above. tools / setting_sources / context_files are

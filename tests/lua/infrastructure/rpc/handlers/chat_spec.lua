@@ -246,7 +246,7 @@ describe("rpc handlers: create_chat", function()
         agent_config = require("vibing").get_config().agent
         saved_profiles = agent_config.profiles
         agent_config.profiles = {
-          implementer = { model = "sonnet", effort = "low", agent = "claude" },
+          { name = "implementer", model = "sonnet", effort = "low", agent = "claude" },
         }
       end)
 
@@ -289,12 +289,12 @@ describe("rpc handlers: create_chat", function()
       end)
 
       it("names the profile when its own model value is unusable", function()
-        agent_config.profiles = { broken = { effort = "extreme" } }
+        agent_config.profiles = { { name = "broken", effort = "extreme" } }
 
         local ok, err = pcall(handler.create_chat, { profile = "broken" })
 
         assert.is_false(ok)
-        assert.is_truthy(tostring(err):find("agent.profiles.broken.effort", 1, true))
+        assert.is_truthy(tostring(err):find('agent.profiles[name="broken"].effort', 1, true))
       end)
 
       -- What the MCP server reads to put the names into nvim_chat_create's own schema, so an

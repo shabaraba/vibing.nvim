@@ -843,11 +843,13 @@ oneshot` meanwhile. Title generation and |:VibingSummarize| are always
 instructions that only matter while someone watches the editor (opening code
 in a window, annotating review findings) and keeps the rest, including the
 report protocol and `.vibing/system-prompt.md`. Any other name is one you
-define in `agent.profiles`:
+define in `agent.profiles`, a list of tables that each name themselves with
+`name`:
 >lua
     agent = {
       profiles = {
-        implementer = {
+        {
+          name = "implementer",
           description = "Implements a fully specified change",
           model = "sonnet",
           tools = { "Bash", "Read", "Edit", "Write", "Glob", "Grep" },
@@ -868,6 +870,11 @@ profile. Measured in this repository, a chat's fixed cost per request went
 from about 67k tokens to 11k with a profile like the one above. `tools`,
 `setting_sources` and `context_files` are Claude-only; other backends take
 `agent`, `model` and `effort` from a profile.
+
+An entry whose `name` is `default` or `worker` extends that built-in field by
+field. An entry that is not a table or has no valid `name` (letters, digits,
+`_` and `-`) is ignored with a warning; if two entries share a name, the last
+one wins and a warning says so.
 
 `nvim_chat_create`'s `profile` argument or
 `agent.orchestration.worker_defaults` sets it at creation. An orchestrator

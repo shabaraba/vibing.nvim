@@ -259,11 +259,12 @@ describe("cli_command_builder", function()
       local implementer = {
         agent = {
           profiles = {
-            implementer = {
+            {
+              name = "implementer",
               tools = { "Bash", "Read", "Edit" },
               setting_sources = { "user", "local" },
             },
-            bare = { setting_sources = {} },
+            { name = "bare", setting_sources = {} },
           },
         },
       }
@@ -334,7 +335,7 @@ describe("cli_command_builder", function()
       end)
 
       local function config(files)
-        return { agent = { profiles = { implementer = { context_files = files } } } }
+        return { agent = { profiles = { { name = "implementer", context_files = files } } } }
       end
 
       it("appends each file to the system prompt", function()
