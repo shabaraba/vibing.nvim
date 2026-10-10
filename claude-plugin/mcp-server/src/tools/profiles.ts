@@ -11,8 +11,17 @@ export interface ProfileEntry {
   effort?: string;
 }
 
-/** The profiles every Neovim has; a list of only these has nothing to tell the model. */
+/**
+ * The profiles every Neovim has. The static `profile` description already says what each is for,
+ * so one of these is only worth listing when the user's config gave it something of its own to
+ * run on (`{ name = "focused", model = "haiku" }`) — otherwise the model would assume the
+ * user's default, usually as expensive as the orchestrator itself.
+ */
 const BUILTIN_PROFILES = new Set(['default', 'focused', 'reviewer']);
+
+function worthListing(p: ProfileEntry): boolean {
+  return !BUILTIN_PROFILES.has(p.name) || Boolean(p.agent || p.model || p.effort);
+}
 
 /**
  * Write the user's configured profiles into `nvim_chat_create`'s `profile` argument.
@@ -22,12 +31,12 @@ const BUILTIN_PROFILES = new Set(['default', 'focused', 'reviewer']);
  * nothing guarantees it does. Putting them in the schema means a model that loads the tool sees
  * them, with what each is for and the model it runs on.
  *
- * Returns the tools untouched when only the built-ins exist. Tool definitions sit at the front of
+ * Returns the tools untouched when only the built-ins exist, as they are. Tool definitions sit at the front of
  * the prompt cache, so the common case must produce exactly the bytes it always did, and the
  * output for a given config must be the same on every call (the Lua side sorts the list).
  */
 export function withProfiles(tools: Tool[], profiles: ProfileEntry[]): Tool[] {
-  const configured = profiles.filter((p) => !BUILTIN_PROFILES.has(p.name));
+  const configured = profiles.filter(worthListing);
   if (configured.length === 0) {
     return tools;
   }

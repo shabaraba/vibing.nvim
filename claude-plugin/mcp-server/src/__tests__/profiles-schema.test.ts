@@ -38,6 +38,21 @@ describe('withProfiles', () => {
     expect(schema.description.startsWith(profileSchema(allTools).description)).toBe(true);
   });
 
+  // A built-in the user gave a model to runs on that model, which the static description cannot
+  // say; without listing it an orchestrator would expect the user's default model.
+  it('lists a built-in once the config gives it something to run on', () => {
+    const tools = withProfiles(allTools, [
+      BUILTINS[0],
+      { ...BUILTINS[1], model: 'haiku' },
+      BUILTINS[2],
+    ]);
+
+    const schema = profileSchema(tools);
+    expect(schema.enum).toEqual(['default', 'focused', 'reviewer']);
+    expect(schema.description).toContain('- focused: Six built-in tools (haiku)');
+    expect(schema.description).not.toContain('- reviewer:');
+  });
+
   it('touches no other tool and does not mutate the static list', () => {
     const before = JSON.stringify(allTools);
     const tools = withProfiles(allTools, [...BUILTINS, { name: 'researcher' }]);
