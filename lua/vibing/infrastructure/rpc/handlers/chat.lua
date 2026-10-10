@@ -286,7 +286,7 @@ function M.list_chats(_)
 
   project_tasks(buffers, bufnrs, by_absolute_path)
 
-  -- The worker kinds the user configured (`agent.profiles`). Here because this is the call an
+  -- The profiles a new chat can run on: the built-ins plus `agent.profiles`. Here because this is the call an
   -- orchestrator makes before it dispatches, and the names cannot live in a static tool
   -- description: they are whatever this user's config says.
   local profiles = require("vibing.core.constants.profiles").catalog(require("vibing").get_config())

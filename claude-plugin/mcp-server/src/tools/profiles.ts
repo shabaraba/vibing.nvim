@@ -12,7 +12,7 @@ export interface ProfileEntry {
 }
 
 /** The profiles every Neovim has; a list of only these has nothing to tell the model. */
-const BUILTIN_PROFILES = new Set(['default', 'worker']);
+const BUILTIN_PROFILES = new Set(['default', 'focused', 'reviewer']);
 
 /**
  * Write the user's configured profiles into `nvim_chat_create`'s `profile` argument.

@@ -227,15 +227,33 @@ describe("cli_command_builder", function()
       return prompt_for_config(opts, {})
     end
 
-    it("drops the watched-editor instructions on a worker chat", function()
-      local worker = prompt_for({ profile = "worker" })
-      assert.is_nil(worker:find("nvim_highlight_range", 1, true))
-      assert.is_nil(worker:find("nvim_annotate", 1, true))
+    -- A profile narrows tools and setting sources, never the instruction block: it is under 1k
+    -- tokens, and the two editor-watching lines once dropped for orchestrated chats saved 320.
+    it("sends the same instruction block on every built-in profile", function()
+      local none = prompt_for({})
+      assert.equals(none, prompt_for({ profile = "focused" }))
+      assert.equals(none, prompt_for({ profile = "reviewer" }))
+      assert.is_truthy(none:find("nvim_highlight_range", 1, true))
+      assert.is_truthy(none:find("nvim_annotate", 1, true))
     end)
 
-    it("keeps everything that changes what a worker produces", function()
+    it("passes each narrowed built-in's tools, keeping ToolSearch and the configured sources", function()
+      local function value_of(cmd, flag)
+        local idx = find_flag(cmd, flag)
+        return idx and cmd[idx + 1] or nil
+      end
+      local focused = cli_command_builder.build("hello", { profile = "focused" }, nil, {}, nil)
+      assert.equals("Bash,Read,Edit,Write,Glob,Grep,ToolSearch", value_of(focused, "--tools"))
+      assert.equals("user,project,local", value_of(focused, "--setting-sources"))
+
+      local reviewer = cli_command_builder.build("hello", { profile = "reviewer" }, nil, {}, nil)
+      assert.equals("Read,Glob,Grep,Bash,ToolSearch", value_of(reviewer, "--tools"))
+      assert.equals("user,project,local", value_of(reviewer, "--setting-sources"))
+    end)
+
+    it("keeps everything that changes what an orchestrated chat produces", function()
       local worker = prompt_for({
-        profile = "worker",
+        profile = "focused",
         chat_bufnr = 7,
         orchestrators = { { path = ".vibing/chat/orchestrator.md", bufnr = 3 } },
       })

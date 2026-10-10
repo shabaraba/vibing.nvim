@@ -188,16 +188,16 @@ describe("rpc handlers: create_chat", function()
     end)
 
     it("writes them into the NEW chat's own frontmatter and returns what was written", function()
-      local result = handler.create_chat({ agent = "codex", model = "gpt-5.5", effort = "low", profile = "worker" })
+      local result = handler.create_chat({ agent = "codex", model = "gpt-5.5", effort = "low", profile = "reviewer" })
 
       local fm = frontmatter_on_disk(result.file_path)
       assert.equals("codex", fm.agent)
       assert.equals("gpt-5.5", fm.model)
       assert.equals("low", fm.effort)
-      assert.equals("worker", fm.profile)
+      assert.equals("reviewer", fm.profile)
       assert.equals("codex", result.agent)
       assert.equals("gpt-5.5", result.model)
-      assert.equals("worker", result.profile)
+      assert.equals("reviewer", result.profile)
     end)
 
     it("leaves an ordinary chat's frontmatter untouched when none is given", function()
@@ -210,13 +210,13 @@ describe("rpc handlers: create_chat", function()
     end)
 
     it("fills omitted ones from agent.orchestration.worker_defaults, and an argument wins", function()
-      orchestration.worker_defaults = { model = "haiku", profile = "worker" }
+      orchestration.worker_defaults = { model = "haiku", profile = "focused" }
 
       local result = handler.create_chat({ model = "sonnet" })
 
       local fm = frontmatter_on_disk(result.file_path)
       assert.equals("sonnet", fm.model)
-      assert.equals("worker", fm.profile)
+      assert.equals("focused", fm.profile)
     end)
 
     -- A worker that silently fell back to the default model would run on the orchestrator's own
@@ -304,7 +304,7 @@ describe("rpc handlers: create_chat", function()
           return profile.name
         end, handler.list_profiles({}).profiles)
 
-        assert.same({ "default", "implementer", "worker" }, names)
+        assert.same({ "default", "focused", "implementer", "reviewer" }, names)
         assert.is_not_nil(require("vibing.infrastructure.rpc.handlers").list_profiles)
       end)
 
@@ -317,8 +317,16 @@ describe("rpc handlers: create_chat", function()
         end
         assert.equals("sonnet", by_name.implementer.model)
         assert.is_not_nil(by_name.default)
-        assert.is_not_nil(by_name.worker)
+        assert.is_not_nil(by_name.focused)
+        assert.is_not_nil(by_name.reviewer)
       end)
+    end)
+
+    it("refuses the removed worker profile", function()
+      local ok, err = pcall(handler.create_chat, { profile = "worker" })
+
+      assert.is_false(ok)
+      assert.is_truthy(tostring(err):find("Unknown profile 'worker'", 1, true))
     end)
 
     it("names worker_defaults in the error when the bad value came from the config", function()

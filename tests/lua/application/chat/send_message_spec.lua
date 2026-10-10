@@ -52,12 +52,12 @@ describe("send_message", function()
       vim.api.nvim_buf_delete(buf, { force = true })
     end)
 
-    -- `/profile default` is how a worker chat is taken back into ordinary use, and it only works
+    -- `/profile default` is how a narrowed chat is taken back into ordinary use, and it only works
     -- if the profile is read from the frontmatter on every send rather than fixed at creation.
     it("passes the frontmatter profile through on every send, so switching it takes effect", function()
       local buf = vim.api.nvim_create_buf(false, true)
       vim.api.nvim_buf_set_name(buf, vim.fn.tempname() .. ".md")
-      local frontmatter = { profile = "worker" }
+      local frontmatter = { profile = "focused" }
       local captured = {}
 
       local callbacks = {
@@ -97,7 +97,7 @@ describe("send_message", function()
       frontmatter.profile = "default"
       SendMessage.execute(adapter, callbacks, "second", {})
 
-      assert.same({ "worker", "default" }, captured)
+      assert.same({ "focused", "default" }, captured)
       vim.api.nvim_buf_delete(buf, { force = true })
     end)
 

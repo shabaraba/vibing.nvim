@@ -127,7 +127,7 @@ describe('chat tools (worktree redesign)', () => {
       agent: 'codex',
       model: 'gpt-5.5',
       effort: 'low',
-      profile: 'worker',
+      profile: 'focused',
     });
 
     expect(rpc.callNeovim).toHaveBeenCalledWith(
@@ -136,7 +136,7 @@ describe('chat tools (worktree redesign)', () => {
         agent: 'codex',
         model: 'gpt-5.5',
         effort: 'low',
-        profile: 'worker',
+        profile: 'focused',
       }),
       9878
     );

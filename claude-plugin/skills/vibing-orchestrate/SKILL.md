@@ -116,11 +116,15 @@ nvim_chat_create({
 - `position: "back"` (the default) creates the buffer without opening a window, so the user's
   layout is untouched. Don't use a split position for workers unless the user asked to watch them.
 - `working_dir` is relative to the git root and must already exist — create the worktree first.
-- **Pick the worker's profile and model.** The kinds of worker the user configured are listed in
-  `nvim_chat_create`'s own `profile` argument (and in `nvim_chat_list`'s `profiles`), each with
-  what it is for and the model it runs on. A configured kind
-  usually loads a fraction of a normal chat on every request (no project rules, a few tools), so
-  prefer the one that fits the task; with none configured, pass `profile: "worker"`. Without a
+- **Pick the worker's profile and model.** The profiles are listed in `nvim_chat_create`'s own
+  `profile` argument (and in `nvim_chat_list`'s `profiles`), each with what it is for and the model
+  it runs on. A narrowed one loads a fraction of a normal chat on every request, so prefer the one
+  that fits the task. Built in: `focused` (Bash/Read/Edit/Write/Glob/Grep, project rules kept) for
+  implementation, `reviewer` (Read/Glob/Grep/Bash) for reviewing a change, and `default` for
+  anything else. Neither narrowed built-in has `Skill` or `Agent`: a worker that will need a skill
+  (this one included, to orchestrate in turn) or subagents needs `default` or a configured
+  profile that lists them. MCP tools, `nvim_chat_create` among them, stay available on every
+  profile. Without a
   `model` (from the profile or yours) a worker runs on the user's default — usually as expensive
   as you. A worker whose brief is complete rarely needs your model: give it `model` (and `agent`
   for another CLI, e.g. `agent: "codex"`), and keep the design decisions in your own chat.

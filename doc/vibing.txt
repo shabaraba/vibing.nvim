@@ -496,8 +496,8 @@ Type these on their own line in a chat buffer and send with `<CR>`:
                         (e.g. sonnet or gpt-5.6-terra)
 /effort <level>         Set Claude/Codex/Grok reasoning effort
                         (default|low|medium|high|xhigh|max)
-/profile <name>         Set the chat profile (default, worker, or one of
-                        agent.profiles)
+/profile <name>         Set the chat profile (default, focused, reviewer,
+                        or one of agent.profiles)
 /help                   List the available slash commands
 /permissions, /perm     Interactive permission builder
 /allow [tool]           Add to the allow list, or show it
@@ -771,7 +771,7 @@ with YAML frontmatter: >
     model: sonnet
     effort: default                           # CLI/model default; or low..max
     process: duplex                           # optional: oneshot | duplex
-    profile: worker                           # optional: see below
+    profile: focused                          # optional: see below
     env:                                   # optional: see below
       - BASH_MAX_OUTPUT_LENGTH=10000
     permission_mode: acceptEdits
@@ -839,12 +839,19 @@ oneshot` meanwhile. Title generation and |:VibingSummarize| are always
 `oneshot`, and so is a subagent chat.
 
 `profile` says what the chat is for, and so what it loads on every request.
-`default` (or no field) loads everything. `worker` leaves out the
-instructions that only matter while someone watches the editor (opening code
-in a window, annotating review findings) and keeps the rest, including the
-report protocol and `.vibing/system-prompt.md`. Any other name is one you
-define in `agent.profiles`, a list of tables that each name themselves with
-`name`:
+Built in:
+
+    default     everything (also what no field means)
+    focused     only Bash, Read, Edit, Write, Glob and Grep of Claude's
+                built-in tools; the project's settings still load
+    reviewer    only Read, Glob, Grep and Bash; the project's settings
+                still load
+
+Neither narrowed built-in has `Skill` or `Agent`, so a chat on one cannot
+load a skill or start a subagent. MCP tools are not affected by any
+profile: such a chat can still report, and still create and drive chats of
+its own. No built-in sets a model. Any other name is one you define in
+`agent.profiles`, a list of tables that each name themselves with `name`:
 >lua
     agent = {
       profiles = {
@@ -852,9 +859,33 @@ define in `agent.profiles`, a list of tables that each name themselves with
           name = "implementer",
           description = "Implements a fully specified change",
           model = "sonnet",
+          effort = "medium",
           tools = { "Bash", "Read", "Edit", "Write", "Glob", "Grep" },
           setting_sources = { "user", "local" },
           context_files = { ".vibing/implementer.md" },
+        },
+        {
+          name = "researcher",
+          description = "Investigates code or the web and reports",
+          model = "haiku",
+          effort = "low",
+          tools = { "Read", "Glob", "Grep", "WebSearch", "WebFetch" },
+          setting_sources = { "user", "local" },
+        },
+        {
+          name = "runner",
+          description = "Runs tests or waits on CI and reports failures",
+          model = "haiku",
+          effort = "low",
+          tools = { "Bash", "Read", "Glob", "Grep" },
+          setting_sources = { "local" },
+        },
+        {
+          name = "orchestrator",
+          description = "Splits work and drives chats of its own",
+          model = "opus",
+          effort = "high",
+          tools = { "Read", "Glob", "Grep", "Bash", "Write", "Skill" },
         },
       },
     }
@@ -864,17 +895,37 @@ MCP tools stay available and deferred). `setting_sources` replaces
 `agent.setting_sources` for the chat: leaving out `project` drops the
 project's CLAUDE.md, rules, skills, agents and `.claude/settings.json`.
 `context_files` are appended to the system prompt instead — the few facts
-such a chat still needs. `instructions` is `full` or `worker`. `agent`,
-`model` and `effort` are what `nvim_chat_create` gives a chat on that
-profile. Measured in this repository, a chat's fixed cost per request went
-from about 67k tokens to 11k with a profile like the one above. `tools`,
-`setting_sources` and `context_files` are Claude-only; other backends take
-`agent`, `model` and `effort` from a profile.
+such a chat still needs. `agent`, `model` and `effort` are what
+`nvim_chat_create` gives a chat on that profile. Any other key is ignored.
+`tools`, `setting_sources` and `context_files` are Claude-only; other
+backends take `agent`, `model` and `effort` from a profile.
 
-An entry whose `name` is `default` or `worker` extends that built-in field by
-field. An entry that is not a table or has no valid `name` (letters, digits,
-`_` and `-`) is ignored with a warning; if two entries share a name, the last
-one wins and a warning says so.
+Fixed cost per request, in this repository on claude 2.1.295 (see
+handbook/architecture/orchestration.md):
+
+    default        ~67k  measured
+    focused        ~37k  measured (same flags as the measured row)
+    reviewer       ~36k  estimated
+    implementer    ~11k  measured (without the editor lines: ~11.6k
+                         estimated with them), plus the context file
+    researcher  ~11-13k  estimated
+    runner      ~10-11k  estimated
+    orchestrator ~45-47k estimated (focused's 37k plus up to ~10k
+                         measured for Skill)
+
+The trade-offs: `implementer` and `researcher` do not load the project's
+rules, so a brief (or `context_files`) has to carry the invariants the task
+touches. Leaving out `project` also drops `.claude/settings.json`, so a chat
+can meet more approval prompts; `runner` keeps `local` for that reason.
+`researcher` cannot run code. `orchestrator` keeps the project's settings
+because writing a correct brief needs the rules, and `Skill` so it can load
+vibing-orchestrate; `Write` is for its assignment table.
+
+An entry whose `name` is `default`, `focused` or `reviewer` extends that
+built-in field by field (e.g. `{ name = "focused", model = "sonnet" }`). An
+entry that is not a table or has no valid `name` (letters, digits, `_` and
+`-`) is ignored with a warning; if two entries share a name, the last one
+wins and a warning says so.
 
 `nvim_chat_create`'s `profile` argument or
 `agent.orchestration.worker_defaults` sets it at creation. An orchestrator
@@ -882,10 +933,10 @@ sees the configured profiles in `nvim_chat_create`'s own `profile` argument
 and in `nvim_chat_list`. |/profile|
 switches it later, with the session and history intact. What follows the
 switch is decided by the CLI: Claude records the system prompt on a chat's
-first message and replays it on every later one, so `instructions` and
-`context_files` stay as the chat started, while `tools` and
-`setting_sources` apply from the next message. That makes `/profile default`
-on a worker give it every tool, the project's rules and skills at once.
+first message and replays it on every later one, so `context_files` stay
+as the chat started, while `tools` and `setting_sources` apply from the next
+message. That makes `/profile default` on a narrowed chat give it every
+tool, the project's rules and skills at once.
 Switching the other way does not shrink what the chat has already loaded.
 
 `nvim_chat_create` also takes `agent`, `model` and `effort` for the new chat,

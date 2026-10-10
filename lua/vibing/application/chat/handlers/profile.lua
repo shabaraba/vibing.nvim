@@ -1,8 +1,8 @@
 local notify = require("vibing.core.utils.notify")
 local Profiles = require("vibing.core.constants.profiles")
 
----`/profile <name>`: what `profile:` frontmatter says, and the way a chat created as a worker is
----taken back into ordinary use (and vice versa). Nothing else moves — the session, the transcript
+---`/profile <name>`: what `profile:` frontmatter says, and the way a chat created on a narrowed
+---profile (`focused`, `reviewer`, ...) is taken back into ordinary use (and vice versa). Nothing else moves — the session, the transcript
 ---and the orchestration links stay — so the conversation carries on where it was.
 ---@param args string[]
 ---@param chat_buffer Vibing.ChatBuffer
@@ -35,12 +35,12 @@ return function(args, chat_buffer)
   end
 
   -- Say what actually follows, because the CLI decides it: tools and setting sources widen from
-  -- the next message, but the instruction block was recorded at the chat's first message
-  -- (`core/constants/profiles.lua`).
+  -- the next message, but the system prompt (a profile's `context_files` with it) was recorded at
+  -- the chat's first message (`core/constants/profiles.lua`).
   notify.info(
     string.format(
       "Profile set to: %s (tools and project settings apply from the next message; "
-        .. "the instruction block stays as the chat started)",
+        .. "context files stay as the chat started)",
       profile
     )
   )

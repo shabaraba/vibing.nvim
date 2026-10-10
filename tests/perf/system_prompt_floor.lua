@@ -95,7 +95,8 @@ local base = vibing_argv()
 --- @type { name: string, argv: string[] }[]
 local VARIANTS = {
   { name = "vibing chat, as sent", argv = base },
-  { name = "profile: worker", argv = vibing_argv({ profile = "worker" }) },
+  { name = "profile: focused", argv = vibing_argv({ profile = "focused" }) },
+  { name = "profile: reviewer", argv = vibing_argv({ profile = "reviewer" }) },
   { name = "- --append-system-prompt", argv = without(base, "--append-system-prompt") },
   { name = "- --plugin-dir (vibing MCP, skills)", argv = without(base, "--plugin-dir") },
   { name = "--setting-sources '' (CLAUDE.md, rules)", argv = replacing(base, "--setting-sources", "") },
@@ -120,11 +121,8 @@ local VARIANTS = {
     argv = with(base, { "--tools", "Bash,Read,Edit,Write,Glob,Grep,ToolSearch" }),
   },
   {
-    name = "lean: six + ToolSearch, worker, no project",
-    argv = with(replacing(vibing_argv({ profile = "worker" }), "--setting-sources", "user,local"), {
-      "--tools",
-      "Bash,Read,Edit,Write,Glob,Grep,ToolSearch",
-    }),
+    name = "lean: focused, no project (user,local)",
+    argv = replacing(vibing_argv({ profile = "focused" }), "--setting-sources", "user,local"),
   },
   { name = "+ --exclude-dynamic-system-prompt-sections", argv = with(base, { "--exclude-dynamic-system-prompt-sections" }) },
   {

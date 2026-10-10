@@ -76,13 +76,13 @@ describe("vibing.config", function()
     -- than merging it index by index into anything.
     it("keeps agent.profiles as the list the user gave", function()
       config.setup({
-        agent = { profiles = { { name = "implementer", model = "sonnet" }, { name = "worker", model = "haiku" } } },
+        agent = { profiles = { { name = "implementer", model = "sonnet" }, { name = "focused", model = "haiku" } } },
       })
 
       local profiles = config.get().agent.profiles
       assert.equals(2, #profiles)
       assert.equals("implementer", profiles[1].name)
-      assert.equals("worker", profiles[2].name)
+      assert.equals("focused", profiles[2].name)
       assert.equals("haiku", profiles[2].model)
     end)
 

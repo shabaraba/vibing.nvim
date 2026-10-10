@@ -2,24 +2,33 @@
 ---
 --- Every request re-reads the whole fixed part of the prompt, so whatever a chat never uses is paid
 --- for once per request for as long as the chat lives. A profile is a named answer to "what does
---- this kind of chat need": the built-in `default` loads everything, the built-in `worker` drops
---- only the instructions that need someone watching the editor, and `agent.profiles` in the user's
---- config can define more (an implementer that needs six tools and no project rules, a reviewer
---- on a different model, ...). Measured on claude 2.1.295 in this repository, a chat's floor is
---- ~67k tokens and a narrowed one ~11k: `handbook/architecture/orchestration.md`.
+--- this kind of chat need". Built in:
+---   default   everything
+---   focused   six built-in tools (Bash, Read, Edit, Write, Glob, Grep); project settings kept
+---   reviewer  four built-in tools (Read, Glob, Grep, Bash); project settings kept
+--- and `agent.profiles` in the user's config can define more (an implementer that also drops the
+--- project rules, a researcher with the web tools, ...). The levers are the built-in tool set and
+--- the setting sources, ~30k tokens each; vibing.nvim's own instruction block is under 1k, so a
+--- profile does not trim it. Measured on claude 2.1.295 in this repository: a chat's floor is
+--- ~67k tokens, ~37k with the six tools, ~11k with the six tools and `user,local` sources:
+--- `handbook/architecture/orchestration.md`.
+---
+--- No built-in sets a model: model names are per backend and per user, so `agent` / `model` /
+--- `effort` are left to `agent.profiles` (or `agent.orchestration.worker_defaults`). Orchestration
+--- is nestable and needs nothing from a profile: MCP tools (`nvim_chat_create`, ...) are not
+--- affected by `tools`, and the report protocol is in the system prompt of every orchestrated chat.
 ---
 --- `agent.profiles` is a list, one table per profile, each naming itself with `name`:
 ---   profiles = { { name = "implementer", model = "sonnet", tools = { ... } }, ... }
---- An entry whose `name` is a built-in (`default`, `worker`) extends that built-in field by field
+--- An entry whose `name` is a built-in (`default`, `focused`, `reviewer`) extends that built-in field by field
 --- instead of adding a profile. An entry that is not a table, or has no usable `name` (a non-empty
 --- string of letters, digits, `_` and `-`), is ignored with a warning; when two entries share a
---- name the later one wins, also with a warning. A keyed table (`profiles = { worker = {...} }`)
+--- name the later one wins, also with a warning. A keyed table (`profiles = { foo = {...} }`)
 --- is not read at all: each such key is ignored with a warning naming the list form.
 ---
---- Fields of a profile besides `name`, every one optional:
+--- Fields of a profile besides `name`, every one optional (any other key is ignored):
 ---   description      one line, shown to an orchestrator by `nvim_chat_list`
 ---   agent/model/effort  frontmatter for a chat `nvim_chat_create` makes on this profile
----   instructions     "full" | "worker" — vibing.nvim's own instruction block
 ---   tools            claude `--tools`: the built-in tools this chat may use. MCP tools are not
 ---                    affected, and `ToolSearch` is always added so they stay deferred: without it
 ---                    every MCP schema is loaded into the prompt instead (+14k measured)
@@ -30,11 +39,11 @@
 ---
 --- **Which parts follow a switch is decided by the CLI, not here** (claude 2.1.295, measured):
 --- the system prompt is recorded on a conversation's first request and replayed verbatim on every
---- resume (`--system-prompt-snapshot`), so `instructions` and `context_files` stay as they were at
---- the first message. `tools` and `setting_sources` are re-read per launch, and widening them takes
+--- resume (`--system-prompt-snapshot`), so `context_files` stay as they were at the first
+--- message. `tools` and `setting_sources` are re-read per launch, and widening them takes
 --- effect on the next message; narrowing them later does not shrink what the conversation already
---- loaded into its history. So `/profile default` on a worker gains the tools, rules and skills
---- immediately, which is the direction that is ever needed.
+--- loaded into its history. So `/profile default` on a narrowed chat gains the tools, rules and
+--- skills immediately, which is the direction that is ever needed.
 ---
 --- The `tools` / `setting_sources` / `context_files` fields are claude's; other backends ignore
 --- them and honour `agent` / `model` / `effort` only.
@@ -42,9 +51,8 @@
 local M = {}
 
 M.DEFAULT = "default"
-M.WORKER = "worker"
-
-M.INSTRUCTIONS = { "full", "worker" }
+M.FOCUSED = "focused"
+M.REVIEWER = "reviewer"
 
 --- Always added to a `tools` list, see the module comment.
 M.ALWAYS_TOOLS = { "ToolSearch" }
@@ -54,11 +62,16 @@ local VALID_SETTING_SOURCES = { user = true, project = true, ["local"] = true }
 --- The built-ins, in the same shape as an `agent.profiles` entry.
 --- @type Vibing.Profile[]
 local BUILTIN = {
-  { name = M.DEFAULT, description = "Ordinary chat: everything loaded", instructions = "full" },
+  { name = M.DEFAULT, description = "Ordinary chat: every built-in tool and setting loaded" },
   {
-    name = M.WORKER,
-    description = "Driven by another chat: drops instructions only a watching human needs",
-    instructions = "worker",
+    name = M.FOCUSED,
+    description = "Reads, edits and runs code with six built-in tools; project rules kept",
+    tools = { "Bash", "Read", "Edit", "Write", "Glob", "Grep" },
+  },
+  {
+    name = M.REVIEWER,
+    description = "Reads code and runs commands to judge a change; no Edit or Write; project rules kept",
+    tools = { "Read", "Glob", "Grep", "Bash" },
   },
 }
 
@@ -207,14 +220,6 @@ local function definition(name, config)
     end
   end
 
-  if raw.instructions ~= nil then
-    if vim.tbl_contains(M.INSTRUCTIONS, raw.instructions) then
-      def.instructions = raw.instructions
-    else
-      bad("instructions")
-    end
-  end
-
   if raw.tools ~= nil then
     local tools = string_list(raw.tools)
     if tools then
@@ -251,7 +256,6 @@ local function definition(name, config)
     end
   end
 
-  def.instructions = def.instructions or "full"
   return def
 end
 

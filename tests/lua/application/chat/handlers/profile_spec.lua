@@ -27,18 +27,25 @@ describe("profile handler", function()
     return buffer
   end
 
-  it("takes a worker chat back to the ordinary profile", function()
+  it("takes a narrowed chat back to the ordinary profile", function()
     local chat_buffer = recording_buffer()
 
     assert.is_true(handler({ "default" }, chat_buffer))
     assert.same({ key = "profile", value = "default" }, chat_buffer.written)
   end)
 
-  it("can make an ordinary chat a worker", function()
+  it("can put an ordinary chat on a narrowed built-in", function()
     local chat_buffer = recording_buffer()
 
-    assert.is_true(handler({ "worker" }, chat_buffer))
-    assert.same({ key = "profile", value = "worker" }, chat_buffer.written)
+    assert.is_true(handler({ "focused" }, chat_buffer))
+    assert.same({ key = "profile", value = "focused" }, chat_buffer.written)
+  end)
+
+  it("no longer knows the removed worker profile", function()
+    local chat_buffer = recording_buffer()
+
+    assert.is_false(handler({ "worker" }, chat_buffer))
+    assert.is_nil(chat_buffer.written)
   end)
 
   it("rejects an unknown profile without touching the frontmatter", function()
