@@ -103,6 +103,95 @@
   defaults to `true`: it spends no tokens, and a warning about a change you cannot otherwise see is
   useless if it is off until you ask for it. Set it to `false` to stop the warning and its probe.
 
+## 6.0.0 (2026-10-10)
+
+## What's Changed
+* feat: make Codex profile template configurable by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/759
+* chore: update gitignore by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/763
+* feat(diff): rework `gd` into a three-pane patch viewer by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/760
+* chore: point AGENTS.md and .agents/skills at the Claude originals by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/765
+* feat(auto-resume): detect usage limits on every backend by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/764
+* fix(permissions): reach codex's own-named built-ins and MCP spelling by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/766
+* feat(auto-resume): read codex's reset time from its limit message by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/767
+* fix(auto-resume): resolve a stated reset minute to its end, not its start by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/769
+* refactor(adapter): descriptor-based CLI backends (ADR 009, P0–P6) by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/770
+* refactor(lightweight): resolve every utility call's adapter the same way by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/768
+* feat(codex): support choice-list question UI by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/771
+* feat(chat): apply summarize and title to linked chats with --linked by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/772
+* feat(chat): show a progress tree while --linked runs by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/773
+* feat(auto_compact): compact before a delivery from another chat, not only before <CR> by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/785
+* chore(deps): bump the minor-and-patch group with 2 updates by @dependabot[bot] in https://github.com/shabaraba/vibing.nvim/pull/784
+* refactor(adapter): split handle_id into a process id and a turn id by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/775
+* refactor(adapter): split the stream registry and finish the handle_id → turn_id rename by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/780
+* feat(adapter): add the duplex transport, one resident CLI process per chat by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/781
+* feat(permissions): answer a tool approval without killing the CLI by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/786
+* docs(rules): update .claude/rules for the process/turn split and the measured gate order by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/787
+* test(ci): gate the MCP server's vitest suite, and stop it collecting dist/ by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/791
+* feat(permissions): answer nvim_ask_user_question in place instead of killing the turn by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/795
+* research(permissions): measure arm B, and decide whether the third shape comes back by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/793
+* fix(mcp): tell the model an answered question comes back as a tool result by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/796
+* test(e2e): pin the assistant section boundary with an exact-match assertion by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/798
+* docs(rules): state the four answer-attribution invariants of the question channel by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/797
+* fix(chat): hold every waiting question, not just the last one asked by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/799
+* test: close three holes in the gates themselves by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/800
+* docs(skills): how to read exit 1 with no failing spec by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/802
+* fix(chat): send back the answer, not the question it was asked by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/801
+* docs(skills): bound what an orchestrator decides and what it verifies by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/803
+* docs(ci-gates): require a new guard to be watched failing by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/804
+* docs(testing): make mutation verification a step of its own by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/805
+* docs(skills): add a stacked-PR merge procedure by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/806
+* fix(duplex): stop a /compact turn wedging the resident CLI process by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/815
+* feat(chat): open image and video paths with gx by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/817
+* docs(readme): add feature demos and restructure in the common plugin layout by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/825
+* docs(readme): add feature demos and restructure in the common plugin layout by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/824
+* chore(deps-dev): bump the minor-and-patch group in /claude-plugin/mcp-server with 2 updates by @dependabot[bot] in https://github.com/shabaraba/vibing.nvim/pull/818
+* chore(deps-dev): bump the minor-and-patch group with 3 updates by @dependabot[bot] in https://github.com/shabaraba/vibing.nvim/pull/819
+* feat(chat): jump to a slash command's definition with gd by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/822
+* feat(chat): cycle frontmatter enum values with ]v and [v by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/823
+* fix(annotations): wrap a note that is wider than the window by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/826
+* feat(chat): fold rendered tool calls and reasoning by default by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/821
+* fix(chat): stop a fold query error from being raised on every turn by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/827
+* feat(chat): show a waiting color on line numbers while a prompt holds the turn by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/828
+* feat(chat): show background subagent completions and recover dropped notifications by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/829
+* Tighten the worker report shape to a few lines by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/832
+* feat(chat): reserve messages while a chat is responding by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/833
+* fix(orchestration): stop a worker's report from subscribing it to its orchestrator by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/830
+* fix(chat): retry a delivery held behind an unsent draft by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/834
+* fix(duplex): stop a result the CLI produced for itself from ending the user's turn by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/843
+* docs: record worker reuse-vs-new-chat cost and brief-completeness guidance by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/835
+* fix(deps): bring pnpm-lock.yaml's brace-expansion in line with package-lock.json by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/850
+* fix(mcp-server): declare zod as a direct dependency by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/836
+* fix(permissions): always allow ListAgents by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/847
+* refactor(adapter): give both transports one first-byte budget and one response shape by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/837
+* fix(chat): drop the dead session-corruption callback by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/844
+* docs: fix table/conclusion mismatch in worker cost section by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/845
+* fix(chat): wake a chat whose turn ended with background subagents outstanding by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/838
+* fix(chat): wake a duplex chat whose process is reclaimed with subagents outstanding by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/849
+* feat(completion): discover model candidates from each backend CLI by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/852
+* chore(deps): bump the minor-and-patch group in /claude-plugin/mcp-server with 3 updates by @dependabot[bot] in https://github.com/shabaraba/vibing.nvim/pull/854
+* chore(deps-dev): bump the minor-and-patch group with 2 updates by @dependabot[bot] in https://github.com/shabaraba/vibing.nvim/pull/853
+* fix: allow Codex MCP tools by default by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/856
+* fix(chat): register a waiting question under the turn's own chat buffer by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/858
+* feat(chat): follow a Markdown link from anywhere in its notation with gf and gd by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/857
+* feat(chat): name a changed tool list as a prefix-rewrite cause; index worktrees for CodeGraph by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/855
+* feat(codex): add opt-in app-server duplex transport by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/860
+* feat(codex): answer native approval requests from the chat in duplex mode by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/863
+* fix(codex): 制御ツールを既定で許可する by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/868
+* perf(codex): 同一内容のフック再配置を省略し検証の失敗を修正 by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/869
+* fix(codex): keep duplex process when model or effort changes by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/871
+* feat(chat): add :VibingChatSearch, and fix the E95 behind it by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/876
+* chore(deps-dev): bump the minor-and-patch group in /claude-plugin/mcp-server with 2 updates by @dependabot[bot] in https://github.com/shabaraba/vibing.nvim/pull/873
+* feat(codex): add backends.codex.auto_approve for sandbox escape requests by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/872
+* feat(mcp): Claude・CodexのJSONLセッション検索・取得を追加 by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/870
+* feat(chat): search chats and CLI sessions with a background agent by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/878
+* docs: trim measurements and history out of .claude/rules by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/880
+* chore(deps-dev): bump the minor-and-patch group with 2 updates by @dependabot[bot] in https://github.com/shabaraba/vibing.nvim/pull/884
+* Add chat profiles to control what each chat loads per request by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/883
+* feat(chat): show search summaries in a separate Telescope pane by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/881
+
+
+**Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v5.9.0...v6.0.0
+
 ## 5.9.0 (2026-09-12)
 
 ## What's Changed
