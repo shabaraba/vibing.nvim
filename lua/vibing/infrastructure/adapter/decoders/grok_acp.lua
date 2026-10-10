@@ -1,9 +1,10 @@
---- `grok agent stdio` ACP `session/update` notifications, as canonical events.
+--- `grok agent stdio` session-update notifications, as canonical events.
 ---
 --- A **second** grok decoder, not a replacement for `grok_streaming_json.lua`. The two formats are
 --- unrelated: `--output-format streaming-json` emits flat `{"type":"text","data":"hi"}` lines, while
---- the resident agent speaks Agent Client Protocol JSON-RPC and wraps everything in
---- `session/update` with a `sessionUpdate` discriminator. Measured against grok 1.0.50 by capturing
+--- the resident agent speaks Agent Client Protocol JSON-RPC and wraps everything in a
+--- `params.update` envelope with a `sessionUpdate` discriminator -- carried on two methods, see
+--- `UPDATE_METHODS`. Measured against grok 1.0.50 by capturing
 --- both from one machine; the `--help` wording ("one ACP session update per line") describes the
 --- one-shot stream's *lineage*, not its shape. Same split as codex's `codex_exec_json` /
 --- `codex_app_server` pair.
@@ -121,6 +122,23 @@ local function tool_result_text(update)
   return raw_output_text(update.rawOutput)
 end
 
+--- The two methods grok carries its updates on, both with the same `params.update` envelope.
+---
+--- **The split is not by kind and not by stability.** Measured against grok 1.0.50: the standard
+--- ACP `session/update` carries `agent_message_chunk`, `agent_thought_chunk`, `tool_call`,
+--- `tool_call_update`, `available_commands_update` and `session_info_update`, while the vendor
+--- `_x.ai/session_notification` carries `response_completed`, `model_changed`, `hook_annotation`,
+--- `hook_run_started`, `hook_execution`, `pending_interaction`, `interaction_resolved`,
+--- `tool_call_delta_chunk` and `turn_completed`. Reading only the standard one left the usage, the
+--- model and the hook's refusal notice as dead handlers -- a turn rendered its prose and its tool
+--- calls correctly and reported no tokens at all, which is why this is measured from a live run
+--- rather than taken from the protocol's own vocabulary.
+--- @type table<string, boolean>
+local UPDATE_METHODS = {
+  ["session/update"] = true,
+  ["_x.ai/session_notification"] = true,
+}
+
 local by_update = {}
 
 by_update.agent_message_chunk = function(update, events)
@@ -152,12 +170,23 @@ by_update.tool_call = function(update, events)
   })
 end
 
---- Two different messages share this name, separated only by `status` being present: a terminal one
---- (`completed` / `failed`) and an enrichment that arrives mid-call to add the title, the locations
---- and the diff. Treating every update as the end closes the tool call before it ran.
+--- ACP's two terminal `ToolCallStatus` values. The other two (`pending`, `in_progress`) are
+--- progress, and grok measurably sends `in_progress` **twice** for one `run_terminal_command` --
+--- once empty and once with the output so far -- so "has a status" is not the terminal test. Keying
+--- on presence closed the call three times: the result was rendered before the command had output,
+--- and twice more after.
+---
+--- An unrecognised status is therefore treated as progress and leaves the call open. That is the
+--- lesser failure of the two: a call closed early states a result that is not the result, while one
+--- left open costs the closing line of a tool block whose output has already streamed.
+--- @type table<string, boolean>
+local TERMINAL_STATUS = { completed = true, failed = true }
+
+--- Several messages share this name: the terminal one, the progress ones, and an enrichment with no
+--- status at all that arrives mid-call to add the title, the locations and the diff.
 by_update.tool_call_update = function(update, events)
   local status = update.status
-  if type(status) ~= "string" then
+  if type(status) ~= "string" or not TERMINAL_STATUS[status:lower()] then
     return
   end
   local id = either(update, "toolCallId", "tool_call_id")
@@ -224,7 +253,7 @@ function M.decode(msg, state)
     table.insert(events, { kind = "error", message = params.message })
     return events
   end
-  if msg.method ~= "session/update" then
+  if not UPDATE_METHODS[msg.method] then
     return events
   end
 

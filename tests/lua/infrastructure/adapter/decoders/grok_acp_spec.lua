@@ -39,6 +39,21 @@ describe("decoders.grok_acp", function()
     )
   end)
 
+  -- grok sends the vendor method for `response_completed`, `model_changed` and `hook_annotation`
+  -- and the standard one for the chunks and the tool calls; the envelope is identical. Reading only
+  -- `session/update` left the usage, the model and the hook's refusal notice unreachable -- a turn
+  -- rendered its prose and its tool calls and reported no tokens at all.
+  it("reads an update off the vendor notification method too", function()
+    local events = Decoder.decode(
+      vim.json.decode(
+        '{"jsonrpc":"2.0","method":"_x.ai/session_notification","params":{"sessionId":"s",'
+          .. '"update":{"sessionUpdate":"response_completed","usage":{"input_tokens":7}}}}'
+      ),
+      {}
+    )
+    assert.same({ { kind = "usage", record = { input_tokens = 7 } } }, events)
+  end)
+
   describe("tool calls", function()
     local TOOL_CALL = '{"sessionUpdate":"tool_call","toolCallId":"call-738d-0","title":"write",'
       .. '"rawInput":{"file_path":"/tmp/x/deny.txt","content":"hi\\n"},'
@@ -81,6 +96,21 @@ describe("decoders.grok_acp", function()
             .. '"content":[{"type":"diff","path":"/tmp/x/deny.txt","oldText":"","newText":"hi\\n"}],'
             .. '"locations":[{"path":"/tmp/x/deny.txt"}],'
             .. '"rawInput":{"variant":"Write","file_path":"/tmp/x/deny.txt","content":"hi\\n"}}'
+        )
+      )
+    end)
+
+    -- Measured from a live `run_terminal_command`: grok streams `in_progress` twice, once empty and
+    -- once with the output so far. Reading "has a status" as terminal closed the call three times,
+    -- the first before the command had produced anything.
+    it("ignores the in_progress updates that stream a command's output", function()
+      assert.same(
+        {},
+        decode(
+          {},
+          '{"sessionUpdate":"tool_call_update","toolCallId":"call-fca0-0","status":"in_progress",'
+            .. '"content":[{"type":"content","content":{"type":"text","text":"hello\\n"}}],'
+            .. '"rawOutput":{"type":"Bash","output":[]}}'
         )
       )
     end)

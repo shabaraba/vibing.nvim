@@ -137,10 +137,12 @@ function M.send_prompt(record, prompt, params)
   end
   record._rpc = { seq = 0, pending = {} }
 
+  -- Exactly the two fields measured to be accepted. A `clientInfo` block is **not** added: grok
+  -- validates it when present and rejects the handshake with `missing field \`version\`` -- a
+  -- failure no stubbed spec can see, since the stub answers whatever it is sent.
   return request(record, "initialize", {
     protocolVersion = 1,
     clientCapabilities = vim.empty_dict(),
-    clientInfo = { name = "vibing_nvim", title = "vibing.nvim" },
   }, function()
     local session = params.opts._session_id
     local method = session and "session/load" or "session/new"
@@ -189,7 +191,13 @@ function M.process_line(record, line)
     rpc.pending[msg.id] = nil
     if callback then
       if msg.error then
-        fail(record, "Grok agent: " .. tostring(msg.error.message or vim.inspect(msg.error)))
+        -- `data` is where grok says *what* was wrong; `message` alone is "Invalid params", which
+        -- names no field and sent one debugging session looking at the wrong request.
+        local detail = msg.error.message or "error"
+        if msg.error.data then
+          detail = detail .. ": " .. tostring(msg.error.data)
+        end
+        fail(record, "Grok agent: " .. detail)
       else
         callback(msg.result or {})
       end

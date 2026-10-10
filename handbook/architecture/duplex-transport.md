@@ -436,6 +436,39 @@ that third spelling. Measured end to end: a session told to call it answered wit
 Neovim's own `rpc_port`, chat file path and `bufnr`, so the route is proven to execute and
 not only to register.
 
+### What a live run found that a stubbed spec could not
+
+Four defects survived every unit test and every protocol probe, because a stub answers
+whatever it is sent and a probe only records what it happened to ask for. They are listed
+here as the argument for driving a real `grok agent stdio` before calling a transport done.
+
+- **`initialize` must not carry a `clientInfo`.** grok validates the block when present and
+  answers `-32602 Invalid params` with `data` reading "missing field version", which kills
+  the handshake before `session/new` ever goes out. The probe never sent a `clientInfo`; the
+  module invented one. What the user saw was "Grok agent: Invalid params", naming no field —
+  so `error.data` is now part of that message.
+- **Updates arrive on two methods.** The standard ACP `session/update` carries the chunks,
+  the tool calls, `available_commands_update` and `session_info_update`; the vendor
+  `_x.ai/session_notification` carries `response_completed`, `model_changed`,
+  `hook_annotation`, `hook_run_started`, `hook_execution`, `pending_interaction`,
+  `interaction_resolved` and `turn_completed`. Reading only the first left three handlers
+  dead: a turn rendered its prose and its tool calls correctly and reported **no tokens at
+  all**, no model, and nothing when the hook refused a tool.
+- **`in_progress` is a status.** grok streams it twice for one `run_terminal_command`, once
+  empty and once with the output so far, so "has a status" closed one tool call three times
+  — the first before the command had produced anything. Only `completed` and `failed` are
+  terminal.
+- **The RPC port must be up before the first turn**, or the hook has nobody to ask and the
+  tool runs ungated. That is a property of the harness, not of this transport: the server
+  starts asynchronously, so a driver that streams immediately after `setup()` measures a
+  session with no gate. Verified afterwards with the server up: `permissions.deny = {"Bash"}`
+  produced `blocked by project/vibing-nvim-pre-tool-use: Tool Bash is in the denied list`
+  and the command did not run.
+
+Also verified on the live process: two turns reuse one process, a `session/cancel` retires
+it and the next turn spawns a replacement, the per-turn git snapshot writes its patch, and
+`nvim_get_info` reaches the editor through grok's `search_tool` / `use_tool` indirection.
+
 ### Where a tool's result text is
 
 `tool_call_update` carries a finished call's prose in three measured places, and **two of
