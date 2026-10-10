@@ -26,6 +26,8 @@ local M = {
     context = true,
     session = true,
     dynamic_permissions = true,
+    structured_output = true,
+    structured_output_file = true,
   },
 
   -- `codex exec --json`, with `resume <id>` as a subcommand and permissions as `-c` overrides.
@@ -38,6 +40,13 @@ local M = {
       { kind = "args", "exec", unless = "duplex" },
       { kind = "resume", subcommand = "resume", unless = "duplex" },
       { kind = "args", "--json", unless = "duplex" },
+      {
+        kind = "extra",
+        fn = function(ctx)
+          return ctx.opts.output_schema_path and { "--output-schema", ctx.opts.output_schema_path } or {}
+        end,
+        unless = "duplex",
+      },
       -- The transport's fragment verbatim: the `-c hooks.PreToolUse` pair and the trust bypass.
       -- Never on a lightweight call, whatever was handed in: the conformance suite passes one to
       -- prove the request drops it, since a hook nothing can answer is what stalls the turn.

@@ -28,6 +28,12 @@ describe("codex_command_builder", function()
     return nil
   end
 
+  it("passes the output schema file for a search request", function()
+    local cmd = codex_command_builder.build("search", { output_schema_path = "/tmp/schema.json" }, nil, {}, nil)
+    assert.are.equal("/tmp/schema.json", cmd[find_flag(cmd, "--output-schema") + 1])
+    assert.is_nil(find_flag(codex_command_builder.build("chat", {}, nil, {}, nil), "--output-schema"))
+  end)
+
   --- Every value passed with `-c`, so a test can assert on the set of config overrides.
   local function config_overrides(cmd)
     local overrides = {}
@@ -283,10 +289,12 @@ describe("codex_command_builder", function()
       local overrides = config_overrides(cmd)
       assert.is_nil(find_flag(cmd, "-s"))
       assert.is_true(vim.tbl_contains(overrides, 'default_permissions="project-edit"'))
-      assert.is_true(vim.tbl_contains(
-        overrides,
-        'permissions={ project-edit = { extends = ":workspace", filesystem = { ":workspace_roots" = { ".git" = "write" } } } }'
-      ))
+      assert.is_true(
+        vim.tbl_contains(
+          overrides,
+          'permissions={ project-edit = { extends = ":workspace", filesystem = { ":workspace_roots" = { ".git" = "write" } } } }'
+        )
+      )
     end)
 
     it("is repeated unchanged when resuming because config is per process", function()
@@ -303,23 +311,12 @@ describe("codex_command_builder", function()
     end)
 
     it("does not weaken plan mode", function()
-      local fresh = codex_command_builder.build(
-        "hi",
-        { cwd = root, permission_mode = "plan" },
-        nil,
-        config,
-        nil
-      )
+      local fresh = codex_command_builder.build("hi", { cwd = root, permission_mode = "plan" }, nil, config, nil)
       assert.equals("read-only", fresh[find_flag(fresh, "-s") + 1])
       assert.is_false(vim.tbl_contains(config_overrides(fresh), 'default_permissions="project-edit"'))
 
-      local resumed = codex_command_builder.build(
-        "hi",
-        { cwd = root, permission_mode = "plan" },
-        "thread-1",
-        config,
-        nil
-      )
+      local resumed =
+        codex_command_builder.build("hi", { cwd = root, permission_mode = "plan" }, "thread-1", config, nil)
       assert.is_true(vim.tbl_contains(config_overrides(resumed), 'sandbox_mode="read-only"'))
       assert.is_false(vim.tbl_contains(config_overrides(resumed), 'default_permissions="project-edit"'))
     end)
@@ -374,20 +371,16 @@ describe("codex_command_builder", function()
       local cmd = codex_command_builder.build("hello", { chat_bufnr = 12 }, "thread-1", no_project, nil)
       assert.is_true(has_override(cmd, "mcp_servers.vibing-nvim.command="))
       assert.is_true(has_override(cmd, "developer_instructions="))
-      assert.is_true(table.concat(config_overrides(cmd), "\n"):find(
-        "Current vibing.nvim chat buffer number: 12",
-        1,
-        true
-      ) ~= nil)
+      assert.is_true(
+        table.concat(config_overrides(cmd), "\n"):find("Current vibing.nvim chat buffer number: 12", 1, true) ~= nil
+      )
     end)
 
     it("carries chat_bufnr in the developer instructions on a fresh session", function()
       local cmd = codex_command_builder.build("hello", { chat_bufnr = 34 }, nil, no_project, nil)
-      assert.is_true(table.concat(config_overrides(cmd), "\n"):find(
-        "Current vibing.nvim chat buffer number: 34",
-        1,
-        true
-      ) ~= nil)
+      assert.is_true(
+        table.concat(config_overrides(cmd), "\n"):find("Current vibing.nvim chat buffer number: 34", 1, true) ~= nil
+      )
     end)
 
     it("keeps the runtime rpc_port out of the developer message", function()
@@ -403,24 +396,20 @@ describe("codex_command_builder", function()
     -- A utility call owes "no tools, no user MCP servers" (core/types.lua); the bundled server
     -- and a skill list are both.
     it("loads none of it on a lightweight call", function()
-      local cmd = codex_command_builder.build(
-        "hello",
-        { lightweight = true, chat_bufnr = 12 },
-        nil,
-        no_project,
-        nil
-      )
+      local cmd = codex_command_builder.build("hello", { lightweight = true, chat_bufnr = 12 }, nil, no_project, nil)
       assert.is_false(has_override(cmd, "mcp_servers."))
       assert.is_false(has_override(cmd, "developer_instructions="))
-      assert.is_nil(table.concat(config_overrides(cmd), "\n"):find(
-        "Current vibing.nvim chat buffer number:",
-        1,
-        true
-      ))
+      assert.is_nil(table.concat(config_overrides(cmd), "\n"):find("Current vibing.nvim chat buffer number:", 1, true))
     end)
 
     it("loads none of it when agent.plugins.self is off and no project plugin exists", function()
-      local cmd = codex_command_builder.build("hello", {}, nil, { agent = { plugins = { self = false, project_dir = false } } }, nil)
+      local cmd = codex_command_builder.build(
+        "hello",
+        {},
+        nil,
+        { agent = { plugins = { self = false, project_dir = false } } },
+        nil
+      )
       assert.is_false(has_override(cmd, "mcp_servers."))
       assert.is_false(has_override(cmd, "developer_instructions="))
     end)
@@ -488,8 +477,13 @@ describe("codex_command_builder", function()
       end
 
       -- …and what each of those modes does say instead is unchanged by this feature.
-      local duplex_bypass =
-        codex_command_builder.build("hi", { _process_model = "duplex", permission_mode = "bypassPermissions" }, nil, policy("on-request"), nil)
+      local duplex_bypass = codex_command_builder.build(
+        "hi",
+        { _process_model = "duplex", permission_mode = "bypassPermissions" },
+        nil,
+        policy("on-request"),
+        nil
+      )
       assert.is_true(vim.tbl_contains(config_overrides(duplex_bypass), 'approval_policy="never"'))
 
       local oneshot_bypass =

@@ -63,16 +63,35 @@ function M._show_telescope(query, results)
   local displayer = entry_display.create({
     separator = " ",
     items = {
-      { width = 24 }, -- 分類
+      { width = 12 }, -- 分類
       { width = 19 }, -- 日時
-      { width = 32 }, -- タイトル
-      { remaining = true }, -- 要約
+      { remaining = true }, -- タイトル
     },
   })
+
+  local previewer = conf.file_previewer({})
+  local preview = previewer.preview
+  function previewer:preview(entry, status)
+    local summary = status.layout.summary
+    if summary and vim.api.nvim_buf_is_valid(summary.bufnr) then
+      vim.api.nvim_buf_set_lines(
+        summary.bufnr,
+        0,
+        -1,
+        false,
+        entry and vim.split(summary_of(entry.value), "\n", { plain = true }) or {}
+      )
+      if vim.api.nvim_win_is_valid(summary.winid) then
+        vim.api.nvim_win_set_cursor(summary.winid, { 1, 0 })
+      end
+    end
+    return preview(self, entry, status)
+  end
 
   pickers
     .new({}, {
       prompt_title = string.format("Chat Search: %s (<Tab> to select, <CR> to open)", query),
+      create_layout = require("vibing.ui.chat_search_layout").create,
       finder = finders.new_table({
         results = results,
         entry_maker = function(result)
@@ -86,14 +105,13 @@ function M._show_telescope(query, results)
                 { entry.value.group, "TelescopeResultsComment" },
                 { entry.value.entity:get_formatted_date(), "TelescopeResultsNumber" },
                 { entry.value.entity:get_display_name(), "TelescopeResultsIdentifier" },
-                { summary_of(entry.value), "TelescopeResultsString" },
               })
             end,
           }
         end,
       }),
       sorter = conf.generic_sorter({}),
-      previewer = conf.file_previewer({}),
+      previewer = previewer,
       attach_mappings = function(prompt_bufnr)
         actions.select_default:replace(function()
           local picker = action_state.get_current_picker(prompt_bufnr)

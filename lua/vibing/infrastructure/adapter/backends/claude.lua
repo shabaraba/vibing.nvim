@@ -21,6 +21,8 @@ local M = {
     context = true,
     session = true,
     dynamic_permissions = true,
+    structured_output = true,
+    structured_output_tool = true,
   },
 
   -- `claude -p`, in the order the CLI has always been given it. The values behind `model`,
@@ -47,10 +49,21 @@ local M = {
       { kind = "hook_arg", flag = "--settings", unless = "lightweight" },
       -- Without this the CLI swallows everything a subagent says and only its final tool_result
       -- surfaces. Opt-in because it makes long delegated turns much noisier.
-      { kind = "args", "--forward-subagent-text", unless = "lightweight", when = { config = "agent.subagent.enabled" } },
+      {
+        kind = "args",
+        "--forward-subagent-text",
+        unless = "lightweight",
+        when = { config = "agent.subagent.enabled" },
+      },
       { kind = "extra", fn = CLICommandBuilder.plugin_dir_args, unless = "lightweight" },
       { kind = "extra", fn = CLICommandBuilder.mcp_config_args, unless = "lightweight" },
       { kind = "extra", fn = CLICommandBuilder.system_prompt_args },
+      {
+        kind = "extra",
+        fn = function(ctx)
+          return ctx.opts.output_schema and { "--json-schema", vim.json.encode(ctx.opts.output_schema) } or {}
+        end,
+      },
       { kind = "extra", fn = CLICommandBuilder.setting_source_args },
       -- End of options marker, so a prompt starting with `---` is not parsed as flags. Dropped on
       -- the duplex transport, where the same text is composed by `request_builder.prompt_text` and

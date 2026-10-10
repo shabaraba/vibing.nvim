@@ -185,11 +185,17 @@ end
 --- CLI does not echo" and only `prompt_ack` can tell those two apart.
 by_type.result = function(msg, events)
   local prompt_uuid = str_or_nil(msg.user_message_uuid)
+  if not msg.is_error and msg.subtype == "success" and type(msg.structured_output) == "table" then
+    table.insert(events, { kind = "structured_output", value = msg.structured_output, prompt_uuid = prompt_uuid })
+  end
   if msg.subtype == "error" or msg.is_error then
     -- Carries the same `prompt_uuid` as the `turn_end` below, both cut from this one `result`, so
     -- `event_renderer.handlers.error` can tell a foreign turn's failure apart from this one's the
     -- same way `ends_this_turn` does.
-    table.insert(events, { kind = "error", message = msg.result or "Unknown error", fatal = true, prompt_uuid = prompt_uuid })
+    table.insert(
+      events,
+      { kind = "error", message = msg.result or "Unknown error", fatal = true, prompt_uuid = prompt_uuid }
+    )
   end
   table.insert(events, { kind = "turn_end", subtype = msg.subtype, prompt_uuid = prompt_uuid })
 end
