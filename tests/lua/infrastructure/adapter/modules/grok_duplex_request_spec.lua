@@ -171,20 +171,35 @@ describe("grok duplex request", function()
       local rules_flag = GrokCommandBuilder.rules_args({ opts = { cwd = "/repo" }, config = CONFIG })
       assert.is_nil(table.concat(rules_flag, "\n"):find("nvim_ask_user_question", 1, true))
 
-      local duplex_text = GrokCommandBuilder.rules_text({ cwd = "/repo", chat_bufnr = 7 }, CONFIG)
+      local duplex_text = GrokCommandBuilder.rules_text({ cwd = "/repo", chat_bufnr = 7 }, CONFIG, "vibing-nvim")
       assert.is_not_nil(duplex_text:find("nvim_ask_user_question", 1, true))
+    end)
+
+    -- The same test one level in: the name comes from the bundled server's own manifest, so with
+    -- `agent.plugins.self = false` there is no server and the tool must not be named at all.
+    it("says nothing about the tool when the bundled server is not loaded", function()
+      local text = GrokCommandBuilder.rules_text({ cwd = "/repo", chat_bufnr = 7 }, CONFIG, nil)
+      assert.is_nil(text:find("nvim_ask_user_question", 1, true))
+      assert.is_nil(text:find("Current vibing.nvim chat buffer number", 1, true))
+    end)
+
+    -- Taken from the manifest rather than hard-coded, so a rename there cannot leave the model
+    -- told about a tool on a server that is not registered -- `codex_plugin_config`'s reason.
+    it("qualifies the tool with the server's own registered name", function()
+      local text = GrokCommandBuilder.rules_text({ cwd = "/repo", chat_bufnr = 7 }, CONFIG, "renamed-server")
+      assert.is_not_nil(text:find("renamed-server__nvim_ask_user_question", 1, true))
     end)
 
     it("qualifies the tool as server__tool, without claude's mcp__ prefix", function()
       -- grok's own error text for an unqualified name says so: "Tool names must be qualified as
       -- `server__tool`". An `mcp__`-prefixed name is one grok will not resolve.
-      local text = GrokCommandBuilder.rules_text({ cwd = "/repo", chat_bufnr = 7 }, CONFIG)
+      local text = GrokCommandBuilder.rules_text({ cwd = "/repo", chat_bufnr = 7 }, CONFIG, "vibing-nvim")
       assert.is_not_nil(text:find("vibing-nvim__nvim_ask_user_question", 1, true))
       assert.is_nil(text:find("mcp__", 1, true))
     end)
 
     it("carries the chat buffer number the answer is routed by", function()
-      local text = GrokCommandBuilder.rules_text({ cwd = "/repo", chat_bufnr = 7 }, CONFIG)
+      local text = GrokCommandBuilder.rules_text({ cwd = "/repo", chat_bufnr = 7 }, CONFIG, "vibing-nvim")
       assert.is_not_nil(text:find("Current vibing.nvim chat buffer number: 7", 1, true))
     end)
 

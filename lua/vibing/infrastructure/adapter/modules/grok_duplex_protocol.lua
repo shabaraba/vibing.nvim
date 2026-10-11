@@ -5,59 +5,20 @@
 local NativeApproval = require("vibing.infrastructure.adapter.modules.grok_native_approval")
 local Process = require("vibing.infrastructure.adapter.modules.duplex_process")
 local TurnOutcome = require("vibing.infrastructure.adapter.modules.turn_outcome")
-local Processor = require("vibing.infrastructure.adapter.modules.stream_decoder").processor(
-  require("vibing.infrastructure.adapter.decoders.grok_acp"),
-  require("vibing.infrastructure.adapter.modules.grok_tool_vocabulary")
-)
+
+--- The turn, the pool and JSON-RPC correlation are shared with codex's app-server transport; what
+--- is below is only what ACP itself decides. `jsonrpc = "2.0"` is required on every ACP frame.
+local Rpc = require("vibing.infrastructure.adapter.modules.duplex_jsonrpc").bind({
+  processor = require("vibing.infrastructure.adapter.modules.stream_decoder").processor(
+    require("vibing.infrastructure.adapter.decoders.grok_acp"),
+    require("vibing.infrastructure.adapter.modules.grok_tool_vocabulary")
+  ),
+  agent = "Grok agent",
+  jsonrpc = true,
+})
+local fail, render, request = Rpc.fail, Rpc.render, Rpc.request
 
 local M = {}
-
---- @param record Vibing.DuplexProcess
---- @param message string
-local function fail(record, message)
-  local Routing = require("vibing.infrastructure.adapter.modules.duplex_routing")
-  local turn = Routing.turn_of(record)
-  if turn then
-    turn.complete(
-      TurnOutcome.ended(Routing.ids_of(record, turn), table.concat(turn.context.output, ""), message)
-    )
-  end
-  local Pool = require("vibing.infrastructure.adapter.modules.duplex_pool")
-  local key, current = Pool.find_by_process_id(record.process_id)
-  if current == record then
-    Pool.stop(key, "unresponsive")
-  end
-end
-
---- Resolve the turn when rendering rather than when the line arrived, for the reason
---- `M.process_line` states: most of what this module renders comes out of a deferred callback.
---- @param record Vibing.DuplexProcess
---- @param msg table
-local function render(record, msg)
-  local turn = record._turn
-  local context = turn and turn.context or record._idle_context
-  if context then
-    Processor.apply(msg, context)
-  end
-end
-
---- @param record Vibing.DuplexProcess
---- @param method string
---- @param params table
---- @param callback fun(result: table)
---- @return boolean sent
-local function request(record, method, params, callback)
-  local rpc = record._rpc
-  rpc.seq = rpc.seq + 1
-  local id = "vibing-rpc-" .. rpc.seq
-  rpc.pending[id] = callback
-  if not Process.write(record, { jsonrpc = "2.0", id = id, method = method, params = params }) then
-    rpc.pending[id] = nil
-    fail(record, "Could not write " .. method .. " to the Grok agent.")
-    return false
-  end
-  return true
-end
 
 --- End the turn this reply belongs to.
 ---
@@ -119,12 +80,11 @@ end
 --- `mcpServers` is **required on both** -- omitting it is an `Invalid params` error naming the
 --- field, not a default -- so an empty list is passed rather than nothing.
 --- @param params Vibing.DuplexRunParams
---- @return table
+--- @return table session_params
+--- @return string|nil self_server the bundled server's registered name, for the rules text
 local function session_params(params)
-  return {
-    cwd = params.cwd,
-    mcpServers = require("vibing.infrastructure.adapter.modules.grok_mcp_config").servers(params),
-  }
+  local mcp = require("vibing.infrastructure.adapter.modules.grok_mcp_config").resolve(params)
+  return { cwd = params.cwd, mcpServers = mcp.servers }, mcp.self_server
 end
 
 --- @param record Vibing.DuplexProcess
@@ -146,7 +106,7 @@ function M.send_prompt(record, prompt, params)
   }, function()
     local session = params.opts._session_id
     local method = session and "session/load" or "session/new"
-    local new_params = session_params(params)
+    local new_params, self_server = session_params(params)
     if session then
       new_params.sessionId = session
     end
@@ -165,8 +125,11 @@ function M.send_prompt(record, prompt, params)
       -- What the one-shot transport puts behind `--rules`. `grok agent` has no such flag, so it
       -- rides on the first prompt of the session and on no later one -- a block repeated every turn
       -- would churn the prompt cache for a system prompt's worth of text that has not changed.
-      local rules =
-        require("vibing.infrastructure.adapter.modules.grok_command_builder").rules_text(params.opts, params.config)
+      local rules = require("vibing.infrastructure.adapter.modules.grok_command_builder").rules_text(
+        params.opts,
+        params.config,
+        self_server
+      )
       send_prompt_now(record, rules and (rules .. "\n\n" .. prompt) or prompt)
     end)
   end)
@@ -184,24 +147,10 @@ function M.process_line(record, line)
   if not ok or type(msg) ~= "table" or not record._rpc then
     return
   end
-  local rpc = record._rpc
-
+  -- A reply to something we asked. The id correlates it; `method` being absent is what makes it a
+  -- response rather than a request of the agent's own.
   if msg.id ~= nil and not msg.method then
-    local callback = rpc.pending[msg.id]
-    rpc.pending[msg.id] = nil
-    if callback then
-      if msg.error then
-        -- `data` is where grok says *what* was wrong; `message` alone is "Invalid params", which
-        -- names no field and sent one debugging session looking at the wrong request.
-        local detail = msg.error.message or "error"
-        if msg.error.data then
-          detail = detail .. ": " .. tostring(msg.error.data)
-        end
-        fail(record, "Grok agent: " .. detail)
-      else
-        callback(msg.result or {})
-      end
-    end
+    Rpc.reply(record, msg)
     return
   end
 

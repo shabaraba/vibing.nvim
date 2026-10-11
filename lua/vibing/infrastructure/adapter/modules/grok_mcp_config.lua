@@ -68,7 +68,12 @@ local function spec(server, process_env)
   }
 end
 
---- Every server the loaded plugins declare, in plugin-directory order.
+--- @class Vibing.GrokMcpResolution
+--- @field servers table[] the `mcpServers` list `session/new` takes
+--- @field self_server string|nil registered name of the **bundled** server, nil when it is not
+---   loaded. What the session's first prompt may name a tool on; see `grok_command_builder`.
+
+--- Every server the loaded plugins declare, in plugin-directory order, and which of them is ours.
 ---
 --- Deduplicated first-plugin-wins, matching the precedence `--plugin-dir` itself gives a duplicate
 --- on the other backends: a project plugin cannot displace the bundled `vibing-nvim` server by
@@ -77,23 +82,31 @@ end
 --- Empty for a lightweight call, which owes "no user MCP servers" (`core/types.lua`). `session/new`
 --- **requires** the field either way — omitting it is an `Invalid params` error naming it, not a
 --- default — so the empty list is the answer, never `nil`.
+---
+--- `self_server` is matched **by path, not by name**: with `agent.plugins.self = false` a project
+--- plugin could carry the name `vibing-nvim`, and the prompt would then describe its server as the
+--- bundled one. Same reasoning, and the same `self_plugin_dir()`, as `codex_plugin_config`.
 --- @param params Vibing.DuplexRunParams
---- @return table[]
-function M.servers(params)
+--- @return Vibing.GrokMcpResolution
+function M.resolve(params)
   if params.opts and params.opts.lightweight then
-    return {}
+    return { servers = {} }
   end
 
-  local seen, out = {}, {}
+  local self_dir = PluginDirs.self_plugin_dir()
+  local seen, out, self_server = {}, {}, nil
   for _, dir in ipairs(PluginDirs.resolve(params.opts and params.opts.cwd, params.config)) do
     for _, server in ipairs(PluginContents.mcp_servers(dir)) do
       if not seen[server.name] then
         seen[server.name] = true
         table.insert(out, spec(server, params.env))
+        if dir == self_dir and not self_server then
+          self_server = server.name
+        end
       end
     end
   end
-  return out
+  return { servers = out, self_server = self_server }
 end
 
 return M

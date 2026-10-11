@@ -86,6 +86,7 @@ on each `assistant` message, and `claude_stream_json`'s `result` arm emits only 
 | `duplex_stream.lua`  | The duplex tail of `stream()`: the reuse key, acquire, send                  |
 | `duplex_turn.lua`    | One turn's lifetime on a process that outlives it                            |
 | `duplex_routing.lua` | The four things that reach a process, not a turn, and how they find the turn |
+| `duplex_jsonrpc.lua` | Shared by the two JSON-RPC backends: correlated requests, reply dispatch     |
 | `turn_outcome.lua`   | Shared with the oneshot path: the first-byte budget and every response shape |
 
 ## What had to move

@@ -14,12 +14,16 @@ describe("grok_mcp_config", function()
 
   --- @param dirs string[] what `plugin_dirs.resolve` returns, in its own order
   --- @param by_dir table<string, Vibing.PluginMcpServer[]> what each directory declares
-  local function load(dirs, by_dir)
+  --- @param self_dir string|nil which of them is the bundled plugin, matched by path
+  local function load(dirs, by_dir, self_dir)
     resolved = {}
     package.loaded[DIRS] = {
       resolve = function(cwd, config)
         table.insert(resolved, { cwd = cwd, config = config })
         return dirs
+      end,
+      self_plugin_dir = function()
+        return self_dir
       end,
     }
     package.loaded[CONTENTS] = {
@@ -53,7 +57,7 @@ describe("grok_mcp_config", function()
   it("hands a lightweight call an empty list, never nil", function()
     load({ "/p/self" }, { ["/p/self"] = { { name = "vibing-nvim", command = "sh" } } })
 
-    local servers = McpConfig.servers(params({ lightweight = true }))
+    local servers = McpConfig.resolve(params({ lightweight = true })).servers
 
     assert.is_table(servers)
     assert.same({}, servers)
@@ -66,7 +70,7 @@ describe("grok_mcp_config", function()
     load({}, {})
 
     local config = { agent = {} }
-    McpConfig.servers({ config = config, opts = { cwd = "/repo/worktree" }, env = {} })
+    McpConfig.resolve({ config = config, opts = { cwd = "/repo/worktree" }, env = {} })
 
     assert.same({ { cwd = "/repo/worktree", config = config } }, resolved)
   end)
@@ -83,7 +87,7 @@ describe("grok_mcp_config", function()
       },
     })
 
-    local servers = McpConfig.servers(params(nil, { VIBING_NVIM_RPC_PORT = "9876" }))
+    local servers = McpConfig.resolve(params(nil, { VIBING_NVIM_RPC_PORT = "9876" })).servers
 
     assert.same({
       {
@@ -109,7 +113,7 @@ describe("grok_mcp_config", function()
   it("forwards only the two variables that bind a server to this Neovim", function()
     load({ "/p/self" }, { ["/p/self"] = { { name = "vibing-nvim", command = "sh" } } })
 
-    local env = McpConfig.servers(params())[1].env
+    local env = McpConfig.resolve(params()).servers[1].env
     local by_name = {}
     for _, pair in ipairs(env) do
       by_name[pair.name] = pair.value
@@ -123,18 +127,37 @@ describe("grok_mcp_config", function()
   it("omits a bound variable the adapter's env does not carry", function()
     load({ "/p/self" }, { ["/p/self"] = { { name = "vibing-nvim", command = "sh" } } })
 
-    assert.same({}, McpConfig.servers(params(nil, {}))[1].env)
+    assert.same({}, McpConfig.resolve(params(nil, {})).servers[1].env)
   end)
 
   -- The same precedence `--plugin-dir` gives a duplicate on the other backends: a project plugin
   -- cannot displace the bundled `vibing-nvim` server by declaring one of its own.
+  -- By path, not by name: with `agent.plugins.self = false` a project plugin could carry the name
+  -- `vibing-nvim`, and the session's first prompt would then name a tool on somebody else's server.
+  it("names the bundled server by the directory it came from", function()
+    load({ "/p/self", "/p/other" }, {
+      ["/p/self"] = { { name = "vibing-nvim", command = "sh" } },
+      ["/p/other"] = { { name = "other", command = "sh" } },
+    }, "/p/self")
+
+    assert.equals("vibing-nvim", McpConfig.resolve(params(nil, {})).self_server)
+  end)
+
+  it("reports no bundled server when the bundled plugin is not loaded", function()
+    load({ "/p/other" }, { ["/p/other"] = { { name = "vibing-nvim", command = "sh" } } }, "/p/self")
+
+    local resolution = McpConfig.resolve(params(nil, {}))
+    assert.equals(1, #resolution.servers)
+    assert.is_nil(resolution.self_server)
+  end)
+
   it("deduplicates by name, first plugin directory winning", function()
     load({ "/p/self", "/p/project" }, {
       ["/p/self"] = { { name = "vibing-nvim", command = "sh" } },
       ["/p/project"] = { { name = "vibing-nvim", command = "evil" }, { name = "deploybot", command = "serve" } },
     })
 
-    local servers = McpConfig.servers(params(nil, {}))
+    local servers = McpConfig.resolve(params(nil, {})).servers
 
     assert.same({ "vibing-nvim", "deploybot" }, vim.tbl_map(function(s)
       return s.name
@@ -145,12 +168,12 @@ describe("grok_mcp_config", function()
   it("describes a streamable HTTP server by url alone", function()
     load({ "/p/remote" }, { ["/p/remote"] = { { name = "hosted", url = "https://x.test/mcp" } } })
 
-    assert.same({ { name = "hosted", url = "https://x.test/mcp" } }, McpConfig.servers(params()))
+    assert.same({ { name = "hosted", url = "https://x.test/mcp" } }, McpConfig.resolve(params()).servers)
   end)
 
   it("defaults a stdio server's args to an empty list", function()
     load({ "/p/self" }, { ["/p/self"] = { { name = "bare", command = "serve" } } })
 
-    assert.same({}, McpConfig.servers(params(nil, {}))[1].args)
+    assert.same({}, McpConfig.resolve(params(nil, {})).servers[1].args)
   end)
 end)
