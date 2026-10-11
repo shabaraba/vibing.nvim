@@ -826,18 +826,26 @@ explicit effort or initially leaves it to Codex. Restoring an unknown default
 after an explicit effort requires choosing an effort explicitly.
 
 `process` chooses how the CLI is run for this chat, overriding
-`backends.<agent>.process` (Claude and Codex). `oneshot` (the default) starts
-a CLI process per message and lets it exit when the answer is done. `duplex`
-starts one process for the chat and feeds every later message to it on its
-stdin, so the CLI's startup — plugins, MCP servers, CLAUDE.md, the system
-prompt — is paid once instead of once per message; the process is stopped
-after five idle minutes, when the chat's buffer is unloaded, or when Neovim
-exits. Supported by Claude and Codex; ignored on other backends. Claude holds
-about 200MB while idle, which is why it is opt-in. Codex uses app-server and
-requires its staged PreToolUse hook to be trusted in Codex. An untrusted or
-modified hook stops startup with a message before inference; use `process:
+`backends.<agent>.process` (Claude, Codex and Grok). `oneshot` (the default)
+starts a CLI process per message and lets it exit when the answer is done.
+`duplex` starts one process for the chat and feeds every later message to it
+on its stdin, so the CLI's startup — plugins, MCP servers, CLAUDE.md, the
+system prompt — is paid once instead of once per message; the process is
+stopped after five idle minutes, when the chat's buffer is unloaded, or when
+Neovim exits. Supported by Claude, Codex and Grok; ignored on other backends.
+Claude holds about 200MB while idle, which is why it is opt-in. Codex uses
+app-server and requires its staged PreToolUse hook to be trusted in Codex. An
+untrusted or modified hook stops startup before inference; use `process:
 oneshot` meanwhile. Title generation and |:VibingSummarize| are always
 `oneshot`, and so is a subagent chat.
+
+On Grok this is more than a startup optimisation: `duplex` runs `grok agent
+stdio`, which is the only Grok transport that reaches vibing.nvim's own MCP
+tools, so the `nvim_*` tools, the choice-list prompt, Code Tour and the
+orchestration tools work there and nowhere else on Grok. Cancelling a Grok
+duplex turn stops the process as well, because a resident Grok session was
+measured not to accept a new prompt immediately after being cancelled; the
+next message starts a fresh one and resumes the session.
 
 `profile` says what the chat is for, and so what it loads on every request.
 Built in:

@@ -211,6 +211,13 @@ M.AGENTS = {
         default = "auto",
         legacy = { "grok", "executable" },
       },
+      -- `duplex` is the resident `grok agent stdio` ACP transport. Default `oneshot` for the same
+      -- reason the other backends default to it: a resident process holds memory while idle.
+      process = {
+        kind = "string",
+        values = { "oneshot", "duplex" },
+        default = "oneshot",
+      },
     },
     discovery_module = "vibing.infrastructure.adapter.models.grok",
     -- `grok models` に訊けなかったときだけ使う

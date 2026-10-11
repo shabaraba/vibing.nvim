@@ -153,10 +153,20 @@ M.INTERNAL_TOOLS_MAP = to_map(M.INTERNAL_TOOLS)
 ---で明示的なallowを返し、CLIは自前のゲートをスキップするため。この列挙が効くのはフックの手前、
 ---CLIが最初に見る関門としてであって、最終的な担保ではない。
 ---#564以前は逆で、フックが黙って通す実装だったためここのずれがそのまま拒否になっていた。
+---
+---**grokの`vibing-nvim__*`（`mcp__`接頭辞を持たない`server__tool`形式、grok 1.0.50で実測）も
+---ここに要る。** grokのdescriptorは`--allowedTools`相当を一切積まないので、この要素がargvに
+---載ることはない。効くのは`exclusive_tools`としての用途で、`session_prompt.TOOLS`は
+---この列挙から文字列を組んでそのまま`exclusive_tools`に渡す（can_use_tool評価順2.5）。
+---`matchers`の`-`→`_`畳み込みは両辺が`mcp__`で始まる場合だけなので、`mcp__vibing-nvim__*`は
+---grokの名前に一致しない。つまりここが唯一「欠けると落ちる」経路で、claude/codex側には
+---それらのCLIが決して送らないリテラルが1つ増えるだけ（上記のとおり無害）。
+---先頭要素はcodex_tool_vocabularyがCANONICALな接頭辞として参照するので、追加は末尾に。
 ---@type string[]
 M.VIBING_NVIM_MCP_TOOL_PATTERNS = {
   "mcp__vibing-nvim__*",
   "mcp__plugin_vibing-nvim_vibing-nvim__*",
+  "vibing-nvim__*",
 }
 
 ---`permissions.allow`の既定値。`config.lua`はこのリストを参照するだけで、値を再列挙しない。

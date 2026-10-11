@@ -203,6 +203,54 @@ M.BINARY = {
   reset = M._reset_path_cache,
 }
 
+--- The duplex transport's system prompt: the shared conventions **plus** the MCP tools that only
+--- this transport can reach.
+---
+--- `grok agent` accepts no `--rules`, so `grok_duplex_protocol` prepends this to the first prompt of
+--- a session instead. The conventions come from the same `build_rules` the flag uses, so what vibing
+--- tells grok has one definition whichever transport carries it.
+---
+--- The MCP half is **deliberately absent from `rules_args`**. `--rules` serves the one-shot path,
+--- which reaches no vibing-nvim MCP server at all (`grok --single` rejects `--plugin-dir`, and the
+--- servers travel in an ACP `session/new`), so naming `nvim_ask_user_question` there would name a
+--- tool grok cannot invoke — the reason `build_rules` was kept small in the first place.
+---
+--- The same test applies on this path: `self_server` is the bundled server's **registered** name,
+--- resolved from its own manifest by `grok_mcp_config`, and `nil` when it is not loaded at all
+--- (`agent.plugins.self = false`). Naming the tool then would describe one this session has no
+--- server for, which is the mistake `codex_plugin_config` reads the manifest to avoid — and a rename
+--- there cannot leave the model told about a tool that does not exist.
+---
+--- The name has **no `mcp__` prefix**: grok qualifies an MCP tool as `server__tool`, measured
+--- against grok 1.0.50 from its own error text for an unqualified name.
+--- @param opts Vibing.AdapterOpts
+--- @param config Vibing.Config
+--- @param self_server string|nil registered name of the bundled MCP server, nil when not loaded
+--- @return string|nil
+function M.rules_text(opts, config, self_server)
+  opts = opts or {}
+  local lines = {}
+  local shared = build_rules(opts, config or {})
+  if shared then
+    table.insert(lines, shared)
+  end
+
+  if self_server then
+    vim.list_extend(
+      lines,
+      require("vibing.infrastructure.adapter.modules.ask_user_question_instructions").lines(
+        self_server .. "__nvim_ask_user_question",
+        opts.chat_bufnr
+      )
+    )
+  end
+
+  if #lines == 0 then
+    return nil
+  end
+  return table.concat(lines, "\n")
+end
+
 --- `--rules`, or nothing when there is nothing to say.
 --- @param ctx Vibing.RequestContext
 --- @return string[]
