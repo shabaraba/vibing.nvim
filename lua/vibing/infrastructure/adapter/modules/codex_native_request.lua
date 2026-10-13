@@ -70,6 +70,8 @@ local function describe_command(params)
   detail(details, params.cwd and ("in " .. tostring(params.cwd)))
   detail(details, params.reason and tostring(params.reason))
   return "Codex command execution", {
+    -- Match delegated command scope in the same vocabulary as hook permissions.
+    scope_tool = "Bash",
     command = type(params.command) == "string" and params.command or nil,
     details = details,
   }

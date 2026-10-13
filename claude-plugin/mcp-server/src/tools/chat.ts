@@ -12,18 +12,6 @@ import { withRpcPort } from './common.js';
  */
 export const CHAT_POSITIONS = ['back', 'current', 'right', 'left', 'top', 'bottom'] as const;
 
-/**
- * The four answers a tool-approval prompt accepts, mirroring `APPROVAL_OPTIONS` in
- * `lua/vibing/infrastructure/rpc/handlers/permission.lua` and the vocabulary
- * `presentation/chat/modules/approval_parser.lua` reads back out of the buffer.
- */
-export const APPROVAL_ACTIONS = [
-  'allow_once',
-  'deny_once',
-  'allow_for_session',
-  'deny_for_session',
-] as const;
-
 export const chatTools: Tool[] = [
   {
     name: 'nvim_chat_create',
@@ -218,7 +206,10 @@ export const chatTools: Tool[] = [
       'user instead. When it is set to "scoped", the call itself enforces this: an allow_once ' +
       "or allow_for_session answer only succeeds if the tool matches that chat's declared " +
       'delegated_scope (see nvim_chat_create), so it is fine to just try it — a denial ' +
-      '(deny_once/deny_for_session) always succeeds either way. Your answer is recorded in ' +
+      '(deny_once/deny_for_session, or Codex decline/cancel) always succeeds either way. ' +
+      'Codex accept/accept_for_session also require a matching scope. ' +
+      'accept_with_execpolicy_amendment requires true, even with a matching scope, because ' +
+      'Codex remembers a command pattern beyond the scoped call. Your answer is recorded in ' +
       'that chat as coming from you. It is answered exactly once. An expired prompt is still ' +
       'answerable — the wait limit denied that one tool call, not the decision — but the answer ' +
       'reaches the chat as a new turn instead of releasing the call that was blocked on it.',
@@ -239,12 +230,14 @@ export const chatTools: Tool[] = [
         },
         action: {
           type: 'string',
-          enum: [...APPROVAL_ACTIONS],
+          minLength: 1,
           description:
-            'Which of the four options to choose. The "_once" pair applies to this one call; ' +
-            'the "_for_session" pair is written into that chat\'s frontmatter and applies to ' +
-            'every later call in it, so prefer allow_once unless the chat will clearly need the ' +
-            'tool repeatedly.',
+            'The exact value of an option offered by this prompt; Lua validates membership. ' +
+            'Hook prompts offer allow_once/deny_once/allow_for_session/deny_for_session. ' +
+            'Codex native prompts may offer accept, accept_for_session, ' +
+            'accept_with_execpolicy_amendment, decline or cancel; use only an offered value. ' +
+            'Prefer allow_once (hook) or accept (Codex). Execpolicy amendments remember a ' +
+            'command pattern beyond this call and require delegated_approval=true.',
         },
         request_id: {
           type: 'string',

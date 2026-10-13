@@ -1146,6 +1146,13 @@ not remove it: nothing can auto-approve anything unless a human first sets
 it: it says what to do instead (name the blocked chat and the tool) and names the setting, so a
 chat running without it does not spend a turn probing.
 
+Codex native actions travel unchanged through MCP; the prompt in Lua owns the accepted values.
+Command prompts provide `input.scope_tool = "Bash"` so scoped delegation uses the same command
+matcher as hooks. File prompts retain their descriptive tool name and require a bare scope entry.
+The adapter marks execpolicy amendments `delegation_requires_unscoped`: they can remember a
+broader pattern than the command being judged, so matching the current call is insufficient.
+Only full delegation (`true`) may select them; the human option and reply path stay the same.
+
 Four things about the implementation:
 
 - **The answer takes exactly the human path.** `approval_delegate` writes the chosen option line —

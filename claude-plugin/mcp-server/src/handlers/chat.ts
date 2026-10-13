@@ -1,6 +1,6 @@
 import { callNeovim } from '../rpc.js';
 import { z } from 'zod';
-import { APPROVAL_ACTIONS, CHAT_POSITIONS } from '../tools/chat.js';
+import { CHAT_POSITIONS } from '../tools/chat.js';
 import { validateChatTarget } from '../validation/schema.js';
 
 // `task` is written into the caller's own `orchestrated` entry as a `{path, task}` map
@@ -188,7 +188,8 @@ export async function handleChatSendMessage(args: any): Promise<any> {
 const chatAnswerApprovalArgsSchema = z.object({
   bufnr: z.number().nullish(),
   file_path: z.string().nullish(),
-  action: z.enum(APPROVAL_ACTIONS),
+  // The pending prompt in Lua owns the vocabulary, including native CLI decisions.
+  action: z.string().min(1),
   request_id: z.string().nullish(),
   from_bufnr: z.number(),
   rpc_port: z.number().optional(),
@@ -249,8 +250,8 @@ export async function handleChatAnswerApproval(args: any): Promise<any> {
       {
         type: 'text',
         text:
-          `Answered ${result?.tool ?? 'the'} tool approval with ${action}. That chat has started ` +
-          'a new turn; it will come back to you when it stops.',
+          `Answered ${result?.tool ?? 'the'} tool approval with ${action}. ` +
+          'The answer was delivered through the chat approval path.',
       },
     ],
     _meta: { bufnr: result?.bufnr ?? bufnr, tool: result?.tool, action },

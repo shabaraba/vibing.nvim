@@ -88,6 +88,7 @@ end
 --- @field label string `"<value> - <sentence>"`, the grammar `approval_parser` reads back
 --- @field raw any what to send as `{ decision = raw }`
 --- @field is_allow boolean
+--- @field delegation_requires_unscoped boolean remembers policy beyond the scoped call
 
 --- Turn codex's `availableDecisions` into the chat's option list.
 --- @param available any[]|nil as codex sent it
@@ -106,6 +107,9 @@ function M.options(available)
       label = description and (value .. " - " .. description) or (value .. " - Codex decision"),
       raw = raw,
       is_allow = M.is_allow(value),
+      -- A remembered command pattern can grant calls outside delegated_scope. Only full
+      -- delegation may choose it; the human path still offers and handles the same option.
+      delegation_requires_unscoped = value == "accept_with_execpolicy_amendment",
     })
   end
 

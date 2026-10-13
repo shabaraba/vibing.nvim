@@ -117,10 +117,21 @@ local function is_allowed_by_scope(chat_buf, pending, action)
   if is_deny_action(pending, action) then
     return true
   end
+  for _, option in ipairs(pending.options or {}) do
+    if option.value == action and option.delegation_requires_unscoped then
+      return false
+    end
+  end
+  local input = pending.input or {}
+  local scope_tool = pending.tool
+  -- Only native adapters provide this alias; hook tool inputs must not override their tool.
+  if pending.kind == require("vibing.infrastructure.rpc.pending_native_approvals").KIND then
+    scope_tool = input.scope_tool or scope_tool
+  end
   local scope = chat_buf:get_frontmatter_list("delegated_scope")
   local matchers = require("vibing.infrastructure.permissions.matchers")
   for _, pattern in ipairs(scope) do
-    if matchers.matches_permission(pending.tool, pending.input or {}, pattern) then
+    if matchers.matches_permission(scope_tool, input, pattern) then
       return true
     end
   end
@@ -268,7 +279,8 @@ function M.answer(params)
         "This chat's declared delegated_scope does not cover the %s tool with this input, so "
           .. "only the user can allow it. Say which chat is blocked and on what, and let the "
           .. "user answer it (or widen delegated_scope in that chat's frontmatter). "
-          .. "A deny_once/deny_for_session answer is always allowed regardless of scope.",
+          .. "Policy-remembering options require delegated_approval=true. "
+          .. "A denial is always allowed regardless of scope.",
         tostring(pending.tool)
       )
     )
