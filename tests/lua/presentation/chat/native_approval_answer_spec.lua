@@ -83,6 +83,26 @@ describe("answering a Codex approval in the chat", function()
     error("no option named " .. value)
   end
 
+  it("delegated native answers reach the CLI once through the real send path", function()
+    local Delegate = require("vibing.application.chat.approval_delegate")
+    local Config = require("vibing.config")
+    Config.get().permissions.delegated_approval = true
+    local amendment = { acceptWithExecpolicyAmendment = { execpolicy_amendment = { "/bin/zsh", "-lc", "ls" } } }
+    local chat_buf, decisions = chat_with_native({ "accept", amendment })
+    local orchestrator = view.render({ session_id = "orchestrator" }, "back")
+    chat_buf:show_pending_prompts()
+    -- This is exactly the busy state of a worker holding a native approval.
+    chat_buf._is_sending = true
+    local params = { bufnr = chat_buf.buf, from_bufnr = orchestrator.buf,
+      action = "accept_with_execpolicy_amendment", request_id = "codex-p1-0" }
+    local result = Delegate.answer(params)
+    local again = pcall(Delegate.answer, params)
+    assert.same({ true, false, { amendment }, 0, {}, {} }, {
+      result.success, again, decisions, #chat_buf:get_pending_approvals(),
+      chat_buf:get_session_allow(), chat_buf:get_session_deny(),
+    })
+  end)
+
   describe("what the answer does not do", function()
     it("never writes to this chat's session allow/deny lists", function()
       -- The whole point of the separate channel. Codex asked whether a call may leave *its*

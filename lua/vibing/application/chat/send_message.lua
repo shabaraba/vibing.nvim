@@ -211,12 +211,12 @@ function M.execute(adapter, callbacks, message, config)
     -- 「このチャットにターンが必要か」はアダプタの問いではない（`outstanding_subagents.lua`）。
     -- ここだけ `on_approval_required` などと違ってターンをまたいで生き残る: プロセスはターンより
     -- 長生きするので、これを呼ぶのは「これを渡したターン」ではなく、そのプロセスの最後のターン
-    on_subagents_orphaned = function(unreported, recovered, subagents_lost)
+    on_subagents_orphaned = function(unreported, recovered, process_killed)
       require("vibing.application.chat.outstanding_subagents").wake_orphaned(
         bufnr,
         unreported,
         recovered,
-        subagents_lost
+        process_killed
       )
     end,
     on_approval_required = function(tool, input, options, hook_request_id, waiting, kind)

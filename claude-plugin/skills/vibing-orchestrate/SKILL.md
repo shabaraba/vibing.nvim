@@ -377,6 +377,15 @@ The two modes differ in who judges the prompt:
   same as when the setting is off. Don't try to widen the scope yourself to force a match; that
   defeats the point of having declared it up front.
 
+For a Codex native approval, pass the exact value offered by its prompt (`accept`,
+`accept_for_session`, `accept_with_execpolicy_amendment`, `decline`, or `cancel` when offered),
+rather than a hook action. Prefer `accept`. Command approvals match `Bash(...)` entries in
+`delegated_scope` using the displayed command; a shell wrapper must match as displayed.
+Native file approvals use the bare `Codex file change` scope entry. Native refusals need no
+scope. `accept_with_execpolicy_amendment` requires `delegated_approval = true`: it remembers a
+command pattern that can authorize later calls beyond the declared scope, so `"scoped"` refuses
+it even with a matching scope. Do not widen the setting to force an answer.
+
 Regardless of mode:
 
 - **Read the prompt before answering.** The buffer names the tool and its input. Approving a tool

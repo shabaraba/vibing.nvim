@@ -194,9 +194,10 @@ so a route added later is heard from rather than silently dropped, which is the 
 closed. Three of the seven reasons sit outside the four routes above because they are the `Pool.stop`
 callers outside the pool: `unresponsive`, `cancelled`, `chat_closed`.
 
-**The vocabulary stays inside the pool.** `forget` resolves the reason to a single boolean before
-announcing it, so `_on_gone` receives "is anything still coming for this chat" and not the reason
-string — the pool owns the routes, `duplex_routing` owns what to do with a dead process, and
+**The vocabulary stays inside the pool.** `forget` resolves the reason to a verdict before
+announcing it, so `_on_gone` receives whether the chat needs a report and whether the pool explicitly
+killed the process (`process_killed`), not the reason string — the pool owns the routes,
+`duplex_routing` owns what to do with a dead process, and
 `Vibing.DuplexReclaimReason` appears in no signature beyond `M.stop` and `forget`. #840 is the first
 consumer: a background subagent runs inside the CLI, so a reclaim takes it down and somebody has to
 tell the chat. `handbook/features/chat-ui.md` → "The same question under the duplex transport".

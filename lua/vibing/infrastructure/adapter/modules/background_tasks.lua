@@ -107,7 +107,7 @@ function M.report(owner, recover, cwd, session_id)
 end
 
 --- @class Vibing.OrphanReportPlan what a resident process needs in order to report its own ledger
---- @field on_orphaned fun(unreported: Vibing.BackgroundTask[], recovered: Vibing.RecoveredSubagent[], subagents_lost: boolean)
+--- @field on_orphaned fun(unreported: Vibing.BackgroundTask[], recovered: Vibing.RecoveredSubagent[], process_killed: boolean)
 --- @field recover Vibing.AdapterDescriptor.recover_unreported_tasks|nil
 --- @field adapter table asked for the session id at report time, because turn 1 does not have one yet
 ---
@@ -128,9 +128,9 @@ end
 --- Recovery is worth more here than at the end of a turn: minutes passed while the process sat idle,
 --- so a subagent that finished in them has written its transcript by now.
 --- @param owner table the process record, which is both the ledger owner and where the plan lives
---- @param subagents_lost boolean whether the reclaim took the CLI's children with it — passed straight
+--- @param process_killed boolean whether the pool deliberately killed the CLI — passed straight
 ---   through, because what it changes is what the chat is *told*, which is not this module's business
-function M.report_orphaned(owner, subagents_lost)
+function M.report_orphaned(owner, process_killed)
   local plan = owner._orphan_report
   if not plan then
     return
@@ -138,7 +138,7 @@ function M.report_orphaned(owner, subagents_lost)
   local unreported, recovered =
     M.report(owner, plan.recover, owner.cwd, plan.adapter:get_session_id(owner.process_id))
   if #unreported > 0 then
-    plan.on_orphaned(unreported, recovered, subagents_lost)
+    plan.on_orphaned(unreported, recovered, process_killed)
   end
 end
 

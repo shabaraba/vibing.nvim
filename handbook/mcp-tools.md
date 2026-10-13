@@ -260,6 +260,15 @@ either way. Why it writes the chosen option line into the worker's buffer instea
 decision directly, and why the watchdog's `waiting_approval` wording changes with the setting:
 `handbook/architecture/orchestration.md` → "Answering a worker's tool approval".
 
+The `action` is the exact value offered by the pending prompt, validated in Lua rather than
+from a duplicated MCP enum. Codex native prompts can offer `accept`, `accept_for_session`,
+`accept_with_execpolicy_amendment`, `decline`, or `cancel`; prefer `accept`. In `"scoped"` mode,
+command approvals match `Bash(...)` scope entries against the displayed command (including any
+shell wrapper); native file approvals use the bare `Codex file change` entry. Native refusals
+always pass the scope gate. Execpolicy amendments require `delegated_approval = true`, because
+Codex remembers a command pattern that can cover future calls outside the declared scope.
+They are refused in `"scoped"` even when the current call matches.
+
 `nvim_chat_list({})` reports every chat buffer open in this Neovim session in one call —
 `bufnr`, `file_path`, `chat_status`, `context_size` (the last measured context in tokens, from the
 last turn's own `### Tokens` marker; absent until a turn has completed), `updated_at` (frontmatter
