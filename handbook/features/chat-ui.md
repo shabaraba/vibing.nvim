@@ -152,8 +152,8 @@ ledger at that point interrupts every fan-out the instant it starts. #840 moves 
 moment the statement becomes true again, which is `duplex_pool`'s reclaim.
 
 **A reclaim route declares what it meant; nothing infers it.** All of them are "the process is gone",
-and they differ on two things: whether anybody still needs telling, and whether the CLI's children went
-down with it. `duplex_pool` resolves both from the route into a `Vibing.DuplexReclaimVerdict` before
+and they differ on two things: whether anybody still needs telling, and whether the pool explicitly killed
+the CLI. `duplex_pool` resolves both from the route into a `Vibing.DuplexReclaimVerdict` before
 announcing it, so `Vibing.DuplexReclaimReason` reaches no signature outside that module and no consumer
 re-decides what a route means. `QUIET_RECLAIM` names the four routes nobody needs telling about —
 `restart` (a turn is being started on the replacement in that same call), `shutdown` and `chat_closed`
@@ -171,17 +171,76 @@ transport picks up yet), so it trades a woken chat for a resident 200MB process 
 five minutes are not wasted either — they are the window in which the CLI's own notification can still
 arrive and take the entry off the ledger, and then there is nothing to report.
 
-So the notice has two forms, and the difference is the instruction — but **it is not keyed on which
-producer called.** A background subagent runs inside the CLI, so a reclaim that killed that process
-took it with it: nothing is coming, and "go and collect them" would tell the model to wait for
-something that cannot arrive. A CLI that merely _exited_, though, leaves the same state on both
-transports — the work may have finished with its notification dropped, and its transcript is on disk.
-That is oneshot's ordinary end of turn and it is also duplex's `exited` route, so the flag is
-`subagents_lost`, answered by `Vibing.DuplexReclaimVerdict` rather than by the entry point. Keying it
-on
-the producer instead would have told the model to stop looking for output a `TaskOutput` could still
-return. Recovery is in any case worth more on the reclaim route: minutes passed while the process sat
-idle, so a subagent that finished in them has written its transcript by the time it is read.
+The notice keeps two forms to explain how the CLI ended, with a separate question for saved
+answers. `process_killed` says whether the pool explicitly killed the process; its false value on
+`exited` does **not** assert that any subagent survived. Both forms preserve the recovered
+transcript text. The exit form asks for saved output and re-dispatch or resume if no answer is
+available, and explicitly says not to wait for a notification from the exited CLI. This corrects
+`COPY.alive`'s former "may still be running" claim without replacing it with an unmeasured promise
+that every possible exit always kills every possible kind of work.
+
+### CLI lifetime measurement
+
+Measured on 2026-10-13 with Claude Code **2.1.286**, parent and general-purpose background agent
+both **`claude-haiku-4-5-20251001`**. Driver: `tests/perf/background_subagent_lifetime.py`, guarded by
+`VIBING_PERF=1` and outside `npm test`. The adjacent Node tests exercise only its accounting and
+classification, with no paid CLI calls.
+
+The observations were selected before the run: parent/descendant process state, new work after
+parent exit, and output recovery. Each agent wrote a start marker, waited, then had to use a
+**separate Write tool** to create a completion marker. A surviving sleep process or an old
+transcript alone could not prove agent survival. Samples every 0.5 seconds retained discovered
+PIDs after reparenting and their process state; a zombie was not treated as a live worker.
+
+Ordinary print mode waits for background agents. To obtain an exit while work remained pending,
+the two exit cells used **`CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=2000`**, the CLI's own wait ceiling,
+rather than a harness signal. The live duplex control used the same setting but kept stdin open
+until the work progressed. These are different from forcing the CLI to exit with SIGTERM.
+The [upstream headless documentation](https://code.claude.com/docs/en/headless#background-tasks-at-exit)
+describes the wait ceiling; the timings and observations below are from the actual local run.
+
+| Condition                                                | State at parent exit                                                                        | Work afterward                                                                                             | Saved-answer recovery                                                                                                       |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| oneshot, stdin already closed                            | exit 0 at 11.895s; start marker present, completion marker absent; agent notified `stopped` | No completion marker or further agent-transcript growth in the following 90s; no live recorded descendants | Same-session `--resume`: actual Bash tool called the plugin's `claude_subagent_transcript.recover`, returned `[]`           |
+| duplex, stdin closed after launching `result` at 11.388s | exit 0 at 14.603s; start marker present, completion marker absent; agent notified `stopped` | Same absence of new work for 90s; no live recorded descendants                                             | Same reader through an actual resumed CLI tool call, returned `[]`                                                          |
+| duplex with open stdin                                   | Parent alive and a successful separate completion Write observed by 56.651s                 | Establishes only that the task can progress while the parent is alive                                      | Not a natural-exit or recovery cell; final agent `task_notification` completion was not confirmed before budget termination |
+
+The live control is accepted **only** as evidence that work can progress with a live parent. It was
+stopped for budget reasons and supplies no evidence about natural exit. A completion notification
+for its nested Bash command is not the background agent's own completion. The driver now matches
+that notification to the launched agent's task id before declaring full control completion.
+Completed-before-exit cells, missing launch/start markers, failed exits and forced exit cells are
+excluded from conclusions about post-exit lifetime.
+
+Under the two measured ceiling exits, pending work did not continue and no answer was recovered.
+That contradicts using "may still be running" as advice for **these** exits. It does not prove what
+happens for every CLI version, backend, model, abrupt crash, server-side operation or wait setting.
+The production oneshot normally waits too: it may have an unreported **finished** agent whose
+notification was lost, while an unfinished agent at process exit may require the wait ceiling to
+have expired. The production default ceiling is 3600s (0 disables it), not the measured 2s. No
+claim that shortening it reproduces every production exit is made, and the new copy consequently
+states only that the CLI exited and no answer was recovered; existing saved answers remain useful.
+The duplex `exited` predicate records the same observed action, not an opposing agent-lifetime
+verdict. Its internal field is now named `process_killed` to make that distinction explicit.
+
+**Cost and failures:** cumulative observed input **308,148 tokens**, output **5,571 tokens**,
+including cache reads/creation. This exceeded the approved 300k input cap by 8,148. Polling usage
+cannot stop a model request already in flight; the live cell needed extra requests beyond its
+estimate. No additional paid run followed. Accounting deduplicates API message ids and takes
+per-session cumulative `modelUsage` high-water marks across resume, including cache usage, rather
+than adding replayed results. The live cell has no final complete usage result; its latest
+assistant/transcript usage is included conservatively.
+
+The guard now reserves 120k input before a new cell, 50k before a recovery turn, and 20k for a
+request in flight during observation, plus output headroom. With the measured 203,882 tokens
+already spent before the live cell, the revised admission guard would refuse that launch. This is
+a conservative stop guard, **not** an exact upstream token cap. It preserves evidence on a budget
+stop. Re-running with `--prior` includes earlier attempts in the same budget.
+The first TaskOutput recovery prompt was unusable because 2.1.286 advertises no TaskOutput tool;
+its prose `UNAVAILABLE` was excluded and replaced by the actual plugin-reader tool observation.
+An initial duplex attempt stopped just after init was also excluded. The later oneshot reader
+finished and saved its result before a log-only `NameError`; that print error was fixed without
+re-running inference. The three accepted observations and both reader results were retained.
 
 **The ledger has to follow the process, not the turn** (`background_tasks.share`). A
 `task_notification` for a subagent launched in turn N arrives after turn N — most often between turns,

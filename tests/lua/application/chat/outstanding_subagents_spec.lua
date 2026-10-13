@@ -139,7 +139,7 @@ describe("outstanding background subagents", function()
 
   -- The other half of the same hole: with one recoverable out of three, keying the notice on the
   -- recovered list reported that one and silently abandoned the two still running.
-  it("names the still-running ones alongside the recovered output", function()
+  it("names the unanswered ones alongside the recovered output", function()
     local bufnr = make_chat()
 
     assert.is_true(Outstanding.wake({
@@ -158,10 +158,12 @@ describe("outstanding background subagents", function()
     -- The two with nothing on disk are the ones the model has to go and collect.
     mentions(body, "a1")
     mentions(body, "a3")
-    mentions(body, "TaskOutput")
+    mentions(body, "saved output")
     -- ...and the recovered one must not be asked for again: its answer is in the notice already.
-    mentions(body, "Nothing recoverable yet")
-    omits(body:sub(body:find("Nothing recoverable yet", 1, true)), "a2")
+    mentions(body, "No answer was recovered")
+    omits(body:sub(body:find("No answer was recovered", 1, true)), "a2")
+    omits(body, "may still be running")
+    mentions(body, "Do not wait for a completion notification from the exited CLI")
   end)
 
   -- A third producer makes this path reachable on *every* turn, so a turn that backgrounded nothing
@@ -262,17 +264,16 @@ describe("outstanding background subagents", function()
       omits(body, "TaskOutput")
     end)
 
-    -- The route that reclaims a process it did not kill: the CLI exited on its own, which leaves the
-    -- subagents exactly as the oneshot transport's ordinary end of turn does. Saying "they are gone"
-    -- here would tell the model not to collect output that its transcript may still hold.
-    it("does not claim they are gone when the CLI merely exited on its own", function()
+    -- Both oneshot and duplex exit notices preserve saved output without offering
+    -- waiting as an alternative. False records an exit, not a surviving agent.
+    it("asks for saved output without claiming agents survived a natural exit", function()
       local bufnr = make_chat()
       Outstanding.wake_orphaned(bufnr, { { task_id = "a1", description = "review reuse" } }, {}, false)
 
       local body = sent_body()
-      mentions(body, "may still be running")
-      mentions(body, "TaskOutput")
-      omits(body, "Do not wait for them")
+      omits(body, "may still be running")
+      mentions(body, "saved output")
+      mentions(body, "Do not wait for a completion notification from the exited CLI")
     end)
 
     -- Recovery is worth more here than at the end of a turn: minutes passed while the process sat
@@ -320,7 +321,7 @@ describe("outstanding background subagents", function()
         { { task_id = "a1", text = "no duplication found" } }
       )
       mentions(body, "no duplication found")
-      omits(body, "Nothing recoverable yet")
+      omits(body, "No answer was recovered")
       omits(body, "TaskOutput")
     end)
   end)
