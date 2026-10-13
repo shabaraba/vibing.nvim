@@ -111,6 +111,19 @@ describe("chat search answer", function()
     assert.are.equal("first second", results[1].summary)
   end)
 
+  it("keeps search results when the final object brace is omitted", function()
+    write_chat(chat_dir, "a")
+    local text = answer({ { label = "direct", chats = { { path = "a.md", summary = "検索の要約" } } } }):gsub(
+      "}\n```",
+      "\n```"
+    )
+    local results, err = AgentAnswer.parse(text, chat_dir, root)
+
+    assert.is_nil(err)
+    assert.are.same({ "direct:a" }, names(results))
+    assert.are.equal("検索の要約", results[1].summary)
+  end)
+
   it("returns an empty list when the agent found nothing", function()
     local results, err = AgentAnswer.parse(answer({}), chat_dir, root)
 

@@ -125,6 +125,9 @@ end
 --- @return Vibing.Config
 function M.child_config(chat_dir, overrides)
   return vim.tbl_deep_extend("force", {
+    -- E2E exercises the bundled MCP server; unrelated user servers can require OAuth and
+    -- divert a turn into authentication instead of the tool the spec asks it to exercise.
+    ai = { agents = { claude = { mcp = { inherit_cli_servers = false } } } },
     chat = {
       storage = {
         location = "custom",

@@ -47,20 +47,19 @@ local function cut_at_utf8_boundary(s, max_bytes)
   return s:sub(1, cut)
 end
 
---- Read the project-local system prompt.
---- Returns nil when the file is missing, unreadable, empty, or whitespace-only,
---- so callers can skip it without special-casing. Content over MAX_BYTES is
---- truncated rather than rejected, so an oversized file degrades instead of
---- silently dropping the user's instructions.
---- @param project_root string
+--- Read one prompt file. Returns nil when the file is missing, unreadable, empty, or
+--- whitespace-only, so callers can skip it without special-casing. Content over MAX_BYTES is
+--- truncated rather than rejected, so an oversized file degrades instead of silently dropping the
+--- user's instructions.
+--- @param file string absolute path
+--- @param label string how the warning names the file
 --- @return string|nil content
-function M.read(project_root)
-  local prompt_file = M.path(project_root)
-  if vim.fn.filereadable(prompt_file) ~= 1 then
+function M.read_file(file, label)
+  if vim.fn.filereadable(file) ~= 1 then
     return nil
   end
 
-  local ok, lines = pcall(vim.fn.readfile, prompt_file)
+  local ok, lines = pcall(vim.fn.readfile, file)
   if not ok or type(lines) ~= "table" then
     return nil
   end
@@ -72,13 +71,17 @@ function M.read(project_root)
 
   if #content > MAX_BYTES then
     content = cut_at_utf8_boundary(content, MAX_BYTES)
-    require("vibing.core.utils.notify").warn(
-      string.format(".vibing/system-prompt.md exceeds %d bytes - truncated", MAX_BYTES),
-      "Config"
-    )
+    require("vibing.core.utils.notify").warn(string.format("%s exceeds %d bytes - truncated", label, MAX_BYTES), "Config")
   end
 
   return content
+end
+
+--- Read the project-local system prompt.
+--- @param project_root string
+--- @return string|nil content
+function M.read(project_root)
+  return M.read_file(M.path(project_root), ".vibing/system-prompt.md")
 end
 
 --- Read the prompt that applies to a request running in `cwd`.
@@ -99,6 +102,26 @@ function M.read_for_cwd(cwd)
     end
   end
   return M.read(nvim_root)
+end
+
+--- Read a file named relative to the project, for a request running in `cwd` — the same order as
+--- `read_for_cwd`: the chat's own worktree first, then the root Neovim was started in. An absolute
+--- path is read as it is.
+--- @param relative_path string
+--- @param cwd string|nil
+--- @return string|nil content
+function M.read_relative_for_cwd(relative_path, cwd)
+  if relative_path:sub(1, 1) == "/" then
+    return M.read_file(relative_path, relative_path)
+  end
+  local nvim_root = vim.fn.getcwd()
+  if cwd and cwd ~= "" and cwd ~= nvim_root then
+    local from_cwd = M.read_file(cwd .. "/" .. relative_path, relative_path)
+    if from_cwd then
+      return from_cwd
+    end
+  end
+  return M.read_file(nvim_root .. "/" .. relative_path, relative_path)
 end
 
 return M

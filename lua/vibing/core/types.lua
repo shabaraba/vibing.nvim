@@ -29,11 +29,15 @@
 -- Vibing.PermissionRule and Vibing.PermissionsConfig are defined in config.lua
 
 ---@class Vibing.AdapterOpts
+---@field output_schema table? JSON Schema for backends supporting structured_output
+---@field output_schema_path string? Temporary schema file for backends requiring a file
+---@field on_structured_output fun(value: table)? Validated structured result
 ---@field streaming boolean?
 ---@field action_type "chat"?
 ---@field mode string?
 ---@field model string?
 ---@field effort ("default"|"low"|"medium"|"high"|"xhigh"|"max")?
+---@field profile string? チャットの`profile:` frontmatter。組み込みの`default`/`focused`/`reviewer`か`ai.profiles`の名前（`core/constants/profiles.lua`）
 ---@field process ("oneshot"|"duplex")? チャットの`process:` frontmatter。**要求**であって結果ではない。実際に走るモデルは`adapter/modules/process_model.lua`が決め、`_process_model`に入る
 ---@field _process_model ("oneshot"|"duplex")? このターンが実際に走るプロセスモデル。`cli_adapter.stream()`が解決して書き込み、`request_builder`の`duplex`条件が読む
 ---@field tools string[]?

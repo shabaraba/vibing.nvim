@@ -52,8 +52,8 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@types/node": "^26.6.3",
-    "eslint": "^10.11.0",
+    "@types/node": "^26.6.4",
+    "eslint": "^10.12.0",
     "markdownlint-cli": "^0.49.1",
     "prettier": "^3.9.9",
     "typescript": "^7.0.2"

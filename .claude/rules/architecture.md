@@ -31,15 +31,10 @@ whenever this path is touched:
 - **The `.res` file carries three decisions, not two** — `deny`, `allow` and `defer`. Exiting 0
   in silence is `defer` ("no opinion"), _not_ an approval.
 - **Only vibing-nvim's own MCP tools get `allow`; everything else permitted gets `defer`.**
-  What an `allow` skips is the CLI's **allowlist**, not the user's deny rules. Measured against
-  claude 2.1.236, the gate is ordered: toolset construction → PreToolUse hook → granular deny rules
-  → `can_use_tool`. A **tool-name** deny is out of reach of any hook verdict — the tool is removed
-  when the toolset is built and the hook never runs for it. A **granular** rule (`Bash(rm -rf:*)`)
-  is evaluated _after_ the hook and **outranks an `allow` written there**. So the reason to withhold
-  `allow` on the ordinary path is not safety from a deny rule: it is that nothing has looked at the
-  call, and the user's own allowlist should still get its say. The one path that does write `allow`
-  for an ordinary tool is an approval a human answered by eye (`permissions.md`). The ordering, the
-  control cell that establishes it and the two limits it is measured under:
+  What an `allow` skips is the CLI's **allowlist**, not the user's deny rules — a granular deny
+  rule is evaluated after the hook and outranks an `allow` written there. The one path that does
+  write `allow` for an ordinary tool is an approval a human answered by eye (`permissions.md`).
+  The gate ordering, the version it was measured against, and the two limits it is measured under:
   `handbook/architecture/approval-without-kill.md`.
 
 The comm directory path has exactly one definition, `infrastructure/rpc/comm_dir.lua`, shared by
@@ -55,7 +50,7 @@ Claude backend's behaviour is the contract, pinned by `tests/lua/infrastructure/
 over every registered descriptor.
 
 - **`core/constants/agents.lua` is the single definition of what a backend is** — module paths,
-  export name, description, model candidates, and its `config_fields` (what `ai.agents.<id>.*`
+  export name, description, model candidates, and its `config_fields` (what `ai.agents.<id>.extensions.*`
   accepts). `factory.lua`, `modes.lua`, `config.lua`, `completion/providers/frontmatter.lua` and
   `infrastructure/init.lua` all derive from it. It deliberately requires nothing, which keeps the
   dependency one-way.
@@ -104,10 +99,10 @@ over every registered descriptor.
   reporting a spawn error. Keep staging synchronous and atomic; if it fails, omit the hook rather
   than registering a command that cannot run. Keep the hook in `bypassPermissions`: that mode
   bypasses the decision, not the git-snapshot baseline carried by the same PreToolUse round trip.
-- **`codex_tool_vocabulary.lua` has no `normalize_input`, deliberately.** A codex edit carries no
-  path in `tool_input` — the paths are inside the apply_patch envelope in `command`, and there may
-  be several. So granular `paths` rules do not match codex edits. Filling `file_path` from the
-  first path would let a deny rule be evaded by patch ordering; the fix belongs in `matchers.lua`.
+- **Codex patch targets travel as `_diff_paths`, separate from `file_path`.** The vocabulary
+  extracts all targets from the apply_patch envelope, including both sides of a move, for the
+  request-diff backup. Resolve relative paths against the chat cwd. Granular `paths` rules still
+  read a single `file_path`; never fill it from the first patch target.
 
 Why each seam exists and which CLI version each shape was captured from:
 `handbook/architecture/cli-integration.md` → "Backend Seams".
@@ -188,8 +183,7 @@ or a formatter run through Bash still shows up (#625).
   applied when `extra_paths` is merged into either diff implementation, or tool events add the
   directory back after git excluded it. Test the path relative to the current worktree root — a
   worktree itself normally lives below an outer `.vibing/worktrees/`.
-- **The git calls block the main loop** (`vim.system():wait()`): 20ms per `git add -A` on a 9k-file
-  tree, 63ms on an 80k one.
+- **The git calls block the main loop** (`vim.system():wait()`), synchronously inside the hook.
 - **`request_diff.lua` stays as the fallback**, and a turn where both come up empty **warns**
   rather than rendering as a turn that changed nothing.
 
@@ -216,8 +210,7 @@ come back. `handbook/architecture/processes-and-turns.md`.
 - **The hook can only ever name a process**, because `VIBING_PROCESS_ID` is fixed at spawn and an
   environment variable cannot carry a per-turn value to a process that outlives the turn. The turn
   is never on the wire: `rpc/hook_scope.lua` resolves it in-editor, and is the **one** place that
-  resolution happens — it was previously derived three times per call under two policies, which
-  disagreed. An id that is **present but unmatched** resolves to `nil`, never to the sole
+  resolution happens. An id that is **present but unmatched** resolves to `nil`, never to the sole
   registered entry; that fallback applied another chat's `allow` / `deny` / `:once` lists to a late
   hook, the #667 failure through a door #667 did not close.
 - **Two registries, cut where the ids are cut.** `process_registry.lua` holds the `--resume`
@@ -249,7 +242,7 @@ come back. `handbook/architecture/processes-and-turns.md`.
 One resident CLI process per chat, serving many turns over an open stdin. **Opt-in and default
 off** — `ai.agents.<id>.process = "duplex"` or a chat's own `process:` frontmatter, and only for a
 backend whose descriptor declares it (claude over stdin stream-json, codex over `app-server`
-JSON-RPC). `process_model.lua` is the one place the exclusions live: a lightweight call, a subagent
+JSON-RPC, grok over ACP stdio). `process_model.lua` is the one place the exclusions live: a lightweight call, a subagent
 chat and a backend whose descriptor does not declare `duplex` can never use it, whatever the
 configuration says. `handbook/architecture/duplex-transport.md`.
 
@@ -264,9 +257,8 @@ configuration says. `handbook/architecture/duplex-transport.md`.
   stay free of both.
 - **The reuse key is the argv, and it is built with no session id.** `permission_mode` comes from
   frontmatter, changes between turns and changes the argv, and a live process cannot be re-flagged.
-  Including the session makes the key differ by construction on every chat's second turn — every
-  chat restarts its process every time and the measured win is exactly zero, while the code looks
-  correct.
+  Including the session makes the key differ by construction on every chat's second turn, which
+  defeats reuse entirely. `handbook/architecture/duplex-transport.md`.
 - **A dying process is identified, never looked up.** stdout, stderr and exit reach a _process_,
   and `jobstop` only asks: the dying process's callbacks land **after** its replacement is
   registered under the same chat key. So each callback carries its own record and asks _am I still
@@ -299,13 +291,12 @@ Each chat buffer maintains its own session ID; processes and turns are keyed by 
 (`hrtime + random`, hex — see "Processes and Turns").
 
 - **Creating a directory two processes could both create is a shared-state operation.**
-  `vim.fn.mkdir(path, "p")` is not atomic and raises `E739` when another process wins the race —
-  9 failures in 200 concurrent calls. Every such creation goes through `core/utils/fs.lua`'s
-  `ensure_dir`. `tests/lua/mkdir_call_sites_spec.lua` **fails the build** on a direct
-  `vim.fn.mkdir` anywhere in `lua/`, and on one in `tests/` whose path is not provably rooted at
-  `vim.fn.tempname()` — plenary runs one child Neovim per spec file, so a fixed path under the
-  cwd or `$HOME` is shared between them, and it was a spec that flaked (#576). Anything the
-  analysis cannot prove is reported; `-- mkdir-ok: <reason>` waives the line that has no choice.
+  `vim.fn.mkdir(path, "p")` is not atomic and raises `E739` when another process wins the race.
+  Every such creation goes through `core/utils/fs.lua`'s `ensure_dir`.
+  `tests/lua/mkdir_call_sites_spec.lua` **fails the build** on a direct `vim.fn.mkdir` anywhere in
+  `lua/`, and on one in `tests/` whose path is not provably rooted at `vim.fn.tempname()`. Anything
+  the analysis cannot prove is reported; `-- mkdir-ok: <reason>` waives the line that has no choice.
+  `handbook/architecture/chat-lineage.md`.
 - **A fork inherits the source's `session_id`** and marks itself with `forked_from`;
   `opts._is_fork` makes the command builder emit `--fork-session`.
 - **A subagent chat shares the parent's `session_id` permanently and must never fork** —
@@ -343,7 +334,10 @@ One chat can create and drive others: `nvim_chat_create` (MCP) → `rpc/handlers
   to its system prompt on every turn (`cli_command_builder.lua`), pointing at the
   `claude-plugin/skills/vibing-worker/SKILL.md` skill for the rest. Skill discovery by description
   match is probabilistic, so this line — not the orchestrator's brief text — is the one place a
-  worker is guaranteed to be told where and how to report.
+  worker is guaranteed to be told where and how to report. **It is repeated at the end of every
+  delivered `## Request` body** (`delivery_message.reply_instructions`): claude replays the system
+  prompt recorded on a chat's first request, so an `orchestrated_by` added after that never reaches
+  the system line. Never on an answer to a blocked question — that body is the human's answer.
 - **A worker's tool-approval prompt is the user's to clear unless the user says otherwise**
   (`permissions.delegated_approval`, default `false`).
 - **A message delivered from another chat gets its own section kind** — `## Request`, `## Report`

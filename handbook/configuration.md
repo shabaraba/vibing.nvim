@@ -96,6 +96,7 @@ require("vibing").setup({
     helpers = {
       effort = "low",
     },
+    profiles = {},
   },
   automation = {
     limits = {
@@ -114,6 +115,7 @@ require("vibing").setup({
     orchestration = {
       max_concurrent = 0,
       max_concurrent_subagents = 0,
+      worker_defaults = {},
       notifications = {
         enabled = false,
         max_round_trips = 8,
@@ -267,7 +269,7 @@ ai = {
 All agents accept `path`, `process`, `env`, `settings`, `mcp` and `extensions`.
 Omit `path` to locate the executable on PATH. An explicit missing path fails; it never falls
 back to another executable. Grok additionally verifies the official xAI Grok Build CLI.
-`process = "duplex"` is supported by Claude and Codex; other agents reject it.
+`process = "duplex"` is supported by Claude, Codex and Grok; other agents reject it.
 Only Claude supports `settings.sources` and `mcp.inherit_cli_servers`; explicitly configuring
 these on another agent is an error. Native flags belong in `extensions`.
 
@@ -277,7 +279,32 @@ Old option locations are rejected with a migration hint. See
 **Permission rules need a git repository.** Grok discovers the PreToolUse hook vibing.nvim installs
 (`<cwd>/.grok/hooks/`) only inside a git repo. Outside one the hook is written and never read, so
 `permissions.rules`, the `ask` list and the Tool Approval UI silently do nothing — vibing.nvim
-warns once per working directory when it detects this.
+warns once per working directory when it detects this. This applies to **both** transports: the
+resident one honours the same file, verified against grok 1.0.50.
+
+### Grok's resident transport
+
+`ai.agents.grok.process = "duplex"` runs `grok agent stdio`, which speaks Agent Client Protocol
+JSON-RPC instead of printing a stream and exiting. It is not only a performance setting — it is the
+only grok transport that reaches vibing.nvim's own MCP tools, and therefore the only one where the
+`nvim_*` tools, the choice-list prompt (`nvim_ask_user_question`), Code Tour and the orchestration
+tools work at all. `grok --single` rejects `--plugin-dir`, and the servers travel in the protocol's
+`session/new`.
+
+Three things differ from the other backends' duplex, all measured rather than assumed:
+
+- **A turn ends on the reply to its own `session/prompt`**, not on a notification. The correlation
+  is the JSON-RPC request id, so grok cannot suffer the "whose turn just ended?" ambiguity that
+  claude's resident transport needs a guard for.
+- **Cancelling retires the process.** After a `session/cancel` grok answers the in-flight prompt in
+  about 2ms, but a prompt sent 16ms later got no reply for 65 seconds, while one sent 8 seconds
+  later completed normally. Rather than sleeping for a length nothing measured, vibing.nvim spends
+  one respawn on the next message — which is what cancelling cost before this transport existed. A
+  turn grok cancelled for its _own_ reasons (a rejected approval) keeps its process, because that
+  case is measurably reusable.
+- **`--permission-mode` is not passed**, because `grok agent` does not accept it. The gate there is
+  the project hook plus grok's own `session/request_permission`, which vibing.nvim answers with the
+  single-use option — the hook has already decided by then, and when it denies, grok never asks.
 
 ## AI and Automation
 
@@ -1980,3 +2007,36 @@ chat = {
 
 Summary files are saved as `YYYY-MM-DD.md` with YAML frontmatter (date, source files, total
 messages).
+
+## Chat Profiles and Worker Defaults
+
+`ai.profiles` defines named chat profiles as a list. The built-ins are `default` (all tools),
+`focused` (Bash, Read, Edit, Write, Glob, Grep) and `reviewer` (Read, Glob, Grep, Bash).
+Entries named after built-ins override individual fields. `ToolSearch` is always included;
+MCP tools are unaffected. Select a profile with frontmatter `profile:`, `/profile`, or
+`nvim_chat_create`'s `profile` argument.
+
+```lua
+ai = {
+  profiles = {
+    {
+      name = "implementer",
+      description = "Implements a specified change",
+      agent = "claude", model = "sonnet", effort = "medium",
+      tools = { "Bash", "Read", "Edit", "Write", "Glob", "Grep" },
+      setting_sources = { "user", "local" },
+      context_files = { ".vibing/implementer.md" },
+    },
+  },
+},
+automation = {
+  orchestration = { worker_defaults = { model = "sonnet", profile = "focused" } },
+},
+```
+
+Every profile requires `name`; other fields are optional. `tools`, `setting_sources` and
+`context_files` apply to Claude. Dropping `project` excludes project rules, skills and settings;
+provide the required instructions in the brief or context files. Tools and setting sources
+change on the next message; context files remain in Claude's first-message prompt snapshot.
+Worker creation resolves each choice as explicit argument, then profile, then worker defaults,
+then ordinary chat defaults. The default profile list and worker defaults are empty.

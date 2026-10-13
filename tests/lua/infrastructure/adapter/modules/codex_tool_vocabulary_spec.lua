@@ -66,6 +66,43 @@ describe("codex_tool_vocabulary", function()
     end
   end)
 
+  describe("patch diff targets", function()
+    local permission = require("vibing.infrastructure.rpc.handlers.permission")
+
+    it("extracts all operations and both move paths without mutating permission input", function()
+      local input = {
+        command = table.concat({
+          "*** Begin Patch",
+          "*** Add File: new file.txt",
+          "+*** Delete File: fake.txt",
+          "*** Update File: old.txt",
+          "*** Move to: moved.txt",
+          "@@",
+          "-old",
+          "+new",
+          "*** Delete File: deleted.txt",
+          "*** Update File: old.txt",
+          "*** End Patch",
+        }, "\r\n"),
+      }
+      local name, normalized =
+        permission.normalize_hook_input({ tool_name = "functions.apply_patch", tool_input = input }, vocabulary)
+      assert.equals("Edit", name)
+      assert.same({ "new file.txt", "old.txt", "moved.txt", "deleted.txt" }, normalized._diff_paths)
+      assert.is_nil(normalized.file_path)
+      assert.is_nil(input._diff_paths)
+    end)
+
+    it("does not treat shell commands or incomplete envelopes as patch targets", function()
+      local command = "*** Begin Patch\n*** Add File: a.txt\n+x\n*** End Patch"
+      assert.is_nil(vocabulary.normalize_input({ command = command }, "Bash")._diff_paths)
+      assert.is_nil(
+        vocabulary.normalize_input({ command = "*** Begin Patch\n*** Add File: a.txt" }, "Edit")._diff_paths
+      )
+      assert.is_nil(vocabulary.normalize_input({ command = false }, "Edit")._diff_paths)
+    end)
+  end)
+
   describe("to_canonical", function()
     it("normalizes every shell spelling before lifecycle and command deny checks", function()
       for _, name in ipairs({ "shell", "shell_command", "exec_command", "unified_exec" }) do

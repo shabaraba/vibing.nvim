@@ -34,6 +34,7 @@ local DuplexTurn = require("vibing.infrastructure.adapter.modules.duplex_turn")
 ---| { kind: "rate_limit", info: Vibing.RateLimitInfo }
 ---| { kind: "error", message: string, fatal: boolean?, prompt_uuid: string? } # fatal: the CLI declared the turn failed
 ---| { kind: "turn_end", subtype: string?, prompt_uuid: string? }     # a turn is over; whose, and the process may not be
+---| { kind: "structured_output", value: table, prompt_uuid: string? }
 ---| { kind: "prompt_ack", prompt_uuid: string, state: string? }      # the CLI named back a prompt written to its stdin
 ---| { kind: "background_task_started", task_id: string, description: string? }
 ---| { kind: "background_task_done", task_id: string, status: string?, usage: table? }
@@ -268,8 +269,7 @@ handlers.tool_end = function(event, context)
 
   local name, input = tool.name, tool.input
   local marker = ToolDisplay.resolve_marker(name, ToolDisplay.get_cached_markers(context))
-  local header =
-    string.format("\n%s %s(%s)\n", marker, name, mark_continuations(input_summary(name, input)))
+  local header = string.format("\n%s %s(%s)\n", marker, name, mark_continuations(input_summary(name, input)))
 
   if SubagentMarker.is_subagent_tool(name) then
     require("vibing.infrastructure.adapter.modules.turn_registry").decrement_subagent_count(context.turnId)
@@ -280,7 +280,8 @@ handlers.tool_end = function(event, context)
   local buffered = context._subagent_text and context._subagent_text[event.id]
   if buffered then
     context._subagent_text[event.id] = nil
-    header = header .. SubagentDisplay.format_buffer(input.subagent_type, buffered, SubagentDisplay.get_cached_show_prefix(context))
+    header = header
+      .. SubagentDisplay.format_buffer(input.subagent_type, buffered, SubagentDisplay.get_cached_show_prefix(context))
   end
 
   local result_text = type(event.result) == "string" and event.result or ""
@@ -382,6 +383,12 @@ end
 handlers.turn_end = function(event, context)
   if context.onTurnEnd then
     context.onTurnEnd(event)
+  end
+end
+
+handlers.structured_output = function(event, context)
+  if context.opts and context.opts.on_structured_output then
+    context.opts.on_structured_output(event.value)
   end
 end
 

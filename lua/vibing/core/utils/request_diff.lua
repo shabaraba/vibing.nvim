@@ -117,28 +117,8 @@ local function sweep_stale()
   end
 end
 
----ツール実行前にファイル内容を退避する（PreToolUseフックの許可パスから呼ぶ）
----同一リクエスト内で同じファイルが複数回編集されても、最初の退避
----（=リクエスト開始時点の状態）を保持する。
----@param turn_id string|nil リクエストのターンID
----@param tool_name string ツール名
----@param tool_input table ツール入力
-function M.capture(turn_id, tool_name, tool_input)
-  if not turn_id or turn_id == "" then
-    return
-  end
-  local path_key = TOOL_PATH_KEYS[tool_name]
-  if not path_key or type(tool_input) ~= "table" then
-    return
-  end
-  local path = tool_input[path_key]
-  if type(path) ~= "string" or path == "" then
-    return
-  end
-
-  sweep_stale()
-
-  local abs = vim.fn.fnamemodify(path, ":p")
+--- Back up one absolute path, retaining the first pre-edit state for the whole turn.
+local function capture_path(turn_id, abs)
   local s = sessions[turn_id]
   if not s then
     s = { dir = nil, count = 0, created = os.time(), files = {}, order = {} }
@@ -171,6 +151,37 @@ function M.capture(turn_id, tool_name, tool_input)
   end
   s.files[abs] = { existed = true, backup_path = backup_path }
   table.insert(s.order, abs)
+end
+
+--- Capture all diff targets before execution; cwd is the chat's working directory, not the
+--- editor's cwd. Existing single-file backends keep their ordinary path key.
+---@param turn_id string|nil
+---@param tool_name string
+---@param tool_input table
+---@param cwd? string
+function M.capture(turn_id, tool_name, tool_input, cwd)
+  local path_key = TOOL_PATH_KEYS[tool_name]
+  if not turn_id or turn_id == "" or not path_key or type(tool_input) ~= "table" then
+    return
+  end
+  local paths = {}
+  if type(tool_input[path_key]) == "string" then
+    table.insert(paths, tool_input[path_key])
+  end
+  if type(tool_input._diff_paths) == "table" then
+    for _, path in ipairs(tool_input._diff_paths) do
+      table.insert(paths, path)
+    end
+  end
+  sweep_stale()
+  for _, path in ipairs(paths) do
+    if type(path) == "string" and path ~= "" then
+      if cwd and cwd ~= "" and path:sub(1, 1) ~= "/" then
+        path = cwd .. "/" .. path
+      end
+      capture_path(turn_id, vim.fn.fnamemodify(path, ":p"))
+    end
+  end
 end
 
 ---git diff --no-index で2ファイル間のhunk部分（@@以降）を取得

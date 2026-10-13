@@ -311,12 +311,26 @@ describe("can_use_tool", function()
       assert.is_false(can_use_tool.is_vibing_nvim_mcp_tool("AskUserQuestion", "nvim_ask_user_question"))
     end)
 
+    it("matches grok's unprefixed server__tool form", function()
+      -- grok 1.0.50 qualifies an MCP tool as `server__tool` with no `mcp__` prefix, so vibing's
+      -- own server arrives with nothing at all before its name.
+      assert.is_true(can_use_tool.is_vibing_nvim_mcp_tool("vibing-nvim__nvim_get_info"))
+      assert.is_true(
+        can_use_tool.is_vibing_nvim_mcp_tool("vibing-nvim__nvim_ask_user_question", "nvim_ask_user_question")
+      )
+    end)
+
     it("does not match a server whose name merely ends with vibing-nvim", function()
-      -- Matching here would grant an unrelated server the CLI-gate bypass. Both real registration
-      -- styles put a separator right before the name, so requiring one costs nothing.
+      -- Matching here would grant an unrelated server the CLI-gate bypass. grok's form has no
+      -- leading separator, so the rejection rests on the server name being anchored -- either at
+      -- the start of the tool name or right after a `_` -- rather than on requiring a separator.
       assert.is_false(can_use_tool.is_vibing_nvim_mcp_tool("mcp__my-vibing-nvim__nvim_get_buffer"))
+      assert.is_false(can_use_tool.is_vibing_nvim_mcp_tool("my-vibing-nvim__nvim_get_buffer"))
       assert.is_false(
         can_use_tool.is_vibing_nvim_mcp_tool("mcp__my-vibing-nvim__nvim_ask_user_question", "nvim_ask_user_question")
+      )
+      assert.is_false(
+        can_use_tool.is_vibing_nvim_mcp_tool("my-vibing-nvim__nvim_ask_user_question", "nvim_ask_user_question")
       )
     end)
 

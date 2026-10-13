@@ -20,6 +20,8 @@ local M = {
     context = true,
     session = true,
     dynamic_permissions = true,
+    structured_output = true,
+    structured_output_tool = true,
   },
 
   -- `claude -p`, in the order the CLI has always been given it. The values behind `model`,
@@ -41,6 +43,8 @@ local M = {
       -- block execution, and --permission-mode plan leaks plan-mode meta-commentary into the
       -- generated title). It names nothing, so unlike a denylist it cannot drift (#488).
       { kind = "args", "--tools", "", when = "lightweight" },
+      -- A chat profile that names its built-in tools (`core/constants/profiles.lua`).
+      { kind = "extra", fn = CLICommandBuilder.profile_tool_args, unless = "lightweight" },
       { kind = "extra", fn = CLICommandBuilder.permission_args, unless = "lightweight" },
       { kind = "hook_arg", flag = "--settings", unless = "lightweight" },
       -- Without this the CLI swallows everything a subagent says and only its final tool_result
@@ -54,6 +58,12 @@ local M = {
       { kind = "extra", fn = CLICommandBuilder.plugin_dir_args, unless = "lightweight" },
       { kind = "extra", fn = CLICommandBuilder.mcp_config_args, unless = "lightweight" },
       { kind = "extra", fn = CLICommandBuilder.system_prompt_args },
+      {
+        kind = "extra",
+        fn = function(ctx)
+          return ctx.opts.output_schema and { "--json-schema", vim.json.encode(ctx.opts.output_schema) } or {}
+        end,
+      },
       { kind = "extra", fn = CLICommandBuilder.setting_source_args },
       -- End of options marker, so a prompt starting with `---` is not parsed as flags. Dropped on
       -- the duplex transport, where the same text is composed by `request_builder.prompt_text` and

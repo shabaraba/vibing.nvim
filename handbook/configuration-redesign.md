@@ -283,3 +283,5 @@ JSONでは省略を「既定値を使用」、`null` は不許可とし、無効
 | 使用量表示OFF時のcontext警告         | token_usage_report: retains context warnings               |
 | agentごとのenv選択                   | agent_environment: environment of each selected agent      |
 | 異agentへのfrontmatter既定値の混入   | renderer: does not inherit another agent's model or effort |
+
+main追従時に追加: `agent.profiles` → `ai.profiles`、`agent.orchestration.worker_defaults` → `automation.orchestration.worker_defaults`。Grokも `ai.agents.grok.process = "duplex"` に対応。

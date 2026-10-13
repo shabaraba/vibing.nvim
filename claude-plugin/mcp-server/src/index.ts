@@ -2,9 +2,13 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
-import { closeSocket } from './rpc.js';
+import { callNeovim, closeSocket, RPC_PORT_ENV } from './rpc.js';
 import { allTools } from './tools/index.js';
+import { withProfiles } from './tools/profiles.js';
 import { handlers } from './handlers/index.js';
+
+// A local socket round trip; long enough for a busy editor, short enough not to stall startup.
+const PROFILE_LOOKUP_TIMEOUT_MS = 2000;
 
 // MCP Server setup
 const server = new Server(
@@ -19,9 +23,22 @@ const server = new Server(
   }
 );
 
-// List available tools
+// List available tools.
+//
+// The configured chat profiles are read from the Neovim this server is bound to, so the model sees
+// them in `nvim_chat_create`'s schema (`tools/profiles.ts`). Only when bound: an unbound server
+// (registered at user scope, outside vibing.nvim) has no Neovim of its own to ask. Any failure
+// falls back to the static list — a tool list that fails to load would take every tool with it.
 server.setRequestHandler(ListToolsRequestSchema, async () => {
-  return { tools: allTools };
+  if (!process.env[RPC_PORT_ENV]?.trim()) {
+    return { tools: allTools };
+  }
+  try {
+    const result = await callNeovim('list_profiles', {}, undefined, PROFILE_LOOKUP_TIMEOUT_MS);
+    return { tools: withProfiles(allTools, result?.profiles ?? []) };
+  } catch {
+    return { tools: allTools };
+  }
 });
 
 // Handle tool calls

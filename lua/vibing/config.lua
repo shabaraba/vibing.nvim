@@ -5,6 +5,15 @@ local Usage = require("vibing.core.utils.token_usage")
 local Notify = require("vibing.core.utils.notify")
 local M = {}
 
+---@class Vibing.Profile
+---@field name string
+---@field description? string
+---@field agent? string
+---@field model? string
+---@field effort? string
+---@field tools? string[]
+---@field setting_sources? string[]
+---@field context_files? string[]
 ---@class Vibing.AiSelection
 ---@field agent? string
 ---@field model? string
@@ -68,7 +77,7 @@ local M = {}
 ---@field auto_analyze_on_error boolean
 ---@field auto_analyze_on_breakpoint boolean
 ---@class Vibing.Config
----@field ai {chat: Vibing.AiSelection, helpers: Vibing.AiSelection, agents: table<string, Vibing.AgentOptions>}
+---@field ai {chat: Vibing.AiSelection, helpers: Vibing.AiSelection, agents: table<string, Vibing.AgentOptions>, profiles: Vibing.Profile[]}
 ---@field chat Vibing.ChatConfig
 ---@field ui Vibing.UiConfig
 ---@field keymaps table<string, string>
@@ -77,7 +86,12 @@ local M = {}
 ---@field integrations table Neovim, plugins and DAP.
 
 M.defaults = {
-  ai = { chat = { agent = Agents.DEFAULT, effort = "default" }, helpers = { effort = "low" }, agents = {} },
+  ai = {
+    chat = { agent = Agents.DEFAULT, effort = "default" },
+    helpers = { effort = "low" },
+    profiles = {},
+    agents = {},
+  },
   chat = {
     storage = { location = "project", path = vim.fn.stdpath("data") .. "/vibing/chats" },
     context = {
@@ -129,6 +143,7 @@ M.defaults = {
     orchestration = {
       max_concurrent = 0,
       max_concurrent_subagents = 0,
+      worker_defaults = {},
       notifications = { enabled = false, max_round_trips = 8, max_wakes = 50 },
     },
   },
@@ -192,6 +207,18 @@ schema.ai.chat.agent = enum(Agents.ORDER)
 schema.ai.chat.model = nonempty
 schema.ai.chat.effort = enum(require("vibing.core.constants.modes").EFFORT_VALUES)
 schema.ai.helpers = vim.deepcopy(schema.ai.chat)
+schema.ai.profiles = list({
+  name = nonempty,
+  description = "string",
+  agent = enum(Agents.ORDER),
+  model = nonempty,
+  effort = enum(require("vibing.core.constants.modes").EFFORT_VALUES),
+  tools = list(nonempty),
+  setting_sources = list(enum({ "user", "project", "local" })),
+  context_files = list(nonempty),
+})
+schema.automation.orchestration.worker_defaults = vim.deepcopy(schema.ai.chat)
+schema.automation.orchestration.worker_defaults.profile = nonempty
 schema.chat.language = { kind = "language" }
 schema.chat.storage.location = enum({ "project", "user", "custom" })
 schema.chat.storage.path = nonempty
@@ -427,6 +454,11 @@ function M.setup(opts)
   for _, rule in ipairs(p.rules) do
     if not rule.tools or not rule.action then
       error("permissions.rules requires tools and action", 2)
+    end
+  end
+  for _, profile in ipairs(options.ai.profiles) do
+    if not profile.name or not profile.name:match("^[%w_%-]+$") then
+      error("ai.profiles requires a name containing letters, digits, _ or -", 2)
     end
   end
   M.options = options

@@ -101,6 +101,19 @@ describe("configuration redesign", function()
     assert.is_true(Config.get().ai.agents.claude.extensions.git_instructions)
   end)
 
+  it("retains profiles and worker defaults without merging list entries", function()
+    Config.setup({
+      ai = { profiles = { { name = "implementer", tools = {} }, { name = "focused", model = "haiku" } } },
+      automation = { orchestration = { worker_defaults = { model = "sonnet", profile = "focused" } } },
+    })
+    assert.equals(2, #Config.get().ai.profiles)
+    assert.same({}, Config.get().ai.profiles[1].tools)
+    assert.equals("haiku", Config.get().ai.profiles[2].model)
+    assert.equals("focused", Config.get().automation.orchestration.worker_defaults.profile)
+    Config.setup({ ai = { agents = { grok = { process = "duplex" } } } })
+    assert.equals("duplex", Config.get().ai.agents.grok.process)
+  end)
+
   it("preserves explicit Skill ask and deny", function()
     for _, key in ipairs({ "ask", "deny" }) do
       Config.setup({ permissions = { allow = {}, [key] = { "Skill" } } })
@@ -134,6 +147,11 @@ describe("configuration redesign", function()
     { chat = { mode = "code" } },
     { ui = { gradient = { interval = 100 } } },
     { unknown = true },
+    { ai = { profiles = { { model = "sonnet" } } } },
+    { ai = { profiles = { { name = "bad name" } } } },
+    { ai = { profiles = { { name = "worker", unknown = true } } } },
+    { ai = { profiles = { { name = "worker", agent = "unknown" } } } },
+    { ai = { profiles = { { name = "worker", effort = "extreme" } } } },
     { permissions = { operations = { read = true } } },
     { ui = { diff = { tool = "git" } } },
     { ai = { agents = { grok = { executable = "auto" } } } },
@@ -141,7 +159,7 @@ describe("configuration redesign", function()
     { ai = { helpers = { model = "" } } },
     { ai = { agents = { codex = { settings = { sources = { "user" } } } } } },
     { ai = { agents = { copilot = { mcp = { inherit_cli_servers = false } } } } },
-    { ai = { agents = { grok = { process = "duplex" } } } },
+    { ai = { agents = { copilot = { process = "duplex" } } } },
     { ui = { diff = { fill_char = "xx" } } },
     { integrations = { nvim = { port = 65536 } } },
     { permissions = { rules = { { action = "allow" } } } },

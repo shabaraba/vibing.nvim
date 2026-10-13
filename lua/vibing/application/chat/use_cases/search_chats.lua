@@ -32,7 +32,8 @@ function M.run(query, save_dir, callback, on_tool)
       end
       local results, parse_error = ChatAnswer.parse(text, chat_dir, cwd)
       callback({ results = results or {}, error = parse_error })
-    end
+    end,
+    require("vibing.application.chat.search.chat_schema")
   )
 end
 

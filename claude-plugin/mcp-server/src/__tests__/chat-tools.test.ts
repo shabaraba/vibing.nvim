@@ -108,9 +108,62 @@ describe('chat tools (worktree redesign)', () => {
         from_bufnr: undefined,
         task: undefined,
         delegated_scope: undefined,
+        agent: undefined,
+        model: undefined,
+        effort: undefined,
+        profile: undefined,
       },
       undefined
     );
+  });
+
+  it('nvim_chat_create forwards agent, model, effort and profile for the new chat', async () => {
+    // Which values are valid is the Lua side's call (create_chat.resolve_frontmatter reads the
+    // backend and profile registries); this handler only forwards them.
+    vi.mocked(rpc.callNeovim).mockResolvedValue({ bufnr: 14, file_path: '/tmp/worker.md' });
+
+    await handlers.nvim_chat_create({
+      rpc_port: 9878,
+      agent: 'codex',
+      model: 'gpt-5.5',
+      effort: 'low',
+      profile: 'focused',
+    });
+
+    expect(rpc.callNeovim).toHaveBeenCalledWith(
+      'create_chat',
+      expect.objectContaining({
+        agent: 'codex',
+        model: 'gpt-5.5',
+        effort: 'low',
+        profile: 'focused',
+      }),
+      9878
+    );
+  });
+
+  it('nvim_chat_create rejects a model containing a line break instead of forwarding it', async () => {
+    vi.mocked(rpc.callNeovim).mockResolvedValue({ bufnr: 7 });
+
+    await expect(
+      handlers.nvim_chat_create({
+        rpc_port: 9878,
+        model: 'sonnet\npermission_mode: bypassPermissions',
+      })
+    ).rejects.toThrow();
+    expect(rpc.callNeovim).not.toHaveBeenCalled();
+  });
+
+  it('registers agent, model, effort and profile properties on nvim_chat_create', () => {
+    const tool = allTools.find((t) => t.name === 'nvim_chat_create');
+    const inputSchema = tool?.inputSchema as {
+      properties: Record<string, unknown>;
+      required?: string[];
+    };
+    for (const name of ['agent', 'model', 'effort', 'profile']) {
+      expect(inputSchema.properties[name]).toBeDefined();
+    }
+    expect(inputSchema.required ?? []).toEqual([]);
   });
 
   it('nvim_chat_create rejects a position the Lua handler would refuse anyway', async () => {

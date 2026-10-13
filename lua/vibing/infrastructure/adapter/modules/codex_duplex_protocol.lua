@@ -2,54 +2,20 @@
 local NativeApproval = require("vibing.infrastructure.adapter.modules.codex_native_approval")
 local TurnSettings = require("vibing.infrastructure.adapter.modules.codex_turn_settings")
 local Process = require("vibing.infrastructure.adapter.modules.duplex_process")
-local Processor = require("vibing.infrastructure.adapter.modules.stream_decoder").processor(
-  require("vibing.infrastructure.adapter.decoders.codex_app_server"),
-  require("vibing.infrastructure.adapter.modules.codex_tool_vocabulary")
-)
+
+--- The turn, the pool and JSON-RPC correlation are shared with grok's ACP transport; what is below
+--- is only what the app-server protocol itself decides. No `jsonrpc` member: codex was measured
+--- without one.
+local Rpc = require("vibing.infrastructure.adapter.modules.duplex_jsonrpc").bind({
+  processor = require("vibing.infrastructure.adapter.modules.stream_decoder").processor(
+    require("vibing.infrastructure.adapter.decoders.codex_app_server"),
+    require("vibing.infrastructure.adapter.modules.codex_tool_vocabulary")
+  ),
+  agent = "Codex app-server",
+})
+local fail, render, request = Rpc.fail, Rpc.render, Rpc.request
+
 local M = {}
-
-local function fail(record, message)
-  local Routing = require("vibing.infrastructure.adapter.modules.duplex_routing")
-  local turn = Routing.turn_of(record)
-  if turn then
-    turn.complete(
-      require("vibing.infrastructure.adapter.modules.turn_outcome").ended(
-        Routing.ids_of(record, turn),
-        table.concat(turn.context.output, ""),
-        message
-      )
-    )
-  end
-  local Pool = require("vibing.infrastructure.adapter.modules.duplex_pool")
-  local key, current = Pool.find_by_process_id(record.process_id)
-  if current == record then
-    Pool.stop(key, "unresponsive")
-  end
-end
-
-local function request(record, method, params, callback)
-  local rpc = record._rpc
-  rpc.seq = rpc.seq + 1
-  local id = "vibing-rpc-" .. rpc.seq
-  rpc.pending[id] = callback
-  if not Process.write(record, { id = id, method = method, params = params }) then
-    rpc.pending[id] = nil
-    fail(record, "Could not write " .. method .. " to the Codex app-server.")
-    return false
-  end
-  return true
-end
-
-local function render(record, msg)
-  local turn = record._turn
-  local context = turn and turn.context or record._idle_context
-  if context then
-    -- `msg` is already a Lua table, built here or decoded off the wire by `M.process_line` --
-    -- `Processor.apply` takes it directly, rather than encoding back to JSON only for the
-    -- decoder to immediately decode it again.
-    Processor.apply(msg, context)
-  end
-end
 
 local function notification(record, msg)
   -- The owned session comes from thread/start or thread/resume's correlated reply.
@@ -277,17 +243,8 @@ function M.process_line(record, line)
   if not ok or type(msg) ~= "table" or not record._rpc then
     return
   end
-  local rpc = record._rpc
   if msg.id ~= nil and not msg.method then
-    local callback = rpc.pending[msg.id]
-    rpc.pending[msg.id] = nil
-    if callback then
-      if msg.error then
-        fail(record, "Codex app-server: " .. tostring(msg.error.message or vim.inspect(msg.error)))
-      else
-        callback(msg.result or {})
-      end
-    end
+    Rpc.reply(record, msg)
   elseif msg.id ~= nil then
     -- An approval codex asked for itself. The bridge takes ownership only when there is a chat to
     -- ask and the wait is covered by a measurement; otherwise it declines here, which is the

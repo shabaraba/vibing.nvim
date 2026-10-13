@@ -62,7 +62,7 @@ describe("E2E: chat completion notification", function()
         require('vibing.infrastructure.rpc.handlers.message').send_message({
           bufnr = %d,
           from_bufnr = %d,
-          message = 'Reply with exactly the word: done. Do not use any tools.',
+          message = 'This test exercises the host completion watchdog. Reply with exactly done, then stop. Do not use any tools or send a report back; the host must notify the sending chat automatically.',
         })
       ]],
       worker,
@@ -79,6 +79,8 @@ describe("E2E: chat completion notification", function()
       notified = text:find("stopped without reporting back", 1, true) ~= nil
     end
 
-    assert.is_true(notified, "orchestrator should be told the worker stopped")
+    local worker_text =
+      exec(string.format("return table.concat(vim.api.nvim_buf_get_lines(%d, 0, -1, false), '\\n')", worker))
+    assert.is_true(notified, "orchestrator should be told the worker stopped; worker transcript: " .. worker_text)
   end)
 end)

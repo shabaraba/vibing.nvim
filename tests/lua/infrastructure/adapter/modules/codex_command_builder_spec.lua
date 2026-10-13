@@ -28,6 +28,12 @@ describe("codex_command_builder", function()
     return nil
   end
 
+  it("passes the output schema file for a search request", function()
+    local cmd = codex_command_builder.build("search", { output_schema_path = "/tmp/schema.json" }, nil, {}, nil)
+    assert.are.equal("/tmp/schema.json", cmd[find_flag(cmd, "--output-schema") + 1])
+    assert.is_nil(find_flag(codex_command_builder.build("chat", {}, nil, {}, nil), "--output-schema"))
+  end)
+
   --- Every value passed with `-c`, so a test can assert on the set of config overrides.
   local function config_overrides(cmd)
     local overrides = {}
