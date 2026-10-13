@@ -47,7 +47,7 @@ local COPY = {
   exited = {
     headline = "This turn ended with %d background subagent(s) that never reported a completion. "
       .. "The CLI did not start a new turn for them, so this chat would not have run again.",
-    still_owed = "No answer was recovered for these before the CLI exited:",
+    still_owed = "No answer was recovered for these:",
     instruction = "Use any saved output that can be recovered before continuing. If no answer is "
       .. "available, re-dispatch or resume the ones whose work still matters, or say what is missing "
       .. "and carry on. Do not wait for a completion notification from the exited CLI.",
