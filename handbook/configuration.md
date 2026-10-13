@@ -822,7 +822,8 @@ before the warning appears. In a project with a small `CLAUDE.md` the same thres
 up. If the warning fires constantly, that is what to raise it against.
 
 `chat.context.warn_tokens = 0` is the middle setting: the metrics stay, the warning never appears. Use it if
-the numbers are what you wanted and the nudge is not. `ui.usage.enabled = false` hides the metrics; context warnings remain independently controlled.
+the numbers are what you wanted and the nudge is not. `ui.usage.enabled = false` hides the metrics;
+context warnings remain independently controlled.
 
 ### Automatic compaction
 
