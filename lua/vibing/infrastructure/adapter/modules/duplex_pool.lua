@@ -17,9 +17,11 @@ local ProcessRegistry = require("vibing.infrastructure.adapter.modules.process_r
 
 local M = {}
 
---- A resident process with no turn in flight is ~200MB of RSS doing nothing. Long enough that a
---- reading-and-replying rhythm keeps the process (and its warm prompt cache), short enough that a
---- chat left open over lunch does not.
+--- A resident process with no turn in flight is ~200MB of RSS doing nothing, plus ~75MB for the
+--- MCP server it keeps as a child. Long enough that a reading-and-replying rhythm keeps the process
+--- (and its warm prompt cache), short enough that a chat left open over lunch does not. Reviewed
+--- when duplex became the default: five minutes is also the prompt cache's own default TTL, so
+--- holding the process longer keeps only the startup saving while every idle chat pays the RSS.
 M.IDLE_TIMEOUT_MS = 5 * 60 * 1000
 
 --- @alias Vibing.DuplexReclaimReason

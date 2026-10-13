@@ -10,6 +10,7 @@ local CommonBuilder = require("vibing.infrastructure.adapter.modules.command_bui
 local RequestBuilder = require("vibing.infrastructure.adapter.modules.request_builder")
 local GrokLightweight = require("vibing.infrastructure.adapter.modules.grok_lightweight")
 local worktree_constants = require("vibing.core.constants.worktree")
+local AskUserQuestionInstructions = require("vibing.infrastructure.adapter.modules.ask_user_question_instructions")
 
 local M = {}
 
@@ -149,8 +150,9 @@ end
 --- What goes into `--rules`, Grok's equivalent of a system prompt.
 ---
 --- Deliberately much smaller than the Claude adapter's block: Grok reaches no vibing-nvim MCP
---- server, so instructing it to call `nvim_ask_user_question` or `nvim_highlight_range` would
---- name tools it cannot invoke. Only the backend-agnostic conventions go here.
+--- server, so instructing it to call `nvim_highlight_range` would name a tool it cannot invoke.
+--- Only the backend-agnostic conventions go here — which now includes asking a multiple-choice
+--- question, since that is a block in the reply rather than a tool call.
 --- @param opts Vibing.AdapterOpts
 --- @param config Vibing.Config
 --- @return string|nil rules `nil` when there is nothing to say, so the caller omits the flag —
@@ -175,6 +177,7 @@ local function build_rules(opts, config)
         .. worktree_constants.DIR
         .. "<branch-name>/ at the repository root."
     )
+    vim.list_extend(lines, AskUserQuestionInstructions.lines())
   end
 
   if #lines == 0 then
@@ -203,29 +206,11 @@ M.BINARY = {
   reset = M._reset_path_cache,
 }
 
---- The duplex transport's system prompt: the shared conventions **plus** the MCP tools that only
---- this transport can reach.
----
---- `grok agent` accepts no `--rules`, so `grok_duplex_protocol` prepends this to the first prompt of
---- a session instead. The conventions come from the same `build_rules` the flag uses, so what vibing
---- tells grok has one definition whichever transport carries it.
----
---- The MCP half is **deliberately absent from `rules_args`**. `--rules` serves the one-shot path,
---- which reaches no vibing-nvim MCP server at all (`grok --single` rejects `--plugin-dir`, and the
---- servers travel in an ACP `session/new`), so naming `nvim_ask_user_question` there would name a
---- tool grok cannot invoke — the reason `build_rules` was kept small in the first place.
----
---- The same test applies on this path: `self_server` is the bundled server's **registered** name,
---- resolved from its own manifest by `grok_mcp_config`, and `nil` when it is not loaded at all
---- (`integrations.plugins.self = false`). Naming the tool then would describe one this session has no
---- server for, which is the mistake `codex_plugin_config` reads the manifest to avoid — and a rename
---- there cannot leave the model told about a tool that does not exist.
----
---- The name has **no `mcp__` prefix**: grok qualifies an MCP tool as `server__tool`, measured
---- against grok 1.0.50 from its own error text for an unqualified name.
+--- The duplex transport carries the same question-block instruction as oneshot.
+--- The chat buffer number is also carried for orchestration and chat recall.
 --- @param opts Vibing.AdapterOpts
 --- @param config Vibing.Config
---- @param self_server string|nil registered name of the bundled MCP server, nil when not loaded
+--- @param self_server string|nil registered bundled MCP server name
 --- @return string|nil
 function M.rules_text(opts, config, self_server)
   opts = opts or {}
@@ -236,13 +221,7 @@ function M.rules_text(opts, config, self_server)
   end
 
   if self_server then
-    vim.list_extend(
-      lines,
-      require("vibing.infrastructure.adapter.modules.ask_user_question_instructions").lines(
-        self_server .. "__nvim_ask_user_question",
-        opts.chat_bufnr
-      )
-    )
+    vim.list_extend(lines, AskUserQuestionInstructions.chat_buffer_lines(opts.chat_bufnr))
   end
 
   if #lines == 0 then

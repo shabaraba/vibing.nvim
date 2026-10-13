@@ -246,7 +246,7 @@ change to `config.lua`. Copilot declares none.
 ai = {
   agents = {
     claude = {
-      process = "oneshot",
+      process = "duplex",
       extensions = {
         background_wait_sec = 3600,
       },

@@ -66,7 +66,7 @@ local BACKGROUND_JOB_MESSAGE = "Shell backgrounding is disabled in vibing.nvim b
 --- matters because this decision bypasses the CLI's own gate — see the call site in
 --- `rpc/handlers/permission.lua`.
 --- @param tool_name string
---- @param specific_tool? string Match only this vibing-nvim tool (e.g. "nvim_ask_user_question"); omit to match any vibing-nvim MCP tool
+--- @param specific_tool? string Match only this vibing-nvim tool (e.g. "nvim_set_buffer"); omit to match any vibing-nvim MCP tool
 --- @return boolean
 function M.is_vibing_nvim_mcp_tool(tool_name, specific_tool)
   local suffix = "vibing%-nvim__" .. (specific_tool or "nvim_[%w_]+") .. "$"

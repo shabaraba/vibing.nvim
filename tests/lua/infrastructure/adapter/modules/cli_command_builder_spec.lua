@@ -187,13 +187,11 @@ describe("cli_command_builder", function()
       assert.equals(before[before_idx + 1], after[after_idx + 1])
     end)
 
-    it("instructs the model to pass chat_bufnr on nvim_ask_user_question, without any per-turn id", function()
+    it("tells the model to ask by ending its reply with a vibing-question block", function()
       local cmd = cli_command_builder.build("hello", {}, nil, {}, nil)
-      local idx = find_flag(cmd, "--append-system-prompt")
-      assert.is_not_nil(idx)
-      local prompt_text = cmd[idx + 1]
-      assert.is_true(prompt_text:find("nvim_ask_user_question", 1, true) ~= nil)
-      assert.is_true(prompt_text:find("chat_bufnr argument", 1, true) ~= nil)
+      local prompt_text = cmd[find_flag(cmd, "--append-system-prompt") + 1]
+      assert.is_truthy(prompt_text:find("vibing-question", 1, true))
+      assert.is_nil(prompt_text:find("nvim_ask_user_question", 1, true))
     end)
 
     it("never embeds a turn_id, so the same conversation's system prompt is byte-identical across turns", function()
@@ -274,7 +272,7 @@ describe("cli_command_builder", function()
       })
       assert.is_truthy(worker:find(".vibing/worktrees/", 1, true))
       assert.is_truthy(worker:find("MUST use the vibing-nvim nvim_job_start", 1, true))
-      assert.is_truthy(worker:find("nvim_ask_user_question", 1, true))
+      assert.is_truthy(worker:find("vibing-question", 1, true))
       -- The report protocol is the one line a worker is guaranteed to be told (#706)
       assert.is_truthy(worker:find(".vibing/chat/orchestrator.md", 1, true))
       assert.is_truthy(worker:find("nvim_chat_send_message", 1, true))
@@ -639,13 +637,20 @@ describe("cli_command_builder", function()
       assert.equals("opus", cmd[idx + 1])
     end)
 
-    it("omits the worktree and ask_user_question tool instructions from the system prompt", function()
-      local cmd = cli_command_builder.build("hello", { lightweight = true, chat_bufnr = 12 }, nil, {}, nil, 9878)
+    it("omits the worktree and question instructions from the system prompt", function()
+      local cmd = cli_command_builder.build(
+        "hello",
+        { lightweight = true, chat_bufnr = 12 },
+        nil,
+        {},
+        nil,
+        9878
+      )
       local idx = find_flag(cmd, "--append-system-prompt")
       assert.is_not_nil(idx)
       local prompt_text = cmd[idx + 1]
       assert.is_nil(prompt_text:find(".vibing/worktrees/", 1, true))
-      assert.is_nil(prompt_text:find("nvim_ask_user_question", 1, true))
+      assert.is_nil(prompt_text:find("vibing-question", 1, true))
       assert.is_nil(prompt_text:find("Your rpc_port for this turn is", 1, true))
       assert.is_nil(prompt_text:find("Current vibing.nvim chat buffer number:", 1, true))
       assert.is_nil(prompt_text:find("nvim_highlight_range", 1, true))

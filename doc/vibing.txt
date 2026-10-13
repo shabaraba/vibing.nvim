@@ -815,14 +815,15 @@ explicit effort or initially leaves it to Codex. Restoring an unknown default
 after an explicit effort requires choosing an effort explicitly.
 
 `process` chooses how the CLI is run for this chat, overriding
-`ai.agents.<agent>.process` (Claude, Codex and Grok). `oneshot` (the default)
-starts a CLI process per message and lets it exit when the answer is done.
+`ai.agents.<agent>.process` (Claude, Codex and Grok). Claude defaults to
+`duplex`; Codex and Grok default to `oneshot`. `oneshot` starts a CLI process
+per message and lets it exit when the answer is done.
 `duplex` starts one process for the chat and feeds every later message to it
 on its stdin, so the CLI's startup — plugins, MCP servers, CLAUDE.md, the
 system prompt — is paid once instead of once per message; the process is
 stopped after five idle minutes, when the chat's buffer is unloaded, or when
 Neovim exits. Supported by Claude, Codex and Grok; rejected on other agents.
-Claude holds about 200MB while idle, which is why it is opt-in. Codex uses
+Claude holds about 275MB while idle (CLI and MCP server). Codex uses
 app-server and requires its staged PreToolUse hook to be trusted in Codex. An
 untrusted or modified hook stops startup before inference; use `process:
 oneshot` meanwhile. Title generation and |:VibingSummarize| are always

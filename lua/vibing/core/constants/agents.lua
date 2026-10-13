@@ -37,6 +37,7 @@ local M = {}
 ---@field discovery_module string? モデル候補をCLI自身に問い合わせる `Vibing.ModelDiscovery` の
 ---  require パス。無いバックエンドは `models` をそのまま使う（どのバックエンドに有るかと、
 ---  その理由は `infrastructure/adapter/models/catalog.lua`）
+---@field process_default? "oneshot"|"duplex" Default process mode for chats
 ---@field chat_model string? Default model for chats
 ---@field helper_model string? Default model for helpers
 ---@field config_support table? Supported common configuration controls
@@ -46,6 +47,7 @@ local M = {}
 M.AGENTS = {
   claude = {
     id = "claude",
+    process_default = "duplex",
     chat_model = "sonnet",
     helper_model = "haiku",
     config_support = { settings_sources = true, inherit_cli_servers = true },

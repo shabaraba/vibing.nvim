@@ -99,7 +99,7 @@ file in ways that only collide at merge time. Once workers are running, call
 `main` and names the files two or more of them touch. It warns, it does not block; call it before
 you merge anything, and read the overlapping files in both branches yourself.
 
-If the split isn't obvious, ask with `nvim_ask_user_question` before creating anything. Creating
+If the split isn't obvious, ask the user with a `vibing-question` block before creating anything. Creating
 five chats for a job that was really one is expensive and the user has to clean them up.
 
 ## 2. Create one worker chat per task

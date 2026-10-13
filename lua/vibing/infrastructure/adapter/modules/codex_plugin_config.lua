@@ -142,8 +142,8 @@ local function developer_instructions(skills, self_server, chat_bufnr)
       table.insert(lines, "")
     end
     -- Codex normalizes an MCP server's hyphens to underscores in the tool names it exposes to the
-    -- model (see codex_tool_vocabulary.lua's CODEX_VIBING_MCP_PREFIX), so both the prose below and
-    -- the qualified tool name handed to AskUserQuestionInstructions must use this same prefix.
+    -- model (see codex_tool_vocabulary.lua's CODEX_VIBING_MCP_PREFIX), so the prose below must use
+    -- this same prefix.
     local mcp_prefix = self_server:gsub("%-", "_")
     table.insert(
       lines,
@@ -153,10 +153,6 @@ local function developer_instructions(skills, self_server, chat_bufnr)
         mcp_prefix
       )
     )
-    vim.list_extend(
-      lines,
-      AskUserQuestionInstructions.lines("mcp__" .. mcp_prefix .. "__nvim_ask_user_question", chat_bufnr)
-    )
     table.insert(
       lines,
       "When starting a development server, watcher, long-running script, or any process intended "
@@ -165,6 +161,17 @@ local function developer_instructions(skills, self_server, chat_bufnr)
         .. "nvim_job_status, nvim_job_wait, and nvim_job_stop to manage them. If nvim_job_start is "
         .. "unavailable, say so instead of silently substituting shell backgrounding."
     )
+  end
+
+  -- Not tied to the bundled server — a question is a block in the reply, not a tool call — but it
+  -- rides only on an override that is being written anyway: with no plugin at all this module
+  -- returns no argv, and the user's own `developer_instructions` stays untouched.
+  if #lines > 0 then
+    vim.list_extend(lines, AskUserQuestionInstructions.lines())
+  end
+  if self_server then
+    -- With the bundled server: the orchestration tools take this as `from_bufnr`.
+    vim.list_extend(lines, AskUserQuestionInstructions.chat_buffer_lines(chat_bufnr))
   end
 
   if #lines == 0 then

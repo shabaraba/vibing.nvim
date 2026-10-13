@@ -36,12 +36,14 @@ state survives.
 ## Debugger Analysis (nvim-dap)
 
 When the debugger is stopped, the agent can look at the actual runtime state instead of reasoning
-about the source: `nvim_dap_get_state`, `nvim_dap_get_stack_trace`, `nvim_dap_get_variables`,
-`nvim_dap_set_breakpoint`, `nvim_dap_evaluate` (`infrastructure/rpc/handlers/dap.lua`).
+about the source: `nvim_dap_inspect` (`what`: `state`, `stack_trace`, `variables`),
+`nvim_dap_set_breakpoint`, `nvim_dap_evaluate` (`infrastructure/rpc/handlers/dap.lua`). The three
+reads share one tool; the other two stay separate because each changes something (evaluate runs
+code in the debuggee), and a permission rule naming a tool must still be able to single them out.
 
 nvim-dap is an **optional** dependency. Every entry point reports "nvim-dap is not installed" or
 "no debug session is running" rather than erroring, so the agent gets an explanation it can act on
-— which is also why `nvim_dap_get_state` exists and its description tells the model to call it
+— which is also why `nvim_dap_inspect`'s `state` exists and its description tells the model to call it
 first.
 
 DAP requests are callback-based while RPC handlers return a value, so each request is awaited with

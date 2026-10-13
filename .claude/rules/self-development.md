@@ -10,7 +10,7 @@ per-request diff snapshot skips it. A worktree anywhere else has its whole check
 parent's `### Modified Files`.
 
 **Serena (or any generic LSP tool) instead of the vibing-nvim MCP LSP tools.**
-`mcp__vibing-nvim__nvim_lsp_references`, not `mcp__serena__lsp_references`. The vibing-nvim tools
+`mcp__vibing-nvim__nvim_lsp` (`method: "references"`), not `mcp__serena__lsp_references`. The vibing-nvim tools
 query the **running** Neovim with its live LSP servers; generic tools analyze separate file copies
 and miss runtime state. Same for buffer and window operations (`nvim_get_buffer`,
 `nvim_set_buffer`, `nvim_list_windows`, `nvim_load_buffer`).

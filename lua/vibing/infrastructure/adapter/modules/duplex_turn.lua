@@ -86,14 +86,7 @@ function M.open(params, record, chat_key)
     turn_id = ids.turn_id,
     process = ProcessRegistry.get(record.process_id),
     worktree_root = params.opts._worktree_root,
-    on_insert_choices = params.opts.on_insert_choices,
     on_approval_required = params.opts.on_approval_required,
-    -- Same value as the oneshot path registers, and it has to be here too: the field is read off
-    -- the *turn*, so a duplex chat that omitted it would silently keep killing itself to ask a
-    -- question while the oneshot chat next to it did not (#788).
-    can_answer_question_in_place = require("vibing.infrastructure.hooks.wait_budget").can_answer_question_in_place(
-      params.descriptor and params.descriptor.mcp
-    ),
     -- Read off the turn for the same reason, and resolved here rather than in the protocol module
     -- so the gate is asked the same way all three are: from the descriptor, against the configured
     -- budget, with no backend named at the point of use.

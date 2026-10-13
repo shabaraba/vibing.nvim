@@ -455,10 +455,6 @@ local APPROVAL_NOTICE_WINDOW_MS = 1500
 ---@type table<number, {seen: table<string, boolean>, announced: number, timer: number?}>
 local approval_notices = {}
 
----質問待ち通知の既配達記録（#788）。合流窓もカウントも持たないので `seen` だけ
----@type table<number, {seen: table<string, boolean>}>
-local question_notices = {}
-
 ---@param notice table
 ---@return number
 local function seen_count(notice)
@@ -553,39 +549,6 @@ function M._flush_approval_notice(bufnr)
   return true
 end
 
----このチャットが質問を出して、その場で答えを待ち始めた（#788）
----
----`on_approval_waiting` と同じ穴を塞ぐもの。答えをその場で受け取れるようになった以上、質問でも
----ターンは終わらないので `VibingResponseDone` は飛ばず、`chat_status` を直しても届くのは
----ポーリングにだけになる。
----
----**合流窓を張らないのが承認との違い。** 承認は1ターンに複数のフックが並列にブロックするので
----まとめて1通にする意味があるが、質問はCLIがその結果を待って止まっているので、開いている
----あいだに次が来ることは基本的に無い。窓を張ると、1件しか無い通知が黙って遅れるだけになる。
----
----`request_id` で冪等なのは承認と同じ
----@param bufnr number
----@param request_id string
-function M.on_question_waiting(bufnr, request_id)
-  if type(bufnr) ~= "number" or type(request_id) ~= "string" or request_id == "" then
-    return
-  end
-
-  local notice = question_notices[bufnr] or { seen = {} }
-  question_notices[bufnr] = notice
-  if notice.seen[request_id] then
-    return
-  end
-  notice.seen[request_id] = true
-
-  deliver_stop_notice(bufnr, "asked_question")
-end
-
----@param bufnr number
-function M.forget_question_notices(bufnr)
-  question_notices[bufnr] = nil
-end
-
 ---このチャットについての合流状態を捨てる
 ---
 ---承認が全部片付いた時点で呼ぶ。捨てないと、次に同じチャットが承認待ちになったとき
@@ -647,7 +610,6 @@ function M.forget(bufnr)
   -- 早期returnより前。合流窓には**タイマーが張ってある**ことがあり、そこだけは空振りではない:
   -- 消えたバッファについて後から発火すると、誰も読まないバッファへの配達を起こす
   M.forget_approval_notices(bufnr)
-  M.forget_question_notices(bufnr)
 
   -- autocmdはパターン無しで登録しているので、エディタ内のどのバッファを閉じても走る。
   -- 既定（無効）では状態が空のまま、全テーブルの走査だけが通常の編集操作ごとに起きる。

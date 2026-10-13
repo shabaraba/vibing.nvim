@@ -19,7 +19,7 @@ Neovim (Lua) ──vim.system()──> claude -p --output-format stream-json
 
 `cli_command_builder.lua` assembles the argv; `cli_event_processor.lua` turns stream-json lines
 into chunk/tool events. Everything that needs to call _back into_ Neovim mid-turn (permission
-decisions, approval UI, `AskUserQuestion`, rate-limit reporting) goes through the RPC server rather
+decisions, approval UI, rate-limit reporting) goes through the RPC server rather
 than the stream, registered by `.vibing/hook-settings-<instance>.json`
 (`hooks/settings_generator.lua`).
 
@@ -44,8 +44,8 @@ the handlers, the cleanup routine and `bin/hooks/*.sh`.
 
 There is one adapter, `cli_adapter.lua`, driven by a descriptor per backend
 (`adapter/backends/<id>.lua`, ADR 009). Implementing the descriptor is not the same as feature
-parity — the `AskUserQuestion` choice-list UI is wired for Claude and Codex, but not Grok
-(`handbook/features/chat-ui.md`). Adding a backend is `handbook/ADAPTER_DEVELOPMENT.md`; the
+parity — waiting for an approval in place requires a measured transport
+(`hooks/transports.lua`, `hooks/wait_budget.lua`). Adding a backend is `handbook/ADAPTER_DEVELOPMENT.md`; the
 Claude backend's behaviour is the contract, pinned by `tests/lua/infrastructure/adapter/conformance/`
 over every registered descriptor.
 
@@ -239,8 +239,8 @@ come back. `handbook/architecture/processes-and-turns.md`.
 
 ## The Duplex Transport
 
-One resident CLI process per chat, serving many turns over an open stdin. **Opt-in and default
-off** — `ai.agents.<id>.process = "duplex"` or a chat's own `process:` frontmatter, and only for a
+One resident CLI process per chat, serving many turns over an open stdin. **Default on for Claude,
+opt-in for Codex and Grok** — `ai.agents.<id>.process = "duplex"` or a chat's own `process:` frontmatter, and only for a
 backend whose descriptor declares it (claude over stdin stream-json, codex over `app-server`
 JSON-RPC, grok over ACP stdio). `process_model.lua` is the one place the exclusions live: a lightweight call, a subagent
 chat and a backend whose descriptor does not declare `duplex` can never use it, whatever the

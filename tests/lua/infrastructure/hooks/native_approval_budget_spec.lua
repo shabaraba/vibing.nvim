@@ -1,10 +1,10 @@
 ---@diagnostic disable: undefined-field
 --- The third measured gate: may a CLI's own approval request be held open for a human? (#861)
 ---
---- Parallel to `can_answer_question_in_place` and to `transports.can_wait_for_approval`, and the
+--- Parallel to `transports.can_wait_for_approval`, and the
 --- parallel is the point — a backend gets the behaviour only when a measurement covers the budget
 --- the current configuration derives. What differs is which measurement. These specs pin that the
---- three cannot be substituted for each other, and that raising the configured wait past the
+--- measurements cannot be substituted for each other, and that raising the configured wait past the
 --- evidence turns the feature **off** rather than waiting past it.
 local WaitBudget = require("vibing.infrastructure.hooks.wait_budget")
 local Config = require("vibing.config")
@@ -48,7 +48,7 @@ describe("the native-approval wait gate", function()
     assert.is_false(WaitBudget.can_wait_for_native_approval({ measured_wait_floor_sec = 960 }))
   end)
 
-  it("carries the answer home with a margin, as the MCP route does", function()
+  it("carries the answer home with a margin, for the native transport", function()
     with_wait(900)
     assert.equals(
       WaitBudget.approval_wait_sec() + WaitBudget.NATIVE_APPROVAL_MARGIN_SEC,
@@ -57,18 +57,8 @@ describe("the native-approval wait gate", function()
     assert.is_true(WaitBudget.native_approval_budget_sec() > WaitBudget.approval_wait_sec())
   end)
 
-  it("is not the MCP gate wearing a different name", function()
-    -- Borrowing one channel's measurement for another is the error both of the other two gates
-    -- already warn about in prose; this is the assertion behind that prose.
-    local floor = { measured_wait_floor_sec = WaitBudget.native_approval_budget_sec() }
-
-    assert.is_true(WaitBudget.can_wait_for_native_approval(floor))
-    assert.is_false(WaitBudget.can_answer_question_in_place(floor))
-  end)
-
-  it("sits under the ceiling on a server that answers nothing at all", function()
-    with_wait(900)
-    assert.is_true(WaitBudget.native_approval_budget_sec() < WaitBudget.MCP_TOOL_IDLE_TIMEOUT_SEC)
+  it("refuses a measurement for the retired MCP question channel", function()
+    assert.is_false(WaitBudget.can_wait_for_native_approval({ measured_answer_wait_sec = 960 }))
   end)
 
   describe("the codex descriptor", function()

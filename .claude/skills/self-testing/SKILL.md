@@ -155,7 +155,7 @@ file the model has to read.
 #### `wait_for_response(instance, pattern, timeout)`
 
 Whole buffer, for what the chat UI renders into the **user** section as a result of a turn: the
-tool-approval prompt, the `nvim_ask_user_question` choice list.
+tool-approval prompt, the choice list drawn from a `vibing-question` block.
 
 ### `cleanup_instance(instance)`
 

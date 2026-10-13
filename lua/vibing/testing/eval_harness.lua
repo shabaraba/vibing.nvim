@@ -168,7 +168,7 @@ end
 ---MCPサーバーの登録形態でツール名の前置が変わる（プレーン登録とプラグイン登録）ので、
 ---接尾辞で照合する。can_use_tool.is_vibing_nvim_mcp_tool と同じ考え方
 ---@param record Vibing.Eval.Record
----@param suffix string 例: "nvim_ask_user_question"
+---@param suffix string 例: "nvim_win_open_file"
 ---@return table? input
 function M.find_mcp_call(record, suffix)
   for _, call in ipairs(record.tool_calls) do

@@ -58,14 +58,11 @@ Read the linked file before changing that path.
 
 ## AskUserQuestion
 
-`handbook/features/chat-ui.md`
+`handbook/features/chat-ui.md`; the invariants are in `permissions.md` → "Asking a Question".
 
-- **Neither `on_insert_choices` nor `on_approval_required` may add an inner `vim.schedule`.** Both
-  are already on the main thread when `permission.lua` calls them, and a deferred staging lands
-  after the completion has consumed it — the turn ends with nothing in the buffer to answer (#649).
-- **Claude and Codex route this UI by `chat_bufnr`.** The same stable buffer number must appear in
-  the model-visible prompt and the adapter's `process_registry` / `turn_registry` entry; a per-turn
-  `turn_id` would churn the prompt cache. Grok still cannot reach the MCP tool.
+- **A question is a block the model writes, not a tool call**, so it reaches every backend, Grok
+  included. `on_approval_required` still may not add an inner `vim.schedule` (#649): it is already
+  on the main thread when `permission.lua` calls it.
 
 ## Message Timestamps and Delivered Sections
 

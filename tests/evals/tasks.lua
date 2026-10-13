@@ -3,10 +3,12 @@
 --- 契約は基本的にsystem prompt（cli_command_builder.lua）かツールdescription（claude-plugin/mcp-server/）で
 --- 表明されている。ここが落ちたら、その表明が効かなくなったということ。
 ---
---- 追加するときの基準: 判定が**観測されたツール呼び出し**だけで決まること。応答文の良し悪しを
+--- 追加するときの基準: 判定が**観測されたツール呼び出し**（または質問ブロックのような機械可読な
+--- 出力）だけで決まること。応答文の良し悪しを
 --- 採点し始めると、モデルの言い回しが変わるたびに落ちるテストになる。
 local Harness = require("vibing.testing.eval_harness")
 local Worktree = require("vibing.core.constants.worktree")
+local QuestionBlock = require("vibing.presentation.chat.modules.question_block")
 
 --- from_bufnr のタスクで system prompt に載せる chat_bufnr。実在しないバッファ番号でよく、
 --- 「system promptに書かれた番号をそのまま写したか」だけを見るための固定値
@@ -39,32 +41,20 @@ end
 ---@type Vibing.Eval.Task[]
 return {
   {
-    id = "ask_user_question/uses_the_mcp_tool",
-    description = "選択肢を出す場面ではnvim_ask_user_questionを使う（自由文や native AskUserQuestion に落ちない）",
+    id = "ask_user_question/ends_with_a_question_block",
+    description = "選択肢を出す場面では本文の末尾に vibing-question ブロックを書いてターンを終える"
+      .. "（自由文や native AskUserQuestion に落ちない）",
     prompt = "I need to pick a database for this project: PostgreSQL, MySQL, or SQLite. "
       .. "Ask me which one I want. Do not decide for me.",
+    -- 本文を読むが、言い回しは採点しない。見るのはチャットが選択肢に変えるのと同じパーサが
+    -- ブロックを見つけるかどうかだけで、これは機械可読な出力の契約である
     check = function(record)
-      if Harness.find_mcp_call(record, "nvim_ask_user_question") then
-        return true
-      end
       if Harness.find_tool_call(record, "AskUserQuestion") then
         return false, "used the native AskUserQuestion, which is unreachable in headless -p mode"
       end
-      return false, "asked in free text instead of calling nvim_ask_user_question"
-    end,
-  },
-
-  {
-    id = "ask_user_question/omits_rpc_port",
-    description = "MCPプロセスがNeovimに束縛済みなのでrpc_portをツール引数に重複させない",
-    prompt = "Ask me whether to use tabs or spaces. Use the vibing.nvim question tool.",
-    check = function(record)
-      local input = Harness.find_mcp_call(record, "nvim_ask_user_question")
-      if not input then
-        return false, "no MCP call to inspect"
-      end
-      if input.rpc_port ~= nil then
-        return false, "passed rpc_port even though the MCP process is already bound"
+      local questions = QuestionBlock.find_trailing(vim.split(record.text or "", "\n", { plain = true }))
+      if not questions then
+        return false, "did not end the reply with a parseable vibing-question block"
       end
       return true
     end,

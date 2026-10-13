@@ -13,8 +13,6 @@ import { z } from 'zod';
 // The MCP process is already bound to one Neovim; rpc_port remains a legacy optional override.
 const baseArgsSchema = z.object({ rpc_port: z.number().optional() });
 
-const stackTraceArgsSchema = baseArgsSchema.extend({ thread_id: z.number().int().optional() });
-const variablesArgsSchema = baseArgsSchema.extend({ frame_id: z.number().int().optional() });
 const evaluateArgsSchema = baseArgsSchema.extend({
   expression: z.string().min(1),
   frame_id: z.number().int().optional(),
@@ -32,19 +30,22 @@ function asJson(result: unknown) {
   };
 }
 
-export async function handleDapGetState(args: any): Promise<any> {
-  const { rpc_port } = baseArgsSchema.parse(args);
-  return asJson(await callNeovim('dap_get_state', {}, rpc_port));
-}
+const inspectArgsSchema = baseArgsSchema.extend({
+  what: z.enum(['state', 'stack_trace', 'variables']),
+  thread_id: z.number().int().optional(),
+  frame_id: z.number().int().optional(),
+});
 
-export async function handleDapGetStackTrace(args: any): Promise<any> {
-  const { thread_id, rpc_port } = stackTraceArgsSchema.parse(args);
-  return asJson(await callNeovim('dap_get_stack_trace', { thread_id }, rpc_port));
-}
-
-export async function handleDapGetVariables(args: any): Promise<any> {
-  const { frame_id, rpc_port } = variablesArgsSchema.parse(args);
-  return asJson(await callNeovim('dap_get_variables', { frame_id }, rpc_port));
+export async function handleDapInspect(args: any): Promise<any> {
+  const { what, thread_id, frame_id, rpc_port } = inspectArgsSchema.parse(args);
+  switch (what) {
+    case 'state':
+      return asJson(await callNeovim('dap_get_state', {}, rpc_port));
+    case 'stack_trace':
+      return asJson(await callNeovim('dap_get_stack_trace', { thread_id }, rpc_port));
+    case 'variables':
+      return asJson(await callNeovim('dap_get_variables', { frame_id }, rpc_port));
+  }
 }
 
 export async function handleDapSetBreakpoint(args: any): Promise<any> {

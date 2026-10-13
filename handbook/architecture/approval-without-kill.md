@@ -943,6 +943,13 @@ does not wait still registers a timeout and still must not be the one to give up
 
 ## The other channel: answering a question in place (#788)
 
+> **Removed.** `nvim_ask_user_question` and everything below that serves it — `pending_questions`,
+> `mcp.measured_answer_wait_sec`, `question_wait_sec`, the question exemptions from the
+> "responding" guards — are gone. A question is now a `vibing-question` block the model writes at
+> the end of its reply, and the answer is the next turn (`handbook/features/chat-ui.md` →
+> AskUserQuestion Support). This section stays as the record of what holding the turn open cost,
+> which is the reason it was dropped once duplex made the resident process the default.
+
 `nvim_ask_user_question` is the second thing a human is waited for on, and until #788 it was the
 last kill path left after #778: the handler called `adapter:cancel`, the turn died, and the user's
 answer came back as the next message on a `--resume`.
@@ -1309,3 +1316,16 @@ somebody went looking for the cost of re-running them. So "write down where the 
 wrong lesson to take from this — nobody who had the tool thought of it as something to keep. The
 lesson is the one above: **when a number is recorded, its instrument is part of the record**, and
 the moment to act on that is when the number is written, not when it is questioned.
+
+## Questions as reply blocks
+
+The in-place question route (`nvim_ask_user_question`, `pending_questions`, and its measured
+late-answer budget) was removed when Claude's duplex mode became the default. A resident process
+already survives between turns and the prompt cache is server-side, so holding the question turn
+open no longer justified the registry and sending exceptions. Questions now end a reply in a
+`vibing-question` block; the user's answer starts the next turn.
+
+Generated questions and their answers are data, even when they begin with `/permission` or another
+slash command. The rendered answer section keeps a `question-answer` header marker through reload
+and submission. Local command dispatch skips that section; generated header-shaped lines are
+quoted to prevent a question from impersonating a new user section.

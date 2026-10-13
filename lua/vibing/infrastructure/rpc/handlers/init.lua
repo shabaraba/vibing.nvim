@@ -64,7 +64,6 @@ M.chat_conflicts = chat.chat_conflicts
 M.list_profiles = chat.list_profiles
 
 M.check_tool_permission = permission.check_tool_permission
-M.ask_user_question = permission.ask_user_question
 
 M.stop_failure = rate_limit.stop_failure
 

@@ -121,7 +121,7 @@ end
 --- **Two descriptor fields have to agree, and that is why this takes the descriptor rather than the
 --- `hook`.** `hook.measured_wait_floor_sec` says the CLI tolerates a blocked hook that long;
 --- `register_chat_bufnr` says the turn carries a chat buffer back. They read as independent — one
---- is about the hook, the other about `nvim_ask_user_question` — but the waiting path needs both,
+--- is about the hook, the other about routing back to a chat — but the waiting path needs both,
 --- because `_ask_without_killing` has to name the chat that will draw the prompt and own the
 --- answer, and the only place that number comes from is `turn.process.chat_bufnr`, which
 --- `cli_adapter` fills in **only** when `register_chat_bufnr` is true.

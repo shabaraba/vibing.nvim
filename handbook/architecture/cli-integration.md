@@ -166,10 +166,10 @@ and dialect from `hooks/transports.lua`; the four generators described below are
 
 - **No MCP on every backend.** Grok registers no `chat_bufnr` and reaches no vibing-nvim MCP
   server, so `grok_command_builder` deliberately keeps `--rules` to the backend-agnostic
-  conventions. Naming `nvim_ask_user_question` there would hand the model a tool it cannot call —
-  see `features.md` → AskUserQuestion Support. Codex reaches the server through
-  `codex_plugin_config` (`plugin-and-commands.md` → "Codex") and registers `chat_bufnr` for the
-  shared choice-list route.
+  conventions — which include asking a multiple-choice question, since that is a `vibing-question`
+  block in the reply rather than a tool (`features/chat-ui.md` → AskUserQuestion Support). Codex
+  reaches the server through `codex_plugin_config` (`plugin-and-commands.md` → "Codex") and
+  registers `chat_bufnr` for the waiting approval route.
 
 - **Grok's hooks need a git repository.** `grok_settings_generator.lua` writes
   `<cwd>/.grok/hooks/` and marks the cwd trusted in `<$GROK_HOME|~/.grok>/trusted_folders.toml`,

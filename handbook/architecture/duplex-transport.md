@@ -1,7 +1,8 @@
 # The Duplex Transport: one resident CLI process per chat
 
-Opt-in for Claude and Codex, default off. Turn it on with `ai.agents.claude.process = "duplex"` or a chat's
-own `process: duplex` frontmatter. Why it exists, what it cost, and the five things that had to move
+Claude defaults to duplex; Codex and Grok opt in with `ai.agents.<id>.process = "duplex"` or a chat's
+own `process: duplex` frontmatter. Claude holds about 275MB while idle (CLI and MCP server); turn it
+off with `ai.agents.claude.process = "oneshot"`. Why it exists, what it cost, and the five things that had to move
 before it could work at all.
 
 Chats that can never use it, whatever the configuration says: a lightweight call (title generation,

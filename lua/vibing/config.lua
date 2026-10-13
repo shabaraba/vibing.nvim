@@ -160,7 +160,7 @@ for _, def in ipairs(Agents.list()) do
     extensions[name] =
       vim.deepcopy(field.default_module and require(field.default_module)[field.default_field] or field.default)
   end
-  local options = { process = "oneshot", env = {}, settings = {}, mcp = {}, extensions = extensions }
+  local options = { process = def.process_default or "oneshot", env = {}, settings = {}, mcp = {}, extensions = extensions }
   local support = def.config_support or {}
   if support.settings_sources then
     options.settings.sources = { "user", "project", "local" }

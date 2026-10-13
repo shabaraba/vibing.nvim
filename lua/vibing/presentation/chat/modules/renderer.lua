@@ -165,7 +165,7 @@ end
 -- Backward compatibility alias
 M.move_cursor_to_end = M.moveCursorToEnd
 
----`nvim_ask_user_question` の選択肢ブロックを組み立てる（**唯一の組み立て口**）
+---質問ブロック（`question_block.lua`）の選択肢を組み立てる（**唯一の組み立て口**）
 ---
 ---関数として切り出してあるのは、**剥がす側が同じものを読むため**（#788）。承認プロンプトは
 ---`approval_parser.strip_prompt_lines` が固定の接頭辞と `<!-- vibing:req=... -->` から
@@ -184,7 +184,7 @@ M.move_cursor_to_end = M.moveCursorToEnd
 ---**この関数の出力はキュー全体の純関数である。** 件数の1行が入るということは、待っている質問が
 ---1件増減しただけで**組み立て直したものが変わる**ということで、描いた後にキューを触ると
 ---`strip_choice_lines` が一致しなくなり、描いてあるブロックがユーザーの本文として残る。
----キューを変える出来事は、変える前に畳んで、変えた後に描き直すこと（`ChatBuffer:expire_question`）
+---キューを変える出来事は、変える前に畳んで、変えた後に描き直すこと
 ---@param pendingChoices Vibing.PendingChoiceEntry[]? 保持している質問、古い順
 ---@return string[] lines 末尾の空行まで含めたブロック
 function M.choice_lines(pendingChoices)
@@ -237,7 +237,14 @@ function M.choice_lines(pendingChoices)
     table.insert(choiceLines, "")
   end
 
-  return flatten_lines(choiceLines)
+  local lines = flatten_lines(choiceLines)
+  -- 生成文中のセクションヘッダーで回答欄の印が隠されないよう、引用行として描く。
+  for i, line in ipairs(lines) do
+    if Timestamp.is_header(line) then
+      lines[i] = "> " .. line
+    end
+  end
+  return lines
 end
 
 ---描かれた選択肢ブロックだけを落とし、ユーザーが打った本文は残す（#788）
@@ -300,7 +307,7 @@ function M.addUserSection(buf, win, pendingChoices, pendingApprovals, initial_me
 
   local newLines = {
     "",
-    header or Timestamp.create_unsent_user_header(),
+    header or Timestamp.create_header("User", nil, nil, pendingChoices ~= nil),
     "",
   }
 
