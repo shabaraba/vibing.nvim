@@ -83,7 +83,7 @@ end
 --- **requires** the field either way — omitting it is an `Invalid params` error naming it, not a
 --- default — so the empty list is the answer, never `nil`.
 ---
---- `self_server` is matched **by path, not by name**: with `agent.plugins.self = false` a project
+--- `self_server` is matched **by path, not by name**: with `integrations.plugins.self = false` a project
 --- plugin could carry the name `vibing-nvim`, and the prompt would then describe its server as the
 --- bundled one. Same reasoning, and the same `self_plugin_dir()`, as `codex_plugin_config`.
 --- @param params Vibing.DuplexRunParams

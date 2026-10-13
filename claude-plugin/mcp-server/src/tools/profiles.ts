@@ -26,7 +26,7 @@ function worthListing(p: ProfileEntry): boolean {
 /**
  * Write the user's configured profiles into `nvim_chat_create`'s `profile` argument.
  *
- * A tool description is static, while `agent.profiles` is whatever this user's config says — so
+ * A tool description is static, while `ai.profiles` is whatever this user's config says — so
  * without this an orchestrator only learns the names by calling `nvim_chat_list` first, which
  * nothing guarantees it does. Putting them in the schema means a model that loads the tool sees
  * them, with what each is for and the model it runs on.

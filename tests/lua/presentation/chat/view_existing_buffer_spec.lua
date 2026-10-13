@@ -33,8 +33,8 @@ describe("view.render with the file already in a buffer", function()
     vim.fn.mkdir(save_dir, "p")
 
     local config = vim.deepcopy(Config.defaults)
-    config.chat.save_location_type = "custom"
-    config.chat.save_dir = save_dir
+    config.chat.storage.location = "custom"
+    config.chat.storage.path = save_dir
 
     package.loaded["vibing"] = {
       get_config = function()

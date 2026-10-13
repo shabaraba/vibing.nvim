@@ -10,18 +10,16 @@ local M = {}
 ---@field description string 補完UIに出す説明
 
 ---@class Vibing.AgentConfigField
----`setup().backends.<id>.<field>` の1項目。`config.lua` が既定値の組み立てと検証をここから導く
+---`setup().ai.agents.<id>.extensions.<field>` の1項目。`config.lua` が既定値の組み立てと検証をここから導く
 ---ので、バックエンド固有の設定キーが共有コードに名前で現れない（ADR 009）
----@field kind "string"|"number"|"boolean"|"path_or_false"|"executable_or_auto" 検証の種類
+---@field kind "string"|"number"|"boolean"|"path_or_false"|"string_list" 検証の種類
 ---@field values string[]? `kind = "string"` のとき、許される値の全体。設定されていれば
----  `config.lua` が enum として検証し、範囲外は警告して既定値に戻す
----@field min number? `kind = "number"` のとき許される最小値。下回れば警告して既定値に戻す
+---  `config.lua` が enum として検証し、範囲外は設定エラー
+---@field min number? `kind = "number"` のとき許される最小値。下回れば設定エラー
 ---@field default any 既定値。`default_module` があればそちらが優先
 ---@field default_module string? 既定値を持つモジュールの require パス（このファイルは何も
 ---  require しないので、文字列の既定値を別モジュールから借りるときはこう書く）
 ---@field default_field string? `default_module` 内のフィールド名
----@field legacy string[]? ADR 009 以前にこの項目があった `setup()` 上の位置。設定されていれば
----  警告付きで `backends.<id>.<field>` へ移す
 
 ---@class Vibing.AgentDefinition
 ---@field id string エージェント識別子（frontmatter の `agent` フィールドの値）
@@ -39,27 +37,25 @@ local M = {}
 ---@field discovery_module string? モデル候補をCLI自身に問い合わせる `Vibing.ModelDiscovery` の
 ---  require パス。無いバックエンドは `models` をそのまま使う（どのバックエンドに有るかと、
 ---  その理由は `infrastructure/adapter/models/catalog.lua`）
----@field config_fields table<string, Vibing.AgentConfigField>? `setup().backends.<id>` の項目
+---@field chat_model string? Default model for chats
+---@field helper_model string? Default model for helpers
+---@field config_support table? Supported common configuration controls
+---@field config_fields table<string, Vibing.AgentConfigField>? `setup().ai.agents.<id>.extensions` の項目
 
 ---@type table<string, Vibing.AgentDefinition>
 M.AGENTS = {
   claude = {
     id = "claude",
+    chat_model = "sonnet",
+    helper_model = "haiku",
+    config_support = { settings_sources = true, inherit_cli_servers = true },
     adapter_module = "vibing.infrastructure.adapter.claude_cli",
     descriptor_module = "vibing.infrastructure.adapter.backends.claude",
     command_builder_module = "vibing.infrastructure.adapter.modules.cli_command_builder",
     export_name = "ClaudeCLIAdapter",
     description = "Claude CLI (Anthropic)",
     config_fields = {
-      -- 1ターン1プロセス（`oneshot`）か、チャットに常駐する1プロセスが複数ターンを捌くか
-      -- （`duplex`、#777）。値の定義は `adapter/modules/process_model.lua`（このファイルは
-      -- 何も require しないので文字列を直接書く）。チャット単位の上書きは frontmatter の
-      -- `process:`。既定が `oneshot` なのは、常駐プロセスがアイドル時も約200MBを占めるため
-      process = {
-        kind = "string",
-        values = { "oneshot", "duplex" },
-        default = "oneshot",
-      },
+      git_instructions = { kind = "boolean", default = false },
       -- `claude -p` はバックグラウンド subagent が終わるまでプロセスを開いたまま待つが、
       -- 「連続アイドル」がこの秒数を超えると**まだ動いているものを止め、部分結果を捨てる**。
       -- CLI の既定は600秒で、それは CI 向けの一発起動に合わせた値。対話チャットでログを精読
@@ -86,7 +82,6 @@ M.AGENTS = {
     export_name = "CodexCLIAdapter",
     description = "Codex CLI (OpenAI)",
     config_fields = {
-      process = { kind = "string", values = { "oneshot", "duplex" }, default = "oneshot" },
       -- When codex asks the human before running something, as a `-c approval_policy` override.
       --
       -- A **separate dial from `permission_mode`**, and deliberately so (#861): `permission_mode`
@@ -135,20 +130,17 @@ M.AGENTS = {
       profile_file = {
         kind = "path_or_false",
         default = ".vibing/codex-permissions.toml",
-        legacy = { "permissions", "codex_profile_file" },
       },
       -- Initial TOML, consulted only when the profile file is first created.
       profile_content = {
         kind = "string",
         default_module = "vibing.core.utils.project_codex_permissions",
         default_field = "DEFAULT_CONTENT",
-        legacy = { "permissions", "codex_profile_content" },
       },
       -- A Git-tracked profile is refused until the user says they reviewed it.
       allow_tracked_profile = {
         kind = "boolean",
         default = false,
-        legacy = { "permissions", "codex_allow_tracked_profile" },
       },
       -- codex の軽量呼び出しは --ignore-user-config で走るので、ユーザーの model_provider が落ちて
       -- 既定の OpenAI エンドポイントに向く。それを 1 セッション 1 回だけ警告する。
@@ -160,7 +152,6 @@ M.AGENTS = {
       provider_notice = {
         kind = "boolean",
         default = true,
-        legacy = { "agent", "codex_provider_notice", "enabled" },
       },
     },
     discovery_module = "vibing.infrastructure.adapter.models.codex",
@@ -204,21 +195,7 @@ M.AGENTS = {
     command_builder_module = "vibing.infrastructure.adapter.modules.grok_command_builder",
     export_name = "GrokCLIAdapter",
     description = "Grok Build CLI (xAI)",
-    config_fields = {
-      -- "auto" looks `grok` up on PATH; a path is used as given and never silently reset.
-      executable = {
-        kind = "executable_or_auto",
-        default = "auto",
-        legacy = { "grok", "executable" },
-      },
-      -- `duplex` is the resident `grok agent stdio` ACP transport. Default `oneshot` for the same
-      -- reason the other backends default to it: a resident process holds memory while idle.
-      process = {
-        kind = "string",
-        values = { "oneshot", "duplex" },
-        default = "oneshot",
-      },
-    },
+    config_fields = {},
     discovery_module = "vibing.infrastructure.adapter.models.grok",
     -- `grok models` に訊けなかったときだけ使う
     models = {

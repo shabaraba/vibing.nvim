@@ -29,7 +29,9 @@ local function apply_position(chat_buf, position)
   end
 
   chat_buf.config = vim.tbl_extend("force", {}, chat_buf.config, {
-    window = vim.tbl_extend("force", {}, chat_buf.config.window, { position = position }),
+    ui = vim.tbl_extend("force", {}, chat_buf.config.ui, {
+      window = vim.tbl_extend("force", {}, chat_buf.config.ui.window, { position = position }),
+    }),
   })
 end
 
@@ -93,7 +95,7 @@ function M.render(session, position, opts)
   end
 
   -- 毎回新規バッファを作成（既存バッファを再利用しない）
-  local chat_buf = ChatBuffer:new(config.chat)
+  local chat_buf = ChatBuffer:new(config)
 
   -- M._current_buffer は「ユーザーが最後に開いたチャット」を指すシングルトンで、
   -- :VibingCancel / :VibingToggleChat がカーソルがチャット外にあるときの
@@ -107,7 +109,7 @@ function M.render(session, position, opts)
   end
 
   -- セッションデータをバッファに反映
-  chat_buf.session = session  -- セッション全体を保持（後方互換性のため）
+  chat_buf.session = session -- セッション全体を保持（後方互換性のため）
   if session.file_path then
     chat_buf.file_path = session.file_path
   end
@@ -226,7 +228,7 @@ function M.attach_to_buffer(bufnr, file_path)
   local vibing = require("vibing")
   local config = vibing.get_config()
 
-  local chat_buf = ChatBuffer:new(config.chat)
+  local chat_buf = ChatBuffer:new(config)
   chat_buf.buf = bufnr
   chat_buf.file_path = file_path
 
@@ -338,7 +340,8 @@ function M._apply_chat_buffer_settings(bufnr)
         "The chat this %s was asked in went away before it was answered."
       )
 
-      local chat_buffer = M._attached_buffers[bufnr] or (M._current_buffer and M._current_buffer.buf == bufnr and M._current_buffer)
+      local chat_buffer = M._attached_buffers[bufnr]
+        or (M._current_buffer and M._current_buffer.buf == bufnr and M._current_buffer)
       if chat_buffer then
         local adapter = chat_buffer:_get_active_adapter()
         if adapter then

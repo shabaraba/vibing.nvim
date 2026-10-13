@@ -5,7 +5,7 @@
 
 local GrokCommandBuilder = require("vibing.infrastructure.adapter.modules.grok_command_builder")
 
-local CONFIG = { agent = { default_model = "grok-4.7" } }
+local CONFIG = { ai = { chat = { agent = "grok", model = "grok-4.7" } } }
 
 --- @param cmd string[]
 --- @param flag string

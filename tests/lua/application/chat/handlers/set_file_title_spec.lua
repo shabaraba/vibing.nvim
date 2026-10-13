@@ -100,7 +100,14 @@ describe("set_file_title handler - streaming guard", function()
 
   it("falls back to a message-based name when title generation fails", function()
     local save_dir = vim.fn.tempname() .. "/vibing_title_fb"
-    require("vibing").setup({ chat = { save_location_type = "custom", save_dir = save_dir } })
+    require("vibing").setup({
+      chat = {
+        storage = {
+          location = "custom",
+          path = save_dir,
+        },
+      },
+    })
     vim.fn.mkdir(save_dir, "p")
 
     -- Simulate the real failure (e.g. "Prompt is too long"): the callback is
@@ -180,21 +187,24 @@ describe("set_file_title handler - summary as input", function()
       passed_opts = opts
     end
 
-    handler({}, chat_buffer_with({
-      "---",
-      "vibing.nvim: true",
-      "---",
-      "# Vibing Chat",
-      "",
-      "## summary",
-      "",
-      "### 一行要約",
-      "- タイトル生成の入力を summary 優先にした",
-      "",
-      "---",
-      "## User",
-      "hi",
-    }))
+    handler(
+      {},
+      chat_buffer_with({
+        "---",
+        "vibing.nvim: true",
+        "---",
+        "# Vibing Chat",
+        "",
+        "## summary",
+        "",
+        "### 一行要約",
+        "- タイトル生成の入力を summary 優先にした",
+        "",
+        "---",
+        "## User",
+        "hi",
+      })
+    )
 
     assert.is_truthy(passed_opts.summary:find("タイトル生成の入力を summary 優先にした", 1, true))
   end)
@@ -205,15 +215,18 @@ describe("set_file_title handler - summary as input", function()
       passed_opts = opts
     end
 
-    handler({}, chat_buffer_with({
-      "---",
-      "vibing.nvim: true",
-      "---",
-      "# Vibing Chat",
-      "---",
-      "## User",
-      "hi",
-    }))
+    handler(
+      {},
+      chat_buffer_with({
+        "---",
+        "vibing.nvim: true",
+        "---",
+        "# Vibing Chat",
+        "---",
+        "## User",
+        "hi",
+      })
+    )
 
     assert.is_table(passed_opts)
     assert.is_nil(passed_opts.summary)

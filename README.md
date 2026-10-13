@@ -142,7 +142,7 @@ that.
 custom or local provider, **those lightweight calls go to the default OpenAI endpoint instead**.
 Ordinary chat still uses your provider. vibing.nvim warns once per Neovim session when this applies
 to you, asking Codex itself (`codex doctor --json`) which provider is configured; it says nothing
-if Codex cannot answer. Set `backends.codex.provider_notice = false` to turn the warning and its
+if Codex cannot answer. Set `ai.agents.codex.extensions.provider_notice = false` to turn the warning and its
 probe off.
 
 </details>
@@ -159,7 +159,7 @@ With [lazy.nvim](https://github.com/folke/lazy.nvim):
     "stevearc/oil.nvim", -- optional: add context straight from the file browser
   },
   opts = {},
-}
+},
 ```
 
 `opts` is passed to `require("vibing").setup()`. See [Configuration](#️-configuration).
@@ -168,13 +168,13 @@ With [lazy.nvim](https://github.com/folke/lazy.nvim):
 <summary><b>packer.nvim</b></summary>
 
 ```lua
-use {
+use({
   "shabaraba/vibing.nvim",
   run = "./build.sh",
   config = function()
     require("vibing").setup()
   end,
-}
+}),
 ```
 
 </details>
@@ -209,9 +209,9 @@ skills are listed for the model in `developer_instructions`. Subagents do not ca
 `.claude-plugin/plugin.json`) is loaded the same way, for chats in that project only. Run
 `:VibingReloadCommands` after adding one, or `:VibingCreatePlugin <name>` to write a working
 skeleton in the first place. Note that a plugin may declare `mcpServers`, so a plugin in a
-repository you cloned can start a process on your machine — set `agent.plugins.project_dir = false`
+repository you cloned can start a process on your machine — set `integrations.plugins.project_dir = false`
 for repositories you do not trust. See
-[handbook/configuration.md](handbook/configuration.md) for `agent.plugins`.
+[handbook/configuration.md](handbook/configuration.md) for `integrations.plugins`.
 
 **Upgrading from an older vibing.nvim:** `build.sh` removes the user-scope install and its
 marketplace entry for you. To do it by hand:
@@ -241,40 +241,24 @@ keeps its highlighting.
 
 ```lua
 require("vibing").setup({
-  adapter = "claude",              -- "claude" | "codex" | "copilot" | "grok"
+  ai = {
+    chat = { agent = "claude", model = "sonnet", effort = "default" },
+    helpers = { model = "haiku", effort = "low" },
+  },
   chat = {
-    window = {
-      position = "current",        -- "current" | "right" | "left" | "top" | "bottom" | "back" | "float"
-      width = 0.4,                 -- screen-width ratio (0-1)
-    },
-    save_location_type = "project", -- "project" | "user" | "custom"
+    language = "ja",
+    storage = { location = "project" },
   },
-  agent = {
-    default_model = "sonnet",      -- backend model id, e.g. "sonnet" or "gpt-5.6-terra"
-    default_effort = "default",     -- "default" | "low" | "medium" | "high" | "xhigh" | "max"
-    scheduled_requests = {
-      enabled = true,              -- during a usage limit, <CR> schedules instead of sending
-    },
-  },
-  permissions = {
-    mode = "acceptEdits",          -- "default" | "acceptEdits" | "plan" | "auto" | "dontAsk" | "bypassPermissions"
-    allow = { "Read", "Edit", "Write", "Glob", "Grep", "Skill", "StructuredOutput" },
-    deny = { "Bash" },
-  },
-  backends = {
-    codex = {
-      profile_file = ".vibing/codex-permissions.toml", -- false disables loading the generated profile
-      -- profile_content = [[...]], -- initial TOML used only when creating the profile
-      allow_tracked_profile = false, -- true explicitly trusts a Git-tracked profile
-    },
-    grok = { executable = "auto" }, -- or a path to the official Grok Build CLI
-  },
-  language = nil,                  -- e.g. "ja", or { default = "ja", chat = "ja" }
+  ui = { window = { position = "current", width = 0.4 } },
+  permissions = { mode = "acceptEdits", deny = { "Bash" } },
 })
 ```
 
 The permissions above are a **template** for new chat files; each chat's frontmatter carries its
 own permissions, and those are what is enforced at runtime.
+
+Old setup keys are rejected with migration hints. Objects merge recursively and lists replace
+(including empty lists). See [the migration guide](./handbook/configuration-redesign.md).
 
 **Full reference:** every option (window details, UI/gradient/tool markers, diff backends, granular
 permission rules, MCP, Node.js executable, daily summary, …) is documented in
@@ -286,7 +270,7 @@ permission rules, MCP, Node.js executable, daily summary, …) is documented in
 For the Codex backend, vibing.nvim creates `.vibing/codex-permissions.toml` when it initializes a
 project. Its default profile permits workspace and Git metadata writes without using full bypass
 mode; edit the file to narrow or extend the OS sandbox. Existing files are never overwritten.
-Git-tracked profiles are rejected unless `backends.codex.allow_tracked_profile = true` explicitly
+Git-tracked profiles are rejected unless `ai.agents.codex.extensions.allow_tracked_profile = true` explicitly
 trusts the reviewed file; locally generated, untracked profiles continue to load automatically. See
 [Project-local Codex permission profiles](./handbook/configuration.md#project-local-codex-permission-profiles).
 

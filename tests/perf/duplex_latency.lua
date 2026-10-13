@@ -7,7 +7,7 @@
 --- the completion condition for the resident transport is a measured number, and a number taken
 --- against a toy config would not be one. So it runs the adapter exactly as a chat does — plugin
 --- directories, the MCP server, the project's CLAUDE.md, the same system prompt — and changes one
---- thing between the two runs: `backends.claude.process`.
+--- thing between the two runs: `ai.agents.claude.process`.
 ---
 --- Three things are measured, because all three are decisions this feature cannot make from a
 --- guess:
@@ -135,7 +135,18 @@ end
 --- @param process string "oneshot" | "duplex"
 --- @return Vibing.Perf.Turn[]
 local function run(process)
-  Config.setup({ agent = { default_model = "sonnet" }, backends = { claude = { process = process } } })
+  Config.setup({
+    ai = {
+      chat = {
+        model = "sonnet",
+      },
+      agents = {
+        claude = {
+          process = process,
+        },
+      },
+    },
+  })
   local descriptor = require(Agents.get("claude").descriptor_module)
   local Adapter = require(Agents.get("claude").adapter_module)
   local adapter = Adapter:new(Config.get())
@@ -156,7 +167,12 @@ local function run(process)
       )
     )
     print(string.format("      vibing usage: %s", usage_line(result.usage)))
-    print(string.format("      result.usage on the wire: %s", result.result_usage and vim.inspect(result.result_usage):gsub("%s+", " ") or "absent"))
+    print(
+      string.format(
+        "      result.usage on the wire: %s",
+        result.result_usage and vim.inspect(result.result_usage):gsub("%s+", " ") or "absent"
+      )
+    )
   end
 
   if process == "duplex" then
@@ -164,9 +180,20 @@ local function run(process)
       prompt = INTERRUPT_PROMPT,
       interrupt_after_first_event = true,
     })
-    print(string.format("  duplex interrupt: turn ended %s after the interrupt was sent", fmt(interrupted.interrupt_ms or -1)))
+    print(
+      string.format(
+        "  duplex interrupt: turn ended %s after the interrupt was sent",
+        fmt(interrupted.interrupt_ms or -1)
+      )
+    )
     local after = timed_turn(adapter, descriptor, interrupted.session_id or session_id)
-    print(string.format("  duplex turn after the interrupt: first event %s%s", fmt(after.first_event_ms), after.error and ("  ERROR: " .. after.error) or ""))
+    print(
+      string.format(
+        "  duplex turn after the interrupt: first event %s%s",
+        fmt(after.first_event_ms),
+        after.error and ("  ERROR: " .. after.error) or ""
+      )
+    )
     table.insert(results, interrupted)
     table.insert(results, after)
   end
@@ -176,7 +203,14 @@ local function run(process)
   return results
 end
 
-print(string.format("claude %s, %d turns per transport, cwd %s", (vim.fn.system("claude --version"):gsub("%s+$", "")), TURNS, vim.fn.getcwd()))
+print(
+  string.format(
+    "claude %s, %d turns per transport, cwd %s",
+    (vim.fn.system("claude --version"):gsub("%s+$", "")),
+    TURNS,
+    vim.fn.getcwd()
+  )
+)
 local oneshot = run("oneshot")
 local duplex = run("duplex")
 

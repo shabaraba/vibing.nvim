@@ -65,7 +65,7 @@ thing in the prefix, so a value that moves invalidates the cache for it _and_ th
 conversation behind it — floor plus history, re-written at cache-creation price, which is 12.5× the
 read price. A long-lived process pays that once per session; here it is once per change.
 
-`agent.git_instructions` is the case that was found (#681). The CLI embeds a block like
+`ai.agents.claude.extensions.git_instructions` is the case that was found (#681). The CLI embeds a block like
 
 ```text
 This is the git status at the start of the conversation. ...
@@ -105,7 +105,7 @@ that shape:
   changes under them. The environment is the one channel every call goes through.
 - **Both settings write the variable**, because the CLI reads it as a tri-state: `"1"` suppresses,
   `"0"` forces on, unset defers to `includeGitInstructions` — which
-  `--setting-sources user,project,local` still loads. So `agent.git_instructions = true` writes
+  `--setting-sources user,project,local` still loads. So `ai.agents.claude.extensions.git_instructions = true` writes
   `"0"` rather than nothing; writing nothing would leave the opt-in unable to deliver what it
   promises to a user who has that key set to `false`. Verified against the CLI: `0` and `false`
   both put the block back, `1` removes it.
@@ -138,7 +138,7 @@ and dialect from `hooks/transports.lua`; the four generators described below are
 - **Process model.** `descriptor.process` names the most capable way a backend can be run, not the
   way it will be: `oneshot` (a process per turn, the default and the only model for codex, copilot
   and grok) or `duplex` (one resident process per chat, serving many turns over an open stdin —
-  claude only, and still reached only through `backends.claude.process` or a chat's own `process:`
+  claude only, and still reached only through `ai.agents.claude.process` or a chat's own `process:`
   frontmatter). The field is `process` and not `transport` because `Vibing.HookSpec.transport`
   already owns that word in the same descriptor. `duplex-transport.md` is the whole story;
   what matters here is that the hook protocol below is unchanged by it — `VIBING_PROCESS_ID` is
@@ -367,4 +367,4 @@ metadata for 'luna' not found`, then HTTP 400 `The 'luna' model is not supported
 `BINARY.resolve` raises when the CLI is absent and sniffs the binary for officialness with two
 blocking `vim.fn.system` calls; paying that per keystroke is what the module's own comments warn
 about. `BINARY.configured` + `BINARY.name` is the non-raising half, and is the one interpretation of
-the `backends.grok.executable` `auto` sentinel.
+the omitted `ai.agents.grok.path` (PATH lookup).

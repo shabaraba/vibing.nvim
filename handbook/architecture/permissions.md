@@ -282,7 +282,7 @@ wrong chat — being per-chat is a correctness property here, not only an isolat
 **Another chat can answer a worker's prompt only when the user opted in.** A worker chat that hits
 this prompt is `waiting_approval`: it can neither continue nor report that it is stuck, and in an
 orchestration run the user has to find each blocked worker by hand. With
-`agent.orchestration.delegated_approval = true` the orchestrator answers instead, via the MCP tool
+`permissions.delegated_approval = true` the orchestrator answers instead, via the MCP tool
 `nvim_chat_answer_approval` → `application/chat/approval_delegate.lua`. The default is off because
 what it buys is an agent clearing another agent's permission gate, not because of anything in the
 implementation.

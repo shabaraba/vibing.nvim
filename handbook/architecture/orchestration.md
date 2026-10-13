@@ -408,7 +408,7 @@ works from whichever side did get written. Fork and subagent chats do **not** in
 — `inherited_frontmatter.from_source` is an explicit whitelist, and a fork claiming its parent's
 relationships would be claiming work it was never given.
 
-**Completion is pushed, not polled** — `agent.chat_notifications.enabled`, default `false` because
+**Completion is pushed, not polled** — `automation.orchestration.notifications.enabled`, default `false` because
 it spends tokens unattended. The whole mechanism is that **the send is the subscription**: when
 `nvim_chat_create` / `nvim_chat_send_message` receive `from_bufnr`, `completion_notifier.subscribe`
 records an A←B edge, and when B's turn ends A is given a new turn saying "B stopped, go read it".
@@ -882,7 +882,7 @@ methods do not each re-implement the git-root lookup and the `orchestrated_entry
 ## Tree operations
 
 `:VibingOrchestrationTree [path]` draws the tree a chat belongs to with each node's status,
-`:VibingCancelTree [path]` stops a subtree, and `agent.orchestration.max_concurrent` (default
+`:VibingCancelTree [path]` stops a subtree, and `automation.orchestration.max_concurrent` (default
 `0` = unlimited) caps how many chats may be responding at once (#645). Three decisions carry
 the design:
 
@@ -1124,7 +1124,7 @@ to whoever messaged it, and — by default — the only thing that orchestrator 
 name the worker and the tool and hand it to the user. With a fan of five workers all hitting the
 same `Bash` prompt, that is five buffers the user has to find by hand.
 
-`agent.orchestration.delegated_approval` (default `false`) lets the orchestrator answer instead,
+`permissions.delegated_approval` (default `false`) lets the orchestrator answer instead,
 through the MCP tool `nvim_chat_answer_approval` →`rpc/handlers/chat.lua:answer_approval` →
 `application/chat/approval_delegate.lua`. Set to `true` it delegates unconditionally; set to
 `"scoped"` (#703) it delegates only `allow_once`/`allow_for_session` answers whose tool and input

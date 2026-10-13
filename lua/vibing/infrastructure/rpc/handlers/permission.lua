@@ -130,7 +130,9 @@ local function build_permission_config(turn_id)
     session_denied_tools = o.permissions_session_deny or {},
     permission_rules = M._resolve_permission_rules(perms),
     permission_mode = o.permission_mode or perms.mode or "default",
-    mcp_enabled = config.mcp and config.mcp.enabled or false,
+    mcp_enabled = vim.tbl_get(config, "integrations", "nvim")
+        and vim.tbl_get(config, "integrations", "nvim", "enabled")
+      or false,
     is_always_allowed = o._tool_vocabulary and o._tool_vocabulary.is_always_allowed,
     exclusive_tools = o.exclusive_tools,
   }
@@ -194,12 +196,7 @@ function M._capture_baselines(turn_id, cwd, tool_name, tool_input)
   pcall(function()
     -- ここも「ツールが走る前」であることが要る。worktreeを作るコマンドの前後を比べるので、
     -- 押さえるのは実行前の一覧でなければならない
-    require("vibing.application.chat.worktree_binding").observe(
-      turn_id,
-      cwd,
-      tool_name,
-      tool_input
-    )
+    require("vibing.application.chat.worktree_binding").observe(turn_id, cwd, tool_name, tool_input)
   end)
 end
 
@@ -488,11 +485,14 @@ function M.check_tool_permission(params)
   local is_ask_user_question_tool = tool_name == "AskUserQuestion"
 
   if is_ask_user_question_tool then
-    cancel_and_deny(function(turn)
-      if turn.on_insert_choices and tool_input.questions then
-        turn.on_insert_choices(tool_input.questions)
-      end
-    end, "vibing.nvim could not find the chat buffer to show this question in (internal error). Ask the question as plain text instead of retrying this tool.")
+    cancel_and_deny(
+      function(turn)
+        if turn.on_insert_choices and tool_input.questions then
+          turn.on_insert_choices(tool_input.questions)
+        end
+      end,
+      "vibing.nvim could not find the chat buffer to show this question in (internal error). Ask the question as plain text instead of retrying this tool."
+    )
     return { status = "denied", reason = "AskUserQuestion intercepted" }
   end
 
@@ -535,11 +535,14 @@ function M.check_tool_permission(params)
 
     -- The fallback, and byte-for-byte what every backend did before #778: kill the process first,
     -- show the approval UI, then write the deny. The user's answer arrives as a new turn.
-    cancel_and_deny(function(turn)
-      if turn.on_approval_required then
-        turn.on_approval_required(tool_name, tool_input, APPROVAL_OPTIONS, request_id)
-      end
-    end, "vibing.nvim could not find the chat buffer to show the approval prompt in (internal error). Do not retry this tool immediately.")
+    cancel_and_deny(
+      function(turn)
+        if turn.on_approval_required then
+          turn.on_approval_required(tool_name, tool_input, APPROVAL_OPTIONS, request_id)
+        end
+      end,
+      "vibing.nvim could not find the chat buffer to show the approval prompt in (internal error). Do not retry this tool immediately."
+    )
     return { status = "pending" }
   end
 end
@@ -582,10 +585,7 @@ function M._ask_question_without_killing(turn, chat_bufnr, questions, respond)
   if turn.on_insert_choices then
     local ok, err = pcall(turn.on_insert_choices, questions, true, request_id)
     if not ok then
-      vim.notify(
-        string.format("[vibing] could not draw the question prompt: %s", tostring(err)),
-        vim.log.levels.ERROR
-      )
+      vim.notify(string.format("[vibing] could not draw the question prompt: %s", tostring(err)), vim.log.levels.ERROR)
     end
   end
 

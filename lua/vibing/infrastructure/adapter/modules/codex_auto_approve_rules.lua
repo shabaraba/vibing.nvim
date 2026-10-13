@@ -1,4 +1,4 @@
---- The exceptions to `backends.codex.auto_approve`, as ordinary permission patterns.
+--- The exceptions to `ai.agents.codex.extensions.auto_approve`, as ordinary permission patterns.
 ---
 --- One question only: **must this request be drawn for a human even though `auto_approve` is on**.
 --- The patterns are the same grammar `permissions.ask` uses and are evaluated by the same
@@ -43,7 +43,7 @@ local function warn_if_unfireable(rule)
   require("vibing.core.utils.notify").warn_once(
     "codex_auto_approve_ask_unfireable:" .. rule,
     string.format(
-      "backends.codex.auto_approve_ask: '%s' can never match -- `Tool(x:*)` compares only the "
+      "ai.agents.codex.extensions.auto_approve_ask: '%s' can never match -- `Tool(x:*)` compares only the "
         .. "command's first word. Write 'Bash(%s)' instead, which matches that prefix.",
       rule,
       base
@@ -95,7 +95,7 @@ end
 --- @param method string
 --- @param params table|nil
 --- @param changes table[]|nil the `item/started` changes for this item, when known
---- @param rules string[]|nil `backends.codex.auto_approve_ask`
+--- @param rules string[]|nil `ai.agents.codex.extensions.auto_approve_ask`
 --- @return boolean
 function M.must_ask(method, params, changes, rules)
   rules = type(rules) == "table" and rules or {}

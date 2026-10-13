@@ -19,7 +19,7 @@ describe("title_generator.generate_from_conversation", function()
           permissions = { mode = "acceptEdits", allow = {}, deny = {} },
         }
       end,
-      get_adapter = function()
+      get_helper_adapter = function()
         return {
           stream = function(_, prompt, opts, on_chunk, on_done)
             captured_prompt = prompt
@@ -55,7 +55,7 @@ describe("title_generator.generate_from_conversation", function()
       get_config = function()
         return { language = nil, permissions = { mode = "acceptEdits", allow = {}, deny = {} } }
       end,
-      get_adapter = function()
+      get_helper_adapter = function()
         return {
           stream = function(_, _, _, on_chunk, on_done)
             on_chunk("Fix login bug\n⏺ ToolSearch(select:TaskList,TaskCreate)\n📄 Read()\nmore narration")

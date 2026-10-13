@@ -27,8 +27,8 @@ describe("Grok duplex ACP agent", function()
       return executable(path)
     end
     adapter = Adapter:new({
-      agent = { default_model = "grok-4.7", plugins = { self = false, project_dir = false } },
-      backends = { grok = { process = "duplex" } },
+      ai = { chat = { agent = "grok", model = "grok-4.7" }, agents = { grok = { process = "duplex" } } },
+      integrations = { plugins = { self = false, project_dir = false } },
     })
   end)
 
@@ -153,7 +153,10 @@ describe("Grok duplex ACP agent", function()
 
     emit(call, {
       method = "session/update",
-      params = { sessionId = "sess-1", update = { sessionUpdate = "turn_completed", prompt_id = "other", stop_reason = "end_turn" } },
+      params = {
+        sessionId = "sess-1",
+        update = { sessionUpdate = "turn_completed", prompt_id = "other", stop_reason = "end_turn" },
+      },
     })
     assert.equals(0, #result.responses)
 
@@ -180,7 +183,10 @@ describe("Grok duplex ACP agent", function()
     ready(call)
     emit(call, {
       method = "session/update",
-      params = { sessionId = "sess-1", update = { sessionUpdate = "agent_message_chunk", content = { type = "text", text = "hi there" } } },
+      params = {
+        sessionId = "sess-1",
+        update = { sessionUpdate = "agent_message_chunk", content = { type = "text", text = "hi there" } },
+      },
     })
     reply(call, { stopReason = "end_turn" })
     assert.is_not_nil(result.responses[1].content:find("hi there", 1, true))

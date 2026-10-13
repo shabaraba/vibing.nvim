@@ -19,7 +19,14 @@ describe("gradient_animation waiting state", function()
   local bufnr
 
   before_each(function()
-    require("vibing.config").setup({ ui = { gradient = { enabled = true, interval = 10 } } })
+    require("vibing.config").setup({
+      ui = {
+        gradient = {
+          enabled = true,
+          interval_ms = 10,
+        },
+      },
+    })
     bufnr = vim.api.nvim_create_buf(false, true)
     vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "a", "b", "c" })
   end)
@@ -66,7 +73,15 @@ describe("gradient_animation waiting state", function()
   end)
 
   it("colors the waiting group with ui.gradient.waiting_color", function()
-    require("vibing.config").setup({ ui = { gradient = { enabled = true, interval = 10, waiting_color = "#123456" } } })
+    require("vibing.config").setup({
+      ui = {
+        gradient = {
+          enabled = true,
+          interval_ms = 10,
+          waiting_color = "#123456",
+        },
+      },
+    })
     GradientAnimation.start(bufnr)
 
     assert.equal(0x123456, vim.api.nvim_get_hl(0, { name = GradientAnimation.WAITING_HL }).fg)

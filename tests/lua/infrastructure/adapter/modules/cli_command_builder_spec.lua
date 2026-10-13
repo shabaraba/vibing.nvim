@@ -65,7 +65,11 @@ describe("cli_command_builder", function()
     end)
 
     it("combines the language instruction and worktree instruction into a single flag", function()
-      local config = { language = "ja" }
+      local config = {
+        chat = {
+          language = "ja",
+        },
+      }
       local cmd = cli_command_builder.build("hello", {}, nil, config, nil)
 
       local count = 0
@@ -283,10 +287,10 @@ describe("cli_command_builder", function()
       assert.is_truthy(none:find("nvim_annotate", 1, true))
     end)
 
-    describe("configured in agent.profiles", function()
+    describe("configured in ai.profiles", function()
       local Profiles = require("vibing.core.constants.profiles")
       local implementer = {
-        agent = {
+        ai = {
           profiles = {
             {
               name = "implementer",
@@ -364,7 +368,7 @@ describe("cli_command_builder", function()
       end)
 
       local function config(files)
-        return { agent = { profiles = { { name = "implementer", context_files = files } } } }
+        return { ai = { profiles = { { name = "implementer", context_files = files } } } }
       end
 
       it("appends each file to the system prompt", function()
@@ -604,15 +608,24 @@ describe("cli_command_builder", function()
       assert.is_nil(find_flag(cmd, "--permission-mode"))
     end)
 
-    it("uses config.agent.utility_model, defaulting to haiku when unset", function()
+    it("uses config.ai.helpers.model, defaulting to haiku when unset", function()
       local cmd = cli_command_builder.build("hello", { lightweight = true }, nil, {}, nil)
       local idx = find_flag(cmd, "--model")
       assert.is_not_nil(idx)
       assert.equals("haiku", cmd[idx + 1])
     end)
 
-    it("prefers config.agent.utility_model over opts.model and config.agent.default_model", function()
-      local config = { agent = { default_model = "sonnet", utility_model = "opus" } }
+    it("prefers config.ai.helpers.model over opts.model and config.ai.chat.model", function()
+      local config = {
+        ai = {
+          chat = {
+            model = "sonnet",
+          },
+          helpers = {
+            model = "opus",
+          },
+        },
+      }
       local cmd = cli_command_builder.build("hello", { lightweight = true, model = "fable" }, nil, config, nil)
       local idx = find_flag(cmd, "--model")
       assert.is_not_nil(idx)
@@ -639,7 +652,11 @@ describe("cli_command_builder", function()
     end)
 
     it("still applies the language instruction to the system prompt", function()
-      local config = { language = "ja" }
+      local config = {
+        chat = {
+          language = "ja",
+        },
+      }
       local cmd = cli_command_builder.build("hello", { lightweight = true }, nil, config, nil)
       local idx = find_flag(cmd, "--append-system-prompt")
       assert.is_not_nil(idx)
@@ -685,15 +702,25 @@ describe("cli_command_builder", function()
   end)
 
   describe("--setting-sources", function()
-    it("defaults to user,project,local when config.agent.setting_sources is not set", function()
+    it("defaults to user,project,local when config.ai.agents.claude.settings.sources is not set", function()
       local cmd = cli_command_builder.build("hello", {}, nil, {}, nil)
       local idx = find_flag(cmd, "--setting-sources")
       assert.is_not_nil(idx)
       assert.equals("user,project,local", cmd[idx + 1])
     end)
 
-    it("uses config.agent.setting_sources when provided", function()
-      local config = { agent = { setting_sources = { "project", "local" } } }
+    it("uses config.ai.agents.claude.settings.sources when provided", function()
+      local config = {
+        ai = {
+          agents = {
+            claude = {
+              settings = {
+                sources = { "project", "local" },
+              },
+            },
+          },
+        },
+      }
       local cmd = cli_command_builder.build("hello", {}, nil, config, nil)
       local idx = find_flag(cmd, "--setting-sources")
       assert.is_not_nil(idx)
@@ -701,35 +728,85 @@ describe("cli_command_builder", function()
     end)
 
     it("falls back to the default when setting_sources is not a table", function()
-      local config = { agent = { setting_sources = "project" } }
+      local config = {
+        ai = {
+          agents = {
+            claude = {
+              settings = {
+                sources = "project",
+              },
+            },
+          },
+        },
+      }
       local cmd = cli_command_builder.build("hello", {}, nil, config, nil)
       local idx = find_flag(cmd, "--setting-sources")
       assert.equals("user,project,local", cmd[idx + 1])
     end)
 
     it("falls back to the default when setting_sources is an empty table", function()
-      local config = { agent = { setting_sources = {} } }
+      local config = {
+        ai = {
+          agents = {
+            claude = {
+              settings = {
+                sources = {},
+              },
+            },
+          },
+        },
+      }
       local cmd = cli_command_builder.build("hello", {}, nil, config, nil)
       local idx = find_flag(cmd, "--setting-sources")
       assert.equals("user,project,local", cmd[idx + 1])
     end)
 
     it("falls back to the default when setting_sources contains a non-string element", function()
-      local config = { agent = { setting_sources = { "project", 42 } } }
+      local config = {
+        ai = {
+          agents = {
+            claude = {
+              settings = {
+                sources = { "project", 42 },
+              },
+            },
+          },
+        },
+      }
       local cmd = cli_command_builder.build("hello", {}, nil, config, nil)
       local idx = find_flag(cmd, "--setting-sources")
       assert.equals("user,project,local", cmd[idx + 1])
     end)
 
     it("falls back to the default when setting_sources contains an empty string element", function()
-      local config = { agent = { setting_sources = { "project", "" } } }
+      local config = {
+        ai = {
+          agents = {
+            claude = {
+              settings = {
+                sources = { "project", "" },
+              },
+            },
+          },
+        },
+      }
       local cmd = cli_command_builder.build("hello", {}, nil, config, nil)
       local idx = find_flag(cmd, "--setting-sources")
       assert.equals("user,project,local", cmd[idx + 1])
     end)
 
     it("falls back to the default when setting_sources contains an unsupported source name", function()
-      local config = { agent = { setting_sources = { "project", "workspace" } } }
+      local config = {
+        ai = {
+          agents = {
+            claude = {
+              settings = {
+                sources = { "project", "workspace" },
+              },
+            },
+          },
+        },
+      }
       local cmd = cli_command_builder.build("hello", {}, nil, config, nil)
       local idx = find_flag(cmd, "--setting-sources")
       assert.equals("user,project,local", cmd[idx + 1])
@@ -742,20 +819,39 @@ describe("cli_command_builder", function()
       assert.is_nil(find_flag(cmd, "--forward-subagent-text"))
     end)
 
-    it("is emitted when agent.subagent.enabled is true", function()
-      local config = { agent = { subagent = { enabled = true } } }
+    it("is emitted when ui.subagents.show_output is true", function()
+      local config = {
+        ui = {
+          subagents = {
+            show_output = true,
+          },
+        },
+      }
       local cmd = cli_command_builder.build("hello", {}, nil, config, nil)
       assert.is_not_nil(find_flag(cmd, "--forward-subagent-text"))
     end)
 
-    it("is omitted when agent.subagent.enabled is false", function()
-      local config = { agent = { subagent = { enabled = false, show_prefix = true } } }
+    it("is omitted when ui.subagents.show_output is false", function()
+      local config = {
+        ui = {
+          subagents = {
+            show_output = false,
+            show_prefix = true,
+          },
+        },
+      }
       local cmd = cli_command_builder.build("hello", {}, nil, config, nil)
       assert.is_nil(find_flag(cmd, "--forward-subagent-text"))
     end)
 
     it("is omitted for lightweight calls, which have no tools to delegate with", function()
-      local config = { agent = { subagent = { enabled = true } } }
+      local config = {
+        ui = {
+          subagents = {
+            show_output = true,
+          },
+        },
+      }
       local cmd = cli_command_builder.build("hello", { lightweight = true }, nil, config, nil)
       assert.is_nil(find_flag(cmd, "--forward-subagent-text"))
     end)
@@ -799,7 +895,11 @@ describe("cli_command_builder", function()
         project_root .. "/plugins/extra1/.claude-plugin/plugin.json"
       )
 
-      local config = { agent = { plugins = { extra = { project_root .. "/plugins/extra1" } } } }
+      local config = {
+        integrations = {
+          plugins = { extra = { project_root .. "/plugins/extra1" } },
+        },
+      }
       local dirs = plugin_dirs(cli_command_builder.build("hello", {}, nil, config, nil))
 
       assert.equals(2, #dirs)
@@ -808,12 +908,16 @@ describe("cli_command_builder", function()
     end)
 
     it("passes none when the whole feature is turned off", function()
-      local config = { agent = { plugins = { self = false, project_dir = false } } }
+      local config = {
+        integrations = {
+          plugins = { self = false, project_dir = false },
+        },
+      }
       assert.same({}, plugin_dirs(cli_command_builder.build("hello", {}, nil, config, nil)))
     end)
   end)
 
-  describe("agent.mcp.user_servers", function()
+  describe("ai.agents.claude.mcp.inherit_cli_servers", function()
     local function mcp_config(cmd)
       local idx = find_flag(cmd, "--mcp-config")
       return idx and cmd[idx + 1] or nil
@@ -829,7 +933,17 @@ describe("cli_command_builder", function()
     -- claude 2.1.231: 42 nvim_* tools gone), so the flag is never emitted without the
     -- re-registration that follows it.
     it("re-registers the bundled server when user servers are excluded", function()
-      local config = { agent = { mcp = { user_servers = false } } }
+      local config = {
+        ai = {
+          agents = {
+            claude = {
+              mcp = {
+                inherit_cli_servers = false,
+              },
+            },
+          },
+        },
+      }
       local cmd = cli_command_builder.build("hello", {}, nil, config, nil)
 
       assert.is_not_nil(find_flag(cmd, "--strict-mcp-config"))
@@ -841,7 +955,17 @@ describe("cli_command_builder", function()
 
     -- The plugins still carry their skills and subagents in; only their MCP half is rebuilt.
     it("keeps the --plugin-dir flags alongside it", function()
-      local config = { agent = { mcp = { user_servers = false } } }
+      local config = {
+        ai = {
+          agents = {
+            claude = {
+              mcp = {
+                inherit_cli_servers = false,
+              },
+            },
+          },
+        },
+      }
       local cmd = cli_command_builder.build("hello", {}, nil, config, nil)
       assert.is_not_nil(find_flag(cmd, "--plugin-dir"))
     end)
@@ -857,7 +981,18 @@ describe("cli_command_builder", function()
       }, project_root .. "/plugins/extra1/.claude-plugin/plugin.json")
 
       local config = {
-        agent = { mcp = { user_servers = false }, plugins = { extra = { project_root .. "/plugins/extra1" } } },
+        ai = {
+          agents = {
+            claude = {
+              mcp = {
+                inherit_cli_servers = false,
+              },
+            },
+          },
+        },
+        integrations = {
+          plugins = { extra = { project_root .. "/plugins/extra1" } },
+        },
       }
       local decoded = vim.json.decode(mcp_config(cli_command_builder.build("hello", {}, nil, config, nil)))
 
@@ -869,7 +1004,20 @@ describe("cli_command_builder", function()
     -- With nothing left to register the turn must still run, with no MCP servers at all. An empty
     -- Lua table encodes as `[]`, which the CLI rejects as an mcpServers map.
     it("emits an empty object when no plugin declares a server", function()
-      local config = { agent = { mcp = { user_servers = false }, plugins = { self = false, project_dir = false } } }
+      local config = {
+        ai = {
+          agents = {
+            claude = {
+              mcp = {
+                inherit_cli_servers = false,
+              },
+            },
+          },
+        },
+        integrations = {
+          plugins = { self = false, project_dir = false },
+        },
+      }
       local cmd = cli_command_builder.build("hello", {}, nil, config, nil)
       assert.equals('{"mcpServers":{}}', mcp_config(cmd))
     end)
@@ -877,7 +1025,17 @@ describe("cli_command_builder", function()
     -- Lightweight already blocks every server with its own empty --mcp-config; the option must not
     -- turn that into a re-registration of the bundled one.
     it("does not reach a lightweight call", function()
-      local config = { agent = { mcp = { user_servers = false } } }
+      local config = {
+        ai = {
+          agents = {
+            claude = {
+              mcp = {
+                inherit_cli_servers = false,
+              },
+            },
+          },
+        },
+      }
       local cmd = cli_command_builder.build("hello", { lightweight = true }, nil, config, nil)
       assert.equals('{"mcpServers":{}}', mcp_config(cmd))
     end)

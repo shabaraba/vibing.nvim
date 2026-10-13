@@ -103,7 +103,14 @@ describe("rpc handlers: list_chats", function()
       -- A platform without symlinks cannot exhibit the bug either
       return
     end
-    require("vibing").setup({ chat = { save_location_type = "custom", save_dir = link_dir .. "/" } })
+    require("vibing").setup({
+      chat = {
+        storage = {
+          location = "custom",
+          path = link_dir .. "/",
+        },
+      },
+    })
 
     local orchestrator = handler.create_chat({})
     local worker = handler.create_chat({ from_bufnr = orchestrator.bufnr, task = "PR #688 -- merge" })

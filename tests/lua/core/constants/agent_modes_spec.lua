@@ -22,27 +22,23 @@ describe("modes.is_valid_agent_mode", function()
   end)
 end)
 
-describe("config validation of agent.default_mode", function()
-  local config = require("vibing.config")
-
-  after_each(function()
-    config.setup({})
-  end)
-
-  it("keeps a valid mode", function()
-    config.setup({ agent = { default_mode = "explore" } })
-    assert.equals("explore", config.get().agent.default_mode)
-  end)
-
-  it("falls back to code for an unknown mode", function()
-    config.setup({ agent = { default_mode = "yolo" } })
-    assert.equals("code", config.get().agent.default_mode)
+describe("removed config mode", function()
+  it("rejects agent.default_mode with the migration path", function()
+    assert.has_error(function()
+      require("vibing.config").setup({ agent = { default_mode = "plan" } })
+    end)
   end)
 end)
 
 describe("fork._copy_frontmatter", function()
   local fork = require("vibing.application.chat.use_cases.fork")
-  local config = { agent = { default_mode = "code", default_model = "sonnet" } }
+  local config = {
+    ai = {
+      chat = {
+        model = "sonnet",
+      },
+    },
+  }
 
   it("carries a valid mode over to the fork", function()
     local copied = fork._copy_frontmatter({ mode = "explore" }, "source.md", config)
@@ -51,12 +47,12 @@ describe("fork._copy_frontmatter", function()
 
   it("resets an invalid mode instead of propagating it into the fork", function()
     local copied = fork._copy_frontmatter({ mode = "planning" }, "source.md", config)
-    assert.equals("code", copied.mode)
+    assert.is_nil(copied.mode)
   end)
 
-  it("falls back to the configured default when the source has no mode", function()
-    local copied = fork._copy_frontmatter({}, "source.md", { agent = { default_mode = "plan" } })
-    assert.equals("plan", copied.mode)
+  it("omits mode when the source has no mode", function()
+    local copied = fork._copy_frontmatter({}, "source.md", {})
+    assert.is_nil(copied.mode)
   end)
 end)
 

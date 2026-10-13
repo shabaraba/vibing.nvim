@@ -74,12 +74,7 @@ describe("background agent", function()
   describe("opts", function()
     it("runs on the utility model, with exactly the tools it was given", function()
       local tools = { "Grep" }
-      local opts = BackgroundAgent.opts(
-        { utility_model = "haiku", utility_effort = "low" },
-        "/repo",
-        tools,
-        function() end
-      )
+      local opts = BackgroundAgent.opts({ model = "haiku", effort = "low" }, "/repo", tools, function() end)
 
       assert.are.equal("haiku", opts.model)
       assert.are.equal("low", opts.effort)
@@ -124,9 +119,15 @@ describe("background agent", function()
 
       package.loaded["vibing"] = {
         get_config = function()
-          return { agent = { utility_model = "haiku" } }
+          return {
+            ai = {
+              helpers = {
+                model = "haiku",
+              },
+            },
+          }
         end,
-        get_adapter = function()
+        get_helper_adapter = function()
           return {
             stream = function(_, prompt, opts, on_chunk, on_done)
               streamed[#streamed + 1] = { prompt = prompt, opts = opts }
@@ -183,7 +184,7 @@ describe("background agent", function()
     end)
 
     it("uses the structured payload instead of streamed prose", function()
-      local adapter = package.loaded["vibing"].get_adapter()
+      local adapter = package.loaded["vibing"].get_helper_adapter()
       adapter.supports = function(_, feature)
         return feature == "structured_output" or feature == "structured_output_tool"
       end
@@ -194,7 +195,7 @@ describe("background agent", function()
         opts.on_structured_output({ groups = {} })
         return stream(self, prompt, opts, on_chunk, on_done)
       end
-      package.loaded["vibing"].get_adapter = function()
+      package.loaded["vibing"].get_helper_adapter = function()
         return adapter
       end
       reply.chunks = { "not JSON" }
@@ -209,11 +210,11 @@ describe("background agent", function()
     end)
 
     it("reports missing structured output instead of accepting prose", function()
-      local adapter = package.loaded["vibing"].get_adapter()
+      local adapter = package.loaded["vibing"].get_helper_adapter()
       adapter.supports = function()
         return true
       end
-      package.loaded["vibing"].get_adapter = function()
+      package.loaded["vibing"].get_helper_adapter = function()
         return adapter
       end
       reply.chunks = { '{"groups": []}' }
@@ -228,7 +229,7 @@ describe("background agent", function()
     end)
 
     it("writes a file schema for Codex and removes it when the turn ends", function()
-      local adapter = package.loaded["vibing"].get_adapter()
+      local adapter = package.loaded["vibing"].get_helper_adapter()
       adapter.supports = function(_, feature)
         return feature == "structured_output" or feature == "structured_output_file"
       end
@@ -242,7 +243,7 @@ describe("background agent", function()
         opts.on_structured_output({ groups = {} })
         return stream(self, prompt, opts, on_chunk, on_done)
       end
-      package.loaded["vibing"].get_adapter = function()
+      package.loaded["vibing"].get_helper_adapter = function()
         return adapter
       end
       local text
@@ -257,7 +258,7 @@ describe("background agent", function()
     end)
 
     it("reports a missing adapter", function()
-      package.loaded["vibing"].get_adapter = function()
+      package.loaded["vibing"].get_helper_adapter = function()
         return nil
       end
 

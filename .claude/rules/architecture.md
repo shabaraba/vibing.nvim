@@ -50,7 +50,7 @@ Claude backend's behaviour is the contract, pinned by `tests/lua/infrastructure/
 over every registered descriptor.
 
 - **`core/constants/agents.lua` is the single definition of what a backend is** — module paths,
-  export name, description, model candidates, and its `config_fields` (what `backends.<id>.*`
+  export name, description, model candidates, and its `config_fields` (what `ai.agents.<id>.extensions.*`
   accepts). `factory.lua`, `modes.lua`, `config.lua`, `completion/providers/frontmatter.lua` and
   `infrastructure/init.lua` all derive from it. It deliberately requires nothing, which keeps the
   dependency one-way.
@@ -64,7 +64,7 @@ over every registered descriptor.
   renderer and `permission.normalize_hook_input` translate through the same
   `<backend>_tool_vocabulary.lua`, so a tool is called the same thing in the chat and in a rule.
 - **Nothing outside `adapter/`, `hooks/` and `agents.lua` names a backend.** Usage reporting keys
-  on `TokenUsage.is_cumulative`, per-backend options live under `backends.<id>`, and project
+  on `TokenUsage.is_cumulative`, per-backend options live under `ai.agents.<id>`, and project
   files come from the descriptor's `on_project_open` / `on_setup` / `clear_caches`.
 - **A backend name belongs in that backend's own module; shared code takes what it is handed.**
   `rpc/handlers/permission.lua` contains no backend name.
@@ -113,12 +113,12 @@ vibing.nvim's own Claude Code plugin is **not installed**: `cli_command_builder`
 `--plugin-dir <path>` once per directory resolved by `infrastructure/plugins/plugin_dirs.lua`.
 
 - **`plugin_dirs.lua` is the single definition of "which plugin directories apply here."** Order
-  is fixed at self → `.vibing/plugins/*/` → `agent.plugins.extra`, because the **earlier
+  is fixed at self → `.vibing/plugins/*/` → `integrations.plugins.extra`, because the **earlier
   `--plugin-dir` flag wins**.
 - **A directory the CLI declines is silently ignored**, so `plugin_dirs` reads each candidate's
   `.claude-plugin/plugin.json` itself and warns about the ones it drops.
 - **`.vibing/plugins/` is read by default, and that is a security decision**: a plugin may declare
-  `mcpServers`. `agent.plugins.project_dir = false` is the opt-out.
+  `mcpServers`. `integrations.plugins.project_dir = false` is the opt-out.
 - **`:VibingReloadCommands` clears `plugin_dirs` first**, before the provider caches — both
   re-resolve from it.
 - **Not passed on the lightweight path**, per `core/types.lua`.
@@ -240,9 +240,9 @@ come back. `handbook/architecture/processes-and-turns.md`.
 ## The Duplex Transport
 
 One resident CLI process per chat, serving many turns over an open stdin. **Opt-in and default
-off** — `backends.<id>.process = "duplex"` or a chat's own `process:` frontmatter, and only for a
+off** — `ai.agents.<id>.process = "duplex"` or a chat's own `process:` frontmatter, and only for a
 backend whose descriptor declares it (claude over stdin stream-json, codex over `app-server`
-JSON-RPC). `process_model.lua` is the one place the exclusions live: a lightweight call, a subagent
+JSON-RPC, grok over ACP stdio). `process_model.lua` is the one place the exclusions live: a lightweight call, a subagent
 chat and a backend whose descriptor does not declare `duplex` can never use it, whatever the
 configuration says. `handbook/architecture/duplex-transport.md`.
 
@@ -326,7 +326,7 @@ One chat can create and drive others: `nvim_chat_create` (MCP) → `rpc/handlers
   in flight", **not** "succeeded".
 - **Completion is pushed, not polled, and the send is the subscription.** The CLI process dies
   when its turn ends, so the only way to deliver anything to a chat is to start a new turn on it.
-- **Reporting is the worker's job; the notification is a watchdog.** `agent.chat_notifications`
+- **Reporting is the worker's job; the notification is a watchdog.** `automation.orchestration.notifications`
   gates only the watchdog — a stop the chat cannot leave on its own (`asked_question`,
   `waiting_approval`, `error`) is delivered whatever the setting is.
 - **The report protocol is injected, not left to the brief or to skill auto-trigger** (#706). A
@@ -339,7 +339,7 @@ One chat can create and drive others: `nvim_chat_create` (MCP) → `rpc/handlers
   prompt recorded on a chat's first request, so an `orchestrated_by` added after that never reaches
   the system line. Never on an answer to a blocked question — that body is the human's answer.
 - **A worker's tool-approval prompt is the user's to clear unless the user says otherwise**
-  (`agent.orchestration.delegated_approval`, default `false`).
+  (`permissions.delegated_approval`, default `false`).
 - **A message delivered from another chat gets its own section kind** — `## Request`, `## Report`
   or `## Notice`. `extract_role` still answers `user` for all three.
 

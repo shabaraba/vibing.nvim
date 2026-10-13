@@ -176,9 +176,9 @@ describe("rpc handlers: create_chat", function()
 
     before_each(function()
       local config = require("vibing").get_config()
-      config.agent = config.agent or {}
-      config.agent.orchestration = config.agent.orchestration or {}
-      orchestration = config.agent.orchestration
+      config.automation = config.automation or {}
+      config.automation.orchestration = config.automation.orchestration or {}
+      orchestration = config.automation.orchestration
       saved_defaults = orchestration.worker_defaults
       orchestration.worker_defaults = {}
     end)
@@ -209,7 +209,7 @@ describe("rpc handlers: create_chat", function()
       assert.equals("default", result.profile)
     end)
 
-    it("fills omitted ones from agent.orchestration.worker_defaults, and an argument wins", function()
+    it("fills omitted ones from automation.orchestration.worker_defaults, and an argument wins", function()
       orchestration.worker_defaults = { model = "haiku", profile = "focused" }
 
       local result = handler.create_chat({ model = "sonnet" })
@@ -243,7 +243,7 @@ describe("rpc handlers: create_chat", function()
       local agent_config, saved_profiles
 
       before_each(function()
-        agent_config = require("vibing").get_config().agent
+        agent_config = require("vibing").get_config().ai
         saved_profiles = agent_config.profiles
         agent_config.profiles = {
           { name = "implementer", model = "sonnet", effort = "low", agent = "claude" },
@@ -294,7 +294,7 @@ describe("rpc handlers: create_chat", function()
         local ok, err = pcall(handler.create_chat, { profile = "broken" })
 
         assert.is_false(ok)
-        assert.is_truthy(tostring(err):find('agent.profiles[name="broken"].effort', 1, true))
+        assert.is_truthy(tostring(err):find('ai.profiles[name="broken"].effort', 1, true))
       end)
 
       -- What the MCP server reads to put the names into nvim_chat_create's own schema, so an

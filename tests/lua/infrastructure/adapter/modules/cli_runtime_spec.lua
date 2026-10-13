@@ -204,7 +204,13 @@ for _, backend in ipairs(helper.adapters()) do
 
     before_each(function()
       system = helper.stub_system()
-      adapter = backend.module:new({ agent = { default_model = "sonnet" } })
+      adapter = backend.module:new({
+        ai = {
+          chat = {
+            model = "sonnet",
+          },
+        },
+      })
     end)
 
     after_each(function()

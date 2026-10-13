@@ -20,7 +20,7 @@ function M.lines(tool_name, chat_bufnr)
       .. " tool instead of asking in free text. Do not use the native AskUserQuestion tool for this — "
       .. "it is unavailable in this environment. Pass this turn's \""
       .. CHAT_BUFFER_LABEL
-      .. "\" (given below when available) as the chat_bufnr argument.",
+      .. '" (given below when available) as the chat_bufnr argument.',
   }
   if chat_bufnr then
     table.insert(lines, CHAT_BUFFER_LABEL .. ": " .. tostring(chat_bufnr))

@@ -286,7 +286,7 @@ function M.list_chats(_)
 
   project_tasks(buffers, bufnrs, by_absolute_path)
 
-  -- The profiles a new chat can run on: the built-ins plus `agent.profiles`. Here because this is the call an
+  -- The profiles a new chat can run on: the built-ins plus `ai.profiles`. Here because this is the call an
   -- orchestrator makes before it dispatches, and the names cannot live in a static tool
   -- description: they are whatever this user's config says.
   local profiles = require("vibing.core.constants.profiles").catalog(require("vibing").get_config())
@@ -297,7 +297,7 @@ end
 ---設定済みのチャットprofile一覧（MCPサーバーの`tools/list`が読む）
 ---
 ---`nvim_chat_create`の`profile`引数のスキーマに名前と説明を埋めるためにある。ツールの説明文は
----静的なので、ユーザーごとの`agent.profiles`をオーケストレーターに見せるには、MCPサーバーが
+---静的なので、ユーザーごとの`ai.profiles`をオーケストレーターに見せるには、MCPサーバーが
 ---ツール一覧を返す時点でここに聞くしかない。並びは`Profiles.names`のソート順で固定 — ツール
 ---定義はプロンプトキャッシュの先頭にあるので、設定が変わらない限り1バイトも動かしてはいけない
 ---@return {profiles: {name: string, description: string?, agent: string?, model: string?, effort: string?}[]}

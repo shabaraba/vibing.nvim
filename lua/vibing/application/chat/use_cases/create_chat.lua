@@ -30,14 +30,14 @@ end
 ---落ちたワーカーは既定のモデル — 多くの場合オーケストレーター自身と同じ高価なもの — で黙って
 ---走り、この引数が存在する理由そのものを失うため。チャットを作る**前**に呼ぶこと。
 ---@param requested table<string, any> 呼び出しの引数
----@param config table|nil プラグイン設定（`agent.profiles`と`agent.orchestration.worker_defaults`を読む）
+---@param config table|nil プラグイン設定（`ai.profiles`と`automation.orchestration.worker_defaults`を読む）
 ---@return table<string, string>|nil overrides
 ---@return string|nil err
 function M.resolve_frontmatter(requested, config)
   local Modes = require("vibing.core.constants.modes")
   local Profiles = require("vibing.core.constants.profiles")
   requested = requested or {}
-  local defaults = vim.tbl_get(config or {}, "agent", "orchestration", "worker_defaults")
+  local defaults = vim.tbl_get(config or {}, "automation", "orchestration", "worker_defaults")
   defaults = type(defaults) == "table" and defaults or {}
 
   ---@param value any
@@ -85,7 +85,7 @@ function M.resolve_frontmatter(requested, config)
 
   local profile, profile_origin = requested.profile, "profile"
   if not given(profile) then
-    profile, profile_origin = defaults.profile, "agent.orchestration.worker_defaults.profile"
+    profile, profile_origin = defaults.profile, "automation.orchestration.worker_defaults.profile"
   end
   local profile_def = {}
   if given(profile) then
@@ -103,7 +103,7 @@ function M.resolve_frontmatter(requested, config)
       local candidates = {
         { requested[key], key },
         { profile_def[key], Profiles.field_label(tostring(profile), key) },
-        { defaults[key], "agent.orchestration.worker_defaults." .. key },
+        { defaults[key], "automation.orchestration.worker_defaults." .. key },
       }
       for _, candidate in ipairs(candidates) do
         local value, origin = candidate[1], candidate[2]

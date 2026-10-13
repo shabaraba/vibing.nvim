@@ -93,8 +93,19 @@ describe("duplex transport", function()
       return helper.fake_binary("duplex-claude")
     end
     config = {
-      agent = { default_model = "sonnet", plugins = { self = false, project_dir = false } },
-      backends = { claude = { process = "duplex" } },
+      ai = {
+        chat = {
+          model = "sonnet",
+        },
+        agents = {
+          claude = {
+            process = "duplex",
+          },
+        },
+      },
+      integrations = {
+        plugins = { self = false, project_dir = false },
+      },
     }
     adapter = ClaudeAdapter:new(config)
   end)
@@ -146,7 +157,7 @@ describe("duplex transport", function()
     end)
 
     it("leaves the oneshot argv alone when the chat did not opt in", function()
-      config.backends.claude.process = "oneshot"
+      config.ai.agents.claude.process = "oneshot"
       local system = helper.stub_system()
       send("hi")
       assert.equals(0, #jobs.calls)

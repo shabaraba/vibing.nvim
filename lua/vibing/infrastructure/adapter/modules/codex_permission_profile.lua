@@ -382,12 +382,7 @@ local function git_common_dir(cwd)
       local ok_wait, candidate = pcall(function()
         return process:wait()
       end)
-      if
-        ok_wait
-        and type(candidate) == "table"
-        and candidate.code == 0
-        and trim(candidate.stdout) ~= ""
-      then
+      if ok_wait and type(candidate) == "table" and candidate.code == 0 and trim(candidate.stdout) ~= "" then
         result = candidate
         break
       end
@@ -477,8 +472,7 @@ local function compile(root, path, cwd)
   local profile_name = decode_profile_name(selected.raw, path)
   if profile_name == ":danger-full-access" then
     error(
-      path
-        .. ": :danger-full-access is not allowed in a project file; use permission_mode=bypassPermissions explicitly",
+      path .. ": :danger-full-access is not allowed in a project file; use permission_mode=bypassPermissions explicitly",
       0
     )
   end
@@ -629,7 +623,7 @@ end
 --- @param config Vibing.Config
 --- @return string[]
 function M.args(cwd, config)
-  local backend = vim.tbl_get(config, "backends", "codex") or {}
+  local backend = vim.tbl_get(config, "ai", "agents", "codex", "extensions") or {}
   local configured_path = backend.profile_file
   if type(configured_path) ~= "string" or configured_path == "" then
     return {}
@@ -642,7 +636,7 @@ function M.args(cwd, config)
   if backend.allow_tracked_profile ~= true and is_git_tracked(path) then
     error(
       path
-        .. ": refusing a Git-tracked Codex permission profile; review it, then set backends.codex.allow_tracked_profile = true to trust it",
+        .. ": refusing a Git-tracked Codex permission profile; review it, then set ai.agents.codex.extensions.allow_tracked_profile = true to trust it",
       0
     )
   end

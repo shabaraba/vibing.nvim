@@ -15,8 +15,23 @@ describe("Codex duplex app-server", function()
       return helper.fake_binary("duplex-codex")
     end
     adapter = Adapter:new({
-      agent = { default_model = "gpt-6-sol", plugins = { self = false, project_dir = false } },
-      backends = { codex = { process = "duplex", profile_file = false } },
+      ai = {
+        chat = {
+          agent = "codex",
+          model = "gpt-6-sol",
+        },
+        agents = {
+          codex = {
+            process = "duplex",
+            extensions = {
+              profile_file = false,
+            },
+          },
+        },
+      },
+      integrations = {
+        plugins = { self = false, project_dir = false },
+      },
     })
   end)
   after_each(function()
@@ -73,11 +88,13 @@ describe("Codex duplex app-server", function()
     reply(call, config_result or { config = { model = "gpt-6.1-sol", model_reasoning_effort = "medium" } })
     assert.equals("model/list", last(call).method)
     assert.equals("{}", vim.json.encode(last(call).params))
-    reply(call, model_result or { data = {
-      { model = "gpt-6.1-sol", isDefault = true, defaultReasoningEffort = "medium" },
-      { model = "gpt-6-sol", defaultReasoningEffort = "medium" },
-      { model = "gpt-6-luna", defaultReasoningEffort = "low" },
-    } })
+    reply(call, model_result or {
+      data = {
+        { model = "gpt-6.1-sol", isDefault = true, defaultReasoningEffort = "medium" },
+        { model = "gpt-6-sol", defaultReasoningEffort = "medium" },
+        { model = "gpt-6-luna", defaultReasoningEffort = "low" },
+      },
+    })
   end
   local function ready(call)
     assert.equals("initialize", last(call).method)
@@ -148,7 +165,8 @@ describe("Codex duplex app-server", function()
     trusted_hook(call)
     reply(call, { thread = { id = "thread-1" } })
     assert.same({ model = "gpt-6-luna", effort = "low" }, {
-      model = last(call).params.model, effort = last(call).params.effort,
+      model = last(call).params.model,
+      effort = last(call).params.effort,
     })
     reply(call, { turn = { id = "turn-1" } })
     finish(call)
@@ -157,7 +175,8 @@ describe("Codex duplex app-server", function()
     assert.equals(first.process, second.process)
     assert.equals(1, #jobs.calls)
     assert.same({ model = "gpt-6-sol", effort = "high" }, {
-      model = last(call).params.model, effort = last(call).params.effort,
+      model = last(call).params.model,
+      effort = last(call).params.effort,
     })
     reply(call, { turn = { id = "turn-2" } })
     finish(call, "completed", "turn-2")
@@ -166,7 +185,8 @@ describe("Codex duplex app-server", function()
     assert.equals(first.process, third.process)
     assert.equals(1, #jobs.calls)
     assert.same({ model = "gpt-6.1-sol", effort = "medium" }, {
-      model = last(call).params.model, effort = last(call).params.effort,
+      model = last(call).params.model,
+      effort = last(call).params.effort,
     })
     reply(call, { turn = { id = "turn-3" } })
     finish(call, "completed", "turn-3")
@@ -250,12 +270,35 @@ describe("Codex duplex app-server", function()
     local call = jobs.only_call()
     reply(call, {})
     local script = require("vibing.infrastructure.hooks.codex_settings_generator").script_path(vim.fn.getcwd())
-    reply(call, { data = { { hooks = {
-      { eventName = "preToolUse", enabled = true, trustStatus = "untrusted", source = "user",
-        command = script, key = "other", currentHash = "sha256:other" },
-      { eventName = "preToolUse", enabled = true, trustStatus = "untrusted", source = "sessionFlags",
-        command = script, key = "session-key", currentHash = "sha256:expected" },
-    } } } })
+    reply(
+      call,
+      {
+        data = {
+          {
+            hooks = {
+              {
+                eventName = "preToolUse",
+                enabled = true,
+                trustStatus = "untrusted",
+                source = "user",
+                command = script,
+                key = "other",
+                currentHash = "sha256:other",
+              },
+              {
+                eventName = "preToolUse",
+                enabled = true,
+                trustStatus = "untrusted",
+                source = "sessionFlags",
+                command = script,
+                key = "session-key",
+                currentHash = "sha256:expected",
+              },
+            },
+          },
+        },
+      }
+    )
     assert.equals("config/batchWrite", last(call).method)
     local params = last(call).params
     assert.equals("hooks.state", params.edits[1].keyPath)
@@ -273,10 +316,23 @@ describe("Codex duplex app-server", function()
     local call = jobs.only_call()
     reply(call, {})
     local script = require("vibing.infrastructure.hooks.codex_settings_generator").script_path(vim.fn.getcwd())
-    local untrusted = { data = { { hooks = { {
-      eventName = "preToolUse", enabled = true, trustStatus = "untrusted", source = "sessionFlags",
-      command = script, key = "session-key", currentHash = "sha256:expected",
-    } } } } }
+    local untrusted = {
+      data = {
+        {
+          hooks = {
+            {
+              eventName = "preToolUse",
+              enabled = true,
+              trustStatus = "untrusted",
+              source = "sessionFlags",
+              command = script,
+              key = "session-key",
+              currentHash = "sha256:expected",
+            },
+          },
+        },
+      },
+    }
     reply(call, untrusted)
     reply(call, {})
     reply(call, untrusted)
@@ -287,10 +343,26 @@ describe("Codex duplex app-server", function()
     local result = send()
     local call = jobs.only_call()
     reply(call, {})
-    reply(call, { data = { { hooks = { {
-      eventName = "preToolUse", enabled = true, trustStatus = "untrusted", source = "sessionFlags",
-      command = "/tmp/other.sh", key = "other", currentHash = "sha256:other",
-    } } } } })
+    reply(
+      call,
+      {
+        data = {
+          {
+            hooks = {
+              {
+                eventName = "preToolUse",
+                enabled = true,
+                trustStatus = "untrusted",
+                source = "sessionFlags",
+                command = "/tmp/other.sh",
+                key = "other",
+                currentHash = "sha256:other",
+              },
+            },
+          },
+        },
+      }
+    )
     assert.matches("trusted PreToolUse hook", result.responses[1].error)
     assert.equals("hooks/list", last(call).method)
   end)
@@ -330,7 +402,12 @@ describe("Codex duplex app-server", function()
       emit(call, {
         id = 88,
         method = "item/commandExecution/requestApproval",
-        params = { command = "/bin/zsh -lc 'ls'", cwd = "/tmp", reason = "outside the sandbox", availableDecisions = { "accept", "cancel" } },
+        params = {
+          command = "/bin/zsh -lc 'ls'",
+          cwd = "/tmp",
+          reason = "outside the sandbox",
+          availableDecisions = { "accept", "cancel" },
+        },
       })
 
       -- Nothing on the wire: the request is being held open, which is the whole feature.
@@ -387,9 +464,12 @@ describe("Codex duplex app-server", function()
       assert.is_true(vim.tbl_contains(drawn[1].input.details, "update /tmp/note.txt"))
       assert.is_true(vim.tbl_contains(drawn[1].input.details, "+goodbye"))
       -- Its params list no decisions at all, so the implied pair has to be offered.
-      assert.same({ "accept", "decline" }, vim.tbl_map(function(option)
-        return option.value
-      end, drawn[1].options))
+      assert.same(
+        { "accept", "decline" },
+        vim.tbl_map(function(option)
+          return option.value
+        end, drawn[1].options)
+      )
     end)
 
     it("stops owing a response once Codex resolves its own request", function()

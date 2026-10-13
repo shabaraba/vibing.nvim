@@ -132,7 +132,7 @@ describe("grok_mcp_config", function()
 
   -- The same precedence `--plugin-dir` gives a duplicate on the other backends: a project plugin
   -- cannot displace the bundled `vibing-nvim` server by declaring one of its own.
-  -- By path, not by name: with `agent.plugins.self = false` a project plugin could carry the name
+  -- By path, not by name: with `integrations.plugins.self = false` a project plugin could carry the name
   -- `vibing-nvim`, and the session's first prompt would then name a tool on somebody else's server.
   it("names the bundled server by the directory it came from", function()
     load({ "/p/self", "/p/other" }, {

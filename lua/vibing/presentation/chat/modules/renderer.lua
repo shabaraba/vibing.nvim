@@ -45,18 +45,18 @@ function M.init_content(buf, session)
   end
 
   -- agent
-  local agent = frontmatter.agent or (config.adapter or "claude")
+  local agent = frontmatter.agent or (vim.tbl_get(config, "ai", "chat", "agent") or "claude")
   table.insert(lines, "agent: " .. agent)
 
   -- model
-  local model = frontmatter.model or (config.agent and config.agent.default_model)
+  local model = frontmatter.model or require("vibing.core.utils.ai_config").resolve(config, agent).model
   if model then
     table.insert(lines, "model: " .. model)
   end
 
   -- Always show the effective choice. `default` deliberately produces no CLI override, which is
   -- the exact behaviour chats had before effort became configurable.
-  local effort = frontmatter.effort or (config.agent and config.agent.default_effort) or Modes.DEFAULT_EFFORT
+  local effort = frontmatter.effort or require("vibing.core.utils.ai_config").resolve(config, agent).effort
   table.insert(lines, "effort: " .. effort)
 
   -- Written only when something chose it (`nvim_chat_create`'s `profile`), unlike effort: an
@@ -382,10 +382,7 @@ function M.addUserSection(buf, win, pendingChoices, pendingApprovals, initial_me
         for _, opt in ipairs(pendingApproval.options or {}) do
           local label = (opt.label and opt.label ~= "") and opt.label or ""
           if label ~= "" then
-            table.insert(
-              approvalLines,
-              ApprovalParser.option_line(optionIndex, label, pendingApproval.request_id)
-            )
+            table.insert(approvalLines, ApprovalParser.option_line(optionIndex, label, pendingApproval.request_id))
             optionIndex = optionIndex + 1
           end
         end
@@ -424,7 +421,6 @@ function M.addUserSection(buf, win, pendingChoices, pendingApprovals, initial_me
     end
   end
 end
-
 
 -- Backward compatibility alias
 M.add_user_section = M.addUserSection

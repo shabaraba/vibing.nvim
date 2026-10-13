@@ -28,14 +28,13 @@ M.BINARY = { name = "codex", missing = "Codex CLI not found in PATH. Please inst
 --- @return string[]
 function M.auto_compact_args(ctx)
   local config = ctx.config
-  local agent = type(config) == "table" and config.agent or nil
-  local token_usage = type(agent) == "table" and agent.token_usage or nil
-  local auto_compact = type(token_usage) == "table" and token_usage.auto_compact or nil
+  local auto_compact = vim.tbl_get(config or {}, "chat", "context", "compaction")
+
   if type(auto_compact) ~= "table" or not auto_compact.enabled then
     return {}
   end
 
-  local at = tonumber(auto_compact.at) or TokenUsage.DEFAULT_AUTO_COMPACT_AT
+  local at = tonumber(auto_compact.threshold_tokens) or TokenUsage.DEFAULT_AUTO_COMPACT_AT
   if at <= 0 or at ~= at or at == math.huge then
     return {}
   end
@@ -110,7 +109,7 @@ M.LIGHTWEIGHT_ARGS = {
   "project_doc_max_bytes=0",
 }
 
---- The user's `backends.codex.approval_policy`, as the `-c` pair it becomes, or nothing.
+--- The user's `ai.agents.codex.extensions.approval_policy`, as the `-c` pair it becomes, or nothing.
 ---
 --- Applied only on the branches that make no statement of their own: `bypassPermissions` already
 --- means "ask nothing" and `plan` already means "write nothing", and a configured policy must not
@@ -123,7 +122,7 @@ M.LIGHTWEIGHT_ARGS = {
 --- @param ctx Vibing.RequestContext
 --- @return string[]
 local function approval_policy_args(ctx)
-  local policy = vim.tbl_get(ctx.config or {}, "backends", "codex", "approval_policy")
+  local policy = vim.tbl_get(ctx.config or {}, "ai", "agents", "codex", "extensions", "approval_policy")
   if type(policy) ~= "string" or policy == "" then
     return {}
   end

@@ -147,6 +147,6 @@ native permission gate, so this classification does not override its sandbox or 
 
 ## Per-backend options
 
-Declare them as `config_fields` on the registry entry; they surface as `backends.<id>.<field>` in
+Declare them as `config_fields` on the registry entry; they surface as `ai.agents.<id>.extensions.<field>` in
 `setup()`, with defaults and validation derived from the declaration (`kind`: `string`, `boolean`,
-`path_or_false`, `executable_or_auto`). `config.lua` never names a backend.
+`path_or_false`, `string_list`). `config.lua` never names a backend.

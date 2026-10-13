@@ -44,7 +44,17 @@ local function fetch(opts)
   local started = CliCommandList.fetch(
     vim.tbl_extend("keep", opts or {}, {
       cwd = ROOT,
-      config = { agent = { setting_sources = { "user" } } },
+      config = {
+        ai = {
+          agents = {
+            claude = {
+              settings = {
+                sources = { "user" },
+              },
+            },
+          },
+        },
+      },
     }),
     function(commands)
       result = commands

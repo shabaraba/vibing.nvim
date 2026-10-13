@@ -36,12 +36,17 @@ describe("CompletionNotifier wiring", function()
     -- 既定を土台にする。`create_new` / `view.render` は `config.chat` を深く読むので、
     -- 必要なキーだけの手書きテーブルだとそちらが落ちる
     local cfg = vim.tbl_deep_extend("force", vim.deepcopy(Config.defaults), {
-      chat = { save_location_type = "custom", save_dir = save_dir },
-      agent = {
-        -- **既定のまま無効**。自力で抜けられない停止の通知が設定に依らず届くことが主題なので、
-        -- ここを有効にしてしまうと watchdog と区別がつかなくなる
-        chat_notifications = { enabled = false },
-        orchestration = { max_concurrent = max_concurrent },
+      chat = {
+        storage = {
+          location = "custom",
+          path = save_dir,
+        },
+      },
+      automation = {
+        orchestration = {
+          notifications = { enabled = false },
+          max_concurrent = max_concurrent,
+        },
       },
     })
     -- 読み口が2つある。通知機構と並列度上限は `Config.get()` を、チャット生成と描画は

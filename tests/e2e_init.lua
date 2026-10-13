@@ -35,6 +35,12 @@ vim.fn.mkdir(chat_dir, "p")
 -- The backend arrives the same way the chat directory does, so a spec that wants one does not
 -- have to configure this child a second time after it has already started.
 local adapter = vim.env.VIBING_E2E_ADAPTER
-local overrides = (adapter and adapter ~= "") and { adapter = adapter } or nil
+local overrides = (adapter and adapter ~= "") and {
+  ai = {
+    chat = {
+      agent = adapter,
+    },
+  },
+} or nil
 
 require("vibing").setup(require("vibing.testing.e2e_helper").child_config(chat_dir, overrides))

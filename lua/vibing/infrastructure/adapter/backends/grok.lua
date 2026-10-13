@@ -11,7 +11,7 @@ local M = {
   id = "grok",
 
   -- The resident transport is `grok agent stdio`, which speaks Agent Client Protocol JSON-RPC.
-  -- A ceiling, not a default: `backends.grok.process = "duplex"` or a chat's `process:` frontmatter
+  -- A ceiling, not a default: `ai.agents.grok.process = "duplex"` or a chat's `process:` frontmatter
   -- is what opts in. The one-shot `grok --single` path is unchanged and stays the default.
   process = "duplex",
   duplex = require("vibing.infrastructure.adapter.modules.grok_duplex_protocol"),
@@ -39,6 +39,7 @@ local M = {
   -- `session/load` / `session/prompt`. Nor is `--permission-mode`, which `grok agent` does not
   -- accept at all -- there the gate is the project hook plus `grok_native_approval`.
   request = {
+    agent_id = "grok",
     binary = GrokCommandBuilder.BINARY,
     parts = {
       { kind = "args", "agent", "--no-leader", when = "duplex" },
@@ -49,7 +50,12 @@ local M = {
       { kind = "resume", flag = "--resume", fork = "--fork-session", unless = "duplex" },
       vim.tbl_extend("force", { kind = "args", when = "lightweight" }, GrokLightweight.ARGS),
       -- Grok has no `auto`; it falls back to asking rather than forwarding an unsupported value.
-      { kind = "permission_mode", flag = "--permission-mode", map = GrokCommandBuilder.PERMISSION_MODE_FALLBACK, unless = { "lightweight", "duplex" } },
+      {
+        kind = "permission_mode",
+        flag = "--permission-mode",
+        map = GrokCommandBuilder.PERMISSION_MODE_FALLBACK,
+        unless = { "lightweight", "duplex" },
+      },
       { kind = "extra", fn = GrokCommandBuilder.cwd_args, unless = "duplex" },
       { kind = "extra", fn = GrokCommandBuilder.rules_args, unless = "duplex" },
       { kind = "args", "stdio", when = "duplex" },

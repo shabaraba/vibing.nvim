@@ -24,7 +24,7 @@ local M = {}
 ---
 --- The `config` argument is deliberately **not** part of the key: `setup()` runs before any
 --- request, and every caller reads the same resolved config afterwards. A second `setup()` with
---- different `agent.plugins` therefore needs `clear_cache()` to take effect, which is also what
+--- different `integrations.plugins` therefore needs `clear_cache()` to take effect, which is also what
 --- `:VibingReloadCommands` does.
 --- @type table<string, Vibing.PluginDirEntry[]>
 local cache = {}
@@ -188,10 +188,10 @@ function M.resolve_entries(cwd, config)
     return cache[effective]
   end
 
-  -- A non-table `agent.plugins` reads as "unset" rather than reaching `candidates()`, where
+  -- A non-table `integrations.plugins` reads as "unset" rather than reaching `candidates()`, where
   -- `plugins.self` on a boolean or a string raises. The builder runs under `pcall`, so that
   -- surfaced as an unexplained "failed to build command" instead of naming the bad config.
-  local plugins = config.agent and config.agent.plugins
+  local plugins = config and vim.tbl_get(config, "integrations", "plugins")
   if type(plugins) ~= "table" then
     plugins = {}
   end
@@ -221,8 +221,7 @@ function M.resolve_entries(cwd, config)
   -- runs after trying to fix the plugin.
   if #problems > 0 then
     Notify.warn(
-      "ignored by --plugin-dir, so their skills and MCP servers will not load: "
-        .. table.concat(problems, ", "),
+      "ignored by --plugin-dir, so their skills and MCP servers will not load: " .. table.concat(problems, ", "),
       "Plugins"
     )
   end

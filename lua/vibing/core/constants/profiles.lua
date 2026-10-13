@@ -6,7 +6,7 @@
 ---   default   everything
 ---   focused   six built-in tools (Bash, Read, Edit, Write, Glob, Grep); project settings kept
 ---   reviewer  four built-in tools (Read, Glob, Grep, Bash); project settings kept
---- and `agent.profiles` in the user's config can define more (an implementer that also drops the
+--- and `ai.profiles` in the user's config can define more (an implementer that also drops the
 --- project rules, a researcher with the web tools, ...). The levers are the built-in tool set and
 --- the setting sources, ~30k tokens each; vibing.nvim's own instruction block is under 1k, so a
 --- profile does not trim it. Measured on claude 2.1.295 in this repository: a chat's floor is
@@ -14,11 +14,11 @@
 --- `handbook/architecture/orchestration.md`.
 ---
 --- No built-in sets a model: model names are per backend and per user, so `agent` / `model` /
---- `effort` are left to `agent.profiles` (or `agent.orchestration.worker_defaults`). Orchestration
+--- `effort` are left to `ai.profiles` (or `automation.orchestration.worker_defaults`). Orchestration
 --- is nestable and needs nothing from a profile: MCP tools (`nvim_chat_create`, ...) are not
 --- affected by `tools`, and the report protocol is in the system prompt of every orchestrated chat.
 ---
---- `agent.profiles` is a list, one table per profile, each naming itself with `name`:
+--- `ai.profiles` is a list, one table per profile, each naming itself with `name`:
 ---   profiles = { { name = "implementer", model = "sonnet", tools = { ... } }, ... }
 --- An entry whose `name` is a built-in (`default`, `focused`, `reviewer`) extends that built-in field by field
 --- instead of adding a profile. An entry that is not a table, or has no usable `name` (a non-empty
@@ -59,7 +59,7 @@ M.ALWAYS_TOOLS = { "ToolSearch" }
 
 local VALID_SETTING_SOURCES = { user = true, project = true, ["local"] = true }
 
---- The built-ins, in the same shape as an `agent.profiles` entry.
+--- The built-ins, in the same shape as an `ai.profiles` entry.
 --- @type Vibing.Profile[]
 local BUILTIN = {
   { name = M.DEFAULT, description = "Ordinary chat: every built-in tool and setting loaded" },
@@ -106,15 +106,15 @@ end
 --- @param field string
 --- @return string
 function M.field_label(name, field)
-  return string.format('agent.profiles[name="%s"].%s', name, field)
+  return string.format('ai.profiles[name="%s"].%s', name, field)
 end
 
---- The user's `agent.profiles` list, keyed by each entry's `name`. Entries that cannot be used
+--- The user's `ai.profiles` list, keyed by each entry's `name`. Entries that cannot be used
 --- are skipped with a warning (see the module comment); a later duplicate replaces an earlier one.
 --- @param config table|nil
 --- @return table<string, table>
 local function configured(config)
-  local profiles = vim.tbl_get(config or {}, "agent", "profiles")
+  local profiles = vim.tbl_get(config or {}, "ai", "profiles")
   if type(profiles) ~= "table" then
     return {}
   end
@@ -124,7 +124,7 @@ local function configured(config)
       warn_once(
         "keyed." .. tostring(key),
         string.format(
-          'agent.profiles must be a list like { { name = "%s", ... } }; ignoring key "%s"',
+          'ai.profiles must be a list like { { name = "%s", ... } }; ignoring key "%s"',
           tostring(key),
           tostring(key)
         )
@@ -136,12 +136,12 @@ local function configured(config)
   for index = 1, table.maxn(profiles) do
     local entry = profiles[index]
     if type(entry) ~= "table" then
-      warn_once("entry." .. index, string.format("agent.profiles[%d] is not a table; ignoring it", index))
+      warn_once("entry." .. index, string.format("ai.profiles[%d] is not a table; ignoring it", index))
     elseif not is_name(entry.name) then
       warn_once(
         "name." .. index,
         string.format(
-          "agent.profiles[%d].name must be a non-empty string of letters, digits, _ or -; ignoring the entry",
+          "ai.profiles[%d].name must be a non-empty string of letters, digits, _ or -; ignoring the entry",
           index
         )
       )
@@ -149,7 +149,7 @@ local function configured(config)
       if by_name[entry.name] then
         warn_once(
           "duplicate." .. entry.name,
-          string.format('agent.profiles has more than one entry named "%s"; using the last one', entry.name)
+          string.format('ai.profiles has more than one entry named "%s"; using the last one', entry.name)
         )
       end
       by_name[entry.name] = entry
@@ -158,7 +158,7 @@ local function configured(config)
   return by_name
 end
 
---- Every profile name a chat may use: the built-ins plus `agent.profiles`, sorted.
+--- Every profile name a chat may use: the built-ins plus `ai.profiles`, sorted.
 --- @param config table|nil
 --- @return string[]
 function M.names(config)
@@ -262,7 +262,7 @@ end
 --- The profile a request runs under. A missing value is `default`; an unknown name warns once and
 --- is treated as `default`, because the safe failure is the chat that loads *more*.
 --- @param profile any frontmatter `profile`
---- @param config table|nil plugin config (`agent.profiles`)
+--- @param config table|nil plugin config (`ai.profiles`)
 --- @return string name
 --- @return Vibing.Profile definition
 function M.resolve(profile, config)

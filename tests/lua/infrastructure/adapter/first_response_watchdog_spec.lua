@@ -50,7 +50,14 @@ describe("the first-response watchdog", function()
   local function oneshot_timeout_response()
     local system = helper.stub_system()
     local adapter = ClaudeAdapter:new({
-      agent = { default_model = "sonnet", plugins = { self = false, project_dir = false } },
+      ai = {
+        chat = {
+          model = "sonnet",
+        },
+      },
+      integrations = {
+        plugins = { self = false, project_dir = false },
+      },
     })
     -- `stub_system` never invokes `on_exit`, so the watchdog is the only thing that can end this
     -- turn: no response at all is the failure this test is looking for.
@@ -73,14 +80,30 @@ describe("the first-response watchdog", function()
       return helper.fake_binary("watchdog-claude")
     end
     local adapter = ClaudeAdapter:new({
-      agent = { default_model = "sonnet", plugins = { self = false, project_dir = false } },
-      backends = { claude = { process = "duplex" } },
+      ai = {
+        chat = {
+          model = "sonnet",
+        },
+        agents = {
+          claude = {
+            process = "duplex",
+          },
+        },
+      },
+      integrations = {
+        plugins = { self = false, project_dir = false },
+      },
     })
 
     local responses = {}
-    adapter:stream("hi", { chat_bufnr = CHAT_BUFNR, permissions_allow = {}, _session_id = "sess-duplex" }, function() end, function(response)
-      table.insert(responses, response)
-    end)
+    adapter:stream(
+      "hi",
+      { chat_bufnr = CHAT_BUFNR, permissions_allow = {}, _session_id = "sess-duplex" },
+      function() end,
+      function(response)
+        table.insert(responses, response)
+      end
+    )
     vim.wait(PATIENCE_MS, function()
       return #responses > 0
     end, 10)

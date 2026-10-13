@@ -51,8 +51,15 @@ describe("codex_command_builder", function()
       assert.is_true(vim.tbl_contains(config_overrides(cmd), 'model_reasoning_effort="xhigh"'))
     end)
 
-    it("falls back to agent.default_effort", function()
-      local config = { agent = { default_effort = "high" } }
+    it("falls back to ai.chat.effort", function()
+      local config = {
+        ai = {
+          chat = {
+            agent = "codex",
+            effort = "high",
+          },
+        },
+      }
       local cmd = codex_command_builder.build("hi", {}, nil, config, nil)
       assert.is_true(vim.tbl_contains(config_overrides(cmd), 'model_reasoning_effort="high"'))
     end)
@@ -72,7 +79,17 @@ describe("codex_command_builder", function()
     end)
 
     it("uses utility_effort for lightweight calls instead of the chat effort", function()
-      local config = { agent = { default_effort = "high", utility_effort = "low" } }
+      local config = {
+        ai = {
+          chat = {
+            agent = "codex",
+            effort = "high",
+          },
+          helpers = {
+            effort = "low",
+          },
+        },
+      }
       local cmd = codex_command_builder.build("hi", { lightweight = true, effort = "max" }, nil, config, nil)
       assert.is_true(vim.tbl_contains(config_overrides(cmd), 'model_reasoning_effort="low"'))
       assert.is_false(vim.tbl_contains(config_overrides(cmd), 'model_reasoning_effort="max"'))
@@ -151,7 +168,17 @@ describe("codex_command_builder", function()
     end)
 
     it("uses utility_model rather than default_model", function()
-      local config = { agent = { default_model = "gpt-5-codex", utility_model = "gpt-5-mini" } }
+      local config = {
+        ai = {
+          chat = {
+            agent = "codex",
+            model = "gpt-5-codex",
+          },
+          helpers = {
+            model = "gpt-5-mini",
+          },
+        },
+      }
       local cmd = codex_command_builder.build("hi", { lightweight = true }, nil, config, nil)
       assert.equals("gpt-5-mini", cmd[find_flag(cmd, "-m") + 1])
     end)
@@ -159,13 +186,33 @@ describe("codex_command_builder", function()
     it("passes no model when utility_model is a Claude name codex does not have", function()
       -- utility_model defaults to "haiku"; the existing filter turns it into codex's own default
       -- instead of a model the CLI would reject.
-      local config = { agent = { default_model = "gpt-5-codex", utility_model = "haiku" } }
+      local config = {
+        ai = {
+          chat = {
+            agent = "codex",
+            model = "gpt-5-codex",
+          },
+          helpers = {
+            model = "haiku",
+          },
+        },
+      }
       local cmd = codex_command_builder.build("hi", { lightweight = true }, nil, config, nil)
       assert.is_nil(find_flag(cmd, "-m"))
     end)
 
     it("does not apply the chat's auto-compaction threshold", function()
-      local config = { agent = { token_usage = { auto_compact = { enabled = true, at = 300000 } } } }
+      local config = {
+        chat = {
+          agent = "codex",
+          context = {
+            compaction = {
+              enabled = true,
+              threshold_tokens = 300000,
+            },
+          },
+        },
+      }
       local cmd = codex_command_builder.build("hi", { lightweight = true }, nil, config, nil)
       assert.is_false(vim.tbl_contains(config_overrides(cmd), "model_auto_compact_token_limit=300000"))
     end)
@@ -201,44 +248,105 @@ describe("codex_command_builder", function()
     end)
 
     it("use default_model, not utility_model", function()
-      local config = { agent = { default_model = "gpt-5-codex", utility_model = "gpt-5-mini" } }
+      local config = {
+        ai = {
+          chat = {
+            agent = "codex",
+            model = "gpt-5-codex",
+          },
+          helpers = {
+            model = "gpt-5-mini",
+          },
+        },
+      }
       local cmd = codex_command_builder.build("hi", {}, nil, config, nil)
       assert.equals("gpt-5-codex", cmd[find_flag(cmd, "-m") + 1])
     end)
 
     it("prefer the frontmatter model passed through opts", function()
-      local config = { agent = { default_model = "gpt-5.5" } }
+      local config = {
+        ai = {
+          chat = {
+            agent = "codex",
+            model = "gpt-5.5",
+          },
+        },
+      }
       local cmd = codex_command_builder.build("hi", { model = "gpt-5.6-terra" }, nil, config, nil)
       assert.equals("gpt-5.6-terra", cmd[find_flag(cmd, "-m") + 1])
     end)
 
-    it("lets model: default bypass agent.default_model", function()
+    it("lets model: default bypass ai.chat.model", function()
       local cmd = codex_command_builder.build("hi", { model = "default" }, nil, {
-        agent = { default_model = "gpt-6-sol" },
+        ai = {
+          chat = {
+            agent = "codex",
+            model = "gpt-6-sol",
+          },
+        },
       }, nil)
       assert.is_nil(find_flag(cmd, "-m"))
     end)
 
     it("maps the shared auto_compact threshold to Codex's native setting", function()
-      local config = { agent = { token_usage = { auto_compact = { enabled = true, at = 300000 } } } }
+      local config = {
+        chat = {
+          agent = "codex",
+          context = {
+            compaction = {
+              enabled = true,
+              threshold_tokens = 300000,
+            },
+          },
+        },
+      }
       local cmd = codex_command_builder.build("hi", {}, nil, config, nil)
       assert.is_true(vim.tbl_contains(config_overrides(cmd), "model_auto_compact_token_limit=300000"))
     end)
 
     it("clamps a positive fractional auto_compact threshold below one to one token", function()
-      local config = { agent = { token_usage = { auto_compact = { enabled = true, at = 0.5 } } } }
+      local config = {
+        chat = {
+          agent = "codex",
+          context = {
+            compaction = {
+              enabled = true,
+              threshold_tokens = 0.5,
+            },
+          },
+        },
+      }
       local cmd = codex_command_builder.build("hi", {}, nil, config, nil)
       assert.is_true(vim.tbl_contains(config_overrides(cmd), "model_auto_compact_token_limit=1"))
     end)
 
     it("keeps the native threshold on resumed threads", function()
-      local config = { agent = { token_usage = { auto_compact = { enabled = true, at = 300000 } } } }
+      local config = {
+        chat = {
+          agent = "codex",
+          context = {
+            compaction = {
+              enabled = true,
+              threshold_tokens = 300000,
+            },
+          },
+        },
+      }
       local cmd = codex_command_builder.build("hi", {}, "thread-1", config, nil)
       assert.is_true(vim.tbl_contains(config_overrides(cmd), "model_auto_compact_token_limit=300000"))
     end)
 
     it("uses the shared default when auto_compact.at is omitted", function()
-      local config = { agent = { token_usage = { auto_compact = { enabled = true } } } }
+      local config = {
+        chat = {
+          agent = "codex",
+          context = {
+            compaction = {
+              enabled = true,
+            },
+          },
+        },
+      }
       local cmd = codex_command_builder.build("hi", {}, nil, config, nil)
       local expected = "model_auto_compact_token_limit="
         .. require("vibing.core.utils.token_usage").DEFAULT_AUTO_COMPACT_AT
@@ -247,11 +355,18 @@ describe("codex_command_builder", function()
 
     it("does not override Codex when auto_compact is disabled or its threshold is non-positive", function()
       for _, auto_compact in ipairs({
-        { enabled = false, at = 300000 },
-        { enabled = true, at = 0 },
-        { enabled = true, at = -1 },
+        { enabled = false, threshold_tokens = 300000 },
+        { enabled = true, threshold_tokens = 0 },
+        { enabled = true, threshold_tokens = -1 },
       }) do
-        local config = { agent = { token_usage = { auto_compact = auto_compact } } }
+        local config = {
+          chat = {
+            agent = "codex",
+            context = {
+              compaction = auto_compact,
+            },
+          },
+        }
         local cmd = codex_command_builder.build("hi", {}, nil, config, nil)
         for _, override in ipairs(config_overrides(cmd)) do
           assert.is_false(vim.startswith(override, "model_auto_compact_token_limit="))
@@ -275,8 +390,18 @@ describe("codex_command_builder", function()
         '".git" = "write"',
       }, root .. "/.vibing/codex-permissions.toml")
       config = {
-        backends = { codex = { profile_file = ".vibing/codex-permissions.toml" } },
-        agent = { plugins = { self = false, project_dir = false } },
+        ai = {
+          agents = {
+            codex = {
+              extensions = {
+                profile_file = ".vibing/codex-permissions.toml",
+              },
+            },
+          },
+        },
+        integrations = {
+          plugins = { self = false, project_dir = false },
+        },
       }
     end)
 
@@ -341,7 +466,11 @@ describe("codex_command_builder", function()
   -- resumed or not, and never on a lightweight one.
   describe("plugins", function()
     local PluginDirs = require("vibing.infrastructure.plugins.plugin_dirs")
-    local no_project = { agent = { plugins = { project_dir = false } } }
+    local no_project = {
+      integrations = {
+        plugins = { project_dir = false },
+      },
+    }
 
     local function has_override(cmd, prefix)
       for _, item in ipairs(config_overrides(cmd)) do
@@ -402,14 +531,12 @@ describe("codex_command_builder", function()
       assert.is_nil(table.concat(config_overrides(cmd), "\n"):find("Current vibing.nvim chat buffer number:", 1, true))
     end)
 
-    it("loads none of it when agent.plugins.self is off and no project plugin exists", function()
-      local cmd = codex_command_builder.build(
-        "hello",
-        {},
-        nil,
-        { agent = { plugins = { self = false, project_dir = false } } },
-        nil
-      )
+    it("loads none of it when integrations.plugins.self is off and no project plugin exists", function()
+      local cmd = codex_command_builder.build("hello", {}, nil, {
+        integrations = {
+          plugins = { self = false, project_dir = false },
+        },
+      }, nil)
       assert.is_false(has_override(cmd, "mcp_servers."))
       assert.is_false(has_override(cmd, "developer_instructions="))
     end)
@@ -420,12 +547,22 @@ describe("codex_command_builder", function()
     end)
   end)
 
-  -- `backends.codex.approval_policy` decides when codex asks the human before running something,
+  -- `ai.agents.codex.extensions.approval_policy` decides when codex asks the human before running something,
   -- which is the switch that makes its own approval requests happen at all (#861). A separate dial
   -- from `permission_mode`, with one rule about where the two meet.
   describe("approval policy", function()
     local function policy(value)
-      return { backends = { codex = { approval_policy = value } } }
+      return {
+        ai = {
+          agents = {
+            codex = {
+              extensions = {
+                approval_policy = value,
+              },
+            },
+          },
+        },
+      }
     end
 
     it("falls back to never on duplex when it is unset, rather than to codex's own default", function()

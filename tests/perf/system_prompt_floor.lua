@@ -31,7 +31,7 @@ local TIMEOUT_MS = 180000
 local Config = require("vibing.config")
 local Builder = require("vibing.infrastructure.adapter.modules.cli_command_builder")
 
-Config.setup({ agent = { default_model = MODEL } })
+Config.setup({ ai = { chat = { model = MODEL } } })
 local config = Config.get()
 
 --- @param extra table|nil

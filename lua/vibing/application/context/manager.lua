@@ -76,7 +76,10 @@ function M.add_selection()
 
   local start_pos = vim.fn.getpos("'<")
   local end_pos = vim.fn.getpos("'>")
-  notify.info(string.format("Added selection: %s:L%d-L%d (copied to clipboard)", relative, start_pos[2], end_pos[2]), "Context")
+  notify.info(
+    string.format("Added selection: %s:L%d-L%d (copied to clipboard)", relative, start_pos[2], end_pos[2]),
+    "Context"
+  )
 end
 
 ---コンテキストをクリア
@@ -125,7 +128,9 @@ end
 ---@return string
 function M.format_for_display()
   local config = require("vibing.config")
-  local auto_context = config.options and config.options.chat and config.options.chat.auto_context
+  local auto_context = config.options
+    and config.options.chat
+    and vim.tbl_get(config.options or {}, "chat", "context", "auto_include")
   if auto_context == nil then
     auto_context = true
   end

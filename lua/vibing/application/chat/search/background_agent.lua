@@ -38,7 +38,7 @@ end
 ---@return string?
 function M.language_name()
   local language_utils = require("vibing.core.utils.language")
-  local code = language_utils.get_language_code(require("vibing").get_config().language, "chat")
+  local code = language_utils.get_language_code(require("vibing").get_config().chat.language, "chat")
   return code and language_utils.language_names[code]
 end
 
@@ -102,15 +102,16 @@ function M.last_json(text)
   return decoded, nil
 end
 
----@param agent table `config.agent`
+---@param agent table Resolved helper selection
 ---@param cwd string
 ---@param tools string[] このターンが使えるツールの全部
 ---@param on_tool fun(label: string) ツール呼び出しのたびに呼ばれる（進捗表示用）
 ---@return Vibing.AdapterOpts
 function M.opts(agent, cwd, tools, on_tool)
   return {
-    model = agent.utility_model,
-    effort = agent.utility_effort,
+    _ai_purpose = "helpers",
+    model = agent.model,
+    effort = agent.effort,
     cwd = cwd,
     permission_mode = "dontAsk",
     permissions_allow = vim.deepcopy(tools),
@@ -140,7 +141,7 @@ end
 ---@param schema table? JSON Schema used when the backend supports structured output
 function M.run(prompt, tools, on_tool, callback, schema)
   local vibing = require("vibing")
-  local adapter = vibing.get_adapter()
+  local adapter = vibing.get_helper_adapter()
   if not adapter then
     callback(nil, "No adapter configured")
     return
@@ -149,7 +150,12 @@ function M.run(prompt, tools, on_tool, callback, schema)
   local collected = {}
   local turn_id
   local structured
-  local opts = M.opts(vibing.get_config().agent or {}, vim.fn.getcwd(), tools, on_tool)
+  local opts = M.opts(
+    require("vibing.core.utils.ai_config").resolve(vibing.get_config(), nil, true),
+    vim.fn.getcwd(),
+    tools,
+    on_tool
+  )
   local use_schema = schema and adapter.supports and adapter:supports("structured_output")
   if use_schema then
     opts.output_schema = schema

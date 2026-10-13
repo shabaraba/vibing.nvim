@@ -10,8 +10,7 @@
 local tools_constants = require("vibing.core.constants.tools")
 local CliMcpConfig = require("vibing.infrastructure.adapter.modules.cli_mcp_config")
 local CommonBuilder = require("vibing.infrastructure.adapter.modules.command_builder_common")
-local AskUserQuestionInstructions =
-  require("vibing.infrastructure.adapter.modules.ask_user_question_instructions")
+local AskUserQuestionInstructions = require("vibing.infrastructure.adapter.modules.ask_user_question_instructions")
 local PluginDirs = require("vibing.infrastructure.plugins.plugin_dirs")
 local worktree_constants = require("vibing.core.constants.worktree")
 local Profiles = require("vibing.core.constants.profiles")
@@ -46,7 +45,7 @@ end
 --- @param config Vibing.Config
 --- @return string[]
 function M.resolve_setting_sources(config)
-  local setting_sources = config.agent and config.agent.setting_sources
+  local setting_sources = config and vim.tbl_get(config, "ai", "agents", "claude", "settings", "sources")
   if type(setting_sources) ~= "table" or #setting_sources == 0 then
     return DEFAULT_SETTING_SOURCES
   end
@@ -146,7 +145,7 @@ function M.plugin_dir_args(ctx)
   return cmd
 end
 
---- `agent.mcp.user_servers = false` only: empty otherwise, so the ordinary turn is untouched. It
+--- `ai.agents.claude.mcp.inherit_cli_servers = false` only: empty otherwise, so the ordinary turn is untouched. It
 --- has to follow the `--plugin-dir` flags rather than replace them -- the plugins still carry
 --- their skills and subagents in, and only their MCP half is re-registered by hand.
 --- @param ctx Vibing.RequestContext
@@ -226,10 +225,7 @@ function M.system_prompt_args(ctx)
     )
     vim.list_extend(
       system_prompt_lines,
-      AskUserQuestionInstructions.lines(
-        "mcp__vibing-nvim__nvim_ask_user_question",
-        opts.chat_bufnr
-      )
+      AskUserQuestionInstructions.lines("mcp__vibing-nvim__nvim_ask_user_question", opts.chat_bufnr)
     )
     table.insert(
       system_prompt_lines,
@@ -308,8 +304,7 @@ function M.system_prompt_args(ctx)
     -- against the transcript, not spliced into this cached prefix per turn.
     if opts.orchestrators and #opts.orchestrators > 0 then
       local named = vim.tbl_map(function(orchestrator)
-        return orchestrator.bufnr
-            and string.format("%s (currently buffer %d)", orchestrator.path, orchestrator.bufnr)
+        return orchestrator.bufnr and string.format("%s (currently buffer %d)", orchestrator.path, orchestrator.bufnr)
           or orchestrator.path
       end, opts.orchestrators)
       -- Usually one path, but `orchestrated_by` is a list: a second chat that later messages this

@@ -13,7 +13,7 @@ local Fs = require("vibing.core.utils.fs")
 ---@class Vibing.ChatBuffer
 ---@field buf number?
 ---@field win number?
----@field config Vibing.ChatConfig
+---@field config Vibing.Config
 ---@field session_id string?
 ---@field file_path string?
 ---@field session Vibing.ChatSession? セッションオブジェクト（非推奨、後方互換性のため）
@@ -57,7 +57,7 @@ local Fs = require("vibing.core.utils.fs")
 local ChatBuffer = {}
 ChatBuffer.__index = ChatBuffer
 
----@param config Vibing.ChatConfig
+---@param config Vibing.Config
 ---@return Vibing.ChatBuffer
 function ChatBuffer:new(config)
   local instance = setmetatable({}, ChatBuffer)
@@ -107,8 +107,7 @@ function ChatBuffer:open()
 
   if buffer_existed then
     local line_count = vim.api.nvim_buf_line_count(self.buf)
-    has_content = line_count > 1
-      or (line_count == 1 and vim.api.nvim_buf_get_lines(self.buf, 0, 1, false)[1] ~= "")
+    has_content = line_count > 1 or (line_count == 1 and vim.api.nvim_buf_get_lines(self.buf, 0, 1, false)[1] ~= "")
   end
 
   self:_create_buffer()
@@ -459,7 +458,7 @@ function ChatBuffer:close()
     self._chunk_timer = nil
   end
   if self.win and vim.api.nvim_win_is_valid(self.win) then
-    if self.config.window.position == "current" then
+    if self.config.ui.window.position == "current" then
       local alt_buf = vim.fn.bufnr("#")
       if alt_buf ~= -1 and vim.api.nvim_buf_is_valid(alt_buf) and alt_buf ~= self.buf then
         vim.api.nvim_win_set_buf(self.win, alt_buf)
@@ -550,7 +549,7 @@ function ChatBuffer:_create_buffer()
   if self.file_path then
     vim.api.nvim_buf_set_name(self.buf, self.file_path)
   else
-    local save_path = FileManager.get_save_directory(self.config)
+    local save_path = FileManager.get_save_directory(self.config.chat)
     Fs.ensure_dir(save_path)
     local filename = FileManager.generate_unique_filename()
     self.file_path = save_path .. filename
@@ -570,7 +569,7 @@ end
 
 ---ウィンドウを作成
 function ChatBuffer:_create_window()
-  self.win = WindowManager.create_window(self.buf, self.config.window)
+  self.win = WindowManager.create_window(self.buf, self.config.ui.window)
   WindowManager.apply_window_config(self.win, self.buf)
 end
 
@@ -753,7 +752,7 @@ end
 ---@return boolean scheduled 予約に切り替えたか
 function ChatBuffer:_try_schedule_instead_of_send(message, is_approval_retry)
   local config = require("vibing.config").get()
-  local opts = (config.agent and config.agent.scheduled_requests) or {}
+  local opts = (config and vim.tbl_get(config, "automation", "limits", "queue")) or {}
   if not opts.enabled then
     return false
   end
@@ -778,8 +777,11 @@ function ChatBuffer:_try_schedule_instead_of_send(message, is_approval_retry)
   end
 
   local AutoResume = require("vibing.application.chat.auto_resume")
-  local grace = (config.agent and config.agent.auto_resume_on_limit and config.agent.auto_resume_on_limit.grace_sec)
-    or 10
+  local grace = (
+    config
+    and vim.tbl_get(config, "automation", "limits", "resume")
+    and vim.tbl_get(config, "automation", "limits", "grace_sec")
+  ) or 10
   local fire_at = state.resets_at + grace
 
   -- 予約本文はバッファにしか無いので、エントリを組む前に保存しておく。保存に失敗したまま
@@ -1166,7 +1168,6 @@ function ChatBuffer:send_message()
 
   self._is_sending = true
 
-
   local message = self:extract_user_message()
   if not message then
     vim.notify("[vibing] No message to send", vim.log.levels.WARN)
@@ -1467,7 +1468,6 @@ function ChatBuffer:show_pending_prompts()
     self:add_user_section()
     return
   end
-
 
   StreamingHandler.stamp_response_end(self.buf, self._assistant_header_line)
   self._assistant_header_line = nil

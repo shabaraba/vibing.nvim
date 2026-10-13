@@ -9,10 +9,7 @@ describe("codex_permission_profile", function()
 
   local function write_at(base, content)
     Fs.ensure_dir(base .. "/.vibing")
-    vim.fn.writefile(
-      vim.split(content, "\n", { plain = true }),
-      base .. "/.vibing/codex-permissions.toml"
-    )
+    vim.fn.writefile(vim.split(content, "\n", { plain = true }), base .. "/.vibing/codex-permissions.toml")
   end
 
   local function override_map(args)
@@ -37,12 +34,14 @@ describe("codex_permission_profile", function()
     root = vim.fn.tempname()
     vim.fn.mkdir(root, "p")
     config = {
-      backends = {
-        codex = {
-          profile_file = ".vibing/codex-permissions.toml",
-          -- Existing parser/remap tests do not exercise repository trust. Keeping this explicit
-          -- also prevents their vim.system git stubs from standing in for `git ls-files`.
-          allow_tracked_profile = true,
+      ai = {
+        agents = {
+          codex = {
+            extensions = {
+              profile_file = ".vibing/codex-permissions.toml",
+              allow_tracked_profile = true,
+            },
+          },
         },
       },
     }
@@ -62,7 +61,9 @@ describe("codex_permission_profile", function()
   end)
 
   it("turns standard Codex profile tables into stable inline overrides", function()
-    write_at(root, [[
+    write_at(
+      root,
+      [[
 # This is ordinary Codex permission-profile TOML.
 default_permissions = "project-edit"
 
@@ -83,7 +84,8 @@ enabled = true
 [permissions.project-edit.network.domains]
 "github.com" = "allow"
 "*.github.com" = "allow" # an actual comment
-]])
+]]
+    )
 
     local overrides = override_map(profile.args(root, config))
     assert.equals('"project-edit"', overrides.default_permissions)
@@ -95,33 +97,42 @@ enabled = true
   end)
 
   it("renders the same bytes regardless of table and field order", function()
-    write_at(root, [[
+    write_at(
+      root,
+      [[
 default_permissions = "project-edit"
 [permissions.project-edit.network]
 enabled = true
 [permissions.project-edit]
 extends = ":workspace"
-]])
+]]
+    )
     local first = profile.args(root, config)
 
-    write_at(root, [[
+    write_at(
+      root,
+      [[
 default_permissions = "project-edit"
 [permissions.project-edit]
 extends = ":workspace"
 [permissions.project-edit.network]
 enabled = true
-]])
+]]
+    )
     assert.same(first, profile.args(root, config))
   end)
 
   it("falls back from a worktree to the Neovim project root", function()
     local worktree = root .. "/.vibing/worktrees/feature-x"
     vim.fn.mkdir(worktree, "p")
-    write_at(root, [[
+    write_at(
+      root,
+      [[
 default_permissions = "root-profile"
 [permissions.root-profile]
 extends = ":workspace"
-]])
+]]
+    )
     vim.system = function(command, opts)
       assert.same({ "git", "rev-parse", "--path-format=absolute", "--git-common-dir" }, command)
       assert.is_true(opts.cwd == root or opts.cwd == worktree)
@@ -155,16 +166,22 @@ extends = ":workspace"
   it("prefers a worktree-local profile", function()
     local worktree = root .. "/.vibing/worktrees/feature-x"
     vim.fn.mkdir(worktree, "p")
-    write_at(root, [[
+    write_at(
+      root,
+      [[
 default_permissions = "root-profile"
 [permissions.root-profile]
 extends = ":workspace"
-]])
-    write_at(worktree, [[
+]]
+    )
+    write_at(
+      worktree,
+      [[
 default_permissions = "worktree-profile"
 [permissions.worktree-profile]
 extends = ":workspace"
-]])
+]]
+    )
 
     local overrides = override_map(profile.args(worktree, config))
     assert.equals('"worktree-profile"', overrides.default_permissions)
@@ -173,7 +190,9 @@ extends = ":workspace"
   it("maps .git write access to a linked worktree's common git directory", function()
     local worktree = root .. "/.vibing/worktrees/feature-x"
     vim.fn.mkdir(worktree, "p")
-    write_at(root, [[
+    write_at(
+      root,
+      [[
 default_permissions = "project-edit"
 [permissions.git-base]
 extends = ":workspace"
@@ -181,7 +200,8 @@ extends = ":workspace"
 ".git" = "write"
 [permissions.project-edit]
 extends = "git-base"
-    ]])
+    ]]
+    )
     vim.system = function(command, opts)
       assert.same({ "git", "rev-parse", "--path-format=absolute", "--git-common-dir" }, command)
       assert.is_true(opts.cwd == root or opts.cwd == worktree)
@@ -193,20 +213,20 @@ extends = "git-base"
     end
 
     local overrides = override_map(profile.args(worktree, config))
-    assert.is_not_nil(
-      overrides.permissions:find('"' .. root .. '/.git" = "write"', 1, true),
-      overrides.permissions
-    )
+    assert.is_not_nil(overrides.permissions:find('"' .. root .. '/.git" = "write"', 1, true), overrides.permissions)
   end)
 
   it("maps scalar workspace-root write access to a linked worktree's common git directory", function()
     local worktree = root .. "/.vibing/worktrees/feature-x"
     vim.fn.mkdir(worktree, "p")
-    write_at(root, [[
+    write_at(
+      root,
+      [[
 default_permissions = "project-edit"
 [permissions.project-edit.filesystem]
 ":workspace_roots" = "write"
-]])
+]]
+    )
     vim.system = function(_, _)
       return {
         wait = function()
@@ -222,11 +242,14 @@ default_permissions = "project-edit"
   it("maps a scoped workspace-root write to a linked worktree's common git directory", function()
     local worktree = root .. "/.vibing/worktrees/feature-x"
     vim.fn.mkdir(worktree, "p")
-    write_at(root, [[
+    write_at(
+      root,
+      [[
 default_permissions = "project-edit"
 [permissions.project-edit.filesystem.":workspace_roots"]
 "." = "write"
-]])
+]]
+    )
     vim.system = function(_, _)
       return {
         wait = function()
@@ -242,7 +265,9 @@ default_permissions = "project-edit"
   it("does not inherit a parent's .git write after a child makes it read-only", function()
     local worktree = root .. "/.vibing/worktrees/feature-x"
     vim.fn.mkdir(worktree, "p")
-    write_at(worktree, [[
+    write_at(
+      worktree,
+      [[
 default_permissions = "child"
 [permissions.parent.filesystem.":workspace_roots"]
 ".git" = "write"
@@ -250,7 +275,8 @@ default_permissions = "child"
 extends = "parent"
 [permissions.child.filesystem.":workspace_roots"]
 ".git" = "read"
-]])
+]]
+    )
     vim.system = function()
       error("git common-dir lookup must not run for an effective read-only .git rule")
     end
@@ -262,13 +288,16 @@ extends = "parent"
   it("does not reuse a main-checkout cache entry for a linked worktree", function()
     local worktree = root .. "/.vibing/worktrees/feature-x"
     vim.fn.mkdir(worktree, "p")
-    write_at(root, [[
+    write_at(
+      root,
+      [[
 default_permissions = "project-edit"
 [permissions.project-edit]
 extends = ":workspace"
 [permissions.project-edit.filesystem.":workspace_roots"]
 ".git" = "write"
-]])
+]]
+    )
     vim.system = function(_, _)
       return {
         wait = function()
@@ -288,33 +317,30 @@ extends = ":workspace"
     assert.same({}, profile.args(root, config))
     write_at(root, "# no profile yet")
     assert.same({}, profile.args(root, config))
-    config.backends.codex.profile_file = false
+    config.ai.agents.codex.extensions.profile_file = false
     assert.same({}, profile.args(root, config))
   end)
 
   it("refuses a Git-tracked profile until the user explicitly trusts it", function()
-    config.backends.codex.allow_tracked_profile = false
+    config.ai.agents.codex.extensions.allow_tracked_profile = false
     write_at(root, 'default_permissions = ":read-only"')
     assert.same({ "-c", 'default_permissions=":read-only"' }, profile.args(root, config))
 
     local initialized = original_system({ "git", "init", "-q" }, { cwd = root, text = true }):wait()
     assert.equals(0, initialized.code, initialized.stderr)
-    local added = original_system(
-      { "git", "add", "-f", ".vibing/codex-permissions.toml" },
-      { cwd = root, text = true }
-    ):wait()
+    local added = original_system({ "git", "add", "-f", ".vibing/codex-permissions.toml" }, { cwd = root, text = true }):wait()
     assert.equals(0, added.code, added.stderr)
 
     expect_error("refusing a Git-tracked Codex permission profile", function()
       profile.args(root, config)
     end)
 
-    config.backends.codex.allow_tracked_profile = true
+    config.ai.agents.codex.extensions.allow_tracked_profile = true
     assert.same({ "-c", 'default_permissions=":read-only"' }, profile.args(root, config))
   end)
 
   it("fails closed when Git cannot classify a profile inside a repository", function()
-    config.backends.codex.allow_tracked_profile = false
+    config.ai.agents.codex.extensions.allow_tracked_profile = false
     write_at(root, 'default_permissions = ":read-only"')
     vim.fn.mkdir(root .. "/.git", "p")
     vim.system = function()
@@ -339,10 +365,13 @@ extends = ":workspace"
   end)
 
   it("fails closed when the selected custom profile is not a table", function()
-    write_at(root, [[
+    write_at(
+      root,
+      [[
 default_permissions = "broken"
 permissions.broken = true
-]])
+]]
+    )
     expect_error('selected profile "broken" must be a table', function()
       profile.args(root, config)
     end)
@@ -356,30 +385,39 @@ permissions.broken = true
   end)
 
   it("rejects unrelated Codex configuration", function()
-    write_at(root, [[
+    write_at(
+      root,
+      [[
 default_permissions = ":workspace"
 model = "gpt-5.6"
-]])
+]]
+    )
     expect_error('unsupported top-level key "model"', function()
       profile.args(root, config)
     end)
 
-    write_at(root, [[
+    write_at(
+      root,
+      [[
 default_permissions = ":workspace"
 [features]
 multi_agent = true
-]])
+]]
+    )
     expect_error("only features.network_proxy is allowed", function()
       profile.args(root, config)
     end)
   end)
 
   it("reports malformed input with its line number", function()
-    write_at(root, [[
+    write_at(
+      root,
+      [[
 default_permissions = "project-edit"
 [permissions.project-edit]
 extends ":workspace"
-]])
+]]
+    )
     expect_error("codex-permissions.toml:3: expected a single-line key = value assignment", function()
       profile.args(root, config)
     end)

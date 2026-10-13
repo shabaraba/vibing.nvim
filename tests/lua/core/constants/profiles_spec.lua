@@ -19,7 +19,7 @@ describe("profiles", function()
   end)
 
   local function config(profiles)
-    return { agent = { profiles = profiles } }
+    return { ai = { profiles = profiles } }
   end
 
   it("knows the built-ins with no configuration at all", function()
@@ -132,7 +132,7 @@ describe("profiles", function()
 
       assert.is_nil(def[case.field])
       assert.equals(1, #warnings)
-      assert.is_truthy(warnings[1]:find('agent.profiles[name="p"].' .. case.field, 1, true))
+      assert.is_truthy(warnings[1]:find('ai.profiles[name="p"].' .. case.field, 1, true))
     end)
   end
 
@@ -187,8 +187,8 @@ describe("profiles", function()
 
     assert.same({ "default", "focused", "reviewer" }, Profiles.names(cfg))
     assert.equals(4, #warnings)
-    assert.is_truthy(warnings[1]:find("agent.profiles[1].name", 1, true))
-    assert.is_truthy(warnings[4]:find("agent.profiles[4].name", 1, true))
+    assert.is_truthy(warnings[1]:find("ai.profiles[1].name", 1, true))
+    assert.is_truthy(warnings[4]:find("ai.profiles[4].name", 1, true))
   end)
 
   it("ignores an entry that is not a table, with a warning", function()
@@ -196,7 +196,7 @@ describe("profiles", function()
 
     assert.same({ "default", "focused", "ok", "reviewer" }, Profiles.names(cfg))
     assert.equals(1, #warnings)
-    assert.is_truthy(warnings[1]:find("agent.profiles[1] is not a table", 1, true))
+    assert.is_truthy(warnings[1]:find("ai.profiles[1] is not a table", 1, true))
   end)
 
   it("lets the last of two entries with the same name win, and warns once", function()

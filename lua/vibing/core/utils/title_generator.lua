@@ -86,7 +86,7 @@ local SUMMARY_LEAD = {
 ---
 ---どちらの場合もセッションの resume/fork は行わない（全履歴を読み込んで context を超過し
 ---"Prompt is too long" になるのを避けるため）。都度フレッシュに送るだけなので session_id は不要。
----アダプタはグローバル既定（`vibing.get_adapter()`）で、チャットの frontmatter の `agent` は
+---アダプタはグローバル既定（`vibing.get_helper_adapter()`）で、チャットの frontmatter の `agent` は
 ---見ない。軽量呼び出し全体でこの解決に揃えてある理由は
 ---`handbook/architecture/lightweight-calls.md` → "Adapter resolution"。
 ---@param conversation {role: string, content: string}[] 会話履歴
@@ -99,7 +99,7 @@ function M.generate_from_conversation(conversation, callback, opts)
   end
 
   local vibing = require("vibing")
-  local adapter = vibing.get_adapter()
+  local adapter = vibing.get_helper_adapter()
   local config = vibing.get_config()
 
   if not adapter then
@@ -107,7 +107,7 @@ function M.generate_from_conversation(conversation, callback, opts)
     return
   end
 
-  local lang_code = language_utils.get_language_code(config.language, "chat")
+  local lang_code = language_utils.get_language_code(vim.tbl_get(config, "chat", "language"), "chat")
   local lang_name = lang_code and language_utils.language_names[lang_code]
 
   local summary = opts and opts.summary

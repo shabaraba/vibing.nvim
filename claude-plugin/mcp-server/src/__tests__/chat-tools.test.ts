@@ -550,7 +550,7 @@ describe('chat tools (worktree redesign)', () => {
   });
 
   it('tells the model the delegated-approval gate exists, so a refusal is not a surprise', () => {
-    // The Lua side refuses unless agent.orchestration.delegated_approval is on. A description
+    // The Lua side refuses unless permissions.delegated_approval is on. A description
     // that does not say so turns every blocked worker into one wasted call before the model does
     // the right thing anyway.
     const description =

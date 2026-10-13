@@ -17,11 +17,11 @@ Cost").
 ## User MCP Servers, Slash Commands, Skills, and Subagents
 
 vibing.nvim invokes the `claude` CLI with `--setting-sources user,project,local` (configurable via
-`config.agent.setting_sources`), so your existing `~/.claude.json` MCP servers,
+`config.ai.agents.claude.settings.sources`), so your existing `~/.claude.json` MCP servers,
 `.claude/commands/` project slash commands, `.claude/skills/`, and global settings/subagents are
 all available inside vibing.nvim sessions automatically — no extra configuration needed.
 
-The MCP half of that is the one part with an off switch: `agent.mcp.user_servers = false` keeps a
+The MCP half of that is the one part with an off switch: `ai.agents.claude.mcp.inherit_cli_servers = false` keeps a
 turn down to the servers vibing.nvim's own plugins declare. What it saves and what else it drops:
 `handbook/configuration.md` → "Excluding User MCP Servers".
 
@@ -224,7 +224,7 @@ normal case — a status check, an approval, "go ahead") leaves the existing one
 **`delegated_scope` (`nvim_chat_create` only) is the opposite of `task`: it is written onto the
 NEW chat's own `delegated_scope` frontmatter**, a list of tool/command patterns using the same
 syntax as `permissions_allow` (e.g. `"Bash(npm:*)"`). It has no effect unless
-`agent.orchestration.delegated_approval` is `"scoped"`, in which case it is what
+`permissions.delegated_approval` is `"scoped"`, in which case it is what
 `nvim_chat_answer_approval` checks an `allow_once`/`allow_for_session` answer against for that
 chat — see below and `handbook/architecture/orchestration.md` → "Answering a worker's tool
 approval".
@@ -240,7 +240,7 @@ normally refuses the send; with the flag the message is queued instead and deliv
 the moment that chat stops, with several queued items coalesced into one turn. The reply says which
 happened, and "queued" means no request has started yet — an orchestrator that read it as "sent"
 would poll a transcript that has not moved. The same "queued" reply, with a different sentence,
-comes back when the target is over its `agent.token_usage.auto_compact` threshold: it spends a
+comes back when the target is over its `chat.context.compaction.threshold_tokens` threshold: it spends a
 turn on `/compact` first and takes the message on the turn after, whether or not the caller passed
 `queue_if_busy`. `task` is queued along with the body and applied at
 flush time, same as the immediate path; if several queued messages from the same sender carry a
@@ -250,7 +250,7 @@ written at delivery rather than when the message is queued, and why the queue is
 
 `nvim_chat_answer_approval({ file_path|bufnr, action, from_bufnr })` answers another
 chat's pending tool-approval prompt with one of `allow_once` / `deny_once` / `allow_for_session` /
-`deny_for_session`. **It is refused unless `agent.orchestration.delegated_approval` is set**, since
+`deny_for_session`. **It is refused unless `permissions.delegated_approval` is set**, since
 what it buys is one agent clearing another agent's permission gate; `from_bufnr` is required here
 (unlike on the other two) so the answer is always recorded as somebody's decision. When the setting
 is `"scoped"` rather than `true`, an `allow_once`/`allow_for_session` call additionally fails unless

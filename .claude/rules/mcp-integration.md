@@ -43,6 +43,6 @@ The tool catalogue, the orchestration tools, annotations and background LSP anal
   reads it as "sent" polls a transcript that has not moved.
 
 vibing.nvim invokes the CLI with `--setting-sources user,project,local`
-(`config.agent.setting_sources`), so the user's own MCP servers, `.claude/commands/`,
+(`config.ai.agents.claude.settings.sources`), so the user's own MCP servers, `.claude/commands/`,
 `.claude/skills/` and subagents are all available inside vibing.nvim sessions with no extra
 configuration.

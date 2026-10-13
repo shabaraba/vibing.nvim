@@ -1,5 +1,5 @@
 ---@diagnostic disable: undefined-field
---- `backends.codex.auto_approve_ask`: the exceptions that reach a human anyway.
+--- `ai.agents.codex.extensions.auto_approve_ask`: the exceptions that reach a human anyway.
 ---
 --- The list can only ever send a request **to** a human, so every assertion here is about one of two
 --- things: that a rule the user wrote fires, and that a shape the request can arrive in does not

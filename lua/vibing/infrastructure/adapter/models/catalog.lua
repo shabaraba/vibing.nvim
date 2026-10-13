@@ -70,7 +70,12 @@ local function probe(id)
     return
   end
 
-  local argv = spec.command(require("vibing.config").get())
+  local config = require("vibing.config").get()
+  local argv = spec.command(config)
+  local path = vim.tbl_get(config, "ai", "agents", id, "path")
+  if path then
+    argv[1] = vim.fn.expand(path)
+  end
   -- A backend whose CLI is not installed is the ordinary case, not a failure to report.
   if vim.fn.executable(argv[1]) ~= 1 then
     record.retry_after = vim.uv.now() + FAILURE_COOLDOWN_MS

@@ -51,7 +51,7 @@ local function ensure_official_grok(path)
 
   error(
     "Found a 'grok' binary that does not appear to be the official xAI Grok Build CLI. "
-      .. "Install from https://x.ai/cli or set backends.grok.executable to the official binary path."
+      .. "Install from https://x.ai/cli or set ai.agents.grok.path to the official binary path."
   )
 end
 
@@ -63,7 +63,7 @@ end
 --- ENOENT out of vim.system. Grok keeps its own cache because it resolves a *configurable*
 --- executable and sniffs it for officialness, neither of which the shared resolver does.
 ---
---- What is skipped is a **bare command name**: no `/` at all. `backends.grok.executable` accepts one
+--- What is skipped is a **bare command name**: no `/` at all. `ai.agents.grok.path` accepts one
 --- (`vim.fn.executable("grok")` searches PATH for it), and `fs_stat` would resolve that against
 --- Neovim's cwd and answer nil forever -- defeating the cache on every request, which costs far
 --- more than the lookup: the fallthrough re-runs `ensure_official_grok`, and that blocks the main
@@ -87,18 +87,18 @@ local function still_installed(path)
   return vim.uv.fs_stat(path) ~= nil
 end
 
---- What `backends.grok.executable` asks for, with the `auto` sentinel already read.
+--- What `ai.agents.grok.path` asks for, with an omitted path meaning PATH lookup.
 ---
 --- The one interpretation of that option, so a caller that only needs the *name* of the binary --
---- model discovery, which runs on the completion path -- does not re-derive the sentinel. It
+--- model discovery, which runs on the completion path -- does not re-derive this rule. It
 --- cannot use `resolve_grok_path`: that raises when the CLI is absent and sniffs the binary with
 --- two blocking `vim.fn.system` calls (the cost lines 68-70 discuss).
 --- @param config Vibing.Config|nil
---- @return string|nil configured the configured path, or nil when the option says `auto`
+--- @return string|nil configured the configured path, or nil when it is omitted
 local function configured_executable(config)
-  local configured = vim.tbl_get(config or {}, "backends", "grok", "executable")
-  if type(configured) == "string" and configured ~= "" and configured ~= "auto" then
-    return configured
+  local configured = vim.tbl_get(config or {}, "ai", "agents", "grok", "path")
+  if type(configured) == "string" and configured ~= "" then
+    return vim.fn.expand(configured)
   end
   return nil
 end
@@ -129,7 +129,7 @@ local function resolve_grok_path(config)
     if found == "" then
       error(
         "Grok CLI not found in PATH. Install the official xAI Grok Build CLI "
-          .. "(curl -fsSL https://x.ai/cli/install.sh | bash) or set backends.grok.executable."
+          .. "(curl -fsSL https://x.ai/cli/install.sh | bash) or set ai.agents.grok.path."
       )
     end
     resolved = found
@@ -217,7 +217,7 @@ M.BINARY = {
 ---
 --- The same test applies on this path: `self_server` is the bundled server's **registered** name,
 --- resolved from its own manifest by `grok_mcp_config`, and `nil` when it is not loaded at all
---- (`agent.plugins.self = false`). Naming the tool then would describe one this session has no
+--- (`integrations.plugins.self = false`). Naming the tool then would describe one this session has no
 --- server for, which is the mistake `codex_plugin_config` reads the manifest to avoid — and a rename
 --- there cannot leave the model told about a tool that does not exist.
 ---

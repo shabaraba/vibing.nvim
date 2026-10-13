@@ -7,7 +7,7 @@ that file; the reasoning and the traps are here.
 
 The Claude CLI hides everything a subagent says unless it is launched with
 `--forward-subagent-text`; without the flag a `Task`/`Agent` call shows only its header and final
-result. `agent.subagent.enabled` (default `false`) opts in, and
+result. `ui.subagents.show_output` (default `false`) opts in, and
 `modules/subagent_display.lua` renders the forwarded text under the tool header behind a `│` rail
 (`show_prefix` adds a `[<subagent_type>]` label per line).
 
@@ -59,7 +59,7 @@ result, but hold the process open for a subagent. Do not generalise from one to 
 
 The wait is bounded by a **ten-minute idle ceiling**, past which Claude Code "stops whatever is
 still running and drops its partial result". That suits a one-shot CI invocation and not a chat,
-so `backends.claude.background_wait_sec` (default 3600, `0` for no limit) is passed as
+so `ai.agents.claude.extensions.background_wait_sec` (default 3600, `0` for no limit) is passed as
 `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS`.
 
 ### What the stream carries
@@ -124,7 +124,7 @@ finished and here is nothing" is still worse than staying quiet; "these two are 
 collect them" is a different sentence and an actionable one. The first describes a subagent, the
 second describes the chat's own predicament.
 
-Two things bound it. It is **not** behind `agent.chat_notifications.enabled` — the same
+Two things bound it. It is **not** behind `automation.orchestration.notifications.enabled` — the same
 "cannot leave this stop on its own" class as `asked_question` / `waiting_approval` / `error`, and an
 opt-in would leave the silent stall as the default behaviour. And it **does not wake a `_cancelled`
 turn**: that flag covers both `:VibingCancel` and the kill that draws a question or an approval, and

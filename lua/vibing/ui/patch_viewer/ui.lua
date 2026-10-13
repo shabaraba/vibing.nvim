@@ -91,7 +91,7 @@ end
 function M._render_unified(state, display, file_diff)
   diff_mode.leave(state)
 
-  if ((require("vibing.config").options or {}).diff or {}).highlights == false then
+  if (vim.tbl_get(require("vibing.config").get(), "ui", "diff") or {}).highlights == false then
     state.buf_after = unified.render_plain(state.win_after, file_diff, display)
   else
     -- 元のパスと描画済みの内容でfiletypeを判定する。削除済みファイルも実体を開く必要が無い

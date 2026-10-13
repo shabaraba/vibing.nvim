@@ -39,7 +39,9 @@ describe("ApprovalDelegate", function()
   ---@param mode boolean|"scoped"
   local function configure(mode)
     local cfg = vim.tbl_deep_extend("force", vim.deepcopy(Config.defaults), {
-      agent = { orchestration = { delegated_approval = mode } },
+      permissions = {
+        delegated_approval = mode,
+      },
     })
     Config.get = function()
       return cfg

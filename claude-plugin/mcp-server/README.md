@@ -303,7 +303,7 @@ is enabled, and directs the agent back to `nvim_job_start`.
 
 - **nvim_chat_answer_approval** - Answer another chat's pending tool-approval prompt, the stop
   that leaves it at status `waiting_approval` unable to continue or report. **Refused unless the
-  user set `agent.orchestration.delegated_approval`** — by default only the user can clear that
+  user set `permissions.delegated_approval`** — by default only the user can clear that
   prompt, and the error says so
   - `file_path` / `bufnr` (exactly one): The blocked chat, addressed as above
   - `action` (required): `allow_once` / `deny_once` / `allow_for_session` / `deny_for_session` —
