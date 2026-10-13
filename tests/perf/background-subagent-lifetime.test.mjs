@@ -148,3 +148,28 @@ with tempfile.TemporaryDirectory() as folder:
 `);
   assert.equal(result, 'stop');
 });
+
+test('cleanup escalates an ignored TERM and does not signal an exited process', () => {
+  const result = python(`
+class FakeProcess:
+    def __init__(self, running):
+        self.running = running
+        self.calls = []
+    def poll(self):
+        return None if self.running else 0
+    def terminate(self):
+        self.calls.append('TERM')
+    def kill(self):
+        self.calls.append('KILL')
+        self.running = False
+    def wait(self, timeout):
+        self.calls.append('wait:'+str(timeout))
+        if self.running:
+            raise m.subprocess.TimeoutExpired('fake-claude', timeout)
+        return 0
+stuck = FakeProcess(True)
+exited = FakeProcess(False)
+print(json.dumps([m.stop_process(stuck), stuck.calls, m.stop_process(exited), exited.calls]))
+`);
+  assert.deepEqual(result, [true, ['TERM', 'wait:15', 'KILL', 'wait:5'], false, ['wait:15']]);
+});

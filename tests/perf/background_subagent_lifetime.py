@@ -109,6 +109,19 @@ def agent_completed(events):
                and e.get("task_id") in ids for e in events)
 
 
+def stop_process(process):
+    """Bound cleanup even when the CLI ignores TERM; no repeated signals in the loop."""
+    running = process.poll() is None
+    if running:
+        process.terminate()
+    try:
+        process.wait(timeout=15)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=5)
+    return running
+
+
 class Probe:
     def __init__(self, out, priors=()):
         self.out = out
@@ -260,16 +273,14 @@ class Probe:
                     break
                 if time.monotonic() - begin > 180 and exit_time is None:
                     forced = True
-                    process.terminate()
+                    failure = "probe timed out"
                     record("forced_timeout")
+                    break
                 time.sleep(0.5)
         except (RuntimeError, KeyboardInterrupt) as err:
             failure = str(err) or "supervisor stopped the probe"
         finally:
-            if process.poll() is None:
-                forced = True
-                process.terminate()
-            process.wait(timeout=15)
+            forced = stop_process(process) or forced
             reader.join(timeout=5)
             stderr.close()
             timeline.close()
