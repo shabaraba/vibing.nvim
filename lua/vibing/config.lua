@@ -286,6 +286,7 @@ local removed = {
   adapter = "ai.chat.agent",
   agent = "ai.chat / ai.helpers / ai.agents / automation / ui",
   backends = "ai.agents",
+  grok = "ai.agents.grok (grok.executable moved to ai.agents.grok.path)",
   diff = "ui.diff (diff.tool was removed)",
   mcp = "integrations.nvim",
   language = "chat.language",
@@ -299,6 +300,9 @@ local removed = {
   ["ui.tool_markers"] = "ui.tools.markers",
   ["ui.tool_result_display"] = "ui.tools.results",
   ["ui.gradient.interval"] = "ui.gradient.interval_ms",
+  ["permissions.codex_profile_file"] = "ai.agents.codex.extensions.profile_file",
+  ["permissions.codex_profile_content"] = "ai.agents.codex.extensions.profile_content",
+  ["permissions.codex_allow_tracked_profile"] = "ai.agents.codex.extensions.allow_tracked_profile",
 }
 
 local function validate(value, rule, path, errors)
@@ -348,7 +352,12 @@ local function validate(value, rule, path, errors)
       fail("a valid number" .. (rule.min and " >= " .. rule.min or ""))
     end
   elseif kind == "language" then
-    if type(value) ~= "string" then
+    if type(value) == "string" then
+      local names = require("vibing.core.utils.language").language_names
+      if value ~= "" and value ~= "en" and not names[value] then
+        fail("a supported language code")
+      end
+    else
       validate(value, { default = nonempty, chat = nonempty }, path, errors)
     end
   elseif type(value) ~= "table" then

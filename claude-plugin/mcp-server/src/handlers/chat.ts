@@ -61,7 +61,7 @@ const chatCreateArgsSchema = z.object({
  * (`delegated_scope`, same pattern syntax as `permissions_allow`), because it is
  * `approval_delegate.lua`'s "scoped" mode reading the answering chat's own declaration, not
  * something that belongs to whoever created it. It has no effect unless
- * `agent.orchestration.delegated_approval` is `"scoped"`.
+ * `permissions.delegated_approval` is `"scoped"`.
  *
  * `agent` / `model` / `effort` / `profile` are also the NEW chat's own frontmatter: they let a
  * planner on an expensive model hand the implementation to a cheaper model or another CLI, in a
@@ -291,7 +291,7 @@ const chatAnswerApprovalArgsSchema = z.object({
  * kind reports `waiting_approval` while its turn is technically still in flight — so do not read
  * `responding` as "it is fine, it is working".
  *
- * By default the someone who answers is the user; `agent.orchestration.delegated_approval` lets an orchestrator stand in — fully when
+ * By default the someone who answers is the user; `permissions.delegated_approval` lets an orchestrator stand in — fully when
  * it is `true`, or only for tools within the target chat's own declared `delegated_scope` when
  * it is `"scoped"` (a denial always goes through either way).
  *

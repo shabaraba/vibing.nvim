@@ -36,7 +36,6 @@ local function is_boilerplate(cleaned)
     return false
   end
   local ok_get, config = pcall(config_mod.get)
-  local agent = ok_get and config and vim.tbl_get(config, "ui", "tools")
   local prompt = ok_get and config and vim.tbl_get(config, "automation", "limits", "continue_prompt")
   return type(prompt) == "string" and vim.trim(prompt):lower() == lowered
 end

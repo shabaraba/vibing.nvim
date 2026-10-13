@@ -123,7 +123,7 @@ function M.setup(opts)
   vim.schedule(function()
     if vim.tbl_get(M.config, "integrations", "nvim") and vim.tbl_get(M.config, "integrations", "nvim", "enabled") then
       local rpc_server = require("vibing.infrastructure.rpc.server")
-      local port = rpc_server.start(vim.tbl_get(M.config, "integrations", "nvim", "rpc_port"))
+      local port = rpc_server.start(vim.tbl_get(M.config, "integrations", "nvim", "port"))
       if port > 0 then
         notify.info(string.format("MCP RPC server started on port %d", port))
       end

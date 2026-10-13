@@ -82,7 +82,7 @@ export const chatTools: Tool[] = [
           description:
             'Tool/command patterns (same syntax as the permissions_allow frontmatter field, ' +
             'e.g. "Bash(npm:*)", "Read") that you may auto-approve on this new chat\'s behalf ' +
-            'with nvim_chat_answer_approval, once agent.orchestration.delegated_approval is set ' +
+            'with nvim_chat_answer_approval, once permissions.delegated_approval is set ' +
             'to "scoped". Recorded on the NEW chat\'s own frontmatter as delegated_scope — it is ' +
             'what is being asked, not who is allowed to answer for it, which stays a config ' +
             'decision. Denials are always answerable regardless of this list; only allow_once / ' +
@@ -277,7 +277,7 @@ export const chatTools: Tool[] = [
       "Answer another chat's pending tool-approval prompt — the one that leaves it stuck at " +
       'status waiting_approval, unable to continue or even to report back. Read what it is ' +
       'stuck on with nvim_get_buffer first; the prompt names the tool and its input. ' +
-      'This is off unless the user turned it on (agent.orchestration.delegated_approval), and ' +
+      'This is off unless the user turned it on (permissions.delegated_approval), and ' +
       'the call fails with an explanation when it is off — then the only thing to do is tell ' +
       'the user which chat is blocked and on what. When it is set to true, you are standing in ' +
       'for the user on a decision they asked to be consulted about: answer only when the tool ' +
