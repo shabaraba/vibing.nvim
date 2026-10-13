@@ -351,14 +351,20 @@ local function validate(value, rule, path, errors)
     then
       fail("a valid number" .. (rule.min and " >= " .. rule.min or ""))
     end
+  elseif kind == "language_code" then
+    local names = require("vibing.core.utils.language").language_names
+    if type(value) ~= "string" or not names[value] then
+      fail("a supported language code")
+    end
   elseif kind == "language" then
+    local code = { kind = "language_code" }
     if type(value) == "string" then
-      local names = require("vibing.core.utils.language").language_names
-      if value ~= "" and value ~= "en" and not names[value] then
-        fail("a supported language code")
+      -- An empty scalar keeps the existing opt-out from a language instruction.
+      if value ~= "" then
+        validate(value, code, path, errors)
       end
     else
-      validate(value, { default = nonempty, chat = nonempty }, path, errors)
+      validate(value, { default = code, chat = code }, path, errors)
     end
   elseif type(value) ~= "table" then
     fail("a table")

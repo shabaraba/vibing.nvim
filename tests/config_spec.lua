@@ -137,6 +137,28 @@ describe("configuration redesign", function()
     assert.equals("off", Config.get().ui.wrap)
   end)
 
+  it("accepts supported language codes in both forms and a scalar opt-out", function()
+    for _, language in ipairs({ "en", "ja", "", { default = "ja", chat = "en" } }) do
+      Config.setup({ chat = { language = language } })
+      assert.same(language, Config.get().chat.language)
+    end
+  end)
+
+  for _, case in ipairs({
+    { language = "unknown", path = "chat.language" },
+    { language = { default = "unknown" }, path = "chat.language.default" },
+    { language = { default = "ja", chat = "unknown" }, path = "chat.language.chat" },
+  }) do
+    it("rejects unsupported language at " .. case.path .. " without replacing the valid config", function()
+      Config.setup({ chat = { language = "ja" } })
+      local before = Config.get()
+      local ok, err = pcall(Config.setup, { chat = { language = case.language } })
+      assert.is_false(ok)
+      assert.truthy(err:find(case.path .. ": expected a supported language code", 1, true))
+      assert.equals(before, Config.get())
+    end)
+  end
+
   local invalid = {
     false,
     { ui = { gradient = { colors = { "#123456" } } } },
