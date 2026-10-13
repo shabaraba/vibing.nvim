@@ -52,8 +52,8 @@ Read the linked file before changing that path.
 - **A reclaim route declares what it meant; nothing downstream infers it.** `duplex_pool` resolves
   the route into a `Vibing.DuplexReclaimVerdict` before announcing it, so no reason name appears in a
   signature outside that module. Two separate bits: `reports` (false only for `QUIET_RECLAIM`'s four
-  — a turn is coming, or there is nobody to tell) and `subagents_lost` (false for `exited`, the one
-  route that killed nothing and so leaves the state an ordinary oneshot exit leaves). **Reporting is
+  — a turn is coming, or there is nobody to tell) and `process_killed` (false for `exited`, the one
+  route where the pool killed nothing; it says nothing about whether a subagent survived). **Reporting is
   the default**, so a route added later wakes rather than silently dropping the wake.
 
 ## AskUserQuestion
