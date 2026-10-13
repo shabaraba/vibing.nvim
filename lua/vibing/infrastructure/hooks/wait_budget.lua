@@ -25,6 +25,24 @@
 
 local M = {}
 
+--- Whether a measurement covers the budget this configuration derives.
+---
+--- A missing measurement means the channel cannot wait for a human. The native approval
+--- gate reads its own measured floor, never a measurement from another transport.
+---
+--- Not shared with `transports.can_wait_for_approval`, deliberately: that one compares against the
+--- script's own deadline with a strict `>`, which is a different question about a different
+--- ordering.
+--- @param floor any the descriptor's measured figure, if it has one
+--- @param budget number what this configuration would hold the channel open for
+--- @return boolean
+local function measured_covers(floor, budget)
+  if type(floor) ~= "number" then
+    return false
+  end
+  return budget <= floor
+end
+
 --- What the script adds to vibing's own limit.
 ---
 --- Not a second policy. The script's deadline is the backstop for "Neovim answered the RPC and
@@ -105,6 +123,41 @@ end
 --- @return number seconds
 function M.min_cli_timeout_sec()
   return M.MIN_APPROVAL_WAIT_SEC + M.SCRIPT_MARGIN_SEC + M.CLI_MARGIN_SEC
+end
+
+--- What the resident-CLI route adds to vibing's own limit, the counterpart of `CLI_MARGIN_SEC`.
+---
+--- Covers everything between our timer deciding the request is unanswered and the CLI having the
+--- decision in hand: a `chansend` on an open stdin and the CLI's own read of it. Sized like the
+--- other two margins rather than smaller, because being wrong here loses a human's answer.
+M.NATIVE_APPROVAL_MARGIN_SEC = 60
+
+--- @class Vibing.NativeApprovalSpec
+--- @field measured_wait_floor_sec? number The longest a **delayed decision** was observed still
+---   being acted on by this CLI, with the turn carrying on. A floor, exactly like
+---   `hook.measured_wait_floor_sec`: it says a decision survived
+---   at least this long, not that the CLI would have stopped after. Absent means unmeasured.
+
+--- @return number seconds
+function M.native_approval_budget_sec()
+  return M.approval_wait_sec() + M.NATIVE_APPROVAL_MARGIN_SEC
+end
+
+--- Whether a CLI's **own** approval request may be held open for a human instead of being refused
+--- on arrival (#861).
+---
+--- Parallel to the hook gate: a backend gets the behaviour when its own measurement covers
+--- the configured budget, and keeps immediate refusal otherwise. The native JSON-RPC decision
+--- and the blocking shell hook are different transports; their measurements cannot substitute.
+---
+--- Comparing against the derived budget means raising `permissions.approval_wait_sec` past what was
+--- measured turns the feature **off** for that backend rather than waiting past the evidence. The
+--- way to wait longer is to re-run `tests/perf/codex_approval_answer_after_delay.sh` at the longer
+--- value, not to raise the number and hope.
+--- @param native_approval Vibing.NativeApprovalSpec|nil the descriptor's `native_approval` table
+--- @return boolean
+function M.can_wait_for_native_approval(native_approval)
+  return measured_covers(native_approval and native_approval.measured_wait_floor_sec, M.native_approval_budget_sec())
 end
 
 --- The environment entry the hook script reads. Merged into the CLI child's environment.

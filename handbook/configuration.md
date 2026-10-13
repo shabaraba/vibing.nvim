@@ -3,12 +3,30 @@
 Complete reference for every `require("vibing").setup()` option. Defaults shown below match
 `lua/vibing/config.lua`.
 
+This is a breaking configuration redesign. The public entry point remains a Lua `setup()` table.
+Objects merge recursively; lists replace rather than append (including `{}`). Unknown keys,
+removed keys, invalid types and unsupported agent options fail before replacing the current
+configuration. Permission tool names and chat frontmatter stay unchanged. New chats omit the
+unused `mode` metadata; existing valid `mode` values can still be read and inherited.
+
+`ai.chat` selects the conversation agent/model/effort. `ai.helpers` selects title generation,
+summaries and background chat search. Its omitted `agent` inherits the chat agent; its omitted
+model uses the chosen agent's helper default (Claude: `haiku`; others: the CLI default).
+Chat models default to `sonnet` on Claude and the CLI default on other agents. Explicit chat
+models never become helper defaults. Chat search still has its restricted search tools;
+title generation and summaries retain their tool-free execution.
+
+`ui.usage.enabled` controls metrics display independently of `chat.context.warn_tokens` and
+`chat.context.cache_ttl_sec`. Set either context threshold to `0` to turn off that warning.
+Agent `env` applies to conversations and helpers. Frontmatter `env` applies only to conversations.
+Protected harness environment variables cannot be overwritten.
+
 ## Table of Contents
 
 - [Defaults at a Glance](#defaults-at-a-glance)
-- [Adapter](#adapter)
-- [Backends](#backends)
-- [Agent](#agent)
+- [Chat Agent](#chat-agent)
+- [Agent Options](#agent-options)
+- [AI and Automation](#ai-and-automation)
 - [Chat](#chat)
 - [UI](#ui)
 - [Keymaps](#keymaps)
@@ -26,95 +44,188 @@ Complete reference for every `require("vibing").setup()` option. Defaults shown 
 
 ```lua
 require("vibing").setup({
-  adapter = "claude",
-  agent = {
-    default_mode = "code",
-    default_model = "sonnet",
-    utility_model = "sonnet",
-    default_effort = "default",
-    utility_effort = "low",
-    setting_sources = { "user", "project", "local" },
-    mcp = { user_servers = true },
-    git_instructions = false,
-    subagent = { enabled = false, show_prefix = false },
-    auto_resume_on_limit = { enabled = false, max_retries = 1 },
-    scheduled_requests = { enabled = true, max_retries = 3 },
-    token_usage = {
-      enabled = true,
-      warn_context = 150000,
-      cache_ttl_sec = 3300,
-      auto_compact = { enabled = false, at = 200000 },
+  ai = {
+    agents = {
+      claude = {
+        env = {},
+        extensions = {
+          background_wait_sec = 3600,
+          git_instructions = false,
+        },
+        mcp = {
+          inherit_cli_servers = true,
+        },
+        process = "oneshot",
+        settings = {
+          sources = { "user", "project", "local" },
+        },
+      },
+      codex = {
+        env = {},
+        extensions = {
+          allow_tracked_profile = false,
+          approval_policy = "",
+          auto_approve = false,
+          auto_approve_ask = {},
+          profile_file = ".vibing/codex-permissions.toml",
+          provider_notice = true,
+        },
+        mcp = {},
+        process = "oneshot",
+        settings = {},
+      },
+      copilot = {
+        env = {},
+        extensions = {},
+        mcp = {},
+        process = "oneshot",
+        settings = {},
+      },
+      grok = {
+        env = {},
+        extensions = {},
+        mcp = {},
+        process = "oneshot",
+        settings = {},
+      },
     },
-    plugins = { self = true, project_dir = ".vibing/plugins", extra = {} },
+    chat = {
+      agent = "claude",
+      effort = "default",
+    },
+    helpers = {
+      effort = "low",
+    },
+    profiles = {},
+  },
+  automation = {
+    limits = {
+      continue_prompt = "Continue from where you left off.",
+      fallback_delay_sec = 300,
+      grace_sec = 10,
+      queue = {
+        enabled = true,
+        max_retries = 3,
+      },
+      resume = {
+        enabled = false,
+        max_retries = 1,
+      },
+    },
+    orchestration = {
+      max_concurrent = 0,
+      max_concurrent_subagents = 0,
+      worker_defaults = {},
+      notifications = {
+        enabled = false,
+        max_round_trips = 8,
+        max_wakes = 50,
+      },
+    },
   },
   chat = {
-    window = {
-      position = "current",
-      width = 0.4,
-      border = "rounded",
+    context = {
+      auto_include = true,
+      cache_ttl_sec = 3300,
+      compaction = {
+        enabled = false,
+        threshold_tokens = 200000,
+      },
+      warn_tokens = 150000,
     },
-    save_location_type = "project",
-    save_dir = vim.fn.stdpath("data") .. "/vibing/chats",
+    daily_summary = {
+      file_finder_strategy = "auto",
+      search_dirs = {},
+    },
+    storage = {
+      location = "project",
+      path = "/Users/t002451/.local/share/nvim/vibing/chats",
+    },
+  },
+  integrations = {
+    dap = {
+      auto_analyze_on_breakpoint = false,
+      auto_analyze_on_error = true,
+      enabled = false,
+    },
+    nvim = {
+      enabled = true,
+      port = 9876,
+    },
+    plugins = {
+      extra = {},
+      project_dir = ".vibing/plugins",
+      self = true,
+    },
+  },
+  keymaps = {
+    add_context = "<C-a>",
+    cancel = "<C-c>",
+    cycle_enum_next = "]v",
+    cycle_enum_prev = "[v",
+    open_diff = "gd",
+    open_file = "gf",
+    open_url = "gx",
+    send = "<CR>",
+  },
+  permissions = {
+    allow = { "Read", "Edit", "Write", "Glob", "Grep", "Skill", "StructuredOutput" },
+    approval_wait_sec = 900,
+    ask = {},
+    default_deny_rules = true,
+    delegated_approval = false,
+    deny = { "Bash" },
+    mode = "acceptEdits",
+    rules = {},
   },
   ui = {
-    wrap = "on",
-    gradient = {
-      enabled = true,
-      colors = { "#cc3300", "#fffe00" },
-      interval = 100,
-      waiting_color = "#3fa9f5",
-    },
-    tool_result_display = "compact",
-    tool_markers = {
-      Task = "▶",
-      default = "⏺",
+    diff = {
+      fill_char = "╱",
+      highlights = true,
+      layout = "split",
     },
     fold = {
       enabled = true,
     },
-  },
-  keymaps = {
-    send = "<CR>",
-    cancel = "<C-c>",
-    add_context = "<C-a>",
-    open_diff = "gd",
-    open_file = "gf",
-    open_url = "gx",
-    cycle_enum_next = "]v",
-    cycle_enum_prev = "[v",
-  },
-  diff = {
-    tool = "auto",
-  },
-  permissions = {
-    mode = "acceptEdits",
-    allow = { "Read", "Edit", "Write", "Glob", "Grep", "Skill", "StructuredOutput" },
-    deny = { "Bash" },
-    ask = {},
-    rules = {},
-  },
-  mcp = {
-    enabled = true,
-    rpc_port = 9876,
-  },
-  language = nil,
-  daily_summary = {
-    save_dir = nil,
-    search_dirs = {},
-    file_finder_strategy = "auto",
+    gradient = {
+      colors = { "#cc3300", "#fffe00" },
+      enabled = true,
+      interval_ms = 100,
+      waiting_color = "#3fa9f5",
+    },
+    subagents = {
+      show_output = false,
+      show_prefix = false,
+    },
+    tools = {
+      markers = {
+        Task = "▶",
+        default = "⏺",
+      },
+      results = "compact",
+    },
+    usage = {
+      enabled = true,
+    },
+    window = {
+      border = "rounded",
+      position = "current",
+      width = 0.4,
+    },
+    wrap = "on",
   },
 })
 ```
 
-## Adapter
+## Chat Agent
 
 ```lua
-adapter = "claude",  -- Global backend adapter
-                     -- "claude":  Claude CLI      (claude -p --output-format stream-json)
-                     -- "codex":   Codex CLI       (codex exec --json)
-                     -- "copilot": Copilot CLI     (copilot -p --output-format json)
-                     -- "grok":    Grok Build CLI  (grok --single=... --output-format streaming-json)
-                     -- Overridable per-chat via the "agent" frontmatter field
+ai = { chat = { agent = "claude" } }, -- Global backend adapter
+-- "claude":  Claude CLI      (claude -p --output-format stream-json)
+-- "codex":   Codex CLI       (codex exec --json)
+-- "copilot": Copilot CLI     (copilot -p --output-format json)
+-- "grok":    Grok Build CLI  (grok --single=... --output-format streaming-json)
+-- Overridable per-chat via the "agent" frontmatter field
 ```
 
 Backends are not feature-equivalent. `AskUserQuestion`'s choice-list UI is available on Claude and
@@ -122,264 +233,177 @@ Codex 0.153 or later. Every
 backend honours `permissions.mode`, the `ask` list and the Tool Approval UI, but each one reaches
 them differently: `copilot` through a generated plugin loaded per run with `--plugin-dir` (written
 to `.vibing/copilot-plugin-<instance>/`; your own `~/.copilot/` is never modified), and `grok` only inside a
-git repository — see [Backends](#backends).
+git repository — see [Agent Options](#agent-options).
 
-## Backends
+## Agent Options
 
-Options that belong to one backend live under `backends.<id>`. The fields, their defaults and
+Options that belong to one backend live under `ai.agents.<id>`. The fields, their defaults and
 their validation are declared next to the backend itself (`config_fields` in
 `lua/vibing/core/constants/agents.lua`), so adding a backend adds its options here without a
 change to `config.lua`. Copilot declares none.
 
 ```lua
-backends = {
-  claude = {
-    process = "duplex",     -- "duplex" (default): one resident process per chat, fed each turn's
-                            --   prompt on its stdin. The CLI's startup -- plugin scan, MCP
-                            --   servers, CLAUDE.md, system prompt, git status block -- is paid
-                            --   once per chat instead of once per message.
-                            -- A resident process holds ~200MB, plus ~75MB for its MCP server,
-                            --   while idle. It is reclaimed after five idle minutes, when the
-                            --   chat buffer is unloaded, or when Neovim exits.
-                            -- "oneshot": one CLI process per turn, which exits when the turn
-                            --   ends. Nothing stays resident between messages.
-                            -- A chat's own `process:` frontmatter overrides this.
-                            -- See handbook/architecture/duplex-transport.md.
-    background_wait_sec = 3600,
-                            -- How long `claude -p` may sit idle waiting for a background subagent
-                            --   before it gives up. Passed as CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS;
-                            --   0 waits without a limit.
-                            -- The CLI's own default is 600, and past it Claude Code "stops
-                            --   whatever is still running and drops its partial result" -- silent
-                            --   loss of work that was already paid for. 600 suits a one-shot CI
-                            --   invocation; a chat that hands several subagents a reading task
-                            --   exceeds it routinely, so vibing.nvim widens it to an hour.
-                            -- A value already exported in the environment wins over this.
+ai = {
+  agents = {
+    claude = {
+      process = "duplex",
+      extensions = {
+        background_wait_sec = 3600,
+      },
+    },
+    codex = {
+      process = "oneshot",
+      extensions = {
+        approval_policy = "",
+        auto_approve = false,
+        auto_approve_ask = {},
+        profile_file = ".vibing/codex-permissions.toml",
+        allow_tracked_profile = false,
+        provider_notice = true,
+      },
+    },
   },
-  codex = {
-    profile_file = ".vibing/codex-permissions.toml",
-                            -- Project-local OS sandbox profile; false disables loading it.
-                            -- See "Project-local Codex permission profiles" below.
-    -- profile_content = [[...]],
-                            -- Optional initial TOML used only when the profile is first created.
-    allow_tracked_profile = false,
-                            -- Set true only after reviewing a Git-tracked profile.
-    provider_notice = true, -- Warn when a Codex lightweight call leaves your model_provider.
-                            -- On by default, unlike the token-spending toggles: it spends no
-                            -- tokens, and a warning about a silent change is useless if it is
-                            -- itself off by default. Turn it off to stop the `codex doctor --json`
-                            -- probe it needs.
-  },
-  grok = {
-    executable = "auto",    -- "auto": detect `grok` on PATH (default)
-                            -- or an explicit path, e.g. "~/.grok/bin/grok"
-  },
-}
+},
 ```
 
-Before these moved here they were `permissions.codex_profile_file`,
-`permissions.codex_profile_content`, `permissions.codex_allow_tracked_profile`,
-`agent.codex_provider_notice.enabled` and `grok.executable`. The old keys are still read, with a
-warning naming the new location, so an existing `setup()` keeps working.
+All agents accept `path`, `process`, `env`, `settings`, `mcp` and `extensions`.
+Omit `path` to locate the executable on PATH. An explicit missing path fails; it never falls
+back to another executable. Grok additionally verifies the official xAI Grok Build CLI.
+`process = "duplex"` is supported by Claude, Codex and Grok; other agents reject it.
+Only Claude supports `settings.sources` and `mcp.inherit_cli_servers`; explicitly configuring
+these on another agent is an error. Native flags belong in `extensions`.
 
-`backends.grok.executable` is only read when `adapter = "grok"` (or a chat's `agent: grok`
-frontmatter). A path that does not exist is **not** reset to `"auto"`: having asked for a specific
-binary, silently falling back to whatever `grok` is on PATH would be worse than failing.
-vibing.nvim also refuses a `grok` that is not the official xAI Grok Build CLI, since the name is
-shared with unrelated tools.
+Old option locations are rejected with a migration hint. See
+[the migration map](configuration-redesign.md#旧設定からの対応表).
 
 **Permission rules need a git repository.** Grok discovers the PreToolUse hook vibing.nvim installs
 (`<cwd>/.grok/hooks/`) only inside a git repo. Outside one the hook is written and never read, so
 `permissions.rules`, the `ask` list and the Tool Approval UI silently do nothing — vibing.nvim
-warns once per working directory when it detects this.
+warns once per working directory when it detects this. This applies to **both** transports: the
+resident one honours the same file, verified against grok 1.0.50.
 
-## Agent
+### Grok's resident transport
+
+`ai.agents.grok.process = "duplex"` runs `grok agent stdio`, which speaks Agent Client Protocol
+JSON-RPC instead of printing a stream and exiting. It is not only a performance setting — it is the
+only grok transport that reaches vibing.nvim's own MCP tools, and therefore the only one where the
+`nvim_*` tools, the choice-list prompt (`nvim_ask_user_question`), Code Tour and the orchestration
+tools work at all. `grok --single` rejects `--plugin-dir`, and the servers travel in the protocol's
+`session/new`.
+
+Three things differ from the other backends' duplex, all measured rather than assumed:
+
+- **A turn ends on the reply to its own `session/prompt`**, not on a notification. The correlation
+  is the JSON-RPC request id, so grok cannot suffer the "whose turn just ended?" ambiguity that
+  claude's resident transport needs a guard for.
+- **Cancelling retires the process.** After a `session/cancel` grok answers the in-flight prompt in
+  about 2ms, but a prompt sent 16ms later got no reply for 65 seconds, while one sent 8 seconds
+  later completed normally. Rather than sleeping for a length nothing measured, vibing.nvim spends
+  one respawn on the next message — which is what cancelling cost before this transport existed. A
+  turn grok cancelled for its _own_ reasons (a rejected approval) keeps its process, because that
+  case is measurably reusable.
+- **`--permission-mode` is not passed**, because `grok agent` does not accept it. The gate there is
+  the project hook plus grok's own `session/request_permission`, which vibing.nvim answers with the
+  single-use option — the hook has already decided by then, and when it denies, grok never asks.
+
+## AI and Automation
 
 ```lua
-agent = {
-  default_mode = "code",    -- Recorded in each new chat's frontmatter as `mode`
-                            -- ("code" | "plan" | "explore"). Currently metadata only —
-                            -- it does not change runtime behavior, and is not the same
-                            -- thing as permissions.mode = "plan" (which does). Anything
-                            -- outside the three values warns and falls back to "code";
-                            -- an invalid frontmatter `mode` warns and is dropped.
-
-  default_model = "sonnet", -- Default backend model id for new chats
-                            -- Claude examples: "sonnet", "opus", "haiku", "fable"
-                            -- Codex example: "gpt-5.6-terra"
-
-  utility_model = "sonnet", -- Model used for lightweight utility calls
-                            -- (AI title generation, chat summaries, daily summaries).
-                            -- Takes priority over the chat's model for those calls.
-                            -- Set to "haiku" for the cheapest option: it costs less but
-                            -- picks the wrong subject noticeably more often.
-
-  default_effort = "default",
-                            -- Reasoning effort recorded in new chat frontmatter.
-                            -- "default" | "low" | "medium" | "high" | "xhigh" | "max".
-                            -- Claude receives --effort, Codex receives a
-                            -- model_reasoning_effort config override, and Grok
-                            -- receives --effort. "default" passes no override,
-                            -- preserving the pre-effort CLI/model default.
-                            -- The selected model may support only a subset of the levels.
-
-  utility_effort = "low",  -- Effort for lightweight utility calls. Takes priority
-                            -- over the chat's effort, like utility_model above.
-
-  setting_sources = { "user", "project", "local" },
-                            -- Passed to the Claude CLI's --setting-sources flag.
-                            -- Drop "user" to skip loading your global CLAUDE.md on
-                            -- every chat, reducing fixed per-session token cost.
-                            -- Note: does not affect MCP server loading — that is
-                            -- agent.mcp.user_servers, right below.
-
-  mcp = {                   -- Which MCP servers an ordinary turn loads. Claude backend only.
-                            -- Not to be confused with the top-level `mcp` block, which
-                            -- configures vibing.nvim's own RPC server.
-    user_servers = true,    -- Keeps today's behaviour: every server in ~/.claude.json is
-                            -- loaded, because --setting-sources also brings in your own
-                            -- commands, skills and subagents. Set false to pass
-                            -- --strict-mcp-config and re-register only the MCP servers the
-                            -- plugins vibing.nvim loads declare — see "Excluding User MCP
-                            -- Servers".
+ai = {
+  chat = {
+    model = "sonnet",
+    effort = "default",
   },
-
-  git_instructions = false, -- Claude backend only. The CLI's own git status block (branch,
-                            -- `git status --short`, recent commits) plus its built-in commit/PR
-                            -- workflow instructions. Off because the CLI computes that block
-                            -- once per process and vibing.nvim starts one per turn — see
-                            -- "Token Usage" below. Set true to get the old behaviour back —
-                            -- which also overrides includeGitInstructions in your settings.json,
-                            -- since both values are written through the CLI's env var.
-                            -- An already-set CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS wins either way.
-
-  env = {},                 -- Claude backend only. Extra environment variables for the CLI child
-                            -- process, so the cost knobs Claude Code exposes only through the
-                            -- environment apply to vibing.nvim's calls and not to the `claude` in
-                            -- your terminal. Values are stringified. See "Claude CLI Environment
-                            -- Variables" below for what is worth setting; a chat's `env:`
-                            -- frontmatter overrides this per chat, CLAUDECODE and VIBING_* are
-                            -- refused, and lightweight utility calls get none of it.
-
-  subagent = {              -- What a subagent (Task/Agent tool) says in the chat
-    enabled = false,        -- Opt-in: passes --forward-subagent-text to the CLI so the
-                            -- subagent's own text reaches vibing.nvim at all. Without it
-                            -- the CLI forwards only the final tool result.
-    show_prefix = false,    -- Prefix each forwarded line with [<subagent_type>]
+  helpers = {
+    model = "haiku",
+    effort = "low",
   },
-
-  auto_resume_on_limit = {  -- Resume a chat automatically once a usage limit resets
-    enabled = false,        -- Opt-in: this spends tokens with nobody watching
-    max_retries = 1,        -- Auto-resumes allowed per limit hit
-    prompt = "Continue from where you left off.",
-    fallback_delay_sec = 300, -- Used when no reset timestamp was reported, which is every codex,
-                            -- copilot and grok limit
-    grace_sec = 10,         -- Added to the reset time to avoid firing on the boundary
-  },
-
-  chat_notifications = {    -- Tell a chat when a chat it messaged finishes responding
-    enabled = false,        -- Opt-in: the notification arrives as a new turn, so it spends
-                            -- tokens with nobody watching. This governs the WATCHDOG only —
-                            -- the volunteered "that chat stopped, go and read it" for a chat
-                            -- that stopped normally. A chat that stopped on a question, a
-                            -- tool-approval prompt, or an error is reported to whoever
-                            -- messaged it whatever this is set to: those three kill the turn,
-                            -- so the chat cannot report for itself, and it will not run again
-                            -- until someone acts on it
-    max_round_trips = 8,    -- Notifications delivered between one pair of chats without a
-                            -- manual <CR>. A→B→A→B is legitimate (B asks, A answers), so the
-                            -- chain is bounded by count rather than refused as a cycle. The
-                            -- pair is undirected, so a worker's question and the answer to it
-                            -- spend two of these, while an orchestrator waking on a worker's
-                            -- completion spends one
-    max_wakes = 50,         -- Whole-tree budget: notifications delivered without a manual <CR>,
-                            -- counted across the editor. A last resort for shapes that spread
-                            -- over many pairs and so stay under the limit above — an unbounded
-                            -- fan reaches it, and so does a long enough cycle (a 3-chat one is
-                            -- caught by max_round_trips first, at these defaults)
-  },
-
-  orchestration = {         -- How the chat network is allowed to run
-    max_concurrent = 0,     -- How many chats may be responding at once. 0 is no limit, which
-                            -- is the default: switching it on changes the order in which an
-                            -- existing orchestration's messages arrive. Only machine-started
-                            -- sends are held (nvim_chat_send_message and queued deliveries) —
-                            -- your own <CR> never waits. The total also counts subagents
-                            -- (Task/Agent tool calls) each responding chat has launched and not
-                            -- yet gotten a result for — five chats within this limit can still be
-                            -- twenty processes deep if each fans out four subagents (#701). The
-                            -- count does include chats you are
-                            -- driving by hand, so one long manual turn occupies a slot. A send
-                            -- that hits the limit is refused unless it passed queue_if_busy,
-                            -- in which case it is queued and delivered the moment one of the
-                            -- running chats finishes
-    max_concurrent_subagents = 0,
-                            -- How many subagents (Task/Agent tool calls) may be in flight at
-                            -- once, summed across every chat. 0 is no limit, which is the
-                            -- default. Unlike max_concurrent, which folds subagents into the
-                            -- same total as responding chats, this throttles subagent fan-out on
-                            -- its own — useful when chats themselves are not the bottleneck but
-                            -- an unbounded number of subagents is
-    delegated_approval = false,
-                            -- Let one chat answer another chat's tool-approval prompt. A worker
-                            -- that hits a tool in its `ask` list has its turn killed and the
-                            -- prompt drawn into its own buffer: it cannot continue and cannot
-                            -- report that it is stuck, so with this off you have to find each
-                            -- blocked worker and answer it yourself.
-                            --
-                            -- true: the orchestrator answers instead (nvim_chat_answer_approval),
-                            -- choosing among the same four options you would, for any tool.
-                            --
-                            -- "scoped": the same call, but an allow_once/allow_for_session answer
-                            -- only succeeds if the tool matches a pattern in the WORKER'S OWN
-                            -- `delegated_scope` frontmatter (declared via nvim_chat_create's
-                            -- delegated_scope argument, same syntax as permissions_allow, e.g.
-                            -- "Bash(npm:*)"). A denial always succeeds regardless of scope, since
-                            -- denying grants nothing.
-                            --
-                            -- Off by default either way, because this is an agent clearing
-                            -- another agent's permission gate — a change to the permission model,
-                            -- not a convenience. The answer is written into the worker's
-                            -- transcript as `## Request ... from <that chat>`, so who granted
-                            -- what is readable afterwards
-  },
-
-  token_usage = {           -- Per-turn token breakdown in the chat. Claude also warns when the
-                            -- conversation has grown; Codex's stream has no context-fill figure.
-                            -- On by default for the same reason as backends.codex.provider_notice: it
-                            -- spends no tokens, and hidden usage is exactly what it prevents.
-    enabled = true,
-    warn_context = 150000,  -- Claude: at or above this, every turn's section gains a warning
-                            -- under the metrics. Written into the buffer rather than notified,
-                            -- and repeated each turn, so it is present when the cost is read.
-                            -- 0 keeps the metrics and never warns. Not applied to Codex.
-
-    auto_compact = {        -- Compact a grown chat using the active backend's own mechanism.
-                            -- Claude inserts `/compact`; Codex configures its native threshold.
-                            -- Off by default. See "Automatic compaction" below.
-      enabled = false,
-      at = 200000,          -- Context size at which to compact. On Claude, this is checked
-                            -- before the next manual send. On Codex it is passed as
-                            -- model_auto_compact_token_limit. 0 disables the override.
-      focus = nil,          -- Appended as `/compact <focus>` — what the summary should keep,
-                            -- e.g. "the open tasks and the files changed so far". No default,
-                            -- because a wrong one would quietly shape every summary.
-                            -- Claude only; Codex uses only enabled and at.
+  agents = {
+    claude = {
+      settings = {
+        sources = { "user", "project", "local" },
+      },
+      mcp = {
+        inherit_cli_servers = true,
+      },
+      extensions = {
+        git_instructions = false,
+      },
+      env = {},
     },
   },
-
-  plugins = {               -- Claude Code plugins loaded for the session with --plugin-dir
-                            -- (claude) or as -c overrides (codex). See "Plugin Directories".
-    self = true,            -- vibing.nvim's own claude-plugin/ — the nvim_* MCP tools and
-                            -- every bundled skill. Turning this off removes all of them;
-                            -- it is a debugging escape hatch, not a normal setting.
-    project_dir = ".vibing/plugins",
-                            -- Directories under this (relative to the project) are each
-                            -- loaded as a plugin. false disables the whole convention.
-    extra = {},             -- Additional paths: absolute, ~-relative, or relative to the
-                            -- request's working directory.
+},
+ui = {
+  subagents = {
+    show_output = false,
+    show_prefix = false,
   },
-}
+  usage = {
+    enabled = true,
+  },
+},
+automation = {
+  limits = {
+    resume = {
+      enabled = false,
+      max_retries = 1,
+    },
+    continue_prompt = "Continue from where you left off.",
+    fallback_delay_sec = 300,
+    grace_sec = 10,
+  },
+  orchestration = {
+    notifications = { -- Tell a chat when a chat it messaged finishes responding
+      enabled = false, -- Opt-in: the notification arrives as a new turn, so it spends
+      -- tokens with nobody watching. This governs the WATCHDOG only —
+      -- the volunteered "that chat stopped, go and read it" for a chat
+      -- that stopped normally. A chat that stopped on a question, a
+      -- tool-approval prompt, or an error is reported to whoever
+      -- messaged it whatever this is set to: those three kill the turn,
+      -- so the chat cannot report for itself, and it will not run again
+      -- until someone acts on it
+      max_round_trips = 8, -- Notifications delivered between one pair of chats without a
+      -- manual <CR>. A→B→A→B is legitimate (B asks, A answers), so the
+      -- chain is bounded by count rather than refused as a cycle. The
+      -- pair is undirected, so a worker's question and the answer to it
+      -- spend two of these, while an orchestrator waking on a worker's
+      -- completion spends one
+      max_wakes = 50, -- Whole-tree budget: notifications delivered without a manual <CR>,
+      -- counted across the editor. A last resort for shapes that spread
+      -- over many pairs and so stay under the limit above — an unbounded
+      -- fan reaches it, and so does a long enough cycle (a 3-chat one is
+      -- caught by max_round_trips first, at these defaults)
+    },
+    max_concurrent = 0,
+    max_concurrent_subagents = 0,
+  },
+},
+permissions = {
+  delegated_approval = false,
+},
+chat = {
+  context = {
+    warn_tokens = 150000,
+    compaction = {
+      enabled = false,
+      threshold_tokens = 200000,
+      focus = nil,
+    },
+  },
+},
+integrations = {
+  plugins = { -- Claude Code plugins loaded for the session with --plugin-dir
+    -- (claude) or as -c overrides (codex). See "Plugin Directories".
+    self = true, -- vibing.nvim's own claude-plugin/ — the nvim_* MCP tools and
+    -- every bundled skill. Turning this off removes all of them;
+    -- it is a debugging escape hatch, not a normal setting.
+    project_dir = ".vibing/plugins",
+    -- Directories under this (relative to the project) are each
+    -- loaded as a plugin. false disables the whole convention.
+    extra = {}, -- Additional paths: absolute, ~-relative, or relative to the
+    -- request's working directory.
+  },
+},
 ```
 
 ### Plugin Directories
@@ -467,11 +491,19 @@ skipped with a warning. One more cost: a `developer_instructions` you set in cod
 
 ### Excluding User MCP Servers
 
-`agent.mcp.user_servers = false` keeps an ordinary turn down to the MCP servers vibing.nvim
+`ai.agents.claude.mcp.inherit_cli_servers = false` keeps an ordinary turn down to the MCP servers vibing.nvim
 brought itself:
 
 ```lua
-agent = { mcp = { user_servers = false } },
+ai = {
+  agents = {
+    claude = {
+      mcp = {
+        inherit_cli_servers = false,
+      },
+    },
+  },
+},
 ```
 
 The reason it is not the default, and the reason it is one switch rather than a per-server list,
@@ -537,7 +569,7 @@ its 10-second timeout first.
 
 ### Token Usage
 
-When `token_usage.enabled` is true, every Claude and Codex turn ends with a section naming what
+When `ui.usage.enabled` is true, every Claude and Codex turn ends with a section naming what
 it cost, alongside
 `### Modified Files`. Claude exposes the request-level split:
 
@@ -572,10 +604,10 @@ the line is labelled `session input ...` and says that per-turn deltas begin wit
 
 Codex's JSONL does not expose the latest request's prompt size or the current context-window fill,
 so its section cannot honestly show Claude's `context`, request count, prefix-rewrite diagnosis, or
-`warn_context` warning. The input/cached/output/reasoning totals remain exact. Backends that expose
+`chat.context.warn_tokens` warning. The input/cached/output/reasoning totals remain exact. Backends that expose
 neither usage shape leave the section absent rather than printing zeros.
 
-For Claude, **`warn_context` is where a chat is worth splitting**, and the default comes from
+For Claude, **`chat.context.warn_tokens` is where a chat is worth splitting**, and the default comes from
 measurement rather than taste. Over 30 days of session logs, the rate at which a request fails to
 reuse the cached prefix — and then re-writes a byte-identical prefix at cache-creation price,
 12.5× the read price — tracks context size directly:
@@ -646,7 +678,7 @@ so anything the CLI computes _at process start_ and puts there is re-computed on
 vibing.nvim restarts the CLI per turn, where an interactive session or Claude Code on the web keeps
 one process for the whole conversation. If that value changes, the miss is total: floor plus the
 entire history, at creation price. The known case is the CLI's git status block (branch,
-`git status --short`, recent commits), which is why `agent.git_instructions` defaults to `false`
+`git status --short`, recent commits), which is why `ai.agents.claude.extensions.git_instructions` defaults to `false`
 (#681).
 
 Measured on a 128k-token session, comparing the turn right after a one-line edit to `README.md`:
@@ -690,7 +722,7 @@ knew to compare them. A turn counts as a rewrite when its **first** request writ
 its prompt. The first request is the one that either found the conversation's prefix or did not;
 the turn's summed `new` cannot answer it, because every later request writes its own increment and
 a turn with enough tool calls therefore out-writes its own context while hitting the cache every
-time. The half is not configurable, unlike `warn_context`: it is a claim about what happened rather
+time. The half is not configurable, unlike `chat.context.warn_tokens`: it is a claim about what happened rather
 than a taste about how noisy to be, and an ordinary turn appending to a warm prefix writes a few
 percent.
 
@@ -743,7 +775,7 @@ answered promptly still has its cache, and a small chat left overnight rewrites 
 The default is 3300 seconds (55 minutes) rather than a full hour because the TTL is not reported
 anywhere in the response and can only be inferred from the clock, so the check leans towards
 catching a send that lands just inside it. Set `cache_ttl_sec = 0` to turn the prompt off; a
-`warn_context = 0` turns it off too, since that already means "show the metrics, skip the
+`chat.context.warn_tokens = 0` turns it off too, since that already means "show the metrics, skip the
 advice".
 
 The elapsed time is measured from the **`## Assistant` header of the last completed turn**, which
@@ -785,26 +817,28 @@ floor ~112k (322 tools, 23 MCP servers)
 ```
 
 The two counts come from the CLI's `init` event, which is the only thing that states them. In this
-repository the floor is about 110k — so `warn_context = 150000` leaves only ~40k of conversation
+repository the floor is about 110k — so `chat.context.warn_tokens = 150000` leaves only ~40k of conversation
 before the warning appears. In a project with a small `CLAUDE.md` the same threshold is a long way
 up. If the warning fires constantly, that is what to raise it against.
 
-`warn_context = 0` is the middle setting: the metrics stay, the warning never appears. Use it if
-the numbers are what you wanted and the nudge is not. `enabled = false` removes the section
-entirely.
+`chat.context.warn_tokens = 0` is the middle setting: the metrics stay, the warning never appears. Use it if
+the numbers are what you wanted and the nudge is not. `ui.usage.enabled = false` hides the metrics;
+context warnings remain independently controlled.
 
 ### Automatic compaction
 
-`agent.token_usage.auto_compact` uses one setting for the two backends that expose compaction:
+`chat.context.compaction` uses one setting for the two backends that expose compaction:
 
 ```lua
-token_usage = {
-  auto_compact = {
-    enabled = true,
-    at = 200000,
-    focus = "the open tasks and the files changed so far",
+chat = {
+  context = {
+    compaction = {
+      enabled = true,
+      threshold_tokens = 200000,
+      focus = "the open tasks and the files changed so far",
+    },
   },
-}
+},
 ```
 
 On **Claude**, the compaction is inserted before the next send, not right after the turn that
@@ -827,23 +861,23 @@ whether the sends are yours or deliveries — so a compaction that fails to shri
 cost every subsequent turn twice.
 
 On **Codex**, every ordinary `codex exec` invocation, both new and resumed, gets
-`-c model_auto_compact_token_limit=<at>`. Codex tracks its own context and compacts inside the
+`-c model_auto_compact_token_limit=<threshold_tokens>`. Codex tracks its own context and compacts inside the
 normal turn when that threshold is reached. There is no preliminary prompt turn, and the trigger
 still works even though Codex's JSONL stream does not expose the current context figure needed for
-`warn_context`. Lightweight utility calls such as title generation and `/summarize` do not inherit
+`chat.context.warn_tokens`. Lightweight utility calls such as title generation and `/summarize` do not inherit
 the chat threshold.
 
 `enabled = false` means vibing.nvim supplies no override. It does not disable either CLI's own
 default near-limit compaction. `at <= 0` likewise disables vibing.nvim's trigger/override.
 
-For Claude, `at` sits above `warn_context` deliberately. The warning is where you get to choose
+For Claude, `threshold_tokens` sits above `chat.context.warn_tokens` deliberately. The warning is where you get to choose
 between `/compact`, `:VibingChatHandoff` and handing the exploring to a subagent; a threshold that
 fired at the same place would take that choice away at the moment it is being offered. Codex does
 not currently produce that warning because its stream does not report current context fill.
 
 `focus` is Claude-only and is worth setting there. What the summary keeps decides how well every
 later turn goes, and the CLI's own default summary is general. There is no default here because a
-wrong one would shape every summary without ever announcing itself. Codex uses `enabled` and `at`;
+wrong one would shape every summary without ever announcing itself. Codex uses `enabled` and `threshold_tokens`;
 vibing.nvim does not translate `focus` into a Codex compaction prompt.
 
 Claude compares against the same figure the cache prompt above uses: the marker on the **last
@@ -887,31 +921,35 @@ way in ([env vars](https://code.claude.com/docs/en/env-vars.md),
 [costs](https://code.claude.com/docs/en/costs.md#reduce-token-usage)). `vim.env.X = ...` in your
 `init.lua` reaches the CLI child, because the spawn inherits `vim.fn.environ()`, but it also
 reaches every `claude` you start from a terminal in that Neovim, and it cannot differ per chat.
-`agent.env` is the scoped version:
+`ai.agents.claude.env` is the scoped version:
 
 ```lua
-agent = {
-  env = {
-    CLAUDE_AUTOCOMPACT_PCT_OVERRIDE = "20",
-    BASH_MAX_OUTPUT_LENGTH = "10000",
+ai = {
+  agents = {
+    claude = {
+      env = {
+        CLAUDE_AUTOCOMPACT_PCT_OVERRIDE = "20",
+        BASH_MAX_OUTPUT_LENGTH = "10000",
+      },
+    },
   },
 },
 ```
 
-| Variable                          | Effect                                                                                          |
-| --------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` | Percentage of the context window at which the CLI auto-compacts. See below                      |
-| `BASH_MAX_OUTPUT_LENGTH`          | Cap on a `Bash` result, in characters (default 30,000)                                          |
-| `CLAUDE_CODE_SUBAGENT_MODEL`      | Model a `Task`/`Agent` call runs on, e.g. `haiku` for exploration                               |
-| `CLAUDE_CODE_PROMPT_CACHE_TTL`    | Prompt cache TTL                                                                                |
-| `MAX_THINKING_TOKENS`             | Thinking budget on older models. Ignored by adaptive-thinking ones — use `agent.default_effort` |
+| Variable                          | Effect                                                                                    |
+| --------------------------------- | ----------------------------------------------------------------------------------------- |
+| `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` | Percentage of the context window at which the CLI auto-compacts. See below                |
+| `BASH_MAX_OUTPUT_LENGTH`          | Cap on a `Bash` result, in characters (default 30,000)                                    |
+| `CLAUDE_CODE_SUBAGENT_MODEL`      | Model a `Task`/`Agent` call runs on, e.g. `haiku` for exploration                         |
+| `CLAUDE_CODE_PROMPT_CACHE_TTL`    | Prompt cache TTL                                                                          |
+| `MAX_THINKING_TOKENS`             | Thinking budget on older models. Ignored by adaptive-thinking ones — use `ai.chat.effort` |
 
 **`CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` is a percentage, so what it means depends on the model.** On a
 1M-context model (`[1m]`) the default fires at roughly 930k tokens (#669), which is far past the
 point where a turn is expensive; `20` brings that to ~200k. On a 200k model the same `20` fires at
-40k, which is almost certainly too eager. Pick the number from the window your `default_model`
+40k, which is almost certainly too eager. Pick the number from the window your `ai.chat.model`
 actually has, and re-check it when you change models. vibing.nvim's own
-[`agent.token_usage.auto_compact`](#automatic-compaction) is the backend-independent alternative:
+[`chat.context.compaction`](#automatic-compaction) is the backend-independent alternative:
 it is an absolute token count rather than a percentage, and it compacts between turns instead of
 mid-turn.
 
@@ -929,9 +967,9 @@ Three rules apply to whatever you put here:
 - **Lightweight utility calls get none of it** (title generation, `/summarize`, the daily summary).
   They run with no tools and no resumed session, so none of these variables has anything to act on.
 
-A variable already present in Neovim's own environment is overwritten by `agent.env` — declaring it
+A variable already present in Neovim's own environment is overwritten by `ai.agents.claude.env` — declaring it
 here is the more specific statement. `CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS` is worth naming
-because it also has an option of its own: `agent.env` is merged first and `agent.git_instructions`
+because it also has an option of its own: `ai.agents.claude.env` is merged first and `ai.agents.claude.extensions.git_instructions`
 only fills a gap, so writing the variable here wins over that option.
 
 Claude backend only. Codex, Copilot and Grok inherit Neovim's environment as before and read none
@@ -941,7 +979,7 @@ of these names.
 
 By default the Claude CLI forwards nothing a subagent says — a `Task`/`Agent` call shows up in
 the chat as its header and its final result, with everything in between invisible. Set
-`agent.subagent.enabled = true` to pass `--forward-subagent-text`, and the subagent's text is
+`ui.subagents.show_output = true` to pass `--forward-subagent-text`, and the subagent's text is
 rendered under the tool header, indented behind a `│` rail:
 
 ```text
@@ -971,11 +1009,13 @@ by itself.
 
 ```lua
 require("vibing").setup({
-  agent = {
-    auto_resume_on_limit = {
-      enabled = true,
-      max_retries = 1,
-      prompt = "Continue from where you left off.",
+  automation = {
+    limits = {
+      resume = {
+        enabled = true,
+        max_retries = 1,
+      },
+      continue_prompt = "Continue from where you left off.",
     },
   },
 })
@@ -1020,11 +1060,13 @@ three ways a scheduled request gets created, described below, are specifically a
 
 ```lua
 require("vibing").setup({
-  agent = {
-    scheduled_requests = {
-      enabled = true,    -- Opt-out, not opt-in: a request during an active limit would
-                         -- fail anyway, so scheduling it instead is the safer default
-      max_retries = 3,   -- Re-schedules allowed if a scheduled send is rejected again
+  automation = {
+    limits = {
+      queue = {
+        enabled = true, -- Opt-out, not opt-in: a request during an active limit would
+        -- fail anyway, so scheduling it instead is the safer default
+        max_retries = 3, -- Re-schedules allowed if a scheduled send is rejected again
+      },
     },
   },
 })
@@ -1036,7 +1078,7 @@ recorded limit at all when `when` is given — only the no-argument form reads
 active, unless the message is a slash command or a reply to a pending approval prompt (those
 always send immediately); and a turn the limit actually rejected, whose message is written back
 into a fresh unsent `## User` section instead of being discarded. `:VibingSchedule` always works;
-the other two are governed by `scheduled_requests.enabled`.
+the other two are governed by `automation.limits.queue.enabled`.
 
 **A rejected turn that got somewhere parks a continuation, not its own message.** The first two
 routes park a message that never ran, so the message is what should be sent. The third does not:
@@ -1044,13 +1086,13 @@ a limit can land part-way through a turn, after the model has already answered, 
 run tools. Both that work and the request that asked for it are in the resumed session's
 transcript, so re-sending the same text hands the model the same request a second time and invites
 it to redo what it already did. When the rejected turn produced any output, vibing.nvim therefore
-parks `auto_resume_on_limit.prompt` (default `"Continue from where you left off."`) instead — the
+parks `automation.limits.continue_prompt` (default `"Continue from where you left off."`) instead — the
 same sentence auto-resume uses, since it means the same thing. A turn the limit rejected at the
 door, with nothing streamed and no file touched, still parks its own message unchanged. The
 sentence lands in the unsent `## User` section like any other scheduled body, so it is visible and
 editable while parked; the original request stays in the transcript above it. Note that
-`auto_resume_on_limit.prompt` is read for its value alone — this works whether or not
-`auto_resume_on_limit.enabled` is set.
+`automation.limits.continue_prompt` is read for its value alone — this works whether or not
+`automation.limits.resume.enabled` is set.
 
 **Where the body lives.** The scheduled message is never copied into the pending-resume store — it
 stays in the chat buffer's unsent `## User` section, visible and editable while parked. Deleting
@@ -1109,36 +1151,35 @@ it.
 ## Chat
 
 ```lua
-chat = {
+ui = {
   window = {
-    position = "current",  -- "current": open in current window
-                           -- "right" / "left": vertical split
-                           -- "top" / "bottom": horizontal split
-                           -- "back": background buffer only (no window)
-                           -- "float": floating window
+    position = "current", -- "current": open in current window
+    -- "right" / "left": vertical split
+    -- "top" / "bottom": horizontal split
+    -- "back": background buffer only (no window)
+    -- "float": floating window
 
-    width = 0.4,           -- Applied to right/left splits and floating windows.
-                           -- Below 1 it is a screen-width ratio; 1 or above is an
-                           -- absolute column count (e.g. width = 80). Note the
-                           -- boundary: width = 1 means one column, not 100%.
+    width = 0.4, -- Applied to right/left splits and floating windows.
+    -- Below 1 it is a screen-width ratio; 1 or above is an
+    -- absolute column count (e.g. width = 80). Note the
+    -- boundary: width = 1 means one column, not 100%.
 
     -- height is not in the defaults on purpose: the fallback differs per position
     -- (0.4 for top/bottom splits, 0.8 for floats), and a value here would apply to
     -- both. Set it to override either.
     --   height = 0.5,     -- Same rule as width: ratio below 1, absolute rows at 1
-                           -- or above. Applies to top/bottom splits and floats.
+    -- or above. Applies to top/bottom splits and floats.
 
-    border = "rounded",    -- Border for position = "float" only (any nvim_open_win
-                           -- border spec). Split windows have no border.
+    border = "rounded", -- Border for position = "float" only (any nvim_open_win
+    -- border style). Split windows have no border.
   },
-
-  save_location_type = "project",  -- Chat file save location
-                                   -- "project": .vibing/chat/ in project root
-                                   -- "user": stdpath("data") .. "/vibing/chats"
-                                   -- "custom": use save_dir
-
-  save_dir = vim.fn.stdpath("data") .. "/vibing/chats",  -- Used when save_location_type = "custom"
-}
+},
+chat = {
+  storage = {
+    location = "project",
+    path = vim.fn.stdpath("data") .. "/vibing/chats",
+  },
+},
 ```
 
 Chat files are created as Markdown (`chat-<timestamp>-....md`) inside the save location.
@@ -1147,38 +1188,30 @@ Chat files are created as Markdown (`chat-<timestamp>-....md`) inside the save l
 
 ```lua
 ui = {
-  wrap = "on",  -- "nvim": respect Neovim defaults (don't touch wrap settings)
-                -- "on": enable wrap + linebreak (recommended for chat readability)
-                -- "off": disable line wrapping
+  wrap = "on",
+  tools = {
+    results = "compact",
+    markers = {
+      Task = "▶", -- Marker for the Task tool
+      default = "⏺", -- Default marker for all other tools
 
-  tool_result_display = "compact",  -- "none": don't show tool results
-                                    -- "compact": first 100 characters only (default)
-                                    -- "full": complete tool output
-
+      -- Per-tool string markers (optional):
+      -- Read = "📄",
+      -- Edit = "✏️",
+      -- Bash = "💻",
+    },
+  },
   gradient = {
-    enabled = true,   -- Animate line numbers while the AI is responding
-    colors = { "#cc3300", "#fffe00" },  -- Exactly 2 hex colors: { start, end }
-    interval = 100,   -- Animation update interval (ms)
-    waiting_color = "#3fa9f5",  -- While a turn is held open waiting for you (a tool approval
-                                -- or AskUserQuestion), the animation stops and every line
-                                -- number turns this color instead
+    enabled = true,
+    colors = { "#cc3300", "#fffe00" },
+    interval_ms = 100,
+    waiting_color = "#3fa9f5",
   },
-
-  tool_markers = {
-    Task = "▶",      -- Marker for the Task tool
-    default = "⏺",   -- Default marker for all other tools
-
-    -- Per-tool string markers (optional):
-    -- Read = "📄",
-    -- Edit = "✏️",
-    -- Bash = "💻",
-  },
-
   fold = {
-    enabled = true,  -- Chat windows open with rendered tool calls and reasoning folded,
-                     -- so what is on screen is the answer. `zo` opens one, `zR` opens all.
+    enabled = true, -- Chat windows open with rendered tool calls and reasoning folded,
+    -- so what is on screen is the answer. `zo` opens one, `zR` opens all.
   },
-}
+},
 ```
 
 ### Folding
@@ -1271,7 +1304,7 @@ none of those nodes and there would be nothing to fold. And it is only ever writ
 showing a chat: Neovim keeps window-local options per window+buffer pair, so your other buffers in
 that window keep their own fold settings.
 
-Every `tool_markers` entry is a plain string. Markers are resolved from the tool name alone, so
+Every `ui.tools.markers` entry is a plain string. Markers are resolved from the tool name alone, so
 they cannot vary with a tool's arguments (there is no way to give `Bash` one marker for `npm` and
 another for `git`). The legacy `Bash = { default = "💻" }` table form is still accepted — it is
 flattened to the `default` string with a warning — but should be replaced with `Bash = "💻"`.
@@ -1282,15 +1315,15 @@ Chat-buffer key bindings (all eight are configurable; `q` to close the window is
 
 ```lua
 keymaps = {
-  send = "<CR>",             -- Send message
-  cancel = "<C-c>",          -- Cancel current request
-  add_context = "<C-a>",     -- Add file to context
-  open_diff = "gd",          -- Open diff viewer on file paths
-  open_file = "gf",          -- Open file on file paths
-  open_url = "gx",           -- Open URL in browser, or image/video path in the default app
-  cycle_enum_next = "]v",    -- Next value for the frontmatter field under the cursor
-  cycle_enum_prev = "[v",    -- Previous value for that field
-}
+  send = "<CR>", -- Send message
+  cancel = "<C-c>", -- Cancel current request
+  add_context = "<C-a>", -- Add file to context
+  open_diff = "gd", -- Open diff viewer on file paths
+  open_file = "gf", -- Open file on file paths
+  open_url = "gx", -- Open URL in browser, or image/video path in the default app
+  cycle_enum_next = "]v", -- Next value for the frontmatter field under the cursor
+  cycle_enum_prev = "[v", -- Previous value for that field
+},
 ```
 
 `]v` / `[v` walk the candidate list completion would offer for `agent`, `model`, `effort`,
@@ -1351,19 +1384,13 @@ mechanism, so a Bash-driven change may be missing from that turn's diff even in 
 When the fallback has nothing either, vibing.nvim says so rather than showing an empty result.
 
 ```lua
-diff = {
-  tool = "auto",    -- "auto" / "git" — currently the same thing. Kept as a hook for
-                    -- future backends; `gd` shows the diff against HEAD when a turn
-                    -- has no patch file (e.g. an old chat reopened), and says so.
-  layout = "split", -- "split" / "unified" — which view the float opens on.
-                    -- `s` toggles it; the choice sticks until Neovim exits.
-  highlights = true,-- Colour the float's diff panes instead of using the
-                    -- colourscheme's DiffAdd/DiffChange/DiffText. `false` also
-                    -- puts the unified view back to plain `filetype=diff` text.
-  fill_char = "╱",  -- What fills deleted lines in the float's diff panes.
-                    -- "" turns it off; anything longer than one character is
-                    -- refused with a warning ('fillchars' would reject it).
-}
+ui = {
+  diff = {
+    layout = "split",
+    highlights = true,
+    fill_char = "╱",
+  },
+},
 ```
 
 ### How `gd` renders a patch
@@ -1460,45 +1487,44 @@ be wrong), and the pre-`base:` header patches the removed mote integration wrote
 > `style = "number"` and a sign column already taken by gitsigns, a large change was hard to read),
 > and mini.diff is no longer a dependency, optional or otherwise. A leftover `diff.viewer` in
 > `setup()` warns once and is ignored.
->
-> **The opt-in `mote` backend has been removed**, along with `diff.mote`, `diff.tool = "mote"`,
-> the `mote_dirs` / `mote_cwd` frontmatter keys, `:VibingMoteDir` and `:VibingCleanMote`. The
-> snapshot path above covers what mote was there for (Bash-driven changes) without an external
-> binary or any setup step. Nothing stops working if you leave the old settings in place — each
-> warns once and is ignored, and `diff.tool = "mote"` behaves as `"git"` — so you can delete them
-> whenever you get to it.
 
 ## Permissions
 
 ```lua
 permissions = {
-  mode = "acceptEdits",  -- Permission mode
-                         -- "default": ask for confirmation each time
-                         -- "acceptEdits": auto-approve Edit/Write (recommended)
-                         -- "plan": forwarded to the CLI as --permission-mode plan
-                         --         (read-only planning enforced by the CLI itself)
-                         -- "auto": approve everything not matched by the deny
-                         --         list / deny rules
-                         -- "dontAsk": deny instead of prompting
-                         -- "bypassPermissions": auto-approve all (use with caution)
+  mode = "acceptEdits", -- Permission mode
+  -- "default": ask for confirmation each time
+  -- "acceptEdits": auto-approve Edit/Write (recommended)
+  -- "plan": forwarded to the CLI as --permission-mode plan
+  --         (read-only planning enforced by the CLI itself)
+  -- "auto": approve everything not matched by the deny
+  --         list / deny rules
+  -- "dontAsk": deny instead of prompting
+  -- "bypassPermissions": auto-approve all (use with caution)
 
-  allow = {              -- Tools to allow (empty = allow all except denied)
-    "Read", "Edit", "Write", "Glob", "Grep", "Skill", "StructuredOutput",
-                         -- Add "Task" (or "Agent" — same launcher, newer CLI name) to let a chat
-                         -- spawn subagents. Left out by default: a subagent runs a whole nested
-                         -- session with these same permissions, unattended.
+  allow = { -- Tools to allow (empty = allow all except denied)
+    "Read",
+    "Edit",
+    "Write",
+    "Glob",
+    "Grep",
+    "Skill",
+    "StructuredOutput",
+    -- Add "Task" (or "Agent" — same launcher, newer CLI name) to let a chat
+    -- spawn subagents. Left out by default: a subagent runs a whole nested
+    -- session with these same permissions, unattended.
   },
 
-  deny = { "Bash" },     -- Tools to deny (takes precedence over allow)
+  deny = { "Bash" }, -- Tools to deny (takes precedence over allow)
 
-  ask = {},              -- Tools requiring confirmation before each use
+  ask = {}, -- Tools requiring confirmation before each use
 
-  rules = {},            -- Granular rules — see next section
-}
+  rules = {}, -- Granular rules — see next section
+},
 ```
 
-The Codex sandbox profile options that used to sit here are `backends.codex.*` — see
-[Backends](#backends).
+The Codex sandbox profile options that used to sit here are `ai.agents.codex.extensions.*` — see
+[Agent Options](#agent-options).
 
 Valid tool names: `Read`, `Edit`, `Write`, `Bash`, `Glob`, `Grep`, `WebSearch`, `WebFetch`,
 `Skill`, `StructuredOutput`. Bash command patterns (`Bash(git:*)`) and MCP tool names
@@ -1514,7 +1540,7 @@ Two built-in behaviors to be aware of:
 
 Codex normally discovers project configuration only at `.codex/config.toml`; it cannot be pointed
 at an arbitrary config file. vibing.nvim bridges that gap for permissions: when
-`backends.codex.profile_file` exists, it reads the file and passes its effective values as
+`ai.agents.codex.extensions.profile_file` exists, it reads the file and passes its effective values as
 per-run `-c` overrides to both a new `codex exec` session and every `resume`. The default path is
 `.vibing/codex-permissions.toml`, relative to the request working directory. vibing.nvim creates
 that file when it initializes the project's `.vibing/` directory, and also backfills it when the
@@ -1542,16 +1568,20 @@ enabled = true
 ```
 
 Network access is enabled in the generated default. To customize the complete initial profile,
-set `backends.codex.profile_content` to a TOML string. It is consulted only when the file is
+set `ai.agents.codex.extensions.profile_content` to a TOML string. It is consulted only when the file is
 created; existing profiles are never overwritten:
 
 ```lua
 require("vibing").setup({
-  backends = {
-    codex = {
-      profile_content = [[
+  ai = {
+    agents = {
+      codex = {
+        extensions = {
+          profile_content = [[
 default_permissions = ":read-only"
 ]],
+        },
+      },
     },
   },
 })
@@ -1561,7 +1591,7 @@ The loader accepts only `default_permissions`, `[permissions.*]`, and
 `features.network_proxy`. It rejects `:danger-full-access`; select `bypassPermissions` explicitly
 when full access is genuinely intended. Deleting the generated file causes it to be recreated on
 the next project initialization; leave it empty to preserve the previous Codex behavior
-(`workspace-write` for a new ordinary session), or set `backends.codex.profile_file = false` to disable
+(`workspace-write` for a new ordinary session), or set `ai.agents.codex.extensions.profile_file = false` to disable
 loading it. `plan` and lightweight utility calls stay read-only, while explicit
 `bypassPermissions` still wins over the project profile.
 
@@ -1586,7 +1616,7 @@ Two boundaries remain separate:
 This file can grant local filesystem and network access. `.vibing/` is normally git-ignored, and
 locally generated, untracked profiles load automatically. A repository can nevertheless force-add
 an ignored file, so Git-tracked profiles fail closed by default. After reviewing one, set
-`backends.codex.allow_tracked_profile = true` to trust it explicitly.
+`ai.agents.codex.extensions.allow_tracked_profile = true` to trust it explicitly.
 
 ## Granular Permission Rules
 
@@ -1616,7 +1646,7 @@ permissions = {
     -- Restrict web fetches to specific domains
     { tools = { "WebFetch" }, domains = { "github.com", "*.npmjs.com" }, action = "allow" },
   },
-}
+},
 ```
 
 Field reference:
@@ -1647,8 +1677,8 @@ vibing.nvim ships deny rules for a small set of destructive Bash commands, enabl
 
 ```lua
 permissions = {
-  default_deny_rules = true,  -- set to false to ship nothing and rely on your own rules
-}
+  default_deny_rules = true, -- set to false to ship nothing and rely on your own rules
+},
 ```
 
 | Blocked                              | Examples                                                      |
@@ -1689,8 +1719,8 @@ primary one.
 
 ```lua
 permissions = {
-  approval_wait_sec = 900,  -- 15 minutes; values below 30 are raised to 30
-}
+  approval_wait_sec = 900, -- 15 minutes; values below 30 are raised to 30
+},
 ```
 
 One number, and **the same one for every backend**. Three deadlines are derived from it
@@ -1708,7 +1738,7 @@ ignored and **the tool runs with no verdict at all**. Everything above exists so
 never the one to give up. `handbook/architecture/approval-without-kill.md` has the measurements.
 
 Raising this is not free: a wait that crosses the 55/60-minute prompt-cache TTL re-pays the whole
-prefix on resume, and a resident process (`backends.claude.process = "duplex"`) holds ~200MB of RSS
+prefix on resume, and a resident process (`ai.agents.claude.process = "duplex"`) holds ~200MB of RSS
 for the duration. 15 minutes covers "the user stepped away and is coming back"; longer absences are
 what the fallback is for.
 
@@ -1717,16 +1747,148 @@ The script's deadline reaches it in the CLI child's environment, alongside the R
 takes effect on the next process rather than the next turn — reopen the chat, or let the five
 minute idle timer reclaim it. Oneshot chats (the default) pick it up on the next message.
 
+### Codex's own approval requests
+
+Codex has a second approval channel of its own, separate from vibing.nvim's PreToolUse gate. The
+hook decides _may this tool run at all_; Codex's own request asks _may this call leave Codex's
+sandbox_ — which is the only way to run something the sandbox blocks (Chrome via Mach IPC,
+`xcrun simctl`, and anything else that needs a service outside the workspace).
+
+```lua
+ai = {
+  agents = {
+    codex = {
+      extensions = {
+        approval_policy = "on-request",
+      },
+    },
+  },
+},
+```
+
+`"on-request"` lets Codex ask when it wants to escalate, `"on-failure"` only after the sandbox
+refuses, `"never"` not at all. `"untrusted"` is not accepted: Codex 0.160 removed it and now
+refuses to start when it is set.
+
+With `""` (the default) what happens depends on the transport, and the difference is not tidiness.
+A **one-shot** call passes no override, so your own `config.toml` decides — byte-for-byte the argv
+before this option existed. A **duplex** chat sends `"never"`: a request this transport cannot put
+in front of a human is declined (no chat to ask, or a configured wait longer than the backend was
+measured to tolerate), so leaving the policy at Codex's own default would turn a sandboxed action
+into a silent denial instead of something vibing.nvim's hook and permission rules get to decide.
+
+Two things it deliberately does **not** do:
+
+- **It does not override `permission_mode`.** A chat in `bypassPermissions` still asks nothing and
+  one in `plan` still writes nothing; those are explicit statements about that chat.
+- **Answering one of these grants nothing in `permissions.allow` / `permissions.deny`.** The human
+  said yes to Codex's sandbox, not to vibing.nvim's permission list, and the answer is routed so
+  that it cannot reach the session lists at all.
+
+The prompt is the ordinary `⚠️  Tool approval required` block, with the options Codex itself
+offered (`accept`, `cancel`, the exec-policy amendment it proposes when it has one) plus `decline`,
+which refuses that one call and leaves the turn running. The request is held open while you decide,
+for the same `permissions.approval_wait_sec` as every other prompt — measured as safe to 960s
+against codex-cli 0.160.1 by `tests/perf/codex_approval_answer_after_delay.sh`. Raise
+`approval_wait_sec` past that and the waiting turns **off** for this channel rather than waiting
+past the evidence.
+
+Both prompts can appear for one command, in sequence: the hook asks first, and only if it allows
+does Codex get as far as asking about its sandbox. A hook denial means Codex never asks at all.
+
+#### Answering them without a human
+
+```lua
+ai = {
+  agents = {
+    codex = {
+      extensions = {
+        auto_approve = true,
+      },
+    },
+  },
+},
+```
+
+`auto_approve` replies `accept` to these requests instead of drawing a prompt. What makes that a
+defensible default to _choose_ — it is still `false` out of the box — is the sequence just above:
+by the time one of these arrives, vibing.nvim's own gate has already allowed the call. So the flag
+removes the **second** ask about something `permissions` passed, not the only one.
+`permissions.ask` and `permissions.deny` keep prompting and keep refusing, one layer up, which is
+where a rule like `Bash(rm:*)` lives.
+
+It is off by default because the two questions are genuinely different: a user may want `Bash`
+allowed inside the sandbox and gated on the way **out** of it — a worktree chat reaching into the
+main checkout is the usual shape. Turning this on says that distinction is not one you want to be
+asked about.
+
+Three things it deliberately does not do:
+
+- **It prefers plain `accept` over every other `accept…`.** The variants outlive the call —
+  `accept_with_execpolicy_amendment` writes a command pattern into Codex's own policy and
+  `accept_for_session` grants the rest of the thread. A human picking one of those has read what it
+  would remember; a flag has not, so it takes the narrowest option that lets the call run.
+- **A request offering no `accept…` at all still reaches you.** It is not turned into a `decline`;
+  turning the flag on must not _lose_ an approval you could have granted by hand.
+- **It grants nothing in `permissions.allow`**, exactly as answering one by hand grants nothing.
+
+Because it needs no chat to draw in, it also answers requests the human path would have had to
+decline for want of somewhere to ask — a wait budget longer than the backend was measured to
+tolerate, or a turn whose chat has gone away.
+
+##### Keeping some of them
+
+`auto_approve_ask` is the exception list, written in the same grammar as `permissions.ask` and
+evaluated by the same `matchers.matches_permission`:
+
+```lua
+ai = {
+  agents = {
+    codex = {
+      extensions = {
+        auto_approve = true,
+        auto_approve_ask = { "Bash(git push)", "Bash(rm:*)" },
+      },
+    },
+  },
+},
+```
+
+It is a **separate list from `permissions.ask`** because the two answer different questions.
+`permissions.ask` decides whether the tool may run at all, and has already said yes by the time
+this one is consulted; this one decides whether running it _outside Codex's sandbox_ is worth a
+look. A command can be fine inside the workspace and worth a glance on the way out of it — which
+is the entire reason there is a second gate to configure.
+
+Every entry can only ever send a request **to** a human; there is no entry that approves one. So a
+rule that fails to match costs exactly what `auto_approve` already cost, and the failure direction
+of a mistake in this list is one extra prompt. For a file change, **every** path in the patch is
+tested rather than the first — matching only the first is evadable by patch ordering — and each
+path is tested under both `Edit` and `Write`, since the request does not say which one Codex would
+have called it.
+
+**`Tool(x:*)` compares only the command's first word.** So `Bash(git push:*)` matches nothing,
+ever; the form that works is `Bash(git push)`, which matches that prefix. This is a property of
+`matchers.lua` shared with `permissions.allow` / `ask` / `deny`, where widening it would start
+_allowing_ calls an existing rule does not allow today — so it is not changed here. A rule in this
+list that cannot fire is warned about once instead of failing silently.
+
+The policy travels as a `-c` override fixed at process spawn, so on `process = "duplex"` changing
+it reaches the next process rather than the next turn — the argv is the reuse key, so a changed
+value starts a fresh one by itself.
+
 ## MCP
 
 Enables the RPC server that the bundled `vibing-nvim` MCP server connects to (see the README's
 Installation section for how the MCP server itself is installed via the Claude Code plugin):
 
 ```lua
-mcp = {
-  enabled = true,   -- Start the Neovim-side RPC server
-  rpc_port = 9876,  -- RPC server port
-}
+integrations = {
+  nvim = {
+    enabled = true,
+    port = 9876,
+  },
+},
 ```
 
 ## Node.js Executable
@@ -1744,7 +1906,7 @@ Or in your lazy.nvim spec:
 {
   "shabaraba/vibing.nvim",
   build = "VIBING_NODE_EXECUTABLE=/usr/local/bin/bun ./build.sh",
-}
+},
 ```
 
 ## Language
@@ -1752,14 +1914,13 @@ Or in your lazy.nvim spec:
 Configure AI response language:
 
 ```lua
--- Simple: all responses in one language
-language = "ja"  -- "ja", "en", "zh", "ko", "fr", "de", "es", ...
+-- All responses in Japanese
+require("vibing").setup({ chat = { language = "ja" } })
 
--- Advanced: per-context language
-language = {
-  default = "ja",  -- Default language
-  chat = "ja",     -- Chat responses (falls back to default)
-}
+-- Alternative: chat responses can use a different language from helper responses
+require("vibing").setup({
+  chat = { language = { default = "en", chat = "ja" } },
+})
 ```
 
 ## Project System Prompt
@@ -1791,15 +1952,17 @@ Notes:
 ## Debugger (nvim-dap)
 
 ```lua
-dap = {
-  enabled = false,             -- Subscribe to nvim-dap's stopped event.
-                               -- Everything below is inert until this is true; the MCP
-                               -- nvim_dap_* tools work regardless, on demand.
-  auto_analyze_on_error = true,      -- Analyze automatically when the program stops on an
-                                     -- exception — something is already wrong there
-  auto_analyze_on_breakpoint = false, -- ...but not on an ordinary breakpoint, which you placed
-                                     -- on purpose and may hit in a loop
-}
+integrations = {
+  dap = {
+    enabled = false, -- Subscribe to nvim-dap's stopped event.
+    -- Everything below is inert until this is true; the MCP
+    -- nvim_dap_* tools work regardless, on demand.
+    auto_analyze_on_error = true, -- Analyze automatically when the program stops on an
+    -- exception — something is already wrong there
+    auto_analyze_on_breakpoint = false, -- ...but not on an ordinary breakpoint, which you placed
+    -- on purpose and may hit in a loop
+  },
+},
 ```
 
 `:VibingDebugAnalyze` and `:VibingDebugHelp` work without `enabled`; the flag only controls whether
@@ -1815,23 +1978,25 @@ uninvited. See `.claude/rules/features.md` → "Debugger Analysis".
 Settings for `:VibingDailySummary` / `:VibingDailySummaryAll`:
 
 ```lua
-daily_summary = {
-  save_dir = nil,  -- nil: auto-detect from the chat save directory
-                   --      (".../chat/" becomes ".../daily/", otherwise "daily/" is appended)
-                   -- string: custom path (relative, absolute, or vim.fn.expand("~/..."))
+chat = {
+  daily_summary = {
+    save_dir = nil, -- nil: auto-detect from the chat save directory
+    --      (".../chat/" becomes ".../daily/", otherwise "daily/" is appended)
+    -- string: custom path (relative, absolute, or vim.fn.expand("~/..."))
 
-  search_dirs = {},  -- Directories for :VibingDailySummaryAll
-                     -- {} (default): search the standard locations (project .vibing/chat,
-                     --     user data dir, custom save_dir)
-                     -- { "~/workspaces" }: search ONLY the listed directories.
-                     --     Each entry is scanned for `.vibing` directories (max depth 5,
-                     --     skipping node_modules/.git/build/dist) and chat files are
-                     --     collected from their chat/ subdirectories.
+    search_dirs = {}, -- Directories for :VibingDailySummaryAll
+    -- {} (default): search the standard locations (project .vibing/chat,
+    --     user data dir, custom save_dir)
+    -- { "~/workspaces" }: search ONLY the listed directories.
+    --     Each entry is scanned for `.vibing` directories (max depth 5,
+    --     skipping node_modules/.git/build/dist) and chat files are
+    --     collected from their chat/ subdirectories.
 
-  file_finder_strategy = "auto",  -- File search backend
-                                  -- "auto": pick the best available tool
-                                  -- "fd" | "find" | "locate" | "ripgrep": force one
-}
+    file_finder_strategy = "auto", -- File search backend
+    -- "auto": pick the best available tool
+    -- "fd" | "find" | "locate" | "ripgrep": force one
+  },
+},
 ```
 
 **Usage:**
@@ -1843,3 +2008,36 @@ daily_summary = {
 
 Summary files are saved as `YYYY-MM-DD.md` with YAML frontmatter (date, source files, total
 messages).
+
+## Chat Profiles and Worker Defaults
+
+`ai.profiles` defines named chat profiles as a list. The built-ins are `default` (all tools),
+`focused` (Bash, Read, Edit, Write, Glob, Grep) and `reviewer` (Read, Glob, Grep, Bash).
+Entries named after built-ins override individual fields. `ToolSearch` is always included;
+MCP tools are unaffected. Select a profile with frontmatter `profile:`, `/profile`, or
+`nvim_chat_create`'s `profile` argument.
+
+```lua
+ai = {
+  profiles = {
+    {
+      name = "implementer",
+      description = "Implements a specified change",
+      agent = "claude", model = "sonnet", effort = "medium",
+      tools = { "Bash", "Read", "Edit", "Write", "Glob", "Grep" },
+      setting_sources = { "user", "local" },
+      context_files = { ".vibing/implementer.md" },
+    },
+  },
+},
+automation = {
+  orchestration = { worker_defaults = { model = "sonnet", profile = "focused" } },
+},
+```
+
+Every profile requires `name`; other fields are optional. `tools`, `setting_sources` and
+`context_files` apply to Claude. Dropping `project` excludes project rules, skills and settings;
+provide the required instructions in the brief or context files. Tools and setting sources
+change on the next message; context files remain in Claude's first-message prompt snapshot.
+Worker creation resolves each choice as explicit argument, then profile, then worker defaults,
+then ordinary chat defaults. The default profile list and worker defaults are empty.

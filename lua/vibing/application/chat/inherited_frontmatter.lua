@@ -16,31 +16,21 @@ local Modes = require("vibing.core.constants.modes")
 ---@param config table
 ---@return table
 function M.from_source(source, config)
+  local selection = require("vibing.core.utils.ai_config").resolve(config, Modes.resolve_agent(source, config))
   return {
     ["vibing.nvim"] = true,
     session_id = source.session_id or "~",
     created_at = os.date("%Y-%m-%dT%H:%M:%S"),
     working_dir = source.working_dir,
-    agent = source.agent or (config.adapter or "claude"),
-    -- 不正なmodeは引き継がない（コピーすると誤りが増殖するだけなのでデフォルトに戻す）。
-    -- 黙って戻す: send_message側が送信時に警告を出すので、引き継ぎのたびに同じ誤字を
-    -- 二重に通知しても意味がない
-    mode = Modes.coerce_agent_mode(source.mode) or (config.agent and config.agent.default_mode or "code"),
-    model = source.model or (config.agent and config.agent.default_model or "sonnet"),
-    -- 古いチャットにeffortが無くても、引き継ぎ先では従来のCLI既定を明示する。
-    effort = source.effort or (config.agent and config.agent.default_effort) or Modes.DEFAULT_EFFORT,
-    -- envもmodel/effortと同じ「このチャットのCLIをどう起動するか」なので引き継ぐ。
-    -- config.agent.envは全チャットに効くのでfallbackは不要
+    agent = source.agent or (vim.tbl_get(config, "ai", "chat", "agent") or "claude"),
+    mode = Modes.coerce_agent_mode(source.mode),
+    model = source.model or selection.model,
+    effort = source.effort or selection.effort,
     env = source.env,
-    -- processも同じ理由で引き継ぐ。fallbackが無いのはenvと同じで、`backends.<id>.process` が
-    -- 全チャットに効くため。subagent chatでは `process_model.resolve` がどのみち oneshot に
-    -- 落とすので無害だが、**handoff で効く** —— 長く走っていた duplex のチャットを引き継いだ
-    -- 先が黙って oneshot に戻り、以降ずっと遅いまま理由が分からない、というのを塞ぐ
     process = source.process,
     permission_mode = source.permission_mode or (config.permissions and config.permissions.mode or "acceptEdits"),
     permissions_allow = source.permissions_allow or (config.permissions and config.permissions.allow or {}),
     permissions_deny = source.permissions_deny or (config.permissions and config.permissions.deny or {}),
-    -- askも権限の一部。落とすと「毎回確認する」と決めたツールが確認なしで動くほうに倒れる
     permissions_ask = source.permissions_ask or (config.permissions and config.permissions.ask or nil),
     language = source.language,
   }

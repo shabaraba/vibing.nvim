@@ -101,15 +101,12 @@ end
 ---@return Vibing.CacheExpiry.Decision?
 function M.evaluate(chat_buffer)
   local config = require("vibing.config").get()
-  local opts = (config.agent and config.agent.token_usage) or {}
-  if opts.enabled == false then
-    return nil
-  end
+  local opts = vim.tbl_get(config, "chat", "context") or {}
 
   -- 既定値は token_usage 側から借りる（config.lua と同じ理由）。手組みの config テーブルで
   -- 片方だけ既定に落ちると、閾値の組み合わせが設定した覚えのないものになる
   local ttl = tonumber(opts.cache_ttl_sec) or TokenUsage.DEFAULT_CACHE_TTL_SEC
-  local warn_context = tonumber(opts.warn_context) or TokenUsage.DEFAULT_WARN_CONTEXT
+  local warn_context = tonumber(opts.warn_tokens) or TokenUsage.DEFAULT_WARN_CONTEXT
   -- `warn_context = 0` は `### Tokens` 側で「内訳だけ出して警告は止める」を意味する。
   -- 閾値を共有している以上、その意思表示はこちらにも効かせる
   if ttl <= 0 or warn_context <= 0 then

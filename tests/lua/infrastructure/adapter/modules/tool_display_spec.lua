@@ -17,12 +17,18 @@ describe("tool_display.resolve_marker", function()
   end)
 end)
 
-describe("config validation of ui.tool_markers", function()
+describe("config validation of ui.tools.markers", function()
   local config = require("vibing.config")
 
   local function markers_after_setup(tool_markers)
-    config.setup({ ui = { tool_markers = tool_markers } })
-    return config.get().ui.tool_markers
+    config.setup({
+      ui = {
+        tools = {
+          markers = tool_markers,
+        },
+      },
+    })
+    return config.get().ui.tools.markers
   end
 
   after_each(function()
@@ -35,28 +41,11 @@ describe("config validation of ui.tool_markers", function()
     assert.equals("⏺", markers.default)
   end)
 
-  it("drops an empty string marker so the default applies", function()
-    assert.is_nil(markers_after_setup({ Bash = "" }).Bash)
-  end)
-
-  it("drops a marker that is not a string", function()
-    assert.is_nil(markers_after_setup({ Bash = 42 }).Bash)
-  end)
-
-  it("flattens the legacy { default = ... } form to a string", function()
-    assert.equals("💻", markers_after_setup({ Bash = { default = "💻" } }).Bash)
-  end)
-
-  it("drops the never-implemented patterns key instead of pretending it works", function()
-    local markers = markers_after_setup({
-      Bash = { default = "💻", patterns = { ["^npm"] = "📦" } },
-    })
-    assert.equals("💻", markers.Bash)
-    -- Resolution only ever sees the tool name, so a pattern marker could never win.
-    assert.equals("💻", tool_display.resolve_marker("Bash", markers))
-  end)
-
-  it("drops a legacy table with no usable default", function()
-    assert.is_nil(markers_after_setup({ Bash = { patterns = { ["^npm"] = "📦" } } }).Bash)
-  end)
+  for _, invalid in ipairs({ "", 42, { default = "💻" }, { patterns = { ["^npm"] = "📦" } } }) do
+    it("rejects invalid or obsolete marker values", function()
+      assert.has_error(function()
+        markers_after_setup({ Bash = invalid })
+      end)
+    end)
+  end
 end)

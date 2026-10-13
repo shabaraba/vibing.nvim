@@ -116,6 +116,23 @@ nvim_chat_create({
 - `position: "back"` (the default) creates the buffer without opening a window, so the user's
   layout is untouched. Don't use a split position for workers unless the user asked to watch them.
 - `working_dir` is relative to the git root and must already exist — create the worktree first.
+- **Pick the worker's profile and model.** The profiles are listed in `nvim_chat_create`'s own
+  `profile` argument (and in `nvim_chat_list`'s `profiles`), each with what it is for and the model
+  it runs on. A narrowed one loads a fraction of a normal chat on every request, so prefer the one
+  that fits the task. Built in: `focused` (Bash/Read/Edit/Write/Glob/Grep, project rules kept) for
+  implementation, `reviewer` (Read/Glob/Grep/Bash) for reviewing a change, and `default` for
+  anything else. Neither narrowed built-in has `Skill` or `Agent`: a worker that will need a skill
+  (this one included, to orchestrate in turn) or subagents needs `default` or a configured
+  profile that lists them. MCP tools, `nvim_chat_create` among them, stay available on every
+  profile. Without a
+  `model` (from the profile or yours) a worker runs on the user's default — usually as expensive
+  as you. A worker whose brief is complete rarely needs your model: give it `model` (and `agent`
+  for another CLI, e.g. `agent: "codex"`), and keep the design decisions in your own chat.
+- **A narrowed profile may not load the project's rules**, so the brief has to carry the
+  invariants the task touches — state them as checked facts, not as "see CLAUDE.md".
+- The returned `agent` / `model` / `profile` are what was actually written — check them, since
+  the profile and the user's `worker_defaults` fill whatever you leave out. The user can take a
+  worker over with `/profile default`.
 - **Always pass `from_bufnr`**: the exact "Current vibing.nvim chat buffer number" from your
   system prompt. It records the relationship in both chat files' frontmatter (`orchestrated` here,
   `orchestrated_by` on the worker), which is what makes it survive a rename or a restart.
@@ -129,7 +146,7 @@ nvim_chat_create({
   conversation resumed the next morning would drive the wrong buffer. The path keeps working, and
   a worker chat that is no longer open is opened for you. Pass one or the other; passing both is
   an error.
-- If `agent.orchestration.delegated_approval` is `"scoped"`, declare what this worker may need
+- If `permissions.delegated_approval` is `"scoped"`, declare what this worker may need
   approved up front with `delegated_scope` (same pattern syntax as `permissions_allow`, e.g.
   `delegated_scope: ["Bash(npm:*)"]`). It is written on the worker's own frontmatter, and is what
   makes "Answering a worker's tool approval" below a safe machine check instead of a judgment call
@@ -213,7 +230,7 @@ Once every brief is sent, end the turn with the worker list:
 Each worker's own report is what wakes you. `queue_if_busy: true` makes that delivery reliable: a
 report that arrives while you are mid-turn waits and starts a new turn the moment you stop, and
 several arriving together are coalesced into one turn. This works regardless of
-`agent.chat_notifications.enabled` — the report is a message the worker chose to send you, not a
+`automation.orchestration.notifications.enabled` — the report is a message the worker chose to send you, not a
 notification vibing.nvim volunteers.
 
 That setting governs the **watchdog** instead: with it enabled, a worker that stops _without_
@@ -224,7 +241,7 @@ never reported is silent — say "進捗は?と聞いてください" and wait f
 question, that is sitting on a tool-approval prompt, or whose turn failed cannot report: all three
 kill its turn before it could call `nvim_chat_send_message`, and it will not run again until
 someone acts on it. Those three are delivered to you regardless of
-`agent.chat_notifications.enabled`, and the notice names the status.
+`automation.orchestration.notifications.enabled`, and the notice names the status.
 
 ## 5. Read what arrived
 
@@ -263,7 +280,7 @@ Alongside the transcript the result carries a chat-status line, in the same voca
   the user if only they can decide. It will not move until someone answers.
 - `status: waiting_approval` — the worker stopped on a tool-approval prompt. By default only the
   user can clear that one: say which worker is blocked and on what. If the user turned on
-  `agent.orchestration.delegated_approval` (`true` or `"scoped"`), you can answer it yourself — see
+  `permissions.delegated_approval` (`true` or `"scoped"`), you can answer it yourself — see
   "Answering a worker's tool approval" below. It is reported as `waiting_approval` whether or not
   its turn is technically still in flight, so never read `responding` as "that one is fine".
 - `status: error` — the last turn ended with an error. Read the tail of the transcript for the
@@ -334,7 +351,7 @@ grant is still the user's to give — but answering it starts a **new turn** on 
 than releasing the call it was raised for, so it only goes through once that worker has stopped.
 Answer the ones that have not expired first.
 
-If the user set `agent.orchestration.delegated_approval` to `true` or `"scoped"`, you can answer it
+If the user set `permissions.delegated_approval` to `true` or `"scoped"`, you can answer it
 instead:
 
 ```text

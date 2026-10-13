@@ -100,29 +100,45 @@ describe("window_manager.create_window through config.setup", function()
   end)
 
   it("gives a float 0.8 of the screen when the user only picks the position", function()
-    config.setup({ chat = { window = { position = "float" } } })
+    config.setup({
+      ui = {
+        window = { position = "float" },
+      },
+    })
 
-    local win = window_manager.create_window(buf, config.get().chat.window)
+    local win = window_manager.create_window(buf, config.get().ui.window)
     assert.equals(math.floor(vim.o.lines * 0.8), vim.api.nvim_win_get_height(win))
     vim.api.nvim_win_close(win, true)
   end)
 
   it("gives a bottom split 0.4 of the screen when the user only picks the position", function()
-    config.setup({ chat = { window = { position = "bottom" } } })
+    config.setup({
+      ui = {
+        window = { position = "bottom" },
+      },
+    })
 
-    local win = window_manager.create_window(buf, config.get().chat.window)
+    local win = window_manager.create_window(buf, config.get().ui.window)
     assert.equals(math.floor(vim.o.lines * 0.4), vim.api.nvim_win_get_height(win))
     vim.api.nvim_win_close(win, true)
   end)
 
   it("lets an explicit height win for both", function()
-    config.setup({ chat = { window = { position = "float", height = 12 } } })
-    local float_win = window_manager.create_window(buf, config.get().chat.window)
+    config.setup({
+      ui = {
+        window = { position = "float", height = 12 },
+      },
+    })
+    local float_win = window_manager.create_window(buf, config.get().ui.window)
     assert.equals(12, vim.api.nvim_win_get_height(float_win))
     vim.api.nvim_win_close(float_win, true)
 
-    config.setup({ chat = { window = { position = "bottom", height = 12 } } })
-    local split_win = window_manager.create_window(buf, config.get().chat.window)
+    config.setup({
+      ui = {
+        window = { position = "bottom", height = 12 },
+      },
+    })
+    local split_win = window_manager.create_window(buf, config.get().ui.window)
     assert.equals(12, vim.api.nvim_win_get_height(split_win))
     vim.api.nvim_win_close(split_win, true)
   end)

@@ -124,7 +124,13 @@ describe("auto_resume", function()
     ---@param auto_resume_opts table
     local function stub_config(auto_resume_opts)
       Config.get = function()
-        return { agent = { auto_resume_on_limit = auto_resume_opts } }
+        return {
+          automation = {
+            limits = {
+              resume = auto_resume_opts,
+            },
+          },
+        }
       end
     end
 
@@ -223,7 +229,16 @@ describe("auto_resume", function()
     before_each(function()
       original_get = Config.get
       Config.get = function()
-        return { agent = { auto_resume_on_limit = { enabled = true, max_retries = 1 } } }
+        return {
+          automation = {
+            limits = {
+              resume = {
+                enabled = true,
+                max_retries = 1,
+              },
+            },
+          },
+        }
       end
 
       -- Symlink-resolved, matching the pattern orchestration_link_spec.lua uses: nvim_buf_get_name
@@ -387,8 +402,11 @@ describe("auto_resume", function()
         table.insert(messages, msg)
       end
 
-      local ok, err =
-        pcall(AutoResume.on_rate_limited, missing_path, { rejected = true, resets_at = os.time() + 3600, source = "test" })
+      local ok, err = pcall(
+        AutoResume.on_rate_limited,
+        missing_path,
+        { rejected = true, resets_at = os.time() + 3600, source = "test" }
+      )
       vim.notify = original_notify
       assert.is_true(ok, err)
 
@@ -499,7 +517,10 @@ describe("auto_resume", function()
 
     it("never re-arms an in_flight entry, whatever its kind", function()
       assert.is_false(
-        AutoResume._is_restorable({ chat_file_path = "/a.md", kind = "scheduled", state = "in_flight" }, { enabled = true })
+        AutoResume._is_restorable(
+          { chat_file_path = "/a.md", kind = "scheduled", state = "in_flight" },
+          { enabled = true }
+        )
       )
     end)
 
@@ -723,7 +744,15 @@ describe("auto_resume", function()
       -- Falsy enabled is the default and the exact condition restore() re-arms scheduled entries
       -- under, so it is the only config that distinguishes correct dispatch from the regression.
       Config.get = function()
-        return { agent = { auto_resume_on_limit = { enabled = false } } }
+        return {
+          automation = {
+            limits = {
+              resume = {
+                enabled = false,
+              },
+            },
+          },
+        }
       end
     end)
 

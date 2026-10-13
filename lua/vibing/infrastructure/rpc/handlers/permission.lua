@@ -131,7 +131,11 @@ local function build_permission_config(turn_id)
     session_denied_tools = o.permissions_session_deny or {},
     permission_rules = M._resolve_permission_rules(perms),
     permission_mode = o.permission_mode or perms.mode or "default",
-    mcp_enabled = config.mcp and config.mcp.enabled or false,
+    mcp_enabled = vim.tbl_get(config, "integrations", "nvim")
+        and vim.tbl_get(config, "integrations", "nvim", "enabled")
+      or false,
+    is_always_allowed = o._tool_vocabulary and o._tool_vocabulary.is_always_allowed,
+    exclusive_tools = o.exclusive_tools,
   }
 end
 
@@ -188,17 +192,12 @@ function M._capture_baselines(turn_id, cwd, tool_name, tool_input)
     require("vibing.core.utils.git_snapshot").ensure_baseline(turn_id, cwd, tool_name)
   end)
   pcall(function()
-    require("vibing.core.utils.request_diff").capture(turn_id, tool_name, tool_input)
+    require("vibing.core.utils.request_diff").capture(turn_id, tool_name, tool_input, cwd)
   end)
   pcall(function()
     -- ここも「ツールが走る前」であることが要る。worktreeを作るコマンドの前後を比べるので、
     -- 押さえるのは実行前の一覧でなければならない
-    require("vibing.application.chat.worktree_binding").observe(
-      turn_id,
-      cwd,
-      tool_name,
-      tool_input
-    )
+    require("vibing.application.chat.worktree_binding").observe(turn_id, cwd, tool_name, tool_input)
   end)
 end
 
@@ -230,7 +229,7 @@ function M.normalize_hook_input(hook_input, vocabulary)
     tool_name = vocabulary.to_canonical(tool_name) or tool_name
   end
   if vocabulary and vocabulary.normalize_input then
-    tool_input = vocabulary.normalize_input(tool_input)
+    tool_input = vocabulary.normalize_input(tool_input, tool_name)
   end
   return tool_name, tool_input
 end
@@ -530,11 +529,14 @@ function M.check_tool_permission(params)
 
     -- The fallback, and byte-for-byte what every backend did before #778: kill the process first,
     -- show the approval UI, then write the deny. The user's answer arrives as a new turn.
-    cancel_and_deny(function(turn)
-      if turn.on_approval_required then
-        turn.on_approval_required(tool_name, tool_input, APPROVAL_OPTIONS, request_id)
-      end
-    end, "vibing.nvim could not find the chat buffer to show the approval prompt in (internal error). Do not retry this tool immediately.")
+    cancel_and_deny(
+      function(turn)
+        if turn.on_approval_required then
+          turn.on_approval_required(tool_name, tool_input, APPROVAL_OPTIONS, request_id)
+        end
+      end,
+      "vibing.nvim could not find the chat buffer to show the approval prompt in (internal error). Do not retry this tool immediately."
+    )
     return { status = "pending" }
   end
 end

@@ -25,6 +25,7 @@ describe("shutdown", function()
       resolve_all = Pending.resolve_all,
       rpc_stop = rpc_server.stop,
       adapter = Vibing.adapter,
+      helper_adapter = Vibing._helper_adapter,
       config = Vibing.config,
     }
 
@@ -46,13 +47,20 @@ describe("shutdown", function()
         table.insert(order, "cli")
       end,
     }
-    Vibing.config = { mcp = { enabled = true } }
+    Vibing.config = {
+      integrations = {
+        nvim = {
+          enabled = true,
+        },
+      },
+    }
 
     restore = function()
       job_manager.shutdown = original.job_shutdown
       Pending.resolve_all = original.resolve_all
       rpc_server.stop = original.rpc_stop
       Vibing.adapter = original.adapter
+      Vibing._helper_adapter = original.helper_adapter
       Vibing.config = original.config
     end
   end)
@@ -60,6 +68,17 @@ describe("shutdown", function()
   after_each(function()
     restore()
     Pending._reset()
+  end)
+
+  it("cancels helper requests before the RPC server stops", function()
+    Vibing._helper_adapter = {
+      cancel = function()
+        table.insert(order, "helpers")
+      end,
+    }
+    Vibing._shutdown()
+    assert.is_true(vim.fn.index(order, "approvals") < vim.fn.index(order, "helpers"))
+    assert.is_true(vim.fn.index(order, "helpers") < vim.fn.index(order, "rpc"))
   end)
 
   it("releases the blocked hooks before killing the CLI that is waiting in them", function()

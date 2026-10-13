@@ -87,6 +87,12 @@ function M.open(params, record, chat_key)
     process = ProcessRegistry.get(record.process_id),
     worktree_root = params.opts._worktree_root,
     on_approval_required = params.opts.on_approval_required,
+    -- Read off the turn for the same reason, and resolved here rather than in the protocol module
+    -- so the gate is asked the same way all three are: from the descriptor, against the configured
+    -- budget, with no backend named at the point of use.
+    can_wait_for_native_approval = require("vibing.infrastructure.hooks.wait_budget").can_wait_for_native_approval(
+      params.descriptor and params.descriptor.native_approval
+    ),
   })
 
   local completed = false

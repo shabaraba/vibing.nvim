@@ -36,8 +36,8 @@
     "test:eval": "nvim --headless -u tests/minimal_init.lua -l tests/evals/run.lua",
     "audit:deps": "node scripts/audit-dependencies.mjs",
     "audit:mcp-imports": "node scripts/audit-mcp-server-imports.mjs",
-    "check": "find lua -name '*.lua' -exec luac -p {} +",
-    "check:lua": "luac -p lua/vibing/init.lua",
+    "check": "nvim --headless -u NONE -i NONE -l scripts/check-lua.lua",
+    "check:lua": "nvim --headless -u NONE -i NONE -l scripts/check-lua.lua lua/vibing/init.lua",
     "check:doc": "nvim --headless -l scripts/check-help.lua",
     "validate": "npm run check && echo 'All checks passed'",
     "format": "prettier --write '**/*.{js,mjs,ts,json,md,yml,yaml}'",
@@ -52,8 +52,8 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@types/node": "^26.6.3",
-    "eslint": "^10.11.0",
+    "@types/node": "^26.6.4",
+    "eslint": "^10.12.0",
     "markdownlint-cli": "^0.49.1",
     "prettier": "^3.9.9",
     "typescript": "^7.0.2"

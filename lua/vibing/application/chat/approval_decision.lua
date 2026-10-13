@@ -25,6 +25,10 @@
 --- returns what the caller should say; deciding *how* to say it is the caller's half.
 --- @module vibing.application.chat.approval_decision
 
+--- Required for its `KIND` alone — the one definition of "which channel owes this prompt a
+--- response". Written out three times below as a literal, it is a rename that compiles.
+local NativeApprovals = require("vibing.infrastructure.rpc.pending_native_approvals")
+
 local M = {}
 
 --- The four answers, in the vocabulary the whole feature shares: the option values
@@ -104,9 +108,16 @@ end
 --- @param tool string
 --- @param input table
 --- @param expired boolean? the prompt had already reached its wait limit when it was answered
+--- @param is_allow boolean? what the action means, when the action is not one of `M.ACTIONS`.
+---   Codex's own approvals carry their own vocabulary (#861) and the four words below cannot read
+---   it, so the caller that built the options says what it chose. Shared rather than reimplemented
+---   there: a second wording for "I approved this" is the drift this module exists to prevent.
 --- @return string
-function M.retry_message(action, tool, input, expired)
-  if M.is_allow(action) then
+function M.retry_message(action, tool, input, expired, is_allow)
+  if is_allow == nil then
+    is_allow = M.is_allow(action)
+  end
+  if is_allow then
     if expired then
       return string.format(
         "I approved the %s tool%s. That call had already been refused for going unanswered, and "
@@ -158,6 +169,14 @@ function M.consume(chat_buf, approval)
   if not pending then
     return nil, "no approval is pending on this chat"
   end
+  -- **別レイヤの承認は別の意味を持つ（#861）。** Codex 自身のサンドボックス昇格承認は vibing の
+  -- `permissions.allow/deny` について何も言っていないので、下の `update_session_permissions` を
+  -- 通してはいけない。分岐をここに置き、本体は別モジュールに出してあるのは、「どちらの意味を
+  -- 適用したか」が呼び出し1行で読めるようにするため — 同じ関数の中に if で混ぜると、claude 側の
+  -- 変更が codex 側の意味を黙って巻き込む
+  if pending.kind == NativeApprovals.KIND then
+    return require("vibing.application.chat.native_approval_decision").consume(chat_buf, pending, approval)
+  end
   -- **期限切れでも消費する。** 上限が切ったのは「飛んでいたその1回」であって、ユーザーが許可を
   -- 与える機会ではない。ここで断ると、半日離席して戻った人は**その承認をもう与えられない** —
   -- kill する設計ではプロンプトがターンより長生きして、いつ答えても再試行できていたので、
@@ -194,6 +213,61 @@ function M.consume(chat_buf, approval)
     is_allow = M.is_allow(approval.action),
     retry_message = M.retry_message(approval.action, tool, input, pending.expired),
   }, nil
+end
+
+--- The registry entry that is still waiting on this prompt, if any.
+---
+--- Asked **before** `consume`, because consuming drops the prompt and the question stops being
+--- answerable afterwards. Which registry to ask is the prompt's own `kind`, never a try-both: two
+--- registries that both answer to one id is the state no exit could then resolve exactly once.
+--- @param pending table|nil the chat's copy of the prompt
+--- @return table|nil blocked
+function M.find_blocked(pending)
+  if not (pending and pending.request_id) then
+    return nil
+  end
+  if pending.kind == NativeApprovals.KIND then
+    return require("vibing.infrastructure.rpc.pending_native_approvals").get(pending.request_id)
+  end
+  return require("vibing.infrastructure.rpc.pending_approvals").get(pending.request_id)
+end
+
+--- The same question asked by id alone, for the callers that have no prompt in hand.
+---
+--- Both registries are consulted here where `find_blocked` refuses to: the ids are **disjoint by
+--- construction** — a hook mints `<epoch>-<pid>-<random>`, a native one is
+--- `codex-<process_id>-<rpc_id>` — so at most one can answer, and a caller holding only an id has
+--- nothing else to decide with. `find_blocked` has the prompt, and asking the prompt is strictly
+--- better than relying on that disjointness staying true.
+--- @param request_id string
+--- @return table|nil blocked
+function M.blocked_for_request(request_id)
+  if type(request_id) ~= "string" or request_id == "" then
+    return nil
+  end
+  return require("vibing.infrastructure.rpc.pending_approvals").get(request_id)
+    or require("vibing.infrastructure.rpc.pending_native_approvals").get(request_id)
+end
+
+--- Deliver the answer to whatever is still blocked on it, in that channel's own terms.
+---
+--- The hook route re-runs `can_use_tool`, because the answer it carries is a *permission* and the
+--- `:once` grant it created has to be spent (`permission.release_answered_approval`). The native
+--- route does not and must not: nothing about vibing's permissions changed, and the only thing owed
+--- is the JSON-RPC response codex is holding open.
+--- @param pending table the chat's copy of the prompt
+--- @param blocked table the registry entry `find_blocked` returned
+--- @param consumed Vibing.ConsumedApproval
+--- @param chat_buf Vibing.ChatBuffer
+--- @return boolean released
+function M.release(pending, blocked, consumed, chat_buf)
+  if pending.kind == NativeApprovals.KIND then
+    return require("vibing.infrastructure.rpc.pending_native_approvals").resolve(
+      blocked.request_id,
+      consumed.raw_decision
+    )
+  end
+  return require("vibing.infrastructure.rpc.handlers.permission").release_answered_approval(blocked, chat_buf)
 end
 
 return M

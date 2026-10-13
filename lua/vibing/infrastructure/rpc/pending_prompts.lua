@@ -1,6 +1,6 @@
 --- "A prompt is holding this turn open", asked as one thing (#778).
 ---
---- One channel today: `pending_approvals`, which withholds a `<request_id>.res` file a shell hook
+--- Hook approvals use `pending_approvals`, which withholds a `<request_id>.res` file a shell hook
 --- is polling. A second channel used to live here — `pending_questions`, the withheld reply to the
 --- `nvim_ask_user_question` MCP call — and was removed when a question became a block the model
 --- writes at the end of its turn (`presentation/chat/modules/question_block.lua`): a question no
@@ -16,6 +16,10 @@ local M = {}
 
 local CHANNELS = {
   { noun = "approval", module = "pending_approvals" },
+  -- The native approval channel withholds a JSON-RPC response to a resident CLI (#861). Its registry drops
+  -- the reason sentence — codex's response carries a decision and nowhere to put prose — but it
+  -- owes the exits exactly as the hook registry does, which is the whole point of being listed here.
+  { noun = "approval", module = "pending_native_approvals" },
 }
 
 --- The reason each registry is given is the same sentence with that channel's noun, so callers

@@ -22,7 +22,7 @@ local UNLIMITED = 0
 ---@return number limit 0なら無制限
 local function read_orchestration_limit(field_name)
   local config = require("vibing.config").get()
-  local orchestration = config.agent and config.agent.orchestration
+  local orchestration = config and vim.tbl_get(config, "automation", "orchestration")
 
   if type(orchestration) ~= "table" then
     return UNLIMITED
@@ -94,7 +94,7 @@ end
 function M.at_capacity_message()
   return string.format(
     "%d chats and %d of their subagents are already in flight, at or above the configured limit "
-      .. "(agent.orchestration.max_concurrent = %d, max_concurrent_subagents = %d). Pass "
+      .. "(automation.orchestration.max_concurrent = %d, max_concurrent_subagents = %d). Pass "
       .. "queue_if_busy so the message is delivered when one of them finishes.",
     M.responding_count(),
     M.subagent_count(),

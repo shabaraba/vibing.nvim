@@ -31,9 +31,11 @@ describe("rpc handlers.message.send_message", function()
   local function configure(max_concurrent)
     Config.get = function()
       return {
-        agent = {
-          chat_notifications = { enabled = true, max_round_trips = 8, max_wakes = 50 },
-          orchestration = { max_concurrent = max_concurrent },
+        automation = {
+          orchestration = {
+            notifications = { enabled = true, max_round_trips = 8, max_wakes = 50 },
+            max_concurrent = max_concurrent,
+          },
         },
       }
     end
@@ -307,8 +309,7 @@ describe("rpc handlers.message.send_message", function()
     local from, to = make_chat(), make_chat()
     chats[to].responding = true
 
-    local result =
-      Message.send_message({ bufnr = to, message = "my report", from_bufnr = from, queue_if_busy = true })
+    local result = Message.send_message({ bufnr = to, message = "my report", from_bufnr = from, queue_if_busy = true })
 
     assert.is_true(result.success)
     assert.is_true(result.queued)

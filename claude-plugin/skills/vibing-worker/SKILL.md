@@ -36,7 +36,7 @@ your turn.
 inside the tool call — nothing of yours runs again until somebody answers it, so you cannot report
 _while_ one is open. If you can see one coming (a destructive command, an edit outside what the brief covers),
 send a heads-up first, in the same turn, before making that call. The orchestrator (or the user,
-depending on `agent.orchestration.delegated_approval`) is who clears it either way; a heads-up
+depending on `permissions.delegated_approval`) is who clears it either way; a heads-up
 just means they aren't finding out from a cold watchdog notice with no context.
 
 **The moment you find you cannot proceed.** Not "eventually, once you've tried everything" — as

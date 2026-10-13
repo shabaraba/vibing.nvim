@@ -41,7 +41,7 @@ Read the linked file before changing that path.
 - **A turn ending with subagents still unreported is a chat nothing will wake**, so the outstanding
   ledger is the wake signal — not what transcript recovery found. Recovery is empty for a subagent
   that is still running, which is exactly the case that needs the turn. Not gated on
-  `agent.chat_notifications.enabled`; never for a `_cancelled` turn.
+  `automation.orchestration.notifications.enabled`; never for a `_cancelled` turn.
 - **Only a process that will serve no more turns may conclude "nothing will report these."** On
   oneshot that is the end of the turn — `finish` _is_ the exit handler. Under duplex `finish` runs on
   `result` with the process resident, where a ledger entry is usually one still running, so duplex

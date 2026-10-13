@@ -108,9 +108,11 @@ function M.matches_bash_pattern(command, rule_content, pattern_type)
   local rule = rule_content:lower()
 
   if pattern_type == "bash_wildcard" then
-    local base_pattern = rule:match("^([^:]+)")
-    local cmd_parts = vim.split(cmd, "%s+", { trimempty = true })
-    return cmd_parts[1] == base_pattern
+    -- The prefix is matched word for word, so `gh pr view:*` covers `gh pr view 876`. Comparing
+    -- only the first word made every multi-word prefix match nothing at all.
+    local prefix = vim.trim(rule:match("^([^:]+)")):gsub("%s+", " ")
+    local words = cmd:gsub("%s+", " ")
+    return words == prefix or vim.startswith(words, prefix .. " ")
   else
     return cmd == rule or vim.startswith(cmd, rule .. " ")
   end

@@ -7,10 +7,10 @@ describe("cache_expiry", function()
   local ChatBuffer = require("vibing.presentation.chat.buffer")
   local Config = require("vibing.config")
   local TokenUsage = require("vibing.core.utils.token_usage")
---- Codex's `turn.completed.usage`, through the codex decoder's field mapping.
-local function codex_usage(usage)
-  return TokenUsage.cumulative(require("vibing.infrastructure.adapter.decoders.codex_exec_json").usage_totals(usage))
-end
+  --- Codex's `turn.completed.usage`, through the codex decoder's field mapping.
+  local function codex_usage(usage)
+    return TokenUsage.cumulative(require("vibing.infrastructure.adapter.decoders.codex_exec_json").usage_totals(usage))
+  end
 
   local original_config_get
   local created_bufs
@@ -31,13 +31,8 @@ end
   local function stub_config(opts)
     Config.get = function()
       return {
-        agent = {
-          token_usage = vim.tbl_extend(
-            "force",
-            { enabled = true, warn_context = 150000, cache_ttl_sec = 3300 },
-            opts or {}
-          ),
-        },
+        chat = { context = vim.tbl_extend("force", { warn_tokens = 150000, cache_ttl_sec = 3300 }, opts or {}) },
+        ui = { usage = { enabled = false } },
       }
     end
   end
@@ -120,12 +115,16 @@ end
     end)
 
     it("does not invent a context size from a Codex Tokens section", function()
-      local usage = TokenUsage.cumulative_delta(codex_usage({
-        input_tokens = 205000,
-        cached_input_tokens = 180000,
-        output_tokens = 5000,
-        reasoning_output_tokens = 3000,
-      }), nil, true)
+      local usage = TokenUsage.cumulative_delta(
+        codex_usage({
+          input_tokens = 205000,
+          cached_input_tokens = 180000,
+          output_tokens = 5000,
+          reasoning_output_tokens = 3000,
+        }),
+        nil,
+        true
+      )
       local lines = {
         string.format("## User <!-- %s -->", stamp(5060)),
         "question",
@@ -233,21 +232,27 @@ end
       assert.is_nil(CacheExpiry.evaluate(make_chat(EXPIRED)))
     end)
 
-    it("is disabled by warn_context = 0, which already means 'no warning'", function()
-      stub_config({ warn_context = 0 })
+    it("is disabled by warn_tokens = 0, which already means 'no warning'", function()
+      stub_config({ warn_tokens = 0 })
 
       assert.is_nil(CacheExpiry.evaluate(make_chat(EXPIRED)))
     end)
 
-    it("is disabled with the rest of the token usage display", function()
-      stub_config({ enabled = false })
+    it("still warns when token usage display is disabled", function()
+      stub_config()
 
-      assert.is_nil(CacheExpiry.evaluate(make_chat(EXPIRED)))
+      assert.is_not_nil(CacheExpiry.evaluate(make_chat(EXPIRED)))
     end)
 
     it("falls back to the shipped defaults rather than switching itself off", function()
       Config.get = function()
-        return { agent = { token_usage = { enabled = true } } }
+        return {
+          ui = {
+            usage = {
+              enabled = true,
+            },
+          },
+        }
       end
       local chat = make_chat({
         seconds_ago = TokenUsage.DEFAULT_CACHE_TTL_SEC + 100,

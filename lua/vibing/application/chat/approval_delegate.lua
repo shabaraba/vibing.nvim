@@ -7,7 +7,7 @@
 ---「どのチャットが何で止まっているか」を言うところまでしかできない
 ---（`delivery_message.lua` の `waiting_approval` の説明文）。
 ---
----`agent.orchestration.delegated_approval` を true にすると、オーケストレーターが4択に無条件で
+---`permissions.delegated_approval` を true にすると、オーケストレーターが4択に無条件で
 ---代理で答えられるようになる。**opt-in なのは、買っているのが「エージェントが別のエージェントの
 ---承認ゲートを外せる」状態そのものだから**で、実装上の都合ではない。
 ---
@@ -39,20 +39,40 @@ local M = {}
 ---@type string[]
 M.ACTIONS = require("vibing.application.chat.approval_decision").ACTIONS
 
----@param action any
----@return boolean
-local function is_valid_action(action)
-  return require("vibing.application.chat.approval_decision").is_valid_action(action)
+---このプロンプトが実際に提示した action 値（#861）
+---
+---フックの承認は常に4択だが、CLI 自身の承認要求は `availableDecisions` 次第で毎回変わる。
+---**出していない選択肢を代理で選べてはいけない**ので、照合先は固定リストではなくプロンプト自身
+---@param pending table
+---@return string[]
+local function offered_actions(pending)
+  local values = {}
+  for _, option in ipairs((pending or {}).options or {}) do
+    if type(option.value) == "string" and option.value ~= "" then
+      table.insert(values, option.value)
+    end
+  end
+  if #values == 0 then
+    return M.ACTIONS
+  end
+  return values
 end
 
----`agent.orchestration.delegated_approval` の実効値
+---@param pending table
+---@param action any
+---@return boolean
+local function action_offered(pending, action)
+  return type(action) == "string" and vim.tbl_contains(offered_actions(pending), action)
+end
+
+---`permissions.delegated_approval` の実効値
 ---
 ---`concurrency.limit()` と同じ理由で型を見る: `orchestration = true` のような壊れた設定で、
 ---`setup()` 後のあらゆる代理応答が落ちるのではなく「無効」に倒れてほしい
 ---@return boolean|"scoped"
 function M.mode()
   local config = require("vibing.config").get()
-  local orchestration = config.agent and config.agent.orchestration
+  local orchestration = config.permissions
   if type(orchestration) ~= "table" then
     return false
   end
@@ -70,9 +90,19 @@ function M.enabled()
 end
 
 ---deny系の答えか（deny系は範囲を問わず常に委任できる — 拒否は権限を広げないため）
+---
+---**極性は、持っていればプロンプトから読む（#861）。** CLI 自身の承認要求の語彙は `decline` /
+---`cancel` で、`deny_*` という文字列はどこにも出てこない。固定2語だけを見ていると、それらが
+---「許可側」と判定され、`"scoped"` モードで**拒否することだけが範囲外**という逆転が起きる
+---@param pending table|nil 答えようとしているプロンプト
 ---@param action string
 ---@return boolean
-local function is_deny_action(action)
+local function is_deny_action(pending, action)
+  for _, option in ipairs((pending or {}).options or {}) do
+    if option.value == action and type(option.is_allow) == "boolean" then
+      return not option.is_allow
+    end
+  end
   return action == "deny_once" or action == "deny_for_session"
 end
 
@@ -84,7 +114,7 @@ end
 ---@param action string
 ---@return boolean
 local function is_allowed_by_scope(chat_buf, pending, action)
-  if is_deny_action(action) then
+  if is_deny_action(pending, action) then
     return true
   end
   local scope = chat_buf:get_frontmatter_list("delegated_scope")
@@ -143,18 +173,8 @@ function M.answer(params)
       "Delegated tool approval is disabled. Only the user can answer this chat's tool-approval "
         .. "prompt: say which chat is blocked and on which tool, and let the user answer it in "
         .. "that chat. (The user can enable it with "
-        .. "agent.orchestration.delegated_approval = true (or \"scoped\") in their vibing.nvim "
+        .. 'permissions.delegated_approval = true (or "scoped") in their vibing.nvim '
         .. "setup.)"
-    )
-  end
-
-  if not is_valid_action(params.action) then
-    error(
-      string.format(
-        "Invalid action: %s (expected one of: %s)",
-        tostring(params.action),
-        table.concat(M.ACTIONS, ", ")
-      )
     )
   end
 
@@ -203,6 +223,19 @@ function M.answer(params)
           .. "or never existed. Expiry is not what removed it — an expired prompt stays "
           .. "answerable, as a new turn.",
         status
+      )
+    )
+  end
+
+  -- **語彙はプロンプトが決める（#861）。** 検証が `pending` の後ろに下りたのはそのため — CLI
+  -- 自身の承認要求は `accept` / `cancel` のような別語彙で選択肢を出すので、固定4択で先に弾くと、
+  -- 代理承認だけがそのチャネルで必ず失敗する。期待値の列挙もそのプロンプトが出したものから作る
+  if not action_offered(pending, params.action) then
+    error(
+      string.format(
+        "Invalid action: %s (expected one of: %s)",
+        tostring(params.action),
+        table.concat(offered_actions(pending), ", ")
       )
     )
   end
@@ -259,13 +292,14 @@ function M.answer(params)
   -- そのワーカーは既に走っていて枠を1つ占有している。ここで断ると、既に数えられている枠を
   -- 理由に承認を拒否することになり、しかも断られたワーカーは承認待ちのまま — 枠が上限なら、
   -- 答えることで枠を空けることもできない。ほぼデッドロックになる
-  local starts_new_turn = not require("vibing.infrastructure.rpc.pending_approvals").get(pending.request_id)
+  local starts_new_turn =
+    not require("vibing.application.chat.approval_decision").blocked_for_request(pending.request_id)
   local Concurrency = require("vibing.application.chat.concurrency")
   if starts_new_turn and Concurrency.at_capacity() then
     error(
       string.format(
         "%d chats and %d of their subagents are already in flight, at or above the configured "
-          .. "limit (agent.orchestration.max_concurrent = %d, max_concurrent_subagents = %d). "
+          .. "limit (automation.orchestration.max_concurrent = %d, max_concurrent_subagents = %d). "
           .. "The approval prompt is still pending — answer it again once one of them finishes.",
         Concurrency.responding_count(),
         Concurrency.subagent_count(),

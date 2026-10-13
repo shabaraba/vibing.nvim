@@ -14,7 +14,7 @@ local Fs = require("vibing.core.utils.fs")
 ---@class Vibing.ChatBuffer
 ---@field buf number?
 ---@field win number?
----@field config Vibing.ChatConfig
+---@field config Vibing.Config
 ---@field session_id string?
 ---@field file_path string?
 ---@field session Vibing.ChatSession? セッションオブジェクト（非推奨、後方互換性のため）
@@ -52,7 +52,7 @@ local Fs = require("vibing.core.utils.fs")
 local ChatBuffer = {}
 ChatBuffer.__index = ChatBuffer
 
----@param config Vibing.ChatConfig
+---@param config Vibing.Config
 ---@return Vibing.ChatBuffer
 function ChatBuffer:new(config)
   local instance = setmetatable({}, ChatBuffer)
@@ -101,8 +101,7 @@ function ChatBuffer:open()
 
   if buffer_existed then
     local line_count = vim.api.nvim_buf_line_count(self.buf)
-    has_content = line_count > 1
-      or (line_count == 1 and vim.api.nvim_buf_get_lines(self.buf, 0, 1, false)[1] ~= "")
+    has_content = line_count > 1 or (line_count == 1 and vim.api.nvim_buf_get_lines(self.buf, 0, 1, false)[1] ~= "")
   end
 
   self:_create_buffer()
@@ -444,7 +443,7 @@ function ChatBuffer:close()
     self._chunk_timer = nil
   end
   if self.win and vim.api.nvim_win_is_valid(self.win) then
-    if self.config.window.position == "current" then
+    if self.config.ui.window.position == "current" then
       local alt_buf = vim.fn.bufnr("#")
       if alt_buf ~= -1 and vim.api.nvim_buf_is_valid(alt_buf) and alt_buf ~= self.buf then
         vim.api.nvim_win_set_buf(self.win, alt_buf)
@@ -535,7 +534,7 @@ function ChatBuffer:_create_buffer()
   if self.file_path then
     vim.api.nvim_buf_set_name(self.buf, self.file_path)
   else
-    local save_path = FileManager.get_save_directory(self.config)
+    local save_path = FileManager.get_save_directory(self.config.chat)
     Fs.ensure_dir(save_path)
     local filename = FileManager.generate_unique_filename()
     self.file_path = save_path .. filename
@@ -555,7 +554,7 @@ end
 
 ---ウィンドウを作成
 function ChatBuffer:_create_window()
-  self.win = WindowManager.create_window(self.buf, self.config.window)
+  self.win = WindowManager.create_window(self.buf, self.config.ui.window)
   WindowManager.apply_window_config(self.win, self.buf)
 end
 
@@ -722,7 +721,10 @@ function ChatBuffer:can_defer_send(message, is_approval_retry)
   end
 
   local ApprovalParser = require("vibing.presentation.chat.modules.approval_parser")
-  if #(self._pending_approvals or {}) > 0 and ApprovalParser.is_approval_response(message) then
+  if
+    #(self._pending_approvals or {}) > 0
+    and ApprovalParser.is_approval_response(message, self:_approval_vocabulary())
+  then
     return false
   end
 
@@ -735,7 +737,7 @@ end
 ---@return boolean scheduled 予約に切り替えたか
 function ChatBuffer:_try_schedule_instead_of_send(message, is_approval_retry)
   local config = require("vibing.config").get()
-  local opts = (config.agent and config.agent.scheduled_requests) or {}
+  local opts = (config and vim.tbl_get(config, "automation", "limits", "queue")) or {}
   if not opts.enabled then
     return false
   end
@@ -760,8 +762,11 @@ function ChatBuffer:_try_schedule_instead_of_send(message, is_approval_retry)
   end
 
   local AutoResume = require("vibing.application.chat.auto_resume")
-  local grace = (config.agent and config.agent.auto_resume_on_limit and config.agent.auto_resume_on_limit.grace_sec)
-    or 10
+  local grace = (
+    config
+    and vim.tbl_get(config, "automation", "limits", "resume")
+    and vim.tbl_get(config, "automation", "limits", "grace_sec")
+  ) or 10
   local fire_at = state.resets_at + grace
 
   -- 予約本文はバッファにしか無いので、エントリを組む前に保存しておく。保存に失敗したまま
@@ -906,6 +911,26 @@ end
 ---
 ---nil は「そもそも承認への答えではない」で、通常の送信がそのまま続く
 ---@return Vibing.AnsweredApproval?
+---いま画面に出ているプロンプトが提示している action 値の和集合（#861）
+---
+---**固定の4語ではない。** CLI 自身の承認要求は `accept` / `cancel` のような別語彙で選択肢を
+---出すので、固定リストだけを読むとその行は普通の本文として素通りし、答えがどこにも届かない
+---まま上限まで待つことになる。語彙はプロンプトが持ち込み、帰属を決めるのは従来どおり
+---`request_id` マーカーだけなので、2種類が同時に出ていても取り違えは起きない
+---@return string[]|nil nil なら呼び出し先の既定（フックの4語）に落ちる
+function ChatBuffer:_approval_vocabulary()
+  local values, seen = {}, {}
+  for _, entry in ipairs(self._pending_approvals or {}) do
+    for _, option in ipairs(entry.options or {}) do
+      if type(option.value) == "string" and option.value ~= "" and not seen[option.value] then
+        seen[option.value] = true
+        table.insert(values, option.value)
+      end
+    end
+  end
+  return #values > 0 and values or nil
+end
+
 function ChatBuffer:_answer_pending_approval()
   local pending = self._pending_approvals or {}
   if #pending == 0 then
@@ -914,7 +939,8 @@ function ChatBuffer:_answer_pending_approval()
 
   local message = self:extract_user_message()
   local ApprovalParser = require("vibing.presentation.chat.modules.approval_parser")
-  if not message or not ApprovalParser.is_approval_response(message) then
+  local vocabulary = self:_approval_vocabulary()
+  if not message or not ApprovalParser.is_approval_response(message, vocabulary) then
     return nil
   end
 
@@ -927,7 +953,7 @@ function ChatBuffer:_answer_pending_approval()
   end
 
   -- **曖昧なら拒否する。** 消し忘れた行が別の承認への答えとして通る経路を残さない
-  local resolved, errors = ApprovalParser.resolve(message, answerable)
+  local resolved, errors = ApprovalParser.resolve(message, answerable, vocabulary)
   if #errors > 0 then
     self:_show_approval_refusal(errors)
     return { outcome = "refused" }
@@ -949,17 +975,18 @@ function ChatBuffer:_answer_pending_approval()
   --
   -- 途中で失敗したものは**そこだけ残す**。全部巻き戻すと「答えたのに消えた」になり、
   -- 黙って続けると失敗が見えない
-  local PendingApprovals = require("vibing.infrastructure.rpc.pending_approvals")
   local ApprovalDecision = require("vibing.application.chat.approval_decision")
-  local Permission = require("vibing.infrastructure.rpc.handlers.permission")
 
   local answered_in_place, retry_messages, failures = 0, {}, {}
 
   for _, approval in ipairs(resolved) do
-    -- 判定を届ける前に、フックがまだ待っているかを見ておく。`consume` はプロンプトを消すので、
-    -- 後から聞いても「待っていない」と区別がつかない。1件ずつ見るのは、直前の `consume` が
-    -- 消すのはその1件のプロンプトだけで、他の保留のレジストリ登録には触らないため
-    local blocked = PendingApprovals.get(approval.request_id)
+    -- 判定を届ける前に、まだ待っているかを見ておく。`consume` はプロンプトを消すので、後から
+    -- 聞いても「待っていない」と区別がつかない。1件ずつ見るのは、直前の `consume` が消すのは
+    -- その1件のプロンプトだけで、他の保留のレジストリ登録には触らないため。
+    -- **どのレジストリに訊くかはプロンプト自身が決める（#861）** — フックの `.res` を待つものと
+    -- CLI の JSON-RPC 応答を待つものが同じバッファに並びうる
+    local pending_entry = self:get_pending_approval(approval.request_id)
+    local blocked = ApprovalDecision.find_blocked(pending_entry)
 
     -- 答えが**意味すること**（セッションリストの更新、`:once` の記帳、再試行文）は
     -- `approval_decision.consume` が1箇所で持つ。ここで書き下すのは
@@ -974,15 +1001,15 @@ function ChatBuffer:_answer_pending_approval()
       -- 今日の経路。プロセスは既に死んでいるので、答えは散文として新しいターンで届く
       table.insert(retry_messages, consumed.retry_message)
     else
-      local ok, released = pcall(Permission.release_answered_approval, blocked, self)
+      local ok, released = pcall(ApprovalDecision.release, pending_entry, blocked, consumed, self)
       if ok and released then
         answered_in_place = answered_in_place + 1
       else
-        -- フックを解放できないまま黙って戻ると、そのフックは上限まで空回りする。答えは既に
+        -- 解放できないまま黙って戻ると、待っている側は上限まで空回りする。答えは既に
         -- 消費済みなので、再試行文として新しいターンに載せるのが唯一の通る道
         vim.notify(
           string.format(
-            "[vibing] Could not answer the waiting %s hook in place (%s); retrying as a new turn.",
+            "[vibing] Could not answer the waiting %s prompt in place (%s); retrying as a new turn.",
             tostring(consumed.tool),
             ok and "it was no longer waiting" or tostring(released)
           ),
@@ -1102,7 +1129,6 @@ function ChatBuffer:send_message()
 
   self._is_sending = true
 
-
   local message = self:extract_user_message()
   if not message then
     vim.notify("[vibing] No message to send", vim.log.levels.WARN)
@@ -1193,8 +1219,12 @@ function ChatBuffer:send_message()
     set_pending_user_text = function(text)
       return self:set_pending_user_text(text)
     end,
-    insert_approval_request = function(tool, input, options, hook_request_id, waiting)
-      return self:insert_approval_request(tool, input, options, hook_request_id, waiting)
+    -- **全部そのまま渡す。** `kind` はどのチャネルの承認かを決める値で（#861）、ここで落ちても
+    -- 何もエラーにならない — プロンプトは描かれ、ユーザーは答えられ、その答えだけが別のレイヤの
+    -- 検証に落ちて黙って捨てられる。中継のクロージャが引数を1つ落とす故障は、この並びに
+    -- 7つ目を足す日にまた起きる
+    insert_approval_request = function(tool, input, options, hook_request_id, waiting, kind)
+      return self:insert_approval_request(tool, input, options, hook_request_id, waiting, kind)
     end,
     get_session_allow = function()
       return self:get_session_allow()
@@ -1389,7 +1419,6 @@ function ChatBuffer:show_pending_prompts()
     return
   end
 
-
   StreamingHandler.stamp_response_end(self.buf, self._assistant_header_line)
   self._assistant_header_line = nil
   self:add_user_section()
@@ -1508,7 +1537,11 @@ end
 ---@param waiting boolean? このプロンプトが走り続けているターンを止めているか（#778）。
 ---  レンダラーはこれを見て「このターンの残りの出力は止まっている」と書く。kill する経路では
 ---  止まっているものが無いので書かない
-function ChatBuffer:insert_approval_request(tool, input, options, hook_request_id, waiting)
+---@param kind string? どのチャネルの承認か（#861）。省略＝PreToolUse フック。`"native"` は
+---  CLI 自身の承認要求で、**答えの意味が違う** — `approval_decision.consume` はこれを見て
+---  セッション許可リストを触らない経路へ振り分ける。レジストリも別なので、`find_blocked` の
+---  訊き先もこれが決める
+function ChatBuffer:insert_approval_request(tool, input, options, hook_request_id, waiting, kind)
   self._pending_approvals = self._pending_approvals or {}
 
   local entry = {
@@ -1516,6 +1549,7 @@ function ChatBuffer:insert_approval_request(tool, input, options, hook_request_i
     input = input,
     options = options,
     waiting = waiting or nil,
+    kind = kind,
     -- 名前は1つだけ。同じ値を2フィールドに持つと、片方だけ書き換える writer が現れたときに
     -- 帰属が黙って割れる — `request_id` という identity が入ったのは、まさにそれを閉じるため
     request_id = hook_request_id,

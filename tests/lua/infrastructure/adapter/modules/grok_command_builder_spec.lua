@@ -104,8 +104,7 @@ describe("grok_command_builder", function()
       local single_arg = find_prefixed(cmd, "--single=")
       assert.is_true(single_arg:find("Context file: init.lua", 1, true) ~= nil)
 
-      local resumed_cmd =
-        grok_command_builder.build("hello", { context = { "@file:init.lua" } }, "session-abc", {})
+      local resumed_cmd = grok_command_builder.build("hello", { context = { "@file:init.lua" } }, "session-abc", {})
       local resumed_single_arg = find_prefixed(resumed_cmd, "--single=")
       assert.is_nil(resumed_single_arg:find("Context file:", 1, true))
     end)
@@ -127,7 +126,12 @@ describe("grok_command_builder", function()
     end)
 
     it("combines the language instruction and worktree instruction into a single flag", function()
-      local config = { language = "ja" }
+      local config = {
+        chat = {
+          agent = "grok",
+          language = "ja",
+        },
+      }
       local cmd = grok_command_builder.build("hello", {}, nil, config)
 
       local count = 0
@@ -196,8 +200,15 @@ describe("grok_command_builder", function()
       assert.equals("xhigh", value_after(cmd, "--effort"))
     end)
 
-    it("falls back to agent.default_effort", function()
-      local config = { agent = { default_effort = "high" } }
+    it("falls back to ai.chat.effort", function()
+      local config = {
+        ai = {
+          chat = {
+            agent = "grok",
+            effort = "high",
+          },
+        },
+      }
       local cmd = grok_command_builder.build("hello", {}, nil, config)
       assert.equals("high", value_after(cmd, "--effort"))
     end)
@@ -213,7 +224,17 @@ describe("grok_command_builder", function()
     end)
 
     it("uses utility_effort for lightweight calls instead of the chat effort", function()
-      local config = { agent = { default_effort = "high", utility_effort = "low" } }
+      local config = {
+        ai = {
+          chat = {
+            agent = "grok",
+            effort = "high",
+          },
+          helpers = {
+            effort = "low",
+          },
+        },
+      }
       local cmd = grok_command_builder.build("hello", { lightweight = true, effort = "max" }, nil, config)
       assert.equals("low", value_after(cmd, "--effort"))
     end)
@@ -286,10 +307,16 @@ describe("grok_command_builder", function()
   end)
 
   describe("binary resolution", function()
-    it("uses backends.grok.executable when set to an explicit path", function()
+    it("uses ai.agents.grok.path when set to an explicit path", function()
       -- Force non-executable so sniff is skipped; path is still used in argv
       local cmd = grok_command_builder.build("hello", {}, nil, {
-        backends = { grok = { executable = "/opt/custom/grok" } },
+        ai = {
+          agents = {
+            grok = {
+              path = "/opt/custom/grok",
+            },
+          },
+        },
       })
       assert.equals("/opt/custom/grok", cmd[1])
     end)
@@ -344,7 +371,15 @@ describe("grok_command_builder", function()
 
       package.loaded["vibing.infrastructure.adapter.modules.grok_command_builder"] = nil
       local fresh_builder = require("vibing.infrastructure.adapter.modules.grok_command_builder")
-      local config = { backends = { grok = { executable = relative } } }
+      local config = {
+        ai = {
+          agents = {
+            grok = {
+              path = relative,
+            },
+          },
+        },
+      }
       assert.equals(relative, fresh_builder.build("hello", {}, nil, config)[1])
 
       -- Gone. The cached path must not survive it: the user gets the actionable "not found at
@@ -356,7 +391,7 @@ describe("grok_command_builder", function()
     end)
 
     it("still caches a bare command name, which no fs_stat can confirm", function()
-      -- backends.grok.executable takes a name off PATH as well as a path, and fs_stat would resolve
+      -- ai.agents.grok.path takes a name off PATH as well as a path, and fs_stat would resolve
       -- that against Neovim's own cwd and answer nil forever. Losing the cache is not just a
       -- lookup: the fallthrough re-runs the officialness sniff, blocking the main loop on a
       -- `grok --version` subprocess on every single send.
@@ -371,7 +406,15 @@ describe("grok_command_builder", function()
 
       package.loaded["vibing.infrastructure.adapter.modules.grok_command_builder"] = nil
       local fresh_builder = require("vibing.infrastructure.adapter.modules.grok_command_builder")
-      local config = { backends = { grok = { executable = "grok" } } }
+      local config = {
+        ai = {
+          agents = {
+            grok = {
+              path = "grok",
+            },
+          },
+        },
+      }
 
       fresh_builder.build("hello", {}, nil, config)
       fresh_builder.build("hello again", {}, nil, config)
@@ -390,7 +433,15 @@ describe("grok_command_builder", function()
       end
       package.loaded["vibing.infrastructure.adapter.modules.grok_command_builder"] = nil
       local fresh_builder = require("vibing.infrastructure.adapter.modules.grok_command_builder")
-      local config = { backends = { grok = { executable = "/opt/custom/grok" } } }
+      local config = {
+        ai = {
+          agents = {
+            grok = {
+              path = "/opt/custom/grok",
+            },
+          },
+        },
+      }
 
       assert.has_error(function()
         fresh_builder.build("hello", {}, nil, config)
@@ -461,7 +512,17 @@ describe("grok_command_builder", function()
     end)
 
     it("uses utility_model rather than default_model", function()
-      local config = { agent = { default_model = "grok-4", utility_model = "grok-3-mini" } }
+      local config = {
+        ai = {
+          chat = {
+            agent = "grok",
+            model = "grok-4",
+          },
+          helpers = {
+            model = "grok-3-mini",
+          },
+        },
+      }
       local cmd = grok_command_builder.build("hi", { lightweight = true }, nil, config)
       assert.equals("grok-3-mini", value_after(cmd, "--model"))
     end)

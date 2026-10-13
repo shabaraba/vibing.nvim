@@ -8,13 +8,23 @@ describe("request_builder", function()
   local binary
 
   before_each(function()
-    binary = { resolve = function()
-      return "/bin/fake-cli"
-    end, reset = function() end }
+    binary = {
+      resolve = function()
+        return "/bin/fake-cli"
+      end,
+      reset = function() end,
+    }
   end)
 
   local function build(parts, prompt, opts, session_id, config, hook_arg)
-    return RequestBuilder.build({ binary = binary, parts = parts }, prompt or "hi", opts or {}, session_id, config or {}, hook_arg)
+    return RequestBuilder.build(
+      { binary = binary, parts = parts },
+      prompt or "hi",
+      opts or {},
+      session_id,
+      config or {},
+      hook_arg
+    )
   end
 
   it("starts with the binary and applies the parts in the order given", function()
@@ -39,9 +49,18 @@ describe("request_builder", function()
     end)
 
     it("reads a config path as a condition", function()
-      local parts = { { kind = "args", "F", when = { config = "agent.subagent.enabled" } } }
+      local parts = { { kind = "args", "F", when = { config = "ui.subagents.show_output" } } }
       assert.same({ "/bin/fake-cli" }, build(parts))
-      assert.same({ "/bin/fake-cli", "F" }, build(parts, "hi", {}, nil, { agent = { subagent = { enabled = true } } }))
+      assert.same(
+        { "/bin/fake-cli", "F" },
+        build(parts, "hi", {}, nil, {
+          ui = {
+            subagents = {
+              show_output = true,
+            },
+          },
+        })
+      )
     end)
 
     it("requires every when and rejects on any unless", function()
@@ -61,11 +80,23 @@ describe("request_builder", function()
   describe("model", function()
     it("passes claude's short names through and prefers utility_model on a lightweight call", function()
       local part = { kind = "model", flag = "--model", names = "claude" }
-      local config = { agent = { default_model = "opus", utility_model = "haiku" } }
+      local config = {
+        ai = {
+          chat = {
+            model = "opus",
+          },
+          helpers = {
+            model = "haiku",
+          },
+        },
+      }
       assert.same({ "/bin/fake-cli", "--model", "sonnet" }, build({ part }, "hi", { model = "sonnet" }, nil, config))
       assert.same({ "/bin/fake-cli", "--model", "opus" }, build({ part }, "hi", {}, nil, config))
-      assert.same({ "/bin/fake-cli", "--model", "haiku" }, build({ part }, "hi", { lightweight = true, model = "opus" }, nil, config))
-      assert.same({ "/bin/fake-cli", "--model", "sonnet" }, build({ part }, "hi", { lightweight = true }, nil, {}))
+      assert.same(
+        { "/bin/fake-cli", "--model", "haiku" },
+        build({ part }, "hi", { lightweight = true, model = "opus" }, nil, config)
+      )
+      assert.same({ "/bin/fake-cli", "--model", "haiku" }, build({ part }, "hi", { lightweight = true }, nil, {}))
     end)
 
     it("drops claude's short names for a native backend", function()
@@ -77,7 +108,10 @@ describe("request_builder", function()
 
   describe("effort", function()
     it("emits a flag or a -c override, and nothing for default", function()
-      assert.same({ "/bin/fake-cli", "--effort", "high" }, build({ { kind = "effort", flag = "--effort" } }, "hi", { effort = "high" }))
+      assert.same(
+        { "/bin/fake-cli", "--effort", "high" },
+        build({ { kind = "effort", flag = "--effort" } }, "hi", { effort = "high" })
+      )
       assert.same(
         { "/bin/fake-cli", "-c", 'model_reasoning_effort="low"' },
         build({ { kind = "effort", config = 'model_reasoning_effort="%s"' } }, "hi", { effort = "low" })
@@ -89,21 +123,36 @@ describe("request_builder", function()
   describe("resume", function()
     it("spells a resume as a flag, a flag=value or a subcommand, with the fork flag when asked", function()
       assert.same({ "/bin/fake-cli" }, build({ { kind = "resume", flag = "--resume" } }))
-      assert.same({ "/bin/fake-cli", "--resume", "s1" }, build({ { kind = "resume", flag = "--resume", fork = "--fork-session" } }, "hi", {}, "s1"))
+      assert.same(
+        { "/bin/fake-cli", "--resume", "s1" },
+        build({ { kind = "resume", flag = "--resume", fork = "--fork-session" } }, "hi", {}, "s1")
+      )
       assert.same(
         { "/bin/fake-cli", "--resume", "s1", "--fork-session" },
         build({ { kind = "resume", flag = "--resume", fork = "--fork-session" } }, "hi", { _is_fork = true }, "s1")
       )
-      assert.same({ "/bin/fake-cli", "--resume=s1" }, build({ { kind = "resume", flag_eq = "--resume=" } }, "hi", {}, "s1"))
-      assert.same({ "/bin/fake-cli", "resume", "s1" }, build({ { kind = "resume", subcommand = "resume" } }, "hi", {}, "s1"))
+      assert.same(
+        { "/bin/fake-cli", "--resume=s1" },
+        build({ { kind = "resume", flag_eq = "--resume=" } }, "hi", {}, "s1")
+      )
+      assert.same(
+        { "/bin/fake-cli", "resume", "s1" },
+        build({ { kind = "resume", subcommand = "resume" } }, "hi", {}, "s1")
+      )
     end)
   end)
 
   describe("hook_arg", function()
     it("places a path behind its flag and a fragment verbatim, and nothing when no hook was installed", function()
       assert.same({ "/bin/fake-cli" }, build({ { kind = "hook_arg", flag = "--settings" } }))
-      assert.same({ "/bin/fake-cli", "--settings", "/s.json" }, build({ { kind = "hook_arg", flag = "--settings" } }, "hi", {}, nil, {}, "/s.json"))
-      assert.same({ "/bin/fake-cli", "-c", "hooks=x" }, build({ { kind = "hook_arg" } }, "hi", {}, nil, {}, { "-c", "hooks=x" }))
+      assert.same(
+        { "/bin/fake-cli", "--settings", "/s.json" },
+        build({ { kind = "hook_arg", flag = "--settings" } }, "hi", {}, nil, {}, "/s.json")
+      )
+      assert.same(
+        { "/bin/fake-cli", "-c", "hooks=x" },
+        build({ { kind = "hook_arg" } }, "hi", {}, nil, {}, { "-c", "hooks=x" })
+      )
     end)
   end)
 
@@ -112,7 +161,10 @@ describe("request_builder", function()
       local part = { kind = "permission_mode", flag = "--permission-mode", map = { auto = "default" } }
       assert.same({ "/bin/fake-cli" }, build({ part }))
       assert.same({ "/bin/fake-cli", "--permission-mode", "plan" }, build({ part }, "hi", { permission_mode = "plan" }))
-      assert.same({ "/bin/fake-cli", "--permission-mode", "default" }, build({ part }, "hi", { permission_mode = "auto" }))
+      assert.same(
+        { "/bin/fake-cli", "--permission-mode", "default" },
+        build({ part }, "hi", { permission_mode = "auto" })
+      )
     end)
   end)
 
@@ -124,13 +176,23 @@ describe("request_builder", function()
     end)
 
     it("prepends the language sentence only where asked, and spells the flag three ways", function()
-      local config = { language = "ja" }
-      assert.same({ "/bin/fake-cli", "--", "hi" }, build({ { kind = "prompt", terminator = "--" } }, "hi", {}, nil, config))
+      local config = {
+        chat = {
+          language = "ja",
+        },
+      }
+      assert.same(
+        { "/bin/fake-cli", "--", "hi" },
+        build({ { kind = "prompt", terminator = "--" } }, "hi", {}, nil, config)
+      )
       assert.same(
         { "/bin/fake-cli", "-p", "Always respond in Japanese (ja).\n\nhi" },
         build({ { kind = "prompt", flag = "-p", language_prefix = true } }, "hi", {}, nil, config)
       )
-      assert.same({ "/bin/fake-cli", "--single=hi" }, build({ { kind = "prompt", flag_eq = "--single=" } }, "hi", {}, nil, config))
+      assert.same(
+        { "/bin/fake-cli", "--single=hi" },
+        build({ { kind = "prompt", flag_eq = "--single=" } }, "hi", {}, nil, config)
+      )
     end)
   end)
 
@@ -138,13 +200,19 @@ describe("request_builder", function()
     it("appends whatever the function returns, and tolerates nil", function()
       local seen = nil
       local parts = {
-        { kind = "extra", fn = function(ctx)
-          seen = ctx
-          return { "--x", ctx.prompt }
-        end },
-        { kind = "extra", fn = function()
-          return nil
-        end },
+        {
+          kind = "extra",
+          fn = function(ctx)
+            seen = ctx
+            return { "--x", ctx.prompt }
+          end,
+        },
+        {
+          kind = "extra",
+          fn = function()
+            return nil
+          end,
+        },
       }
       assert.same({ "/bin/fake-cli", "--x", "hi" }, build(parts, "hi", {}, "s1", {}, "h"))
       assert.equals("s1", seen.session_id)

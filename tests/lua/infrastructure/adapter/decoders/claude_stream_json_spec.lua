@@ -2,6 +2,29 @@
 local Decoder = require("vibing.infrastructure.adapter.decoders.claude_stream_json")
 
 describe("decoders.claude_stream_json", function()
+  it("routes structured output through the stream processor to the caller", function()
+    local result
+    local processor = require("vibing.infrastructure.adapter.modules.cli_event_processor")
+    assert.is_true(
+      processor.processLine(
+        vim.json.encode({ type = "result", subtype = "success", structured_output = { groups = {} } }),
+        {
+          opts = {
+            on_structured_output = function(value)
+              result = value
+            end,
+          },
+        }
+      )
+    )
+    assert.are.same({ groups = {} }, result)
+  end)
+  it("delivers the structured result before ending the turn", function()
+    local events = Decoder.decode({ type = "result", subtype = "success", structured_output = { groups = {} } }, {})
+    assert.are.equal("structured_output", events[1].kind)
+    assert.are.same({ groups = {} }, events[1].value)
+    assert.are.equal("turn_end", events[2].kind)
+  end)
   local function decode(state, msg)
     return Decoder.decode(msg, state)
   end
@@ -29,7 +52,10 @@ describe("decoders.claude_stream_json", function()
       tools = { "Bash", "Read" },
       mcp_servers = { { name = "x" } },
     })
-    assert.same({ kind = "cli_info", version = "2.1.231", model = "claude-opus-5", tools = 2, mcp_servers = 1 }, events[1])
+    assert.same(
+      { kind = "cli_info", version = "2.1.231", model = "claude-opus-5", tools = 2, mcp_servers = 1 },
+      events[1]
+    )
     assert.equals("first_response", events[2].kind)
   end)
 
@@ -39,10 +65,13 @@ describe("decoders.claude_stream_json", function()
       event = { type = "content_block_delta", delta = { type = "text_delta", text = "hi" } },
     })
     assert.same({ { kind = "text", delta = "hi" } }, events)
-    assert.same({}, decode({}, {
-      type = "stream_event",
-      event = { type = "content_block_delta", delta = { type = "thinking_delta", thinking = "private" } },
-    }))
+    assert.same(
+      {},
+      decode({}, {
+        type = "stream_event",
+        event = { type = "content_block_delta", delta = { type = "thinking_delta", thinking = "private" } },
+      })
+    )
   end)
 
   it("turns an assistant message into usage plus tool starts", function()
@@ -74,17 +103,22 @@ describe("decoders.claude_stream_json", function()
     local events = decode({}, {
       type = "user",
       parent_tool_use_id = vim.NIL,
-      message = { content = { { type = "tool_result", tool_use_id = "t1", content = { { type = "text", text = "ok" } } } } },
+      message = {
+        content = { { type = "tool_result", tool_use_id = "t1", content = { { type = "text", text = "ok" } } } },
+      },
     })
     assert.same({ { kind = "tool_end", id = "t1", result = "ok" } }, events)
   end)
 
   it("drops a subagent's own user events", function()
-    assert.same({}, decode({}, {
-      type = "user",
-      parent_tool_use_id = "t1",
-      message = { content = { { type = "tool_result", tool_use_id = "nested", content = "x" } } },
-    }))
+    assert.same(
+      {},
+      decode({}, {
+        type = "user",
+        parent_tool_use_id = "t1",
+        message = { content = { { type = "tool_result", tool_use_id = "nested", content = "x" } } },
+      })
+    )
   end)
 
   it("reports a failed result as a fatal error, ahead of the turn_end it also ends", function()
@@ -149,7 +183,10 @@ describe("decoders.claude_stream_json", function()
     -- string rather than a block list. `ipairs` on that raised, and on the resident transport the
     -- raise escaped the stdout callback -- taking the `result` line sharing that batch with it, so
     -- the turn never ended and the chat sat at `responding` for good.
-    assert.same({}, decode({}, { type = "user", message = { role = "user", content = "This session is being continued…" } }))
+    assert.same(
+      {},
+      decode({}, { type = "user", message = { role = "user", content = "This session is being continued…" } })
+    )
     assert.same(
       {},
       decode({}, {
@@ -161,7 +198,10 @@ describe("decoders.claude_stream_json", function()
   end)
 
   it("normalises a rate_limit_event", function()
-    local events = decode({}, { type = "rate_limit_event", rate_limit_info = { status = "rejected", resetsAt = 1700000000 } })
+    local events = decode(
+      {},
+      { type = "rate_limit_event", rate_limit_info = { status = "rejected", resetsAt = 1700000000 } }
+    )
     assert.equals("rate_limit", events[1].kind)
     assert.is_true(events[1].info.rejected)
   end)
@@ -179,7 +219,10 @@ describe("decoders.claude_stream_json", function()
       })
       -- Only what something downstream reads: the id the ledger and the transcript path are keyed
       -- by, and the brief the completion line names the task with.
-      assert.same({ kind = "background_task_started", task_id = "a5a51adc038e56bf6", description = "Reply PONG" }, events[1])
+      assert.same(
+        { kind = "background_task_started", task_id = "a5a51adc038e56bf6", description = "Reply PONG" },
+        events[1]
+      )
     end)
 
     -- A foreground subagent closes inside the turn that launched it, as a tool_result. Tracking it

@@ -1,252 +1,208 @@
--- Tests for vibing.config module
+local Config = require("vibing.config")
+local Ai = require("vibing.core.utils.ai_config")
 
-describe("vibing.config", function()
-  local config
-
-  before_each(function()
-    -- Reload module before each test.
-    -- `notify` も一緒に捨てるのは、削除設定の案内が `notify.warn_once` の memo に載っている
-    -- ため。configだけ作り直しても、前のテストが立てたフラグが残って警告が出なくなる
-    package.loaded["vibing.core.utils.notify"] = nil
-    package.loaded["vibing.config"] = nil
-    config = require("vibing.config")
+describe("configuration redesign", function()
+  after_each(function()
+    Config.setup({})
   end)
 
-  describe("defaults", function()
-    it("should have chat configuration", function()
-      assert.is_not_nil(config.defaults.chat)
-      assert.is_not_nil(config.defaults.chat.window)
-      assert.equals("current", config.defaults.chat.window.position)
-    end)
-
-    it("should have agent configuration", function()
-      assert.is_not_nil(config.defaults.agent)
-      assert.equals("code", config.defaults.agent.default_mode)
-      assert.equals("sonnet", config.defaults.agent.default_model)
-      assert.equals("default", config.defaults.agent.default_effort)
-    end)
-
-    it("should have permissions configuration", function()
-      assert.is_not_nil(config.defaults.permissions)
-      assert.is_not_nil(config.defaults.permissions.allow)
-      assert.is_table(config.defaults.permissions.allow)
-      assert.is_not_nil(config.defaults.permissions.rules)
-      assert.is_table(config.defaults.permissions.rules)
-    end)
-
-    it("should have per-backend configuration declared by the backends themselves", function()
-      -- The fields come from `config_fields` in core/constants/agents.lua, so config.lua names no
-      -- backend (ADR 009).
-      assert.equals(".vibing/codex-permissions.toml", config.defaults.backends.codex.profile_file)
-      assert.matches("%[permissions%.vibing%-project%.network%]", config.defaults.backends.codex.profile_content)
-      assert.matches("enabled = true", config.defaults.backends.codex.profile_content)
-      assert.is_false(config.defaults.backends.codex.allow_tracked_profile)
-      assert.is_true(config.defaults.backends.codex.provider_notice)
-      assert.equals("auto", config.defaults.backends.grok.executable)
-      assert.same({ process = "duplex", background_wait_sec = 3600 }, config.defaults.backends.claude)
-    end)
-
-    it("should have language configuration", function()
-      assert.is_nil(config.defaults.language)
-    end)
+  it("resolves purpose defaults and preserves all feature defaults", function()
+    Config.setup({})
+    local c = Config.get()
+    assert.same({ agent = "claude", model = "sonnet", effort = "default" }, Ai.resolve(c))
+    assert.same({ agent = "claude", model = "haiku", effort = "low" }, Ai.resolve(c, nil, true))
+    assert.equals("current", c.ui.window.position)
+    assert.equals("project", c.chat.storage.location)
+    assert.equals(9876, c.integrations.nvim.port)
+    assert.is_false(c.automation.limits.resume.enabled)
+    assert.is_true(c.automation.limits.queue.enabled)
+    assert.is_false(c.permissions.delegated_approval)
+    assert.equals(".vibing/codex-permissions.toml", c.ai.agents.codex.extensions.profile_file)
+    assert.matches("%[permissions%.vibing%-project%.network%]", c.ai.agents.codex.extensions.profile_content)
+    assert.equals("duplex", c.ai.agents.claude.process)
+    assert.equals("oneshot", c.ai.agents.codex.process)
+    assert.equals("oneshot", c.ai.agents.grok.process)
+    assert.is_nil(c.ai.agents.grok.path)
   end)
 
-  describe("setup", function()
-    it("should merge user config with defaults", function()
-      local user_config = {
-        chat = {
-          window = {
-            position = "left",
+  it("selects helper agent/model independently of the chat", function()
+    Config.setup({
+      ai = {
+        chat = { agent = "codex", model = "chat-model", effort = "high" },
+        helpers = { agent = "claude", model = "helper-model", effort = "medium" },
+      },
+    })
+    assert.same({ agent = "claude", model = "helper-model", effort = "medium" }, Ai.resolve(Config.get(), nil, true))
+    assert.same({ agent = "codex", model = "chat-model", effort = "high" }, Ai.resolve(Config.get()))
+  end)
+
+  it("inherits the chat agent but uses its own helper model default", function()
+    Config.setup({ ai = { chat = { agent = "codex", model = "chat-model" } } })
+    assert.same({ agent = "codex", effort = "low" }, Ai.resolve(Config.get(), nil, true))
+    assert.is_nil(Ai.resolve(Config.get(), "copilot").model)
+  end)
+
+  it("merges objects and replaces lists, including empty lists", function()
+    Config.setup({
+      ui = { window = { position = "left" }, gradient = { colors = { "#123456", "#654321" } } },
+      permissions = { allow = {}, deny = {} },
+      ai = { agents = { claude = { settings = { sources = {} } } } },
+    })
+    local c = Config.get()
+    assert.equals(0.4, c.ui.window.width)
+    assert.same({ "#123456", "#654321" }, c.ui.gradient.colors)
+    assert.same({ "Skill" }, c.permissions.allow)
+    assert.same({}, c.permissions.deny)
+    assert.same({}, c.ai.agents.claude.settings.sources)
+  end)
+
+  it("merges free-form marker objects while replacing permission lists", function()
+    Config.setup({ ui = { tools = { markers = { Bash = "B" } } }, permissions = { deny = { "Write" } } })
+    assert.equals("▶", Config.get().ui.tools.markers.Task)
+    assert.equals("B", Config.get().ui.tools.markers.Bash)
+    assert.same({ "Write" }, Config.get().permissions.deny)
+  end)
+
+  it("does not share defaults or input objects", function()
+    local opts = { ai = { agents = { codex = { extensions = { auto_approve_ask = { "Bash(git push)" } } } } } }
+    Config.setup(opts)
+    Config.get().ai.agents.codex.extensions.auto_approve_ask[1] = "changed"
+    Config.get().ui.window.position = "left"
+    assert.equals("Bash(git push)", opts.ai.agents.codex.extensions.auto_approve_ask[1])
+    assert.same({}, Config.defaults.ai.agents.codex.extensions.auto_approve_ask)
+    assert.equals("current", Config.defaults.ui.window.position)
+  end)
+
+  it("accepts each agent's common parameters and native extensions", function()
+    for _, id in ipairs({ "claude", "codex", "copilot", "grok" }) do
+      Config.setup({
+        ai = {
+          agents = {
+            [id] = {
+              path = "/custom/agent",
+              process = "oneshot",
+              env = { TOKEN_LIMIT = 42 },
+              settings = {},
+              mcp = {},
+              extensions = {},
+            },
           },
         },
-      }
-
-      config.setup(user_config)
-      local result = config.get()
-
-      -- User values should override defaults
-      assert.equals("left", result.chat.window.position)
-
-      -- Non-overridden defaults should remain
-      assert.is_not_nil(result.agent)
-      assert.equals("code", result.agent.default_mode)
-    end)
-
-    it("should warn about invalid tools in permissions", function()
-      local user_config = {
-        permissions = {
-          allow = { "Read", "InvalidTool" },
+      })
+      assert.equals("/custom/agent", Config.get().ai.agents[id].path)
+      assert.equals(42, Config.get().ai.agents[id].env.TOKEN_LIMIT)
+    end
+    Config.setup({
+      ai = {
+        agents = {
+          codex = { extensions = { profile_file = false, approval_policy = "on-request", auto_approve = true } },
+          claude = { extensions = { git_instructions = true }, process = "duplex" },
         },
-      }
-      -- Should not error, just warn
-      assert.has_no.errors(function()
-        config.setup(user_config)
+      },
+    })
+    assert.is_false(Config.get().ai.agents.codex.extensions.profile_file)
+    assert.is_true(Config.get().ai.agents.claude.extensions.git_instructions)
+  end)
+
+  it("retains profiles and worker defaults without merging list entries", function()
+    Config.setup({
+      ai = { profiles = { { name = "implementer", tools = {} }, { name = "focused", model = "haiku" } } },
+      automation = { orchestration = { worker_defaults = { model = "sonnet", profile = "focused" } } },
+    })
+    assert.equals(2, #Config.get().ai.profiles)
+    assert.same({}, Config.get().ai.profiles[1].tools)
+    assert.equals("haiku", Config.get().ai.profiles[2].model)
+    assert.equals("focused", Config.get().automation.orchestration.worker_defaults.profile)
+    Config.setup({ ai = { agents = { grok = { process = "duplex" } } } })
+    assert.equals("duplex", Config.get().ai.agents.grok.process)
+  end)
+
+  it("preserves explicit Skill ask and deny", function()
+    for _, key in ipairs({ "ask", "deny" }) do
+      Config.setup({ permissions = { allow = {}, [key] = { "Skill" } } })
+      assert.same({}, Config.get().permissions.allow)
+    end
+  end)
+
+  it("keeps tool rules and delegated approvals without operations", function()
+    local rule = { tools = { "Bash" }, commands = { "git status" }, action = "allow" }
+    Config.setup({ permissions = { delegated_approval = "scoped", rules = { rule } } })
+    assert.same({ rule }, Config.get().permissions.rules)
+    assert.equals("scoped", Config.get().permissions.delegated_approval)
+  end)
+
+  it("reports paths and leaves the last valid config intact on error", function()
+    Config.setup({ ui = { wrap = "off" } })
+    local ok, err =
+      pcall(Config.setup, { ai = { agents = { codex = { extensions = { approval_policy = "untrusted" } } } } })
+    assert.is_false(ok)
+    assert.matches("ai.agents.codex.extensions.approval_policy", err, 1, true)
+    assert.equals("off", Config.get().ui.wrap)
+  end)
+
+  it("accepts supported language codes in both forms and a scalar opt-out", function()
+    for _, language in ipairs({ "en", "ja", "", { default = "ja", chat = "en" } }) do
+      Config.setup({ chat = { language = language } })
+      assert.same(language, Config.get().chat.language)
+    end
+  end)
+
+  for _, case in ipairs({
+    { language = "unknown", path = "chat.language" },
+    { language = { default = "unknown" }, path = "chat.language.default" },
+    { language = { default = "ja", chat = "unknown" }, path = "chat.language.chat" },
+  }) do
+    it("rejects unsupported language at " .. case.path .. " without replacing the valid config", function()
+      Config.setup({ chat = { language = "ja" } })
+      local before = Config.get()
+      local ok, err = pcall(Config.setup, { chat = { language = case.language } })
+      assert.is_false(ok)
+      assert.truthy(err:find(case.path .. ": expected a supported language code", 1, true))
+      assert.equals(before, Config.get())
+    end)
+  end
+
+  local invalid = {
+    false,
+    { ui = { gradient = { colors = { "#123456" } } } },
+    { ui = { gradient = { waiting_color = "blue" } } },
+    { adapter = "claude" },
+    { agent = { default_mode = "plan" } },
+    { backends = {} },
+    { chat = { mode = "code" } },
+    { ui = { gradient = { interval = 100 } } },
+    { unknown = true },
+    { ai = { profiles = { { model = "sonnet" } } } },
+    { ai = { profiles = { { name = "bad name" } } } },
+    { ai = { profiles = { { name = "worker", unknown = true } } } },
+    { ai = { profiles = { { name = "worker", agent = "unknown" } } } },
+    { ai = { profiles = { { name = "worker", effort = "extreme" } } } },
+    { permissions = { operations = { read = true } } },
+    { ui = { diff = { tool = "git" } } },
+    { ai = { agents = { grok = { executable = "auto" } } } },
+    { ai = { chat = { agent = "unknown" } } },
+    { ai = { helpers = { model = "" } } },
+    { ai = { agents = { codex = { settings = { sources = { "user" } } } } } },
+    { ai = { agents = { copilot = { mcp = { inherit_cli_servers = false } } } } },
+    { ai = { agents = { copilot = { process = "duplex" } } } },
+    { ui = { diff = { fill_char = "xx" } } },
+    { integrations = { nvim = { port = 65536 } } },
+    { permissions = { rules = { { action = "allow" } } } },
+    { permissions = { rules = { { tools = { "Bash" } } } } },
+    { permissions = { allow = { [1] = "Read", [3] = "Write" } } },
+    { ai = { agents = { codex = { extensions = { profile_file = true } } } } },
+    { ai = { agents = { claude = { env = { FOO = true } } } } },
+    { automation = { limits = { resume = { max_retries = 0.5 } } } },
+  }
+  for i, opts in ipairs(invalid) do
+    it("rejects invalid or removed options " .. i, function()
+      assert.has_error(function()
+        Config.setup(opts)
       end)
     end)
-
-    it("should validate the Codex permission profile options by their declared kind", function()
-      config.setup({ backends = { codex = { profile_file = false } } })
-      assert.is_false(config.get().backends.codex.profile_file)
-
-      config.setup({ backends = { codex = { profile_file = true } } })
-      assert.equals(".vibing/codex-permissions.toml", config.get().backends.codex.profile_file)
-
-      config.setup({ backends = { codex = { allow_tracked_profile = "yes" } } })
-      assert.is_false(config.get().backends.codex.allow_tracked_profile)
-
-      config.setup({ backends = { codex = { allow_tracked_profile = true } } })
-      assert.is_true(config.get().backends.codex.allow_tracked_profile)
-
-      config.setup({ backends = { codex = { profile_content = false } } })
-      assert.equals(config.defaults.backends.codex.profile_content, config.get().backends.codex.profile_content)
-    end)
-
-    it("should validate the grok executable without resetting a missing path", function()
-      config.setup({ backends = { grok = { executable = "" } } })
-      assert.equals("auto", config.get().backends.grok.executable)
-
-      -- A path that does not exist is kept: the user asked for that binary, and falling back to
-      -- whatever `grok` is on PATH would be worse than failing.
-      config.setup({ backends = { grok = { executable = "/nonexistent/grok" } } })
-      assert.equals("/nonexistent/grok", config.get().backends.grok.executable)
-    end)
-
-    it("should migrate the pre-ADR-009 option locations into backends.<id>", function()
-      config.setup({
-        permissions = { codex_profile_file = false, codex_allow_tracked_profile = true },
-        grok = { executable = "/opt/grok/bin/grok" },
-        agent = { codex_provider_notice = { enabled = false } },
-      })
-      local backends = config.get().backends
-      assert.is_false(backends.codex.profile_file)
-      assert.is_true(backends.codex.allow_tracked_profile)
-      assert.is_false(backends.codex.provider_notice)
-      assert.equals("/opt/grok/bin/grok", backends.grok.executable)
-      -- The stale keys do not survive into a table nothing reads.
-      assert.is_nil(config.get().permissions.codex_profile_file)
-      assert.is_nil(vim.tbl_get(config.get(), "grok", "executable"))
-    end)
-
-    it("prefers the new location when an option is set in both", function()
-      config.setup({
-        permissions = { codex_profile_file = false },
-        backends = { codex = { profile_file = "custom.toml" } },
-      })
-      assert.equals("custom.toml", config.get().backends.codex.profile_file)
-    end)
-  end)
-
-  describe("get", function()
-    it("should return current config", function()
-      config.setup({
-        agent = {
-          default_mode = "plan"
-        }
-      })
-      local result = config.get()
-      assert.equals("plan", result.agent.default_mode)
-    end)
-  end)
-  describe("removed mote settings", function()
-    local messages
-    local original_notify
-
-    before_each(function()
-      messages = {}
-      original_notify = vim.notify
-      vim.notify = function(msg, level)
-        table.insert(messages, { msg = msg, level = level })
-      end
-    end)
-
-    after_each(function()
-      vim.notify = original_notify
-    end)
-
-    it("treats diff.tool = 'mote' as 'git' and says so", function()
-      config.setup({ diff = { tool = "mote" } })
-
-      assert.equals("git", config.get().diff.tool)
-      assert.equals(1, #messages)
-      assert.is_truthy(messages[1].msg:find("mote", 1, true))
-    end)
-
-    it("drops diff.mote and says so", function()
-      config.setup({ diff = { mote = { context_prefix = "vibing" } } })
-
-      assert.is_nil(config.get().diff.mote)
-      assert.equals(1, #messages)
-      assert.is_truthy(messages[1].msg:find("diff.mote", 1, true))
-    end)
-
-    it("warns only once even when setup() runs again", function()
-      -- 正規化した値は M.options にしか書かないので、ユーザーの opts には古い設定が残る。
-      -- ガードが無いと setup() を呼ぶたびに同じ警告が出る
-      local opts = { diff = { tool = "mote", mote = { context_prefix = "vibing" } } }
-      config.setup(opts)
-      local after_first = #messages
-
-      config.setup(opts)
-
-      assert.equals(2, after_first)
-      assert.equals(after_first, #messages)
-      assert.equals("git", config.get().diff.tool)
-      assert.is_nil(config.get().diff.mote)
-    end)
-
-    it("says nothing for a config that never mentioned mote", function()
-      config.setup({ diff = { tool = "auto" } })
-
-      assert.equals(0, #messages)
-    end)
-  end)
-
-  describe("removed chat_notifications.max_hops", function()
-    local messages
-    local original_notify
-
-    before_each(function()
-      messages = {}
-      original_notify = vim.notify
-      vim.notify = function(msg, level)
-        table.insert(messages, { msg = msg, level = level })
-      end
-    end)
-
-    after_each(function()
-      vim.notify = original_notify
-    end)
-
-    it("drops it and names the settings that replaced it", function()
-      -- 黙って無視すると「上限を下げたはずなのに効いていない」に気づけない
-      config.setup({ agent = { chat_notifications = { enabled = true, max_hops = 2 } } })
-
-      assert.is_nil(config.get().agent.chat_notifications.max_hops)
-      assert.equals(1, #messages)
-      assert.is_truthy(messages[1].msg:find("max_round_trips", 1, true))
-      assert.is_truthy(messages[1].msg:find("max_wakes", 1, true))
-    end)
-
-    it("keeps the replacement defaults when the removed key was set", function()
-      config.setup({ agent = { chat_notifications = { enabled = true, max_hops = 2 } } })
-
-      local notifications = config.get().agent.chat_notifications
-      assert.equals(8, notifications.max_round_trips)
-      assert.equals(50, notifications.max_wakes)
-    end)
-
-    it("warns only once even when setup() runs again", function()
-      local opts = { agent = { chat_notifications = { enabled = true, max_hops = 2 } } }
-      config.setup(opts)
-      config.setup(opts)
-
-      assert.equals(1, #messages)
-    end)
-
-    it("says nothing for a config that never mentioned max_hops", function()
-      config.setup({ agent = { chat_notifications = { enabled = true } } })
-
-      assert.equals(0, #messages)
-    end)
+  end
+  it("names the replacement for legacy keys", function()
+    local _, err = pcall(Config.setup, { chat = { window = { position = "left" } } })
+    assert.matches("chat.window: moved to ui.window", err, 1, true)
   end)
 end)

@@ -153,6 +153,7 @@ by_type["item.completed"] = function(msg, events, state)
     return
   end
   if item.type == "agent_message" then
+    state.last_agent_message = item.text
     if item.text then
       table.insert(events, { kind = "text", delta = item.text })
     end
@@ -200,7 +201,14 @@ end
 --- Codex emits its only token report on the terminal event, cumulative for the thread on a
 --- resumed session. `TokenUsage.cumulative` tags it so the reporter treats it as a session total
 --- rather than one request.
-by_type["turn.completed"] = function(msg, events)
+by_type["turn.completed"] = function(msg, events, state)
+  if state.last_agent_message then
+    local ok, value = pcall(vim.json.decode, state.last_agent_message)
+    if ok and type(value) == "table" then
+      table.insert(events, { kind = "structured_output", value = value })
+    end
+    state.last_agent_message = nil
+  end
   local totals = M.usage_totals(msg.usage)
   if totals then
     table.insert(events, { kind = "usage", accumulator = TokenUsage.cumulative(totals) })

@@ -10,8 +10,11 @@ import * as annotations from './annotations.js';
 import * as qflist from './qflist.js';
 import * as dap from './dap.js';
 import * as jobs from './jobs.js';
+import * as sessions from './sessions.js';
 
 export const handlers: Record<string, (args: any) => Promise<any>> = {
+  nvim_session_search: sessions.handleSessionSearch,
+  nvim_session_read: sessions.handleSessionRead,
   // Buffer operations
   nvim_get_buffer: buffer.handleGetBuffer,
   nvim_set_buffer: buffer.handleSetBuffer,

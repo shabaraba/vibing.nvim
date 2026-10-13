@@ -87,7 +87,7 @@ function M.enter(state)
     state.saved_diffopt = M.apply()
   end
 
-  local diff_config = ((require("vibing.config").options or {}).diff or {})
+  local diff_config = (vim.tbl_get(require("vibing.config").get(), "ui", "diff") or {})
   local fill_char = diff_config.fill_char or "╱"
   local recolor = diff_config.highlights ~= false
 

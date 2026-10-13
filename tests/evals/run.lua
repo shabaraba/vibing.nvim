@@ -13,12 +13,20 @@
 local Harness = require("vibing.testing.eval_harness")
 
 require("vibing").setup({
-  mcp = { enabled = true },
+  integrations = {
+    nvim = {
+      enabled = true,
+    },
+  },
   permissions = { mode = "acceptEdits" },
 })
 
 local adapter = require("vibing.infrastructure.adapter.claude_cli"):new({
-  agent = { default_model = os.getenv("VIBING_EVAL_MODEL") or "haiku" },
+  ai = {
+    chat = {
+      model = os.getenv("VIBING_EVAL_MODEL") or "haiku",
+    },
+  },
 })
 
 local tasks = require("tests.evals.tasks")

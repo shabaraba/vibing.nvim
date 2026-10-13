@@ -6,7 +6,6 @@
 
 local CLICommandBuilder = require("vibing.infrastructure.adapter.modules.cli_command_builder")
 local CLIEventProcessor = require("vibing.infrastructure.adapter.modules.cli_event_processor")
-local AgentEnvironment = require("vibing.infrastructure.adapter.modules.agent_environment")
 local TokenUsage = require("vibing.core.utils.token_usage")
 local ClaudeSubagentTranscript = require("vibing.infrastructure.adapter.modules.claude_subagent_transcript")
 
@@ -21,12 +20,15 @@ local M = {
     context = true,
     session = true,
     dynamic_permissions = true,
+    structured_output = true,
+    structured_output_tool = true,
   },
 
   -- `claude -p`, in the order the CLI has always been given it. The values behind `model`,
   -- `effort`, `resume` and `prompt` are resolved by request_builder; the extras are the parts
   -- composed from several sources, named here so they are listed rather than buried.
   request = {
+    agent_id = "claude",
     binary = CLICommandBuilder.BINARY,
     parts = {
       { kind = "args", "-p", "--output-format", "stream-json", "--verbose", "--include-partial-messages" },
@@ -41,14 +43,27 @@ local M = {
       -- block execution, and --permission-mode plan leaks plan-mode meta-commentary into the
       -- generated title). It names nothing, so unlike a denylist it cannot drift (#488).
       { kind = "args", "--tools", "", when = "lightweight" },
+      -- A chat profile that names its built-in tools (`core/constants/profiles.lua`).
+      { kind = "extra", fn = CLICommandBuilder.profile_tool_args, unless = "lightweight" },
       { kind = "extra", fn = CLICommandBuilder.permission_args, unless = "lightweight" },
       { kind = "hook_arg", flag = "--settings", unless = "lightweight" },
       -- Without this the CLI swallows everything a subagent says and only its final tool_result
       -- surfaces. Opt-in because it makes long delegated turns much noisier.
-      { kind = "args", "--forward-subagent-text", unless = "lightweight", when = { config = "agent.subagent.enabled" } },
+      {
+        kind = "args",
+        "--forward-subagent-text",
+        unless = "lightweight",
+        when = { config = "ui.subagents.show_output" },
+      },
       { kind = "extra", fn = CLICommandBuilder.plugin_dir_args, unless = "lightweight" },
       { kind = "extra", fn = CLICommandBuilder.mcp_config_args, unless = "lightweight" },
       { kind = "extra", fn = CLICommandBuilder.system_prompt_args },
+      {
+        kind = "extra",
+        fn = function(ctx)
+          return ctx.opts.output_schema and { "--json-schema", vim.json.encode(ctx.opts.output_schema) } or {}
+        end,
+      },
       { kind = "extra", fn = CLICommandBuilder.setting_source_args },
       -- End of options marker, so a prompt starting with `---` is not parsed as flags. Dropped on
       -- the duplex transport, where the same text is composed by `request_builder.prompt_text` and
@@ -83,10 +98,6 @@ local M = {
     -- Remove CLAUDECODE to allow nested invocation
     env.CLAUDECODE = nil
 
-    -- Ahead of the git-instructions default below, so a declared variable reads exactly like one
-    -- the user exported: the default still sees "already set, leave it alone".
-    AgentEnvironment.apply(env, config, opts)
-
     -- The CLI computes a git status block (branch, `git status --short`, recent commits) once per
     -- process and puts it at the top of the system prompt, ahead of the whole conversation. A
     -- long-lived process pays for that once; vibing.nvim starts a new one every turn, so any turn
@@ -100,9 +111,9 @@ local M = {
     -- nothing on the opt-in path would leave `git_instructions = true` unable to deliver what it
     -- promises for a user who has that key set to false. A value already in the environment wins
     -- over both.
+    local extensions = vim.tbl_get(config or {}, "ai", "agents", "claude", "extensions") or {}
     if env.CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS == nil then
-      local git_instructions = config.agent and config.agent.git_instructions
-      env.CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS = git_instructions and "0" or "1"
+      env.CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS = extensions.git_instructions and "0" or "1"
     end
 
     -- `claude -p` はバックグラウンド subagent が終わるまで開いたまま待つが、連続アイドルが
@@ -110,7 +121,7 @@ local M = {
     -- 一発起動向けで、対話チャットの subagent は普通に超える。失われるのが黙って起きる以上、
     -- 既定を広げるのは安全側。環境に既にあればそちらが勝つ（ユーザーの export が最終決定）
     if env.CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS == nil then
-      local sec = config.backends and config.backends.claude and config.backends.claude.background_wait_sec
+      local sec = extensions.background_wait_sec
       if type(sec) == "number" then
         env.CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS = tostring(math.floor(sec * 1000))
       end
@@ -132,7 +143,7 @@ local M = {
   stdin = nil,
   -- The most capable process model this CLI can run, not the one it will: the default stays
   -- `oneshot` for every chat, and a resident process is reached only through
-  -- `backends.claude.process` or a chat's `process:` frontmatter (`process_model.lua`).
+  -- `ai.agents.claude.process` or a chat's `process:` frontmatter (`process_model.lua`).
   process = "duplex",
 }
 

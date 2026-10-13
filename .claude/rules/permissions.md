@@ -28,7 +28,7 @@ allow list permits everything except denied tools.
   the worker's unsent section and calls `ChatBuffer:send_message()`, so
   `update_session_permissions`, the `:once` bookkeeping and the retry-message substitution all run
   once, in one place. A second implementation of "what an approval means" is the failure this
-  shape exists to prevent. Refused unless `agent.orchestration.delegated_approval` is set.
+  shape exists to prevent. Refused unless `permissions.delegated_approval` is set.
 - **The Permission Builder must not offer an argument to a tool `matchers.lua` cannot parse.**
   `Skill` / `StructuredOutput` take none; anything else is classified `unknown_pattern` and never
   matches, so a `Skill(x)` rule would silently never fire.
@@ -84,11 +84,9 @@ as a new turn (#778). The mechanism, the measurements and the two limits they we
 - **Every blocked hook is released before the CLI serving it is stopped, at every exit**:
   `:VibingCancel`, the chat's `BufUnload`, the turn ending, `VimLeavePre`. A missed exit leaves the
   hook spinning to the script's own deadline and then explaining itself as a timeout that did not
-  happen. **There were five; "sending a new message instead of answering" was removed in #788** —
-  it is the only one of them where the chat carries on afterwards, and it was never reachable
-  anyway (`send_message` returned on `_is_sending` first). While a prompt holds a turn open the
-  ways out are answering it and `:VibingCancel`, and a message that answers nothing is refused
-  **out loud** (`vim.notify`), never dropped.
+  happen. While a prompt holds a turn open the ways out are answering it and `:VibingCancel`, and a
+  message that answers nothing is refused **out loud** (`vim.notify`), never dropped. The full exit
+  list and the route #788 removed: `handbook/architecture/approval-without-kill.md`.
 - **A delegated answer is exempt from the "chat is responding" guard only while its hook is
   actually blocked**, never because a prompt is still drawn.
 - **The duplicate-send guard is opened for an answer and closed again immediately.**
@@ -97,9 +95,7 @@ as a new turn (#778). The mechanism, the measurements and the two limits they we
   the moment it did not claim the message. The condition is the pair of counts
   `_resume_after_prompts` uses — _is anything still holding this turn_ — never whether prompt lines
   are still on screen. `_is_sending` is true for **the whole of a running turn**, not for the gap
-  before the CLI starts, so every in-place answer arrives in exactly the state the guard rejects:
-  left unconditional it swallowed all of them, on both routes, returning `false` in silence
-  (#788). No spec caught it because no spec set the flag; both prompt specs now do.
+  before the CLI starts, so every in-place answer arrives in exactly the state the guard rejects.
   `handbook/architecture/approval-without-kill.md` → "The duplicate-send guard swallowed every
   answer, on both routes".
 

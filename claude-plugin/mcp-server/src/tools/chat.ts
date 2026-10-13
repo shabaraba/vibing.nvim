@@ -82,12 +82,44 @@ export const chatTools: Tool[] = [
           description:
             'Tool/command patterns (same syntax as the permissions_allow frontmatter field, ' +
             'e.g. "Bash(npm:*)", "Read") that you may auto-approve on this new chat\'s behalf ' +
-            'with nvim_chat_answer_approval, once agent.orchestration.delegated_approval is set ' +
+            'with nvim_chat_answer_approval, once permissions.delegated_approval is set ' +
             'to "scoped". Recorded on the NEW chat\'s own frontmatter as delegated_scope — it is ' +
             'what is being asked, not who is allowed to answer for it, which stays a config ' +
             'decision. Denials are always answerable regardless of this list; only allow_once / ' +
             'allow_for_session answers are checked against it. Has no effect unless ' +
             'delegated_approval is "scoped" (and none at all if it is unset or true/false).',
+        },
+        agent: {
+          type: 'string',
+          description:
+            'CLI backend for the new chat: "claude", "codex", "copilot" or "grok". Use it with ' +
+            "model to hand implementation to a cheaper model than yours. Omitted: the user's " +
+            'worker_defaults, else the default backend. An unknown value fails the call.',
+        },
+        model: {
+          type: 'string',
+          description:
+            'Model for the new chat, in that backend\'s own naming (e.g. "sonnet", "haiku" on ' +
+            "claude). Omitted: worker_defaults, else the user's default model — often as " +
+            'expensive as yours, so pass it when the work does not need your model.',
+        },
+        effort: {
+          type: 'string',
+          description:
+            'Reasoning effort: "default", "low", "medium", "high", "xhigh" or "max". Omitted: ' +
+            "worker_defaults, else the user's default.",
+        },
+        profile: {
+          type: 'string',
+          description:
+            'What the new chat loads on every request, by name: "default" (everything), ' +
+            '"focused" (only Bash/Read/Edit/Write/Glob/Grep of the built-in tools, project rules ' +
+            'kept), "reviewer" (only Read/Glob/Grep/Bash, project rules kept), or a kind the user ' +
+            'configured — nvim_chat_list returns them, with the model each one runs on. MCP tools ' +
+            'stay available on every profile. A ' +
+            "configured kind can cut a chat's fixed per-request cost several-fold; its " +
+            'agent/model/effort fill any you leave out. Omitted: worker_defaults, else ' +
+            '"default". The user can widen a chat later with /profile default.',
         },
       }),
       required: [],
@@ -178,7 +210,7 @@ export const chatTools: Tool[] = [
       "Answer another chat's pending tool-approval prompt — the one that leaves it stuck at " +
       'status waiting_approval, unable to continue or even to report back. Read what it is ' +
       'stuck on with nvim_get_buffer first; the prompt names the tool and its input. ' +
-      'This is off unless the user turned it on (agent.orchestration.delegated_approval), and ' +
+      'This is off unless the user turned it on (permissions.delegated_approval), and ' +
       'the call fails with an explanation when it is off — then the only thing to do is tell ' +
       'the user which chat is blocked and on what. When it is set to true, you are standing in ' +
       'for the user on a decision they asked to be consulted about: answer only when the tool ' +
@@ -258,7 +290,9 @@ export const chatTools: Tool[] = [
       'orchestrator is also open in this session, omitted otherwise). Use this to check on ' +
       'several worker chats at once in a multi-agent workflow (see the vibing-orchestrate ' +
       'skill). Only chats currently open in this Neovim session are listed — a chat file that ' +
-      'was never opened this session is not included.',
+      'was never opened this session is not included. Also returns profiles: the built-in and ' +
+      'configured ones (name, description, and the agent/model a chat created on it gets) — ' +
+      "pick one for nvim_chat_create's profile.",
     inputSchema: {
       type: 'object',
       properties: withRpcPort({}),

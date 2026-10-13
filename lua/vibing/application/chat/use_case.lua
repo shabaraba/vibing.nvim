@@ -22,14 +22,14 @@ M._current_session = nil
 ---@param config table vibing設定
 ---@return table frontmatter
 local function create_default_frontmatter(config)
+  local selection = require("vibing.core.utils.ai_config").resolve(config)
   return {
     ["vibing.nvim"] = true,
     created_at = os.date("%Y-%m-%dT%H:%M:%S"),
-    agent = config.adapter or "claude",
-    mode = config.agent and config.agent.default_mode or "code",
-    model = config.agent and config.agent.default_model or "sonnet",
+    agent = vim.tbl_get(config, "ai", "chat", "agent") or "claude",
+    model = selection.model,
     -- Keep the old no-flag behaviour explicit and editable in every new chat.
-    effort = (config.agent and config.agent.default_effort) or Modes.DEFAULT_EFFORT,
+    effort = selection.effort,
     permission_mode = config.permissions and config.permissions.mode or "acceptEdits",
     permissions_allow = config.permissions and config.permissions.allow or {},
     permissions_deny = config.permissions and config.permissions.deny or {},
@@ -37,7 +37,7 @@ local function create_default_frontmatter(config)
 end
 
 ---新しいチャットセッションを作成
----@param opts? {working_dir?: string} working_dirはgitルートからの相対パス（省略時はcwdから算出）
+---@param opts? {working_dir?: string, frontmatter?: table<string, string>} working_dirはgitルートからの相対パス（省略時はcwdから算出）。frontmatterは既定値に上書きする検証済みの値
 ---@return Vibing.ChatSession
 function M.create_new(opts)
   local vibing = require("vibing")
@@ -55,6 +55,11 @@ function M.create_new(opts)
   local working_dir = (explicit and explicit ~= "") and explicit or Git.get_relative_path(vim.fn.getcwd())
 
   local frontmatter = create_default_frontmatter(config)
+  -- `create_chat.resolve_frontmatter`が検証済みの値。既定値の**上に**載せるので、渡さなかった
+  -- キーは通常の新規チャットと同じになる
+  for key, value in pairs(opts and opts.frontmatter or {}) do
+    frontmatter[key] = value
+  end
   if working_dir then
     frontmatter.working_dir = working_dir
   end
@@ -180,9 +185,7 @@ local function elide_middle(text, max_chars)
 
   local head = math.floor(max_chars * 2 / 3)
   local tail = max_chars - head
-  return vim.fn.strcharpart(text, 0, head)
-    .. "\n(… 中略 …)\n"
-    .. vim.fn.strcharpart(text, len - tail, tail)
+  return vim.fn.strcharpart(text, 0, head) .. "\n(… 中略 …)\n" .. vim.fn.strcharpart(text, len - tail, tail)
 end
 
 ---要約に渡すメッセージを選ぶ。
@@ -256,7 +259,7 @@ local function format_conversation_for_prompt(conversation)
       parts[#parts + 1] = M.OMISSION_MARKER
     end
     -- Wrap in XML tags to prevent prompt injection
-    table.insert(parts, string.format("<message role=\"%s\">\n%s\n</message>", msg.role, msg.content))
+    table.insert(parts, string.format('<message role="%s">\n%s\n</message>', msg.role, msg.content))
   end
   if omitted and #messages < 2 then
     parts[#parts + 1] = M.OMISSION_MARKER
@@ -376,7 +379,7 @@ function M.generate_and_insert_summary(chat_buffer, opts)
   end
 
   local vibing = require("vibing")
-  local adapter = vibing.get_adapter()
+  local adapter = vibing.get_helper_adapter()
 
   if not adapter then
     notify.error("No adapter configured")

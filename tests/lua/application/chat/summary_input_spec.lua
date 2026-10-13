@@ -137,7 +137,7 @@ describe("summary call options", function()
       get_config = function()
         return { permissions = { mode = "acceptEdits", allow = { "Read" }, deny = { "Bash" } } }
       end,
-      get_adapter = function()
+      get_helper_adapter = function()
         return {
           stream = function(_, _prompt, opts, _on_chunk, on_done)
             captured_opts = opts

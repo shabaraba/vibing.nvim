@@ -43,9 +43,11 @@ describe("ChatBuffer:_try_schedule_instead_of_send", function()
   local function stub_config(scheduled_opts, auto_resume_opts)
     Config.get = function()
       return {
-        agent = {
-          scheduled_requests = scheduled_opts or { enabled = true, max_retries = 3 },
-          auto_resume_on_limit = auto_resume_opts or { grace_sec = 10 },
+        automation = {
+          limits = {
+            queue = scheduled_opts or { enabled = true, max_retries = 3 },
+            resume = auto_resume_opts or { grace_sec = 10 },
+          },
         },
       }
     end
@@ -286,10 +288,7 @@ describe("ChatBuffer:_try_schedule_instead_of_send", function()
     AutoResume.schedule_request = original_schedule_request
 
     assert.is_false(scheduled)
-    assert.is_false(
-      schedule_request_called,
-      "AutoResume.schedule_request must not be called when the save failed"
-    )
+    assert.is_false(schedule_request_called, "AutoResume.schedule_request must not be called when the save failed")
     assert.is_nil(PendingResume.get(chat_path))
     -- The failed `:write` left the buffer's unsaved-changes flag set; a passing save would have
     -- cleared it. This is the same signal the helper itself checks before arming.

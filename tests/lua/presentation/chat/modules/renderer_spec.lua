@@ -27,6 +27,14 @@ describe("chat renderer frontmatter", function()
     assert.is_truthy(content:find("\neffort: default\n", 1, true))
   end)
 
+  it("does not inherit another agent's configured model or effort", function()
+    require("vibing").setup({ ai = { chat = { agent = "claude", model = "opus", effort = "high" } } })
+    Renderer.init_content(bufnr, { frontmatter = { ["vibing.nvim"] = true, agent = "codex" } })
+    local content = table.concat(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), "\n")
+    assert.truthy(content:find("\neffort: default\n", 1, true))
+    assert.is_nil(content:find("\nmodel:", 1, true))
+  end)
+
   it("shows a configured effort instead of the default sentinel", function()
     Renderer.init_content(bufnr, {
       frontmatter = {

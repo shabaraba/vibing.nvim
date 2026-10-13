@@ -13,7 +13,7 @@ describe("Concurrency", function()
   ---@param agent table?
   local function configure(agent)
     Config.get = function()
-      return { agent = agent }
+      return { automation = { orchestration = agent and agent.orchestration } }
     end
   end
 

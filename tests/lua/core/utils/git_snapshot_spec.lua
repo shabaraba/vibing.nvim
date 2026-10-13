@@ -75,6 +75,8 @@ describe("git_snapshot", function()
     git_ok({ "init", "-q" })
     git_ok({ "config", "user.email", "test@example.com" })
     git_ok({ "config", "user.name", "test" })
+    -- Keep the fixture's ignore rules independent of the developer's global excludes file.
+    git_ok({ "config", "core.excludesFile", repo .. "/.git/info/exclude" })
     if not opts.unborn then
       write(repo .. "/tracked.txt", "before\n")
       write(repo .. "/.gitignore", "ignored/\n*.log\n")
@@ -270,6 +272,26 @@ describe("git_snapshot", function()
       GitSnapshot.ensure_baseline(turn, repo, "Bash")
       assert.is_true(GitSnapshot.has_baseline(turn))
 
+      write(repo .. "/tracked.txt", "after\n")
+      local files, _, patch, ok = GitSnapshot.generate(turn, nil)
+
+      assert.is_true(ok)
+      assert.same({ "tracked.txt" }, files)
+      assert.is_truthy(patch:find("+after", 1, true))
+      assert.is_nil(patch:find(".vibing", 1, true))
+    end)
+
+    it("still snapshots when an ignored state directory is first created during the turn", function()
+      -- A directory-only rule does not match the bare path before it exists. The baseline
+      -- must still choose a pathspec that works after the chat creates the directory.
+      write(repo .. "/.git/info/exclude", ".vibing/\n")
+      assert.equals(0, vim.fn.isdirectory(repo .. "/.vibing"))
+
+      local turn = next_turn()
+      GitSnapshot.ensure_baseline(turn, repo, "Bash")
+      assert.is_true(GitSnapshot.has_baseline(turn))
+
+      write(repo .. "/.vibing/chat/2026-01-01.md", "## User\nhello\n")
       write(repo .. "/tracked.txt", "after\n")
       local files, _, patch, ok = GitSnapshot.generate(turn, nil)
 

@@ -13,12 +13,27 @@ const taskSchema = z
   .refine((value) => !/[\r\n]/.test(value), { message: 'task must not contain line breaks' })
   .optional();
 
+// `agent` / `model` / `effort` / `profile` land on the NEW chat's own frontmatter, one line each,
+// so the same line-break rule as `task` applies. Which values are valid is decided on the Lua side
+// alone (`create_chat.resolve_frontmatter`), from the registries that define them — an enum
+// copied here would go stale the day a backend or a profile is added.
+function singleLineSchema(name: string) {
+  return z
+    .string()
+    .refine((value) => !/[\r\n]/.test(value), { message: `${name} must not contain line breaks` })
+    .optional();
+}
+
 const chatCreateArgsSchema = z.object({
   position: z.enum(CHAT_POSITIONS).optional(),
   working_dir: z.string().optional(),
   from_bufnr: z.number().optional(),
   task: taskSchema,
   delegated_scope: z.array(z.string()).optional(),
+  agent: singleLineSchema('agent'),
+  model: singleLineSchema('model'),
+  effort: singleLineSchema('effort'),
+  profile: singleLineSchema('profile'),
   rpc_port: z.number().optional(),
 });
 
@@ -46,15 +61,32 @@ const chatCreateArgsSchema = z.object({
  * (`delegated_scope`, same pattern syntax as `permissions_allow`), because it is
  * `approval_delegate.lua`'s "scoped" mode reading the answering chat's own declaration, not
  * something that belongs to whoever created it. It has no effect unless
- * `agent.orchestration.delegated_approval` is `"scoped"`.
+ * `permissions.delegated_approval` is `"scoped"`.
+ *
+ * `agent` / `model` / `effort` / `profile` are also the NEW chat's own frontmatter: they let a
+ * planner on an expensive model hand the implementation to a cheaper model or another CLI, in a
+ * chat that does not share the planner's prompt cache. Omitted ones fall back to
+ * `automation.orchestration.worker_defaults`, then to an ordinary new chat's defaults. An invalid value
+ * is an error rather than a dropped key, because a worker that silently ran on the default model
+ * defeats the reason for passing one.
  */
 export async function handleChatCreate(args: any): Promise<any> {
-  const { position, working_dir, from_bufnr, task, delegated_scope, rpc_port } =
-    chatCreateArgsSchema.parse(args);
+  const {
+    position,
+    working_dir,
+    from_bufnr,
+    task,
+    delegated_scope,
+    agent,
+    model,
+    effort,
+    profile,
+    rpc_port,
+  } = chatCreateArgsSchema.parse(args);
 
   const result = await callNeovim(
     'create_chat',
-    { position, working_dir, from_bufnr, task, delegated_scope },
+    { position, working_dir, from_bufnr, task, delegated_scope, agent, model, effort, profile },
     rpc_port
   );
 
@@ -177,7 +209,7 @@ const chatAnswerApprovalArgsSchema = z.object({
  * kind reports `waiting_approval` while its turn is technically still in flight — so do not read
  * `responding` as "it is fine, it is working".
  *
- * By default the someone who answers is the user; `agent.orchestration.delegated_approval` lets an orchestrator stand in — fully when
+ * By default the someone who answers is the user; `permissions.delegated_approval` lets an orchestrator stand in — fully when
  * it is `true`, or only for tools within the target chat's own declared `delegated_scope` when
  * it is `"scoped"` (a denial always goes through either way).
  *

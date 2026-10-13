@@ -5,7 +5,13 @@ local helper = require("tests.helpers.adapter_stream")
 local TurnRegistry = require("vibing.infrastructure.adapter.modules.turn_registry")
 local perm_handler = require("vibing.infrastructure.rpc.handlers.permission")
 
-local CONFIG = { agent = { default_model = "sonnet" } }
+local CONFIG = {
+  ai = {
+    chat = {
+      model = "sonnet",
+    },
+  },
+}
 
 for _, backend in ipairs(helper.adapters()) do
   describe("adapter stream() options: " .. backend.name, function()

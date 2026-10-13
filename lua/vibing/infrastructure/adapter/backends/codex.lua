@@ -10,12 +10,14 @@ local ProjectCodexPermissions = require("vibing.core.utils.project_codex_permiss
 --- @param config Vibing.Config|nil
 --- @return string|nil
 local function profile_content(config)
-  return vim.tbl_get(config or {}, "backends", "codex", "profile_content")
+  return vim.tbl_get(config or {}, "ai", "agents", "codex", "extensions", "profile_content")
 end
 
 ---@type Vibing.BackendDescriptor
 local M = {
   id = "codex",
+  process = "duplex",
+  duplex = require("vibing.infrastructure.adapter.modules.codex_duplex_protocol"),
 
   features = {
     streaming = true,
@@ -24,32 +26,48 @@ local M = {
     context = true,
     session = true,
     dynamic_permissions = true,
+    structured_output = true,
+    structured_output_file = true,
   },
 
   -- `codex exec --json`, with `resume <id>` as a subcommand and permissions as `-c` overrides.
   request = {
+    agent_id = "codex",
     binary = CodexCommandBuilder.BINARY,
     parts = {
-      { kind = "args", "exec" },
-      { kind = "resume", subcommand = "resume" },
-      { kind = "args", "--json" },
+      -- app-server does not implement exec's hook-trust bypass; verify trust over RPC.
+      { kind = "args", "app-server", "--listen", "stdio://", when = "duplex" },
+      { kind = "extra", fn = CodexCommandBuilder.resident_hook_args, when = "duplex" },
+      { kind = "args", "exec", unless = "duplex" },
+      { kind = "resume", subcommand = "resume", unless = "duplex" },
+      { kind = "args", "--json", unless = "duplex" },
+      {
+        kind = "extra",
+        fn = function(ctx)
+          return ctx.opts.output_schema_path and { "--output-schema", ctx.opts.output_schema_path } or {}
+        end,
+        unless = "duplex",
+      },
       -- The transport's fragment verbatim: the `-c hooks.PreToolUse` pair and the trust bypass.
       -- Never on a lightweight call, whatever was handed in: the conformance suite passes one to
       -- prove the request drops it, since a hook nothing can answer is what stalls the turn.
-      { kind = "hook_arg", unless = "lightweight" },
-      { kind = "model", flag = "-m", names = "native" },
-      -- No dedicated exec flag; a per-process config override applies to fresh and resumed
-      -- threads alike without changing the user's config.toml.
-      { kind = "effort", config = 'model_reasoning_effort="%s"' },
+      { kind = "hook_arg", unless = { "lightweight", "duplex" } },
+      -- One-shot selections are process flags. Resident selections go only through turn/start,
+      -- so changing them does not change the pool's argv reuse key.
+      { kind = "extra", fn = CodexCommandBuilder.oneshot_selection_args, unless = "duplex" },
       -- Utility calls neither inherit the chat's threshold nor override codex's compaction
       -- setting after --ignore-user-config.
       { kind = "extra", fn = CodexCommandBuilder.auto_compact_args, unless = "lightweight" },
       vim.tbl_extend("force", { kind = "args", when = "lightweight" }, CodexCommandBuilder.LIGHTWEIGHT_ARGS),
-      { kind = "extra", fn = CodexCommandBuilder.permission_args, unless = "lightweight" },
+      -- One mapping per transport, chosen here rather than inside the builder: app-server has no
+      -- `-s` and no native approval dialog, so its permission argv is a different shape, not a
+      -- variation on this one.
+      { kind = "extra", fn = CodexCommandBuilder.permission_args, unless = { "lightweight", "duplex" } },
+      { kind = "extra", fn = CodexCommandBuilder.resident_permission_args, when = "duplex" },
       { kind = "extra", fn = CodexCommandBuilder.plugin_args, unless = "lightweight" },
       -- Codex's `developer_instructions` is reserved for the plugin material, so the language
       -- sentence rides on the prompt.
-      { kind = "prompt", language_prefix = true },
+      { kind = "prompt", language_prefix = true, unless = "duplex" },
     },
   },
   build = CodexCommandBuilder.build,
@@ -66,6 +84,18 @@ local M = {
   -- account was at its usage limit when the rest of the table was taken), so approvals here keep
   -- killing the turn. Run `tests/perf/hook_wait_ceiling.sh` before adding a number.
   hook = { transport = "config_override", dialect = "claude", keep_in_bypass = true },
+
+  -- Codex's **own** approval requests, which are a third channel and not the hook (#861). Measured
+  -- with `tests/perf/codex_approval_answer_after_delay.sh` against codex-cli 0.160.1: a decision
+  -- delivered 960s after `item/commandExecution/requestApproval` arrived was acknowledged
+  -- (`serverRequest/resolved`), the approved command ran, and the turn completed normally. The
+  -- control cell at 0s passed in the same run, which is what makes that reading legible.
+  --
+  -- **A floor, not a ceiling.** 960 is `permissions.approval_wait_sec` (900) plus
+  -- `NATIVE_APPROVAL_MARGIN_SEC` (60) — the whole budget the default configuration derives — so the
+  -- gate sits exactly on the evidence, and raising `approval_wait_sec` turns the waiting off here
+  -- rather than waiting past what was observed.
+  native_approval = { measured_wait_floor_sec = 960 },
 
   -- The project-local sandbox profile (`.vibing/codex-permissions.toml`) is created with the
   -- project's `.vibing/` and backfilled on setup for projects created before it existed. Existing
@@ -106,7 +136,7 @@ local M = {
   -- Absent config reads as enabled, not disabled: the default is on (`config_fields` in
   -- core/constants/agents.lua).
   after_spawn = function(cmd, cwd, opts, config)
-    local notice_enabled = vim.tbl_get(config or {}, "backends", "codex", "provider_notice") ~= false
+    local notice_enabled = vim.tbl_get(config or {}, "ai", "agents", "codex", "extensions", "provider_notice") ~= false
     if notice_enabled and opts.lightweight and vim.tbl_contains(cmd, "--ignore-user-config") then
       CodexProviderNotice.check(cmd[1], cwd)
     end

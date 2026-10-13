@@ -55,7 +55,8 @@ local function answers_blocked_approval(opts)
   if type(request_id) ~= "string" or request_id == "" then
     return false
   end
-  return require("vibing.infrastructure.rpc.pending_approvals").get(request_id) ~= nil
+  -- どちらのチャネルで止まっていても「実際に止まっている」ことは同じなので、両方に訊く（#861）
+  return require("vibing.application.chat.approval_decision").blocked_for_request(request_id) ~= nil
 end
 
 ---@param bufnr number

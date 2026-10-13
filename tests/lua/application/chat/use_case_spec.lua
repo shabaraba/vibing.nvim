@@ -48,7 +48,13 @@ describe("chat use_case.create_new", function()
   end)
 
   it("records a configured default effort in a new chat", function()
-    require("vibing").setup({ agent = { default_effort = "high" } })
+    require("vibing").setup({
+      ai = {
+        chat = {
+          effort = "high",
+        },
+      },
+    })
 
     local session = use_case.create_new()
 

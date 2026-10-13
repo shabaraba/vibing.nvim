@@ -7,11 +7,29 @@ describe("Modes.resolve_agent", function()
   local Modes = require("vibing.core.constants.modes")
 
   it("prefers the chat's own frontmatter", function()
-    assert.equals("codex", Modes.resolve_agent({ agent = "codex" }, { adapter = "claude" }))
+    assert.equals(
+      "codex",
+      Modes.resolve_agent({ agent = "codex" }, {
+        ai = {
+          chat = {
+            agent = "claude",
+          },
+        },
+      })
+    )
   end)
 
   it("falls back to the configured adapter", function()
-    assert.equals("grok", Modes.resolve_agent({}, { adapter = "grok" }))
+    assert.equals(
+      "grok",
+      Modes.resolve_agent({}, {
+        ai = {
+          chat = {
+            agent = "grok",
+          },
+        },
+      })
+    )
   end)
 
   it("falls back to claude with neither", function()
@@ -19,7 +37,16 @@ describe("Modes.resolve_agent", function()
   end)
 
   it("ignores an unknown frontmatter agent, matching _resolve_adapter's own fallback", function()
-    assert.equals("codex", Modes.resolve_agent({ agent = "gpt9" }, { adapter = "codex" }))
+    assert.equals(
+      "codex",
+      Modes.resolve_agent({ agent = "gpt9" }, {
+        ai = {
+          chat = {
+            agent = "codex",
+          },
+        },
+      })
+    )
   end)
 
   it("ignores an unknown configured adapter", function()

@@ -16,7 +16,7 @@ local layout = nil
 ---@return "split"|"unified"
 function M.initial_layout()
   if not layout then
-    layout = (((require("vibing.config").options or {}).diff or {}).layout) or "split"
+    layout = vim.tbl_get(require("vibing.config").get(), "ui", "diff", "layout") or "split"
   end
   return layout
 end

@@ -67,9 +67,18 @@ local function setup_config()
   package.loaded["vibing"] = {
     get_config = function()
       return {
-        agent = { default_mode = "code", default_model = "sonnet" },
+        ai = {
+          chat = {
+            model = "sonnet",
+          },
+        },
         permissions = { mode = "acceptEdits", allow = { "Read" }, deny = {} },
-        chat = { save_location_type = "custom", save_dir = tmp_dir },
+        chat = {
+          storage = {
+            location = "custom",
+            path = tmp_dir,
+          },
+        },
       }
     end,
   }
@@ -91,7 +100,10 @@ describe("Handoff use case", function()
 
   describe("strip_summary_heading", function()
     it("drops the `## summary` line and trims", function()
-      assert.equals("### 📝 一行要約\n\n- 決めた", Handoff.strip_summary_heading("## summary\n\n### 📝 一行要約\n\n- 決めた\n"))
+      assert.equals(
+        "### 📝 一行要約\n\n- 決めた",
+        Handoff.strip_summary_heading("## summary\n\n### 📝 一行要約\n\n- 決めた\n")
+      )
     end)
 
     it("is case-insensitive about the heading", function()

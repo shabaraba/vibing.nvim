@@ -26,7 +26,14 @@ end
 
 --- Flags that carry the hook or the plugins into an ordinary turn on some backend. None may
 --- appear on a lightweight one.
-local GATE_FLAGS = { "--settings", "--plugin-dir", "--dangerously-bypass-hook-trust", "--allowedTools", "--disallowedTools", "--deny-tool" }
+local GATE_FLAGS = {
+  "--settings",
+  "--plugin-dir",
+  "--dangerously-bypass-hook-trust",
+  "--allowedTools",
+  "--disallowedTools",
+  "--deny-tool",
+}
 
 describe("conformance: request", function()
   local original_exepath, original_executable
@@ -56,16 +63,29 @@ describe("conformance: request", function()
 
   for _, def in ipairs(Agents.list()) do
     local descriptor = require(def.descriptor_module)
-    local config = { agent = { default_model = "sonnet", plugins = { self = false, project_dir = false } } }
+    local config = {
+      ai = {
+        chat = {
+          model = "sonnet",
+        },
+      },
+      integrations = {
+        plugins = { self = false, project_dir = false },
+      },
+    }
 
     describe(def.id, function()
       it("carries no gate flag and no hook reference on a lightweight call, whatever the mode", function()
         -- The hook itself is never installed for a lightweight call (hook_registration_spec), so
         -- a real turn has no hook_arg; passing one anyway proves the request drops it too.
         for _, mode in ipairs(MODES) do
-          local cmd = descriptor.build("hi", { lightweight = true, permission_mode = mode }, nil, config, "/tmp/hook-arg")
+          local cmd =
+            descriptor.build("hi", { lightweight = true, permission_mode = mode }, nil, config, "/tmp/hook-arg")
           for _, flag in ipairs(GATE_FLAGS) do
-            assert.is_false(vim.tbl_contains(cmd, flag), string.format("%s lightweight/%s carries %s", def.id, mode, flag))
+            assert.is_false(
+              vim.tbl_contains(cmd, flag),
+              string.format("%s lightweight/%s carries %s", def.id, mode, flag)
+            )
           end
           assert.is_false(vim.tbl_contains(cmd, "/tmp/hook-arg"), def.id .. " lightweight references the hook")
         end
@@ -77,7 +97,8 @@ describe("conformance: request", function()
           -- Discovered from the tree, so nothing to find in the argv.
           return
         end
-        local hook_arg = transport == "config_override" and { "-c", "hooks.PreToolUse=[conformance]" } or "/tmp/hook-arg"
+        local hook_arg = transport == "config_override" and { "-c", "hooks.PreToolUse=[conformance]" }
+          or "/tmp/hook-arg"
         local cmd = descriptor.build("hi", { permission_mode = "default" }, nil, config, hook_arg)
         local needle = type(hook_arg) == "table" and hook_arg[2] or hook_arg
         assert.is_true(vim.tbl_contains(cmd, needle), def.id .. " does not reference its hook")
@@ -89,7 +110,10 @@ describe("conformance: request", function()
           local resumed = descriptor.build("hi", { permission_mode = mode }, "sess-1", config, nil)
           assert.is_true(#fresh > 1, def.id .. "/" .. mode)
           assert.is_true(#resumed > #fresh - 1, def.id .. "/" .. mode .. " resumed")
-          assert.is_true(vim.tbl_contains(resumed, "sess-1") or vim.tbl_contains(resumed, "--resume=sess-1"), def.id .. " does not resume")
+          assert.is_true(
+            vim.tbl_contains(resumed, "sess-1") or vim.tbl_contains(resumed, "--resume=sess-1"),
+            def.id .. " does not resume"
+          )
         end
       end)
 
@@ -110,6 +134,12 @@ describe("conformance: request", function()
         local cmd = descriptor.build(prompt, { _process_model = "duplex" }, "sess-1", config, nil)
 
         assert.equals(0, count_prompt(cmd, prompt), def.id .. " duplex still carries its prompt in the argv")
+        if descriptor.duplex then
+          assert.is_function(descriptor.duplex.send_prompt)
+          assert.is_function(descriptor.duplex.process_line)
+          assert.is_function(descriptor.duplex.interrupt)
+          return -- session resumption travels in the protocol, not the argv
+        end
         assert.is_true(vim.tbl_contains(cmd, "--input-format"), def.id .. " duplex does not read stdin as stream-json")
         -- The session is still named in the argv: a resident process is started resuming its
         -- conversation and then kept, so this is the one place `--resume` can appear.

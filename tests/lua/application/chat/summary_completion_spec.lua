@@ -53,7 +53,7 @@ local function stub_vibing(response)
     get_config = function()
       return { permissions = { mode = "acceptEdits", allow = { "Read" }, deny = {} } }
     end,
-    get_adapter = function()
+    get_helper_adapter = function()
       return {
         stream = function(_, _prompt, _opts, _on_chunk, on_done)
           on_done(response)
@@ -114,7 +114,7 @@ describe("generate_and_insert_summary on_done", function()
       get_config = function()
         return { permissions = { mode = "acceptEdits", allow = {}, deny = {} } }
       end,
-      get_adapter = function()
+      get_helper_adapter = function()
         return nil
       end,
     }

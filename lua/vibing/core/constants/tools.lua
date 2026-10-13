@@ -60,6 +60,39 @@ M.ALWAYS_ALLOWED_TOOLS = {
 ---@type table<string, boolean>
 M.ALWAYS_ALLOWED_TOOLS_MAP = to_map(M.ALWAYS_ALLOWED_TOOLS)
 
+---Codexの制御ツール。Codexのvocabulary経由でのみ常時許可するので、他バックエンドには
+---適用しない。ALWAYS_ALLOWED_TOOLSと同じく明示的なask/denyは優先する。
+---名前空間付き・名前空間を連結したフック名も扱う。MCPはvocabulary側で除外する。
+---Bash/Edit/Read/WebSearch等へマッピングされる操作は通常の許可設定に従う。
+---@type string[]
+M.CODEX_ALWAYS_ALLOWED_TOOL_PATTERNS = {
+  "write_stdin",
+  "update_plan",
+  "request_user_input",
+  "tool_search",
+  "spawn_agent",
+  "send_input",
+  "wait",
+  "close_agent",
+  "resume_agent",
+  "list_agents",
+  "send_message",
+  "report_agent_job_result",
+  "list_dir",
+  "grep_files",
+  "list_mcp_resources",
+  "list_mcp_resource_templates",
+  "read_mcp_resource",
+  "search_tool_bm25",
+  "js",
+  "js_reset",
+  "functions*",
+  "collaboration*",
+  "clock*",
+  "image_gen*",
+  "multi_tool_use*",
+}
+
 ---Claude Codeハーネス自身の制御ツール。`ask`/`deny`すら通さず常に許可される
 ---（can_use_tool.luaの評価順で`ALWAYS_ALLOWED_TOOLS`より前）。
 ---
@@ -120,10 +153,20 @@ M.INTERNAL_TOOLS_MAP = to_map(M.INTERNAL_TOOLS)
 ---で明示的なallowを返し、CLIは自前のゲートをスキップするため。この列挙が効くのはフックの手前、
 ---CLIが最初に見る関門としてであって、最終的な担保ではない。
 ---#564以前は逆で、フックが黙って通す実装だったためここのずれがそのまま拒否になっていた。
+---
+---**grokの`vibing-nvim__*`（`mcp__`接頭辞を持たない`server__tool`形式、grok 1.0.50で実測）も
+---ここに要る。** grokのdescriptorは`--allowedTools`相当を一切積まないので、この要素がargvに
+---載ることはない。効くのは`exclusive_tools`としての用途で、`session_prompt.TOOLS`は
+---この列挙から文字列を組んでそのまま`exclusive_tools`に渡す（can_use_tool評価順2.5）。
+---`matchers`の`-`→`_`畳み込みは両辺が`mcp__`で始まる場合だけなので、`mcp__vibing-nvim__*`は
+---grokの名前に一致しない。つまりここが唯一「欠けると落ちる」経路で、claude/codex側には
+---それらのCLIが決して送らないリテラルが1つ増えるだけ（上記のとおり無害）。
+---先頭要素はcodex_tool_vocabularyがCANONICALな接頭辞として参照するので、追加は末尾に。
 ---@type string[]
 M.VIBING_NVIM_MCP_TOOL_PATTERNS = {
   "mcp__vibing-nvim__*",
   "mcp__plugin_vibing-nvim_vibing-nvim__*",
+  "vibing-nvim__*",
 }
 
 ---`permissions.allow`の既定値。`config.lua`はこのリストを参照するだけで、値を再列挙しない。

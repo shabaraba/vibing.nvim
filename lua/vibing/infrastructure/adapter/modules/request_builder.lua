@@ -2,7 +2,7 @@
 ---
 --- A request is an ordered list of parts. Most parts are data -- a flag name and which shared
 --- value goes after it -- and the values themselves (which model, which effort, whether to resume)
---- are resolved here, once, so a rule such as "a lightweight call uses `utility_model`" cannot be
+--- are resolved here, once, so a rule such as "a lightweight call uses `ai.helpers.model`" cannot be
 --- fixed on one backend and stay broken on another (#537). What a flag table cannot express -- a
 --- system prompt composed from a dozen sources, a permission mode mapped onto a sandbox profile --
 --- is an `extra` part: a function that returns an argv fragment, named in the descriptor so the
@@ -136,11 +136,15 @@ end
 --- @return string|nil
 local function resolve_model(part, ctx)
   if part.names == "claude" then
-    local agent = ctx.config.agent or {}
-    if ctx.opts.lightweight then
-      return agent.utility_model or "sonnet"
+    local selection = require("vibing.core.utils.ai_config").resolve(
+      ctx.config,
+      ctx.opts._agent_id,
+      ctx.opts.lightweight or ctx.opts._ai_purpose == "helpers"
+    )
+    if ctx.opts.lightweight or ctx.opts._ai_purpose == "helpers" then
+      return selection.model
     end
-    return ctx.opts.model or agent.default_model
+    return ctx.opts.model or selection.model
   end
   return NonClaudeModel.resolve(ctx.opts, ctx.config)
 end
@@ -270,7 +274,18 @@ function M.build(spec, prompt, opts, session_id, config, hook_arg)
   config = config or {}
 
   local binary = resolver_for(spec)
-  local cmd = { binary.resolve(config) }
+  local id = opts._agent_id or spec.agent_id
+  if id then
+    opts = vim.tbl_extend("force", {}, opts, { _agent_id = id })
+  end
+  local path = id and vim.tbl_get(config, "ai", "agents", id, "path")
+  if path then
+    path = vim.fn.expand(path)
+  end
+  if path and vim.fn.executable(path) == 0 then
+    error("ai.agents." .. id .. ".path is not executable: " .. path)
+  end
+  local cmd = { (path and not spec.binary.resolve) and path or binary.resolve(config) }
   local ctx = { prompt = prompt, opts = opts, session_id = session_id, config = config, hook_arg = hook_arg, cmd = cmd }
 
   for _, part in ipairs(spec.parts) do

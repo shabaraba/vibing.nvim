@@ -57,7 +57,7 @@ local held_by_limit = {}
 ---@return {enabled: boolean, max_round_trips: number?, max_wakes: number?}
 local function settings()
   local config = require("vibing.config").get()
-  return (config.agent and config.agent.chat_notifications) or { enabled = false }
+  return (config and vim.tbl_get(config, "automation", "orchestration", "notifications")) or { enabled = false }
 end
 
 ---無向ペアを lo < hi に正規化する

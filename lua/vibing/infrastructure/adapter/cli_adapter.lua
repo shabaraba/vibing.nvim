@@ -66,6 +66,10 @@ local PluginScaffold = require("vibing.infrastructure.plugins.scaffold")
 ---  Read back what a background subagent said when the CLI dropped its completion notification
 ---  (anthropics/claude-code#87675). Absent means this backend never backgrounds a subagent, so
 ---  `BackgroundTasks.unreported()` is always empty for it and this is never called.
+---@field duplex? table Resident wire protocol: send_prompt(record, prompt, params),
+---  process_line(record, line), interrupt(record, seq). Absent uses stream-json. `process_line`
+---  takes no context: a protocol renders from deferred callbacks as well as from lines, so it
+---  resolves the turn itself rather than being handed the one that was current when a line landed.
 ---@field process? "oneshot"|"duplex" The most capable process model this backend can run; absent
 ---  means `oneshot` only. Not the default — that is `oneshot` for everyone, and a chat opts in
 ---  through `backends.<id>.process` or its own frontmatter (`process_model.lua`). Named `process`
@@ -145,6 +149,7 @@ function M.define(descriptor)
     -- spec branches on it (`--input-format`, and whether the prompt goes into the argv at all), and
     -- re-deriving it there would let the argv and the transport disagree. `opts.process` stays as
     -- the chat wrote it.
+    opts = vim.tbl_extend("force", {}, opts, { _agent_id = descriptor.id })
     local process_model = ProcessModel.resolve(descriptor, opts, self.config)
     opts._process_model = process_model
     local is_duplex = process_model == ProcessModel.DUPLEX
@@ -243,6 +248,7 @@ function M.define(descriptor)
     end
 
     local env = vim.fn.environ()
+    require("vibing.infrastructure.adapter.modules.agent_environment").apply(env, self.config, opts, descriptor.id)
     -- Backend edits first, so a variable the user declared reads exactly like one they exported:
     -- the `VIBING_*` binding below still overwrites it.
     if descriptor.apply_env then
@@ -377,8 +383,6 @@ function M.define(descriptor)
     -- begin and end together, so both are torn down together below.
     local process = {
       process_id = ids.process_id,
-      -- Only where the waiting approval route is wired: registering a value nothing consumes
-      -- would only look like a working route (`hooks/transports.lua`).
       chat_bufnr = descriptor.register_chat_bufnr and opts.chat_bufnr or nil,
       session_id = opts._session_id,
       adapter = self,
@@ -394,18 +398,25 @@ function M.define(descriptor)
       ProcessRegistry.unregister(ids.process_id)
     end
 
-    local started = CliRuntime.spawn(self._processes, ids, cmd, {
-      text = true,
-      stdin = descriptor.stdin,
-      cwd = cwd,
-      env = env,
-      stdout = StreamHandler.create_stdout_handler(descriptor.event_processor, event_context, function()
-        return self._processes[ids.process_id] == nil
+    local started = CliRuntime.spawn(
+      self._processes,
+      ids,
+      cmd,
+      {
+        text = true,
+        stdin = descriptor.stdin,
+        cwd = cwd,
+        env = env,
+        stdout = StreamHandler.create_stdout_handler(descriptor.event_processor, event_context, function()
+          return self._processes[ids.process_id] == nil
+        end),
+        stderr = stderr_handler(descriptor, error_output),
+      },
+      StreamHandler.create_exit_handler(ids, self._processes, output, error_output, finish, function()
+        return event_context.resultErrors
       end),
-      stderr = stderr_handler(descriptor, error_output),
-    }, StreamHandler.create_exit_handler(ids, self._processes, output, error_output, finish, function()
-      return event_context.resultErrors
-    end), finish)
+      finish
+    )
 
     if not started then
       return ids.turn_id, ids.process_id

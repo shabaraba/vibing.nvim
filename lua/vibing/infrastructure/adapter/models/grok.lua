@@ -26,7 +26,7 @@ function M.command(config)
   -- `BINARY.configured` and `BINARY.name`, not `BINARY.resolve`: the resolver raises when the CLI
   -- is missing and sniffs the binary for officialness with two **blocking** `vim.fn.system` calls,
   -- and this runs on the completion path. Reading the option through the builder keeps one
-  -- interpretation of the `auto` sentinel.
+  -- interpretation of the optional path.
   local binary = GrokCommandBuilder.BINARY
   return { binary.configured(config) or binary.name, "models" }
 end

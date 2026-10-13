@@ -20,6 +20,7 @@ local M = {
 
   -- `copilot -p --output-format json`, prompt last.
   request = {
+    agent_id = "copilot",
     binary = CopilotCommandBuilder.BINARY,
     parts = {
       { kind = "args", "--output-format", "json", "--stream", "on", "--no-color" },

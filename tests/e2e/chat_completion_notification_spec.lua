@@ -28,7 +28,13 @@ describe("E2E: chat completion notification", function()
       init_script = "tests/e2e_init.lua",
     })
     vim.wait(TIMEOUTS.SETUP)
-    helper.setup_child(nvim_instance, { agent = { chat_notifications = { enabled = true } } })
+    helper.setup_child(nvim_instance, {
+      automation = {
+        orchestration = {
+          notifications = { enabled = true },
+        },
+      },
+    })
   end)
 
   after_each(function()
@@ -47,9 +53,8 @@ describe("E2E: chat completion notification", function()
     assert.is_true(orchestrator > 0 and worker > 0, "both chats should be created")
 
     -- 作成時点で双方向のリンクが frontmatter に書かれている（#628）
-    local worker_frontmatter = exec(
-      string.format("return table.concat(vim.api.nvim_buf_get_lines(%d, 0, 40, false), '\\n')", worker)
-    )
+    local worker_frontmatter =
+      exec(string.format("return table.concat(vim.api.nvim_buf_get_lines(%d, 0, 40, false), '\\n')", worker))
     assert.is_truthy(worker_frontmatter:find("orchestrated_by", 1, true), "worker should record its orchestrator")
 
     exec(string.format(
@@ -57,7 +62,7 @@ describe("E2E: chat completion notification", function()
         require('vibing.infrastructure.rpc.handlers.message').send_message({
           bufnr = %d,
           from_bufnr = %d,
-          message = 'Reply with exactly the word: done. Do not use any tools.',
+          message = 'This test exercises the host completion watchdog. Reply with exactly done, then stop. Do not use any tools or send a report back; the host must notify the sending chat automatically.',
         })
       ]],
       worker,
@@ -69,12 +74,13 @@ describe("E2E: chat completion notification", function()
     local notified = false
     while vim.loop.now() < deadline and not notified do
       vim.wait(TIMEOUTS.POLL)
-      local text = exec(
-        string.format("return table.concat(vim.api.nvim_buf_get_lines(%d, 0, -1, false), '\\n')", orchestrator)
-      )
+      local text =
+        exec(string.format("return table.concat(vim.api.nvim_buf_get_lines(%d, 0, -1, false), '\\n')", orchestrator))
       notified = text:find("stopped without reporting back", 1, true) ~= nil
     end
 
-    assert.is_true(notified, "orchestrator should be told the worker stopped")
+    local worker_text =
+      exec(string.format("return table.concat(vim.api.nvim_buf_get_lines(%d, 0, -1, false), '\\n')", worker))
+    assert.is_true(notified, "orchestrator should be told the worker stopped; worker transcript: " .. worker_text)
   end)
 end)
