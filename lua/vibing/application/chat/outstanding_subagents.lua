@@ -11,8 +11,8 @@
 --- end of a turn, which on oneshot is also the end of the process; `M.wake_orphaned` is a resident
 --- process being reclaimed, which is the first moment duplex can say the same thing (#840). What they
 --- share is the ledger being the signal and the notice being one turn. What the notice *says* is not
---- decided by which of them called: it turns on whether the subagents went down with the CLI, and one
---- reclaim route leaves them exactly as an ordinary exit does (`COPY`).
+--- decided by which of them called: it describes whether the pool killed the CLI or it exited.
+--- Neither form treats an exited process as evidence that its subagents are still running.
 ---
 --- **The notice is driven by the outstanding ledger, never by what recovery found.** Recovery only
 --- yields text for a subagent that already *finished*; the one still running has nothing on disk
@@ -39,27 +39,18 @@ local function name_of(entry)
   return string.format("`%s`", entry.task_id)
 end
 
----The two notices, side by side, because the only difference between them is what they say.
----
----**The question is whether the subagents are still out there, and it is not the same as which
----producer called.** A background subagent runs *inside* the CLI, so a reclaim that killed that
----process took it with it: nothing is coming, and "go and collect them" would tell the model to wait
----for something that cannot arrive. But a CLI that simply *exited* — the oneshot transport's ordinary
----end of turn, and duplex's `exited` route — leaves the same state either way: the work may have
----finished with its notification dropped, and its transcript is on disk to collect. So the flag is
----`subagents_lost`, decided by `Vibing.DuplexReclaimVerdict`, never by which of the two entry points
----was used.
----
----Held as data rather than branched at each of the three places it shows up, so the two can be read
----and compared as wholes and the layout below stays variant-free.
+---The two notices describe how the CLI ended, never an unobserved agent lifetime.
+---`process_killed` records the pool's deliberate kill; false means an exit, not
+---that the agents survived it. Both variants keep recovered transcript text.
+---Measured limits: `handbook/features/chat-ui.md` → "CLI lifetime measurement".
 local COPY = {
-  alive = {
+  exited = {
     headline = "This turn ended with %d background subagent(s) that never reported a completion. "
       .. "The CLI did not start a new turn for them, so this chat would not have run again.",
-    still_owed = "Nothing recoverable yet for these — they may still be running:",
-    instruction = "Collect their output before continuing (`TaskOutput`, or `SendMessage` with the "
-      .. "agent id). If they are gone, say so and re-dispatch rather than waiting — nothing will wake "
-      .. "this chat again on its own.",
+    still_owed = "No answer was recovered for these before the CLI exited:",
+    instruction = "Use any saved output that can be recovered before continuing. If no answer is "
+      .. "available, re-dispatch or resume the ones whose work still matters, or say what is missing "
+      .. "and carry on. Do not wait for a completion notification from the exited CLI.",
   },
   lost = {
     headline = "The CLI process serving this chat was reclaimed with %d background subagent(s) that "
@@ -81,10 +72,10 @@ local COPY = {
 ---a block belonging to nothing.
 ---@param unreported Vibing.BackgroundTask[] everything still owed a completion notification
 ---@param recovered Vibing.RecoveredSubagent[] the subset whose transcript had an answer in it
----@param subagents_lost boolean? the reclaim killed the CLI that was running them, so nothing is coming
+---@param process_killed boolean? whether the pool deliberately killed the CLI; false does not imply agent survival
 ---@return string
-function M.notice_body(unreported, recovered, subagents_lost)
-  local copy = subagents_lost and COPY.lost or COPY.alive
+function M.notice_body(unreported, recovered, process_killed)
+  local copy = process_killed and COPY.lost or COPY.exited
   local text_of = {}
   for _, item in ipairs(recovered) do
     if item.task_id then
@@ -206,7 +197,7 @@ function M.wake(response, bufnr)
   return deliver(bufnr, unreported, M.notice_body(unreported, response._recovered_subagents or {}, false))
 end
 
----Wake the chat about background subagents that went down with the CLI process running them (#840).
+---Wake the chat about background subagents left unreported when the CLI stopped serving turns (#840).
 ---
 ---The duplex counterpart of `M.wake`. There is no response to read, because no turn ended: the
 ---process was reclaimed between turns, which is the only moment that transport can honestly say
@@ -216,14 +207,13 @@ end
 ---@param bufnr number|nil
 ---@param unreported Vibing.BackgroundTask[]
 ---@param recovered Vibing.RecoveredSubagent[]
----@param subagents_lost boolean? whether the reclaim killed the CLI running them. Not "did a reclaim
----  happen" — `exited` is a reclaim that did not, and it leaves the state the turn-end route describes.
+---@param process_killed boolean? whether the pool deliberately killed the CLI, rather than observing its exit
 ---@return boolean woken
-function M.wake_orphaned(bufnr, unreported, recovered, subagents_lost)
+function M.wake_orphaned(bufnr, unreported, recovered, process_killed)
   if #unreported == 0 then
     return false
   end
-  return deliver(bufnr, unreported, M.notice_body(unreported, recovered or {}, subagents_lost))
+  return deliver(bufnr, unreported, M.notice_body(unreported, recovered or {}, process_killed))
 end
 
 return M

@@ -649,8 +649,8 @@ describe("duplex transport", function()
       return send(
         prompt,
         vim.tbl_extend("force", {
-          on_subagents_orphaned = function(unreported, recovered, subagents_lost)
-            table.insert(reports, { unreported = unreported, recovered = recovered, lost = subagents_lost })
+          on_subagents_orphaned = function(unreported, recovered, process_killed)
+            table.insert(reports, { unreported = unreported, recovered = recovered, killed = process_killed })
           end,
         }, extra or {})
       )
@@ -724,7 +724,7 @@ describe("duplex transport", function()
       local report = wait_for_report()
       assert.same({ { task_id = "task-a", description = "review task-a" } }, report.unreported)
       assert.is_true(call.stopped, "the idle process was not reclaimed")
-      assert.is_true(report.lost, "the idle reclaim killed the CLI, so its subagents went with it")
+      assert.is_true(report.killed, "the idle reclaim killed the CLI, so its subagents went with it")
     end)
 
     it("reports when the CLI dies on its own under an idle chat", function()
@@ -732,12 +732,10 @@ describe("duplex transport", function()
       local call = fan_out("task-a")
       jobs.exit(call, 1)
 
-      -- **And says the subagents may still be out there.** This is the one reclaim route that killed
-      -- nothing: the CLI ended by itself, leaving exactly the state an ordinary oneshot turn leaves, so
-      -- a transcript may still hold the answer. Reporting it as lost would tell the model to stop
-      -- looking (`Vibing.DuplexReclaimVerdict`).
+      -- False records that the pool did not kill the CLI. It does not assert
+      -- that agents survived; the exit copy now asks for saved output only.
       assert.same({ "task-a" }, reported_ids())
-      assert.is_false(reports[1].lost, "a CLI that exited on its own was reported as having been killed")
+      assert.is_false(reports[1].killed, "a CLI that exited on its own was reported as having been killed")
     end)
 
     it("reports when the CLI could not be talked to", function()

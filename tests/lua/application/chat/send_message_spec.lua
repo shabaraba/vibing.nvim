@@ -942,8 +942,8 @@ describe("send_message", function()
       local Outstanding = require("vibing.application.chat.outstanding_subagents")
       local original = Outstanding.wake_orphaned
       local woken = {}
-      Outstanding.wake_orphaned = function(bufnr, unreported, recovered, subagents_lost)
-        table.insert(woken, { bufnr = bufnr, unreported = unreported, recovered = recovered, lost = subagents_lost })
+      Outstanding.wake_orphaned = function(bufnr, unreported, recovered, process_killed)
+        table.insert(woken, { bufnr = bufnr, unreported = unreported, recovered = recovered, killed = process_killed })
       end
 
       local callbacks = execute_callbacks(buf)
@@ -962,11 +962,11 @@ describe("send_message", function()
 
       assert.is_function(captured.on_subagents_orphaned, "the adapter was given no way to report them")
       -- The fourth argument travels too: it is what decides whether the chat is told its subagents are
-      -- gone or still worth collecting, and dropping it silently picks the second on every route.
+      -- explicitly killed or exited; saved answers remain useful on either route.
       captured.on_subagents_orphaned({ { task_id = "a1" } }, {}, true)
 
       Outstanding.wake_orphaned = original
-      assert.same({ { bufnr = buf, unreported = { { task_id = "a1" } }, recovered = {}, lost = true } }, woken)
+      assert.same({ { bufnr = buf, unreported = { { task_id = "a1" } }, recovered = {}, killed = true } }, woken)
 
       vim.api.nvim_buf_delete(buf, { force = true })
     end)

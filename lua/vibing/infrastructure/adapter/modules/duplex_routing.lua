@@ -135,7 +135,7 @@ end
 --- The process is gone, by any of the routes `duplex_pool` reclaims one through.
 ---
 --- The verdict is the pool's reading of the route it took (`Vibing.DuplexReclaimVerdict`): whether
---- anybody still needs telling, and whether the CLI's own children went down with it.
+--- anybody still needs telling, and whether the pool deliberately killed the CLI.
 --- @param adapter table
 --- @return fun(record: Vibing.DuplexProcess, code: number, verdict: Vibing.DuplexReclaimVerdict)
 function M.exit_handler(adapter)
@@ -160,7 +160,7 @@ function M.exit_handler(adapter)
       -- that teardown, and `vim.schedule` is FIFO, so completing the turn first is what puts the wake
       -- behind it. Moving this call above `take_turn` would reintroduce exactly that race.
       vim.schedule(function()
-        BackgroundTasks.report_orphaned(record, verdict.subagents_lost)
+        BackgroundTasks.report_orphaned(record, verdict.process_killed)
       end)
     end
   end
