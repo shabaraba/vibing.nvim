@@ -98,44 +98,57 @@ function M.to_canonical(native_tool_name)
   return NATIVE_TO_CANONICAL[native_tool_name]
 end
 
---- Where codex puts the path a tool is about, for the tools that name one at all. `view_image`
---- declares a single required `path` (`view_image_spec.rs`), which is the same shape copilot uses,
---- so a granular `Read(...)` paths rule can reach it. Without this, mapping `view_image` to `Read`
---- above would read as covered by such a rule while silently never matching.
---- @param tool_input table
---- @return table input with `file_path` filled in when codex named it `path`. The original is
----   never mutated: the same payload is also used to render the approval UI.
-function M.normalize_input(tool_input)
-  if type(tool_input) ~= "table" or tool_input.file_path or not tool_input.path then
-    return tool_input
+--- Extract every file touched by an apply_patch envelope, including both sides of a move.
+--- Hunk lines carry a context/add/delete prefix, so anchored headers do not match file contents.
+local function patch_paths(command)
+  if type(command) ~= "string" then
+    return nil
   end
-
-  return vim.tbl_extend("force", tool_input, { file_path = tool_input.path })
+  local lines = vim.split(vim.trim(command):gsub("\r\n", "\n"), "\n", { plain = true })
+  if lines[1] ~= "*** Begin Patch" or lines[#lines] ~= "*** End Patch" then
+    return nil
+  end
+  local paths, seen = {}, {}
+  for _, line in ipairs(lines) do
+    local path = line:match("^%*%*%* Add File: (.+)$")
+      or line:match("^%*%*%* Update File: (.+)$")
+      or line:match("^%*%*%* Delete File: (.+)$")
+      or line:match("^%*%*%* Move to: (.+)$")
+    if path and not seen[path] then
+      seen[path] = true
+      table.insert(paths, path)
+    end
+  end
+  return paths
 end
 
---- **Still uncovered above: `apply_patch`.** Known gap, not an oversight.
+--- Keep the multi-file diff targets separate from the single-path permission contract.
+--- Never manufacture file_path from the first patch header: that would misrepresent a multi-file
+--- edit to granular permission rules. Those rules still need their own set-of-paths support.
 ---
---- Codex does not put the *edited* path in a sibling key the way grok (`target_file`) and copilot
---- (`path`) do -- there is no path in an apply_patch `tool_input` at all. It is inside the
---- `command` string, as an envelope that may name several files at once:
----
----   *** Begin Patch
----   *** Update File: a.lua
----   *** Add File: b.lua
----   *** End Patch
----
---- Two consequences, both pre-existing and neither introduced by registering the hook (before that
---- fix no codex tool call reached this module at all):
----
----   - granular `paths` rules never match a codex edit, because `matchers.lua` reads a single
----     `input.file_path`;
----   - `request_diff.capture` backs nothing up, because it reads `tool_input.file_path`. Harmless
----     today: the git-snapshot path is the primary one and needs no path, only the baseline.
----
---- The reason this is not a two-line fix is the multi-file case. Filling `file_path` with the
---- *first* path parsed would read as working while letting a deny rule be evaded by patch
---- ordering, which is worse than not matching at all. Doing it properly means teaching the paths
---- matcher about a set of paths, and that is a change to shared permission code rather than to
---- this backend's seam.
+--- Copies only when there is something to add — every Bash/MCP call through this vocabulary would
+--- otherwise pay for a table copy of its `tool_input` (command strings included) on every
+--- PreToolUse hook, for fields that only an apply_patch or view_image call ever needs.
+---@param tool_input table
+---@param tool_name? string canonical tool name
+---@return table normalized copy when changed, the original table otherwise (never mutated)
+function M.normalize_input(tool_input, tool_name)
+  if type(tool_input) ~= "table" then
+    return tool_input
+  end
+  local diff_paths = tool_name == "Edit" and patch_paths(tool_input.command) or nil
+  local needs_file_path = not tool_input.file_path and tool_input.path
+  if not needs_file_path and not diff_paths then
+    return tool_input
+  end
+  local normalized = vim.tbl_extend("force", {}, tool_input)
+  if needs_file_path then
+    normalized.file_path = normalized.path
+  end
+  if diff_paths then
+    normalized._diff_paths = diff_paths
+  end
+  return normalized
+end
 
 return M
