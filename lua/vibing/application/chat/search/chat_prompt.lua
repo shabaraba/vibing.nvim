@@ -4,10 +4,9 @@
 local M = {}
 
 ---読み取りしかしないツールだけ。`gh` は PR/issue の URL や番号からタイトルを引いてキーワードを
----作り直すためで、それ以外のサブコマンドは通さない
+---作り直すためで、それ以外のサブコマンドは通さない。Grep / Glob は渡さない: `.vibing/` は
+---`.gitignore` されていることが多く、ignore を尊重する両者はチャットを1件も見つけられない
 M.TOOLS = {
-  "Grep",
-  "Glob",
   "Read",
   "Bash(rg:*)",
   "Bash(gh pr view:*)",
@@ -40,10 +39,12 @@ function M.build(query, chat_dir, language)
     "1. Turn the query into 2-4 keywords, including obvious rephrasings. If the query is a",
     "   GitHub PR or issue URL or number, also read its title and branch with `gh pr view` or",
     "   `gh issue view` and search for those.",
-    "2. Grep the directory for the keywords, as fixed strings rather than as regular expressions",
-    "   (a keyword with characters such as `.`, `(` or `[` is literal, not a pattern). If nothing",
-    "   matches, rephrase and search again. If too many files match, rank them by match count and",
-    "   keep the strongest.",
+    "2. Search the directory with `rg --no-ignore --fixed-strings`, for example",
+    "   `rg --no-ignore --fixed-strings -c -e <keyword> -e <keyword> <chat directory>`. The directory",
+    "   is usually git-ignored, so a search without `--no-ignore` finds nothing. `--fixed-strings`",
+    "   keeps a keyword with characters such as `.`, `(` or `[` literal. If nothing matches,",
+    "   rephrase and search again. If too many files match, rank them by match count and keep the",
+    "   strongest.",
     "3. Read the matching parts of each candidate and judge whether the chat is actually about",
     "   the query. Drop chats where the keyword appears only in passing. Never list a chat just",
     "   because it is recent: an empty result is a valid answer.",

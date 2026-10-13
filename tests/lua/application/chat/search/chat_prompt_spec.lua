@@ -8,10 +8,24 @@ describe("chat search prompt", function()
   local opts = BackgroundAgent.opts({}, "/repo", ChatPrompt.TOOLS, function() end)
 
   it("lets the read-only tools and the gh lookups through", function()
-    assert.are.equal("allow", helper.decide(opts, "Grep", { pattern = "x" }))
     assert.are.equal("allow", helper.decide(opts, "Read", { file_path = "/repo/a.md" }))
     assert.are.equal("allow", helper.decide(opts, "Bash", { command = "gh pr view 876 --json title" }))
-    assert.are.equal("allow", helper.decide(opts, "Bash", { command = "rg -c foo .vibing/chat" }))
+    assert.are.equal(
+      "allow",
+      helper.decide(opts, "Bash", { command = "rg --no-ignore --fixed-strings -c foo .vibing/chat" })
+    )
+  end)
+
+  -- `.vibing/` が ignore されているとどちらも0件を返し、エージェントは「無い」と結論する
+  it("withholds Grep and Glob, which skip ignored chat files", function()
+    assert.are.equal("deny", helper.decide(opts, "Grep", { pattern = "x" }))
+    assert.are.equal("deny", helper.decide(opts, "Glob", { pattern = "*.md" }))
+  end)
+
+  it("tells the agent to search past the ignore files", function()
+    local prompt = ChatPrompt.build("pull/70332", "/repo/.vibing/chat", nil)
+
+    assert.is_truthy(prompt:find("rg --no-ignore --fixed-strings", 1, true))
   end)
 
   it("refuses anything else without asking, the vibing-nvim MCP tools included", function()
