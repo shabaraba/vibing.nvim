@@ -22,12 +22,9 @@ local M = {}
 --- @return string|nil
 function M.resolve_language(opts, config)
   local language = opts.language
-  if not language and vim.tbl_get(config, "chat", "language") then
-    if type(vim.tbl_get(config, "chat", "language")) == "table" then
-      language = vim.tbl_get(config, "chat", "language", "default") or vim.tbl_get(config, "chat", "language", "chat")
-    else
-      language = vim.tbl_get(config, "chat", "language")
-    end
+  if not language then
+    local configured = vim.tbl_get(config, "chat", "language")
+    language = type(configured) == "table" and (configured.default or configured.chat) or configured
   end
   return type(language) == "string" and language or nil
 end

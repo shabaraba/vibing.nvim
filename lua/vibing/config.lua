@@ -157,19 +157,18 @@ M.defaults = {
 for _, def in ipairs(Agents.list()) do
   local extensions = {}
   for name, field in pairs(Agents.config_fields(def.id)) do
-    do
-      extensions[name] =
-        vim.deepcopy(field.default_module and require(field.default_module)[field.default_field] or field.default)
-    end
+    extensions[name] =
+      vim.deepcopy(field.default_module and require(field.default_module)[field.default_field] or field.default)
   end
-  M.defaults.ai.agents[def.id] = { process = "oneshot", env = {}, settings = {}, mcp = {}, extensions = extensions }
+  local options = { process = "oneshot", env = {}, settings = {}, mcp = {}, extensions = extensions }
   local support = def.config_support or {}
   if support.settings_sources then
-    M.defaults.ai.agents[def.id].settings.sources = { "user", "project", "local" }
+    options.settings.sources = { "user", "project", "local" }
   end
   if support.inherit_cli_servers then
-    M.defaults.ai.agents[def.id].mcp.inherit_cli_servers = true
+    options.mcp.inherit_cli_servers = true
   end
+  M.defaults.ai.agents[def.id] = options
 end
 
 local function enum(values)
@@ -269,19 +268,17 @@ for _, def in ipairs(Agents.list()) do
   common.settings = { sources = list(enum({ "user", "project", "local" })) }
   common.mcp = { inherit_cli_servers = "boolean" }
   for name, field in pairs(Agents.config_fields(def.id)) do
-    do
-      local rule = field.kind
-      if rule == "string_list" then
-        rule = list(nonempty)
-      elseif rule == "path_or_false" then
-        rule = path_or_false
-      elseif rule == "number" then
-        rule = number(field.min)
-      elseif field.values then
-        rule = enum(field.values)
-      end
-      common.extensions[name] = rule
+    local rule = field.kind
+    if rule == "string_list" then
+      rule = list(nonempty)
+    elseif rule == "path_or_false" then
+      rule = path_or_false
+    elseif rule == "number" then
+      rule = number(field.min)
+    elseif field.values then
+      rule = enum(field.values)
     end
+    common.extensions[name] = rule
   end
 end
 
@@ -411,14 +408,15 @@ function M.setup(opts)
     error("Invalid vibing configuration:\n" .. table.concat(errors, "\n"), 2)
   end
   for id, options in pairs(vim.tbl_get(opts, "ai", "agents") or {}) do
-    local support = Agents.get(id).config_support or {}
+    local def = Agents.get(id)
+    local support = def.config_support or {}
     if options.settings and options.settings.sources ~= nil and not support.settings_sources then
       errors[#errors + 1] = "ai.agents." .. id .. ".settings.sources: unsupported by this agent"
     end
     if options.mcp and options.mcp.inherit_cli_servers ~= nil and not support.inherit_cli_servers then
       errors[#errors + 1] = "ai.agents." .. id .. ".mcp.inherit_cli_servers: unsupported by this agent"
     end
-    if options.process == "duplex" and require(Agents.get(id).descriptor_module).process ~= "duplex" then
+    if options.process == "duplex" and require(def.descriptor_module).process ~= "duplex" then
       errors[#errors + 1] = "ai.agents." .. id .. ".process: duplex is unsupported by this agent"
     end
   end

@@ -768,20 +768,19 @@ function M.get_adapter()
   return M.adapter
 end
 
----現在の設定を取得
----setup()で初期化された設定を返す
 --- Resolve the adapter for auxiliary work independently of chat frontmatter.
+---@return Vibing.Adapter
 function M.get_helper_adapter()
   local config = M.config or Config.get()
-  local selection = require("vibing.core.utils.ai_config").resolve(config, nil, true)
   if not M._helper_adapter or M._helper_adapter_config ~= config then
+    local selection = require("vibing.core.utils.ai_config").resolve(config, nil, true)
     M._helper_adapter = require("vibing.infrastructure.adapter.factory").create(selection.agent, config)
     M._helper_adapter_config = config
   end
   return M._helper_adapter
 end
 
----setup()未実行の場合はデフォルト設定を返す
+---現在の設定を取得。setup()未実行の場合はデフォルト設定を返す。
 ---@return Vibing.Config
 function M.get_config()
   return M.config or Config.defaults
