@@ -291,7 +291,7 @@ function M.process_line(record, line)
   end
 end
 
-function M.interrupt(record)
+function M.interrupt(record, _seq)
   local rpc = record._rpc
   if not rpc then
     return false

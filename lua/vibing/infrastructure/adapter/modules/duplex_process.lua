@@ -34,11 +34,6 @@ local M = {}
 --- @field on_exit fun(code: number)
 --- @field stopping boolean Set before a deliberate kill so `on_exit` can tell it from a crash.
 
---- Interrupts are correlated by id like every other control request; the CLI echoes it back in the
---- `control_response`. Nothing waits on that response today (the turn ends on `result`), but a
---- request with no id is one the CLI is free to reject.
-local INTERRUPT_REQUEST_PREFIX = "vibing-interrupt-"
-
 --- @param record Vibing.DuplexProcess
 --- @param data string[] one `on_stdout` batch
 local function absorb(record, data)
@@ -186,42 +181,6 @@ local function write(record, payload)
 end
 
 M.write = write
-
---- Begin a turn by handing the CLI a user message on stdin.
----
---- `--input-format stream-json` takes the same envelope the CLI emits, so the prompt travels as a
---- plain `user` message rather than as an argv argument. The content is a string rather than a
---- one-element block list: both are accepted, and the string form is what the CLI's own replay
---- emits back.
----
---- **The envelope's `uuid` is the only thing that says which turn is ours.** The CLI echoes it
---- back on that prompt's `result` as `user_message_uuid`, and on the `command_lifecycle` lines it
---- only emits when one was supplied. A turn the CLI started by itself carries neither field, which
---- is what `duplex_turn.ends_this_turn` reads. Any string is accepted -- it is not validated as a
---- UUID. `handbook/architecture/duplex-transport.md` -> "Whose `result` is this?".
---- @param record Vibing.DuplexProcess
---- @param prompt string
---- @param prompt_uuid string|nil correlation id echoed back on this prompt's own `result`
---- @return boolean sent
-function M.send_prompt(record, prompt, prompt_uuid)
-  return write(record, { type = "user", uuid = prompt_uuid, message = { role = "user", content = prompt } })
-end
-
---- Stop the turn without stopping the process.
----
---- The CLI answers with `control_response { still_queued = [] }` and then a `result` of subtype
---- `error_during_execution`; the process stays alive and serves the next turn normally. That
---- `result` is what ends the turn here, so nothing waits on the control response.
---- @param record Vibing.DuplexProcess
---- @param seq number a per-process counter, so two interrupts never share a request id
---- @return boolean sent
-function M.interrupt(record, seq)
-  return write(record, {
-    type = "control_request",
-    request_id = INTERRUPT_REQUEST_PREFIX .. tostring(seq),
-    request = { subtype = "interrupt" },
-  })
-end
 
 --- Stop the process, and everything holding its pipes open.
 ---

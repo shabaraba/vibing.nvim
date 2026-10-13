@@ -138,6 +138,20 @@ describe("conformance: descriptor shape", function()
         assert.is_true(descriptor.stdin == nil or descriptor.stdin == "")
       end)
 
+      it("declares all resident protocol functions with the shared signatures", function()
+        if descriptor.process ~= "duplex" then
+          return
+        end
+        assert.is_table(descriptor.duplex, def.id .. " declares duplex without a protocol")
+        for name, arity in pairs({ send_prompt = 3, process_line = 2, interrupt = 2 }) do
+          local fn = descriptor.duplex[name]
+          assert.is_function(fn, def.id .. ".duplex." .. name)
+          local shape = debug.getinfo(fn, "u")
+          assert.equals(arity, shape.nparams, def.id .. ".duplex." .. name .. " has the wrong signature")
+          assert.is_false(shape.isvararg, def.id .. ".duplex." .. name .. " must name its arguments")
+        end
+      end)
+
       it("declares a process model it can actually run", function()
         -- `process` is a ceiling, not a default: absent means oneshot only. The two things a
         -- duplex-capable backend must not do are close the stdin its prompts arrive on, and keep
@@ -147,10 +161,6 @@ describe("conformance: descriptor shape", function()
         if descriptor.process ~= "duplex" then
           return
         end
-        if not descriptor.duplex then
-          assert.is_nil(descriptor.stdin, def.id .. " runs duplex but closes stdin")
-        end
-
         local prompt_part
         for _, part in ipairs(descriptor.request.parts) do
           if part.kind == "prompt" then
