@@ -182,17 +182,39 @@ function M.normalize(summary, refs)
   local missing = {}
   for number, candidates in pairs(refs.saved) do
     for _, ref in pairs(candidates) do
-      if not result:find(ref.url, 1, true) then
+      if not result:find("(" .. ref.url .. ")", 1, true) then
         missing[#missing + 1] = "- [" .. ref.repo .. "#" .. number .. "](" .. ref.url .. ")"
       end
     end
   end
   if #missing > 0 then
     table.sort(missing)
-    if not result:find("### 🔗 関連", 1, true) then
-      result = result .. "\n\n### 🔗 関連\n"
+    local output = vim.split(result, "\n", { plain = true })
+    local related, insert_at
+    local fence
+    for i, line in ipairs(output) do
+      local inside = fence ~= nil
+      fence = Fence.scan({ line }, fence)
+      if not inside and not fence then
+        if line:match("^### 🔗 関連%s*$") then
+          related = true
+        elseif related and line:match("^###?%s") then
+          insert_at = i
+          break
+        end
+      end
     end
-    result = result .. "\n" .. table.concat(missing, "\n")
+    if not related then
+      vim.list_extend(output, { "", "### 🔗 関連", "" })
+    end
+    if insert_at then
+      table.insert(output, insert_at, "")
+    end
+    insert_at = insert_at or (#output + 1)
+    for i, link in ipairs(missing) do
+      table.insert(output, insert_at + i - 1, link)
+    end
+    result = table.concat(output, "\n")
   end
   return result
 end

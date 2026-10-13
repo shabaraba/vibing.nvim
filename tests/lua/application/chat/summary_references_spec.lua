@@ -111,6 +111,20 @@ local cases = {
     "- [#7](https://gitlab.example.com/one/repo/-/merge_requests/7)",
   },
   {
+    "does not mistake a longer URL for a preserved saved reference",
+    "one/repo#71",
+    "## summary\n- [#71](https://github.com/one/repo/pull/71)",
+    "## summary\n- [#71](https://github.com/one/repo/issues/71)\n\n### 🔗 関連\n\n- [one/repo#7](https://github.com/one/repo/issues/7)",
+    "## summary\n- [#7](https://github.com/one/repo/issues/7)",
+  },
+  {
+    "inserts preserved links inside an existing related section",
+    "#7",
+    "## summary\n### 🔗 関連\n- docs\n\n### 🚧 未解決 / 次の一手\n- pending",
+    "## summary\n### 🔗 関連\n- docs\n\n- [one/repo#7](https://github.com/one/repo/issues/7)\n\n### 🚧 未解決 / 次の一手\n- pending",
+    "## summary\n- [#7](https://github.com/one/repo/issues/7)",
+  },
+  {
     "preserves unrelated links and code examples",
     "one/repo#7",
     "[docs](https://example.com) `#7`\n~~~~md\n[#7](https://github.com/cwd/repo/issues/7)\n~~~~",
