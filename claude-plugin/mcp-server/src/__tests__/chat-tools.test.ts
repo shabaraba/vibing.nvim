@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { allTools } from '../tools/index.js';
-import { APPROVAL_ACTIONS, CHAT_POSITIONS } from '../tools/chat.js';
+import { CHAT_POSITIONS } from '../tools/chat.js';
 import { handlers } from '../handlers/index.js';
 import * as rpc from '../rpc.js';
 
@@ -433,7 +433,8 @@ describe('chat tools (worktree redesign)', () => {
     // Same "name the target once" rule as nvim_chat_send_message.
     expect(inputSchema.required).not.toContain('bufnr');
     expect(inputSchema.required).not.toContain('file_path');
-    expect(inputSchema.properties.action.enum).toEqual([...APPROVAL_ACTIONS]);
+    expect(inputSchema.properties.action.enum).toBeUndefined();
+    expect(inputSchema.properties.action.minLength).toBe(1);
   });
 
   it('nvim_chat_answer_approval forwards the action and reports the tool it answered', async () => {
@@ -502,16 +503,37 @@ describe('chat tools (worktree redesign)', () => {
     expect(inputSchema.properties.request_id.description).toContain('waiting_approvals');
   });
 
-  it('nvim_chat_answer_approval refuses an action outside the four the prompt offers', async () => {
+  it('nvim_chat_answer_approval refuses an empty action before RPC', async () => {
     await expect(
       handlers.nvim_chat_answer_approval({
         rpc_port: 9878,
         bufnr: 21,
-        action: 'allow',
+        action: '',
         from_bufnr: 12,
       })
     ).rejects.toThrow();
     expect(rpc.callNeovim).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    'accept',
+    'accept_for_session',
+    'accept_with_execpolicy_amendment',
+    'cancel',
+    'decline',
+    'accept_future_variant',
+    'allow_once',
+    'deny_once',
+    'allow_for_session',
+    'deny_for_session',
+  ])('forwards %s unchanged for validation against the actual prompt', async (action) => {
+    vi.mocked(rpc.callNeovim).mockResolvedValue({ success: true, bufnr: 21 });
+    await handlers.nvim_chat_answer_approval({ bufnr: 21, action, from_bufnr: 12 });
+    expect(rpc.callNeovim).toHaveBeenCalledWith(
+      'answer_approval',
+      expect.objectContaining({ action }),
+      undefined
+    );
   });
 
   it('nvim_chat_answer_approval refuses a call that names no chat as the answerer', async () => {
