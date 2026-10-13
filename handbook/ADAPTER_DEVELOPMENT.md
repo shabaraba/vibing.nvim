@@ -142,7 +142,8 @@ native permission gate, so this classification does not override its sandbox or 
 - **Lightweight fencing** is `args` when the CLI has a flag for it and an `extra` when it needs a
   scratch directory or environment (grok).
 - **Anything that names a `vibing.nvim` MCP tool in a prompt** must only be sent to a CLI that can
-  reach the server (`.claude/rules/features.md` → AskUserQuestion).
+  reach the server (`handbook/architecture/plugin-and-commands.md`). Questions use the shared
+  reply-block protocol in `adapter/modules/ask_user_question_instructions.lua`, without an MCP tool.
 
 ## Per-backend options
 

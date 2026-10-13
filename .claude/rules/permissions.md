@@ -103,11 +103,13 @@ as a new turn (#778). The mechanism, the measurements and the two limits they we
 
 A multiple-choice question is **not** waited for. The model ends its reply with a
 ` ```vibing-question ` block and stops; `ChatBuffer:take_question_block` turns it into choices in
-the next unsent section, and the answer is the next turn's message. The in-place route
-(`nvim_ask_user_question`, `pending_questions`, a measured late-answer ceiling) was removed once
-duplex became the default: a resident process already survives between turns and the prompt cache
-is server-side, so holding the turn open bought nothing that cost its exemptions.
-`presentation/chat/modules/question_block.lua`.
+the next unsent section, and the answer is the next turn's message.
+`presentation/chat/modules/question_block.lua`; rationale:
+`handbook/architecture/approval-without-kill.md` → "Questions as reply blocks".
+
+- **Question-answer sections never dispatch local slash commands.** Their header carries
+  `question-answer`, preserved across reload and send. Generated section headers in choices are
+  quoted so they cannot hide the answer section's marker.
 
 - **Only the last thing a turn wrote is a question.** `find_trailing` accepts nothing but blank
   lines after the closing fence, and refuses when a later fence closes the reply. Looking further

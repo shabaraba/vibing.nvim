@@ -1316,3 +1316,16 @@ somebody went looking for the cost of re-running them. So "write down where the 
 wrong lesson to take from this — nobody who had the tool thought of it as something to keep. The
 lesson is the one above: **when a number is recorded, its instrument is part of the record**, and
 the moment to act on that is when the number is written, not when it is questioned.
+
+## Questions as reply blocks
+
+The in-place question route (`nvim_ask_user_question`, `pending_questions`, and its measured
+late-answer budget) was removed when Claude's duplex mode became the default. A resident process
+already survives between turns and the prompt cache is server-side, so holding the question turn
+open no longer justified the registry and sending exceptions. Questions now end a reply in a
+`vibing-question` block; the user's answer starts the next turn.
+
+Generated questions and their answers are data, even when they begin with `/permission` or another
+slash command. The rendered answer section keeps a `question-answer` header marker through reload
+and submission. Local command dispatch skips that section; generated header-shaped lines are
+quoted to prevent a question from impersonating a new user section.

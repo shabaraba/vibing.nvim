@@ -237,7 +237,14 @@ function M.choice_lines(pendingChoices)
     table.insert(choiceLines, "")
   end
 
-  return flatten_lines(choiceLines)
+  local lines = flatten_lines(choiceLines)
+  -- 生成文中のセクションヘッダーで回答欄の印が隠されないよう、引用行として描く。
+  for i, line in ipairs(lines) do
+    if Timestamp.is_header(line) then
+      lines[i] = "> " .. line
+    end
+  end
+  return lines
 end
 
 ---描かれた選択肢ブロックだけを落とし、ユーザーが打った本文は残す（#788）
@@ -300,7 +307,7 @@ function M.addUserSection(buf, win, pendingChoices, pendingApprovals, initial_me
 
   local newLines = {
     "",
-    header or Timestamp.create_unsent_user_header(),
+    header or Timestamp.create_header("User", nil, nil, pendingChoices ~= nil),
     "",
   }
 

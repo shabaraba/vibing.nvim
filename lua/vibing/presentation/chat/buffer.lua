@@ -712,7 +712,7 @@ end
 ---@return boolean
 function ChatBuffer:can_defer_send(message, is_approval_retry)
   local commands = require("vibing.application.chat.commands")
-  if commands.is_command(message) then
+  if not ConversationExtractor.is_question_answer(self.buf) and commands.is_command(message) then
     return false
   end
 
@@ -1158,10 +1158,13 @@ function ChatBuffer:send_message()
     return true
   end
 
+  -- 質問文・編集した選択肢・回答はデータであり、権限変更などのローカルコマンドではない。
+  -- 印はヘッダーに保存されるため、再読込や予約後の送信でもこの境界を維持する。
+  local question_answer = ConversationExtractor.is_question_answer(self.buf)
   ConversationExtractor.commit_user_message(self.buf)
 
   local commands = require("vibing.application.chat.commands")
-  if commands.is_command(message) then
+  if not question_answer and commands.is_command(message) then
     local handled, expanded = commands.execute(message, self)
     if handled then
       if expanded then

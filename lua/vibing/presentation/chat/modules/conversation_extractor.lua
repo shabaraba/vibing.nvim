@@ -86,6 +86,21 @@ function M.user_message_lines(buf)
   return message_lines
 end
 
+---最後のユーザーセクションが、生成された質問への回答欄か。
+---バッファ内のヘッダーで識別するので、再読込や予約送信でも由来を失わない。
+---@param buf number
+---@return boolean
+function M.is_question_answer(buf)
+  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  for i = #lines, 1, -1 do
+    local header = Timestamp.parse_header(lines[i])
+    if header and Timestamp.extract_role(lines[i]) == "user" then
+      return header.question_answer == true
+    end
+  end
+  return false
+end
+
 ---ユーザーメッセージを抽出（最後の## Userセクション）
 ---@param buf number バッファ番号
 ---@return string?
@@ -135,7 +150,12 @@ function M.commit_user_message(buf)
     return
   end
 
-  local committed = Timestamp.create_header(last_unsent_header.kind, Timestamp.now(), last_unsent_header.from)
+  local committed = Timestamp.create_header(
+    last_unsent_header.kind,
+    Timestamp.now(),
+    last_unsent_header.from,
+    last_unsent_header.question_answer
+  )
   vim.api.nvim_buf_set_lines(buf, last_unsent_line - 1, last_unsent_line, false, { committed })
 end
 
