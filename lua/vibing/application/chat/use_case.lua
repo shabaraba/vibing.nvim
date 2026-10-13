@@ -268,48 +268,6 @@ local function format_conversation_for_prompt(conversation)
   return "<conversation>\n" .. table.concat(parts, "\n") .. "\n</conversation>"
 end
 
----URL が分からない旨をモデルに伝える一文。空文字にはしない: 指示ごと消えると、モデルは
----代わりにもっともらしい URL を組み立てるほうへ倒れる。
-local UNKNOWN_ISSUE_URL = "会話に URL が現れていない番号は素のまま書くこと。"
-
----要約に issue / PR リンクを書かせるための一文を作る
----
----要約は `lightweight` 呼び出しでツールを持たないので、モデルは自分で remote を見に行けない。
----リポジトリ URL をここで解決して渡さないと、`#123` は永久に素のテキストのままになる。
----
----URL の組み立てを許すのは github.com だけ。issue / PR の URL 形は forge ごとに違い（GitLab は
----`/-/issues/` と `/-/merge_requests/`）、`to_web_url` はドットを含む任意のホストを通すので、
----`/issues/` や `/pull/` を例に出すと他 forge では存在しないリンクをチャットファイルに書き込む
----ことになる。分からない forge では URL だけ渡して番号は素のままにさせる — テンプレートの
----「URL を推測して組み立てない」を、こちらが例文で上書きしないため。
----@param cwd string|nil
----@return string
-local function build_repository_instruction(cwd)
-  local repo_url = require("vibing.core.utils.repo_url").get(cwd)
-  if not repo_url then
-    return "このチャットのリポジトリ URL は不明である。" .. UNKNOWN_ISSUE_URL
-  end
-
-  local prefix = string.format("このチャットのリポジトリは %s である。", repo_url)
-
-  if not repo_url:match("^https://github%.com/") then
-    return prefix .. "issue / PR の URL 形式は不明である。" .. UNKNOWN_ISSUE_URL
-  end
-
-  -- 組み立てを許すのは「このリポジトリの番号」だけ。rule 6 は `ABC-456`（他システム）も
-  -- `org/repo#123`（別リポジトリ）も表記として認めているので、どちらもこのリポジトリの
-  -- issue / PR URL に流し込ませない。後者は特に、開くと無関係な issue に飛ぶリンクになる
-  return prefix
-    .. string.format(
-      "`#123` のようにリポジトリ名の付かない issue / PR 番号は、ここから URL を組み立ててよい"
-        .. "（issue: `[#123](%s/issues/123)`、PR: `[#456](%s/pull/456)`）。"
-        .. "`ABC-456` のような他システムのチケット番号と、"
-        .. "`org/repo#123` のように別リポジトリを明示した参照は、URL を組み立てず素のまま書くこと。",
-      repo_url,
-      repo_url
-    )
-end
-
 ---会話からサマリープロンプトを組み立てる
 ---
 ---`daily_summary` の `_build_summary_prompt` と同じ理由で切り出してある: プロンプトの組み立ては
@@ -317,14 +275,17 @@ end
 ---合っているかを確かめる手段が他にない。`substitute_variables` は未知の `{{...}}` を黙って
 ---残すため、変数名を間違えると空の会話とリテラルの `{{conversation}}` がモデルに渡る。
 ---@param conversation table[]
----@param cwd? string リポジトリ URL の解決に使う作業ディレクトリ
+---@param cwd? string 互換性のため保持。番号の所属には使わない
+---@param references? table 会話と既存 summary の明示参照
 ---@return string|nil prompt
 ---@return string|nil error
-function M._build_summary_prompt(conversation, cwd)
+function M._build_summary_prompt(conversation, cwd, references)
   local PromptLoader = require("vibing.core.utils.prompt_loader")
   return PromptLoader.load("chat_summary", {
     conversation = format_conversation_for_prompt(conversation),
-    repository_instruction = build_repository_instruction(cwd),
+    repository_instruction = require("vibing.core.utils.summary_references").instruction(
+      references or require("vibing.core.utils.summary_references").build(conversation)
+    ),
   })
 end
 
@@ -386,7 +347,10 @@ function M.generate_and_insert_summary(chat_buffer, opts)
     return finish(false, "No adapter configured")
   end
 
-  local full_prompt, err = M._build_summary_prompt(conversation, chat_buffer:get_cwd())
+  local SummaryInserter = require("vibing.presentation.chat.modules.summary_inserter")
+  local References = require("vibing.core.utils.summary_references")
+  local references = References.build(conversation, SummaryInserter.extract(chat_buffer.buf))
+  local full_prompt, err = M._build_summary_prompt(conversation, chat_buffer:get_cwd(), references)
   if err then
     notify.error("Failed to load summary prompt: " .. err)
     return finish(false, "Failed to load summary prompt: " .. err)
@@ -422,7 +386,8 @@ function M.generate_and_insert_summary(chat_buffer, opts)
       return finish(false, "AI returned empty summary")
     end
 
-    local SummaryInserter = require("vibing.presentation.chat.modules.summary_inserter")
+    -- Re-read at completion so corrections made while the helper runs are preserved too.
+    summary = References.normalize(summary, References.build(conversation, SummaryInserter.extract(buf)))
     -- 失敗の内訳（バッファ無効・`## summary` で始まらない等）は Inserter 側が通知済みなので、
     -- ここでは連鎖する呼び出し側に成否だけを渡す。
     if not SummaryInserter.insert_or_update(buf, summary) then

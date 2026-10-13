@@ -22,8 +22,8 @@ it must stay short — target 40 lines, and never exceed 60.
 
 ### 🎫 対応 issue / PR
 
-- [#123](https://github.com/org/repo/issues/123) (issue / チケットのタイトルか、この会話で扱った範囲を短く)
-- [#456](https://github.com/org/repo/pull/456) (この会話で作成 / 対応した PR)
+- #123 (issue / チケットのタイトルか、この会話で扱った範囲を短く)
+- #456 (この会話で作成 / 対応した PR)
 
 ### 🎯 決定事項
 
