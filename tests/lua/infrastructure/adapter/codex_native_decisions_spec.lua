@@ -72,10 +72,10 @@ describe("codex native decisions", function()
   end)
 
   describe("a request that offers nothing", function()
-    it("still gets a usable pair, which is what fileChange needs", function()
+    it("offers accept, decline and cancel, which is what fileChange needs", function()
       -- `item/fileChange/requestApproval`'s params carry no `availableDecisions` key.
-      assert.same({ "accept", "decline" }, values(Decisions.options(nil)))
-      assert.same({ "accept", "decline" }, values(Decisions.options({})))
+      assert.same({ "accept", "decline", "cancel" }, values(Decisions.options(nil)))
+      assert.same({ "accept", "decline", "cancel" }, values(Decisions.options({})))
     end)
   end)
 

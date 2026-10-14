@@ -408,14 +408,19 @@ thread. Missing hooks, mismatched commands, and writes that do not result in tru
 produce an actionable error and reclaim the process. The startup error includes a
 shell-quoted CLI command with the exact hook override for manual review through
 `/hooks`. This check is intentionally part of startup, not an assumption based on argv.
-Native app-server approval requests are declined; unsupported server requests receive
-a JSON-RPC error and a visible notice rather than leaving Codex blocked. Native approval
-and user-input dialogs are not implemented by this transport.
+Native command and file-change approval requests reach the owning chat when
+`ai.agents.codex.extensions.approval_policy = "on-request"`. Their replies carry the
+original JSON-RPC request id and never alter the hook permission lists. Requests
+arriving before `turn/start` replies wait for its correlated turn id; foreign
+threads and stale turns are refused. Unsupported server requests receive a
+JSON-RPC error and a visible notice. The native approval lifetime and measured
+wait budget are in `approval-without-kill.md` → "The third channel".
 
 Verification: adapter tests exercise two turns on one process, resume, early/foreign
-notifications, interrupt, failures, native request denial and replacement races. The
-local Codex app-server was probed without inference for initialization and hooks/list.
-Real model latency and full native approval UI parity have not been measured.
+notifications, interrupt, failures, native approval ownership and replacement races.
+`tests/e2e/codex_native_approval_spec.lua` drives real requests through the chat
+option-line answer path and checks accept, decline and cancel against command
+execution, JSON-RPC correlation and workspace sandbox settings.
 
 ## Grok ACP agent
 

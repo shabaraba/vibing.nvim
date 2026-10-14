@@ -628,12 +628,15 @@ declined, so leaving the policy open there would refuse the call in silence.
 The prompt looks the same, with the options Codex itself offered plus
 `decline`, which refuses that one call and leaves the turn running. The
 options are not the usual four: they are Codex's words (`accept`, `cancel`,
-and an exec-policy amendment when Codex proposes one).
+and an exec-policy amendment when Codex proposes one). Without an offered
+list, the prompt provides `accept`, `decline` and `cancel`.
 
 Answering one of these grants nothing in `permissions.allow` or
 `permissions.deny` — you approved Codex's sandbox, not vibing.nvim's
 permission list. A chat in `bypassPermissions` or `plan` ignores the setting,
-since those modes already say what they want.
+since those modes already say what they want. Changing the approval policy
+changes the duplex argv: the next turn replaces the resident process and
+resumes the same thread with the new configuration.
 
 Both prompts can appear for one command, one after the other: vibing.nvim's
 gate asks first, and only a call it allows gets as far as Codex's sandbox.

@@ -1787,7 +1787,8 @@ Two things it deliberately does **not** do:
 
 The prompt is the ordinary `⚠️  Tool approval required` block, with the options Codex itself
 offered (`accept`, `cancel`, the exec-policy amendment it proposes when it has one) plus `decline`,
-which refuses that one call and leaves the turn running. The request is held open while you decide,
+which refuses that one call and leaves the turn running. When Codex omits the offered list
+(as in 0.162.0), the prompt provides `accept`, `decline` and `cancel`. The request is held open while you decide,
 for the same `permissions.approval_wait_sec` as every other prompt — measured as safe to 960s
 against codex-cli 0.160.1 by `tests/perf/codex_approval_answer_after_delay.sh`. Raise
 `approval_wait_sec` past that and the waiting turns **off** for this channel rather than waiting
