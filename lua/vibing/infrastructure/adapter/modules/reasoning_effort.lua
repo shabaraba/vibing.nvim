@@ -11,8 +11,8 @@ local Modes = require("vibing.core.constants.modes")
 local M = {}
 
 --- Resolve the reasoning effort for this call, or nil to let the selected CLI use its own default.
---- Lightweight calls use `utility_effort` instead of inheriting the chat's value, just as they use
---- `utility_model` instead of the chat's model.
+--- Lightweight calls use `ai.helpers.effort` instead of inheriting the chat's value, just as they use
+--- `ai.helpers.model` instead of the chat's model.
 ---
 --- Invalid values are dropped with a warning. Some CLIs accept an unknown level and silently
 --- ignore it, which would otherwise make a frontmatter typo look as though it had taken effect.
@@ -24,13 +24,9 @@ function M.resolve(opts, config)
   opts = opts or {}
   config = config or {}
 
-  local agent = config.agent or {}
-  local effort
-  if opts.lightweight then
-    effort = agent.utility_effort
-  else
-    effort = opts.effort or agent.default_effort
-  end
+  local helpers = opts.lightweight or opts._ai_purpose == "helpers"
+  local selection = require("vibing.core.utils.ai_config").resolve(config, opts._agent_id, helpers)
+  local effort = helpers and selection.effort or (opts.effort or selection.effort)
 
   if effort == nil then
     return nil

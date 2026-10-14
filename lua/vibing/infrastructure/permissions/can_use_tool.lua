@@ -4,6 +4,7 @@
 --- Permission evaluation order (highest to lowest priority):
 --- 1. Neovim-owned background-job policy (when MCP is enabled)
 --- 2. Session-level deny list (immediate block)
+--- 2.5. Exclusive tool set (a background agent's whole toolset; everything else is denied)
 --- 3. Internal tools (always allowed, e.g. ToolSearch, Agent)
 --- 4. bypassPermissions mode (bypasses the configurable deny list too)
 --- 5. Deny list (deny takes precedence over allow)
@@ -45,23 +46,31 @@ local BACKGROUND_JOB_MESSAGE = "Shell backgrounding is disabled in vibing.nvim b
 --- @field permission_rules? PermissionRule[] Granular rules
 --- @field permission_mode "default"|"acceptEdits"|"bypassPermissions"|"plan"|"dontAsk"|"auto"
 --- @field mcp_enabled boolean
+--- @field is_always_allowed? fun(tool_name: string): boolean Backend-specific always-allowed tools
+--- @field exclusive_tools? string[] When set, the only tools the turn may use at all
 
 --- Check whether a tool name is a vibing-nvim MCP tool, regardless of how the MCP server was
---- registered (plain user-level server vs. Claude Code plugin — see the call site for details).
+--- registered — see the call site for details. One server, three spellings, all measured:
+---   * `mcp__vibing-nvim__<tool>` — claude with a plain user-level entry, and codex
+---   * `mcp__plugin_<plugin>_vibing-nvim__<tool>` — claude inside the bundled plugin (the normal case)
+---   * `vibing-nvim__<tool>` — grok 1.0.50, which qualifies a tool as `server__tool` with no
+---     `mcp__` prefix and so puts the server name at the very start of the tool name
 ---
---- The leading `_` is the whole reason this is not a bare suffix match. Both registration styles
---- put a separator directly before the server name — `mcp__vibing-nvim__` and
---- `mcp__plugin_<plugin>_vibing-nvim__` — so requiring one rejects a server whose name merely
---- *ends* with it (`mcp__my-vibing-nvim__nvim_get_buffer`). What it cannot reject is a third-party
---- server actually named `vibing-nvim` exposing `nvim_*` tools: nothing in the tool name says who
---- registered it. That call is granted, which matters because this decision bypasses the CLI's own
---- gate — see the call site in `rpc/handlers/permission.lua`.
+--- So the server name is *anchored*, not suffix-matched: either it starts the tool name, or a `_`
+--- separator comes directly before it. That is what still rejects a third-party server whose name
+--- merely *ends* with ours, in both of its spellings (`mcp__my-vibing-nvim__nvim_get_buffer`,
+--- `my-vibing-nvim__nvim_get_buffer`) — grok's form made a leading separator optional, so
+--- requiring one is no longer available as the rejection and the start-of-string anchor carries it.
+--- What anchoring cannot reject is a third-party server actually named `vibing-nvim` exposing
+--- `nvim_*` tools: nothing in the tool name says who registered it. That call is granted, which
+--- matters because this decision bypasses the CLI's own gate — see the call site in
+--- `rpc/handlers/permission.lua`.
 --- @param tool_name string
---- @param specific_tool? string Match only this vibing-nvim tool (e.g. "nvim_ask_user_question"); omit to match any vibing-nvim MCP tool
+--- @param specific_tool? string Match only this vibing-nvim tool (e.g. "nvim_set_buffer"); omit to match any vibing-nvim MCP tool
 --- @return boolean
 function M.is_vibing_nvim_mcp_tool(tool_name, specific_tool)
-  local pattern = specific_tool and ("_vibing%-nvim__" .. specific_tool .. "$") or "_vibing%-nvim__nvim_[%w_]+$"
-  return tool_name:match(pattern) ~= nil
+  local suffix = "vibing%-nvim__" .. (specific_tool or "nvim_[%w_]+") .. "$"
+  return tool_name:match("_" .. suffix) ~= nil or tool_name:match("^" .. suffix) ~= nil
 end
 
 --- Create allow result
@@ -287,6 +296,18 @@ function M.can_use_tool(tool_name, input, config)
       return session_deny_result
     end
 
+    -- 2.5. A turn that names its whole tool set may use nothing else — not an internal tool, not a
+    -- vibing-nvim MCP tool, whatever the mode. Only a background agent with no chat to ask in sets
+    -- this, so there is no approval to fall back to.
+    if config.exclusive_tools then
+      local listed = vim.iter(config.exclusive_tools):any(function(pattern)
+        return matchers.matches_permission(tool_name, input, pattern)
+      end)
+      if not listed then
+        return deny(string.format("Tool %s is not available to this task", tool_name))
+      end
+    end
+
     -- 3. Always allow Claude Code internal tools
     if tools_constants.INTERNAL_TOOLS_MAP[tool_name] then
       return allow(input)
@@ -331,6 +352,9 @@ function M.can_use_tool(tool_name, input, config)
 
     -- 7. Always-allowed tools: bypass allow list, but respect deny (checked above) and ask
     local is_always_allowed = tools_constants.ALWAYS_ALLOWED_TOOLS_MAP[tool_name] == true
+    if not is_always_allowed and config.is_always_allowed then
+      is_always_allowed = config.is_always_allowed(tool_name)
+    end
     if not is_always_allowed then
       for _, pattern in ipairs(tools_constants.ALWAYS_ALLOWED_TOOLS) do
         local prefix = pattern:match("^(.*)%*$")
@@ -361,11 +385,12 @@ function M.can_use_tool(tool_name, input, config)
       return allow(input)
     end
 
-    -- Handle vibing-nvim MCP tools. The vibing-nvim MCP server may reach the CLI either as a
-    -- plain user-level MCP server (mcp__vibing-nvim__<tool>) or inside a Claude Code plugin
+    -- Handle vibing-nvim MCP tools. The vibing-nvim MCP server reaches the CLI as a plain
+    -- user-level MCP server (mcp__vibing-nvim__<tool>), inside a Claude Code plugin
     -- (mcp__plugin_<plugin>_<server>__<tool>, i.e. mcp__plugin_vibing-nvim_vibing-nvim__<tool>) --
-    -- which is the normal case, since vibing.nvim self-hosts that plugin with --plugin-dir.
-    -- Match on suffix so both are recognized identically, whatever the plugin is called.
+    -- which is the normal case, since vibing.nvim self-hosts that plugin with --plugin-dir -- or
+    -- unprefixed as grok's `server__tool`. is_vibing_nvim_mcp_tool anchors on the server name so
+    -- all three are recognized identically, whatever the plugin is called.
     if M.is_vibing_nvim_mcp_tool(tool_name) then
       if config.mcp_enabled then
         return allow(input)
@@ -374,8 +399,8 @@ function M.can_use_tool(tool_name, input, config)
     end
 
     -- 9. Check allow list (with pattern support)
+    local is_allowed = false
     if #config.allowed_tools > 0 then
-      local is_allowed = false
       for _, pattern in ipairs(config.allowed_tools) do
         if matchers.matches_permission(tool_name, input, pattern) then
           is_allowed = true
@@ -409,7 +434,9 @@ function M.can_use_tool(tool_name, input, config)
       end
     end
 
-    if mode == "dontAsk" then
+    -- A tool the allow list named *is* pre-approved; only the ask list and the rules above may
+    -- still take it back.
+    if mode == "dontAsk" and not is_allowed then
       return deny(string.format("Tool %s is not pre-approved (dontAsk mode)", tool_name))
     end
     return allow(input)

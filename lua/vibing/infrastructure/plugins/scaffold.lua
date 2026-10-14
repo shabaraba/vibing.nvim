@@ -15,7 +15,7 @@ local M = {}
 --- straight to a shell-invoked CLI, so a name is restricted to what is safe in both.
 local NAME_PATTERN = "^[a-z0-9][a-z0-9%-_]*$"
 
---- Where plugins live for this project. `agent.plugins.project_dir` is the single definition of
+--- Where plugins live for this project. `integrations.plugins.project_dir` is the single definition of
 --- the convention, so an unset config falls back to the resolved options rather than to a second
 --- copy of the default string.
 --- @param root string project root
@@ -23,7 +23,7 @@ local NAME_PATTERN = "^[a-z0-9][a-z0-9%-_]*$"
 --- @return string|nil absolute path to the plugins directory, nil when disabled
 local function plugins_dir(root, config)
   local resolved = config or Config.get()
-  local plugins = (resolved.agent and resolved.agent.plugins) or {}
+  local plugins = vim.tbl_get(resolved, "integrations", "plugins") or {}
   local rel = plugins.project_dir
   if type(rel) ~= "string" or rel == "" then
     return nil
@@ -95,7 +95,7 @@ function M.create(name, root, config)
   root = (root and root ~= "") and root or vim.fn.getcwd()
   local base = plugins_dir(root, config)
   if not base then
-    return nil, "agent.plugins.project_dir is disabled"
+    return nil, "integrations.plugins.project_dir is disabled"
   end
 
   local dir = base .. "/" .. name

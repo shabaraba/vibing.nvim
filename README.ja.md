@@ -120,13 +120,13 @@ https://github.com/user-attachments/assets/8182307e-83f6-428a-af11-1122b69f4483
   バッファ全体 Markdown 解析にフォールバックします
 - AI CLI バックエンドを最低1つ:
 
-| バックエンド       | インストール                                                  |
-| ------------------ | ------------------------------------------------------------- |
-| Claude CLI         | `npm install -g @anthropic-ai/claude-code`                    |
-| Codex CLI          | `npm install -g @openai/codex`(**0.140+**)                    |
-| GitHub Copilot CLI | `npm install -g @github/copilot`(Node.js 22+ が必要)          |
-| Grok Build CLI     | [xAI のインストール手順](https://github.com/xai-org/grok-cli) |
-| Pi コーディングエージェント | `curl -fsSL https://pi.dev/install.sh | sh`(Node.js 22.19+) |
+| バックエンド                | インストール                                                  |
+| --------------------------- | ------------------------------------------------------------- |
+| Claude CLI                  | `npm install -g @anthropic-ai/claude-code`                    |
+| Codex CLI                   | `npm install -g @openai/codex`(**0.140+**)                    |
+| GitHub Copilot CLI          | `npm install -g @github/copilot`(Node.js 22+ が必要)          |
+| Grok Build CLI              | [xAI のインストール手順](https://github.com/xai-org/grok-cli) |
+| Pi コーディングエージェント | [Piの導入](https://pi.dev) (Node.js 22.19+)                   |
 
 <details>
 <summary><b>Codex のバージョンについて</b></summary>
@@ -246,24 +246,13 @@ Codex バックエンドは `--plugin-dir` を使わず同じものを読み込�
 
 ```lua
 require("vibing").setup({
-  adapter = "claude",              -- "claude" | "codex" | "copilot" | "grok"
-  chat = {
-    window = {
-      position = "current",        -- "current" | "right" | "left" | "top" | "bottom" | "back" | "float"
-      width = 0.4,                 -- 画面幅に対する比率(0-1)
-    },
-    save_location_type = "project", -- "project" | "user" | "custom"
+  ai = {
+    chat = { agent = "claude", model = "sonnet", effort = "default" },
+    helpers = { model = "haiku", effort = "low" },
   },
-  agent = {
-    default_model = "sonnet",      -- backend のモデルID。例: "sonnet" / "gpt-5.6-terra"
-    default_effort = "default",     -- "default" | "low" | "medium" | "high" | "xhigh" | "max"
-  },
-  permissions = {
-    mode = "acceptEdits",          -- "default" | "acceptEdits" | "plan" | "auto" | "dontAsk" | "bypassPermissions"
-    allow = { "Read", "Edit", "Write", "Glob", "Grep", "Skill", "StructuredOutput" },
-    deny = { "Bash" },
-  },
-  language = nil,                  -- 例: "ja"、または { default = "ja", chat = "ja" }
+  chat = { language = "ja", storage = { location = "project" } },
+  ui = { window = { position = "current", width = 0.4 } },
+  permissions = { mode = "acceptEdits", deny = { "Bash" } },
 })
 ```
 
@@ -444,10 +433,10 @@ graph TB
 - **Codex CLI**(`codex exec --json`)— OpenAI Codex バックエンド
 - **GitHub Copilot CLI**(`copilot -p --output-format json`)— GitHub Copilot バックエンド
 - **Grok Build CLI**(`grok --single --output-format streaming-json`)— xAI Grok バックエンド
-- **Pi コーディングエージェント**(`pi --mode json`)— ベンダー CLI ではなくハーネスです。Pi 自身の
+- **Pi コーディングエージェント**(`pi --mode rpc`)— ベンダー CLI ではなくハーネスです。Pi 自身の
   設定で選択したプロバイダを使い、OpenAI 互換エンドポイント経由でローカルモデルも実行できます
 
-setup の `adapter = "claude"|"codex"|"copilot"|"grok"|"pi"` でグローバルに、チャットファイルの
+setup の `ai.chat.agent = "claude"|"codex"|"copilot"|"grok"|"pi"` でグローバルに、チャットファイルの
 frontmatter に `agent: claude` / `agent: codex` / `agent: copilot` / `agent: grok` / `agent: pi` を書けば
 チャット単位で切り替えられます。`effort: low|medium|high|xhigh|max` は、選択したモデルがその
 レベルに対応している場合に Claude・Codex・Grok の推論量を制御します。新規チャットは
@@ -461,13 +450,15 @@ frontmatter に `agent: claude` / `agent: codex` / `agent: copilot` / `agent: gr
 > 引き続きバックストップとして渡します。対応するのは `Bash`(`Bash(cmd:*)` 形式を含む)・
 > `Write`・`Edit`・`WebFetch`・`WebSearch` で、Copilot 側に権限パターンが無いツール名を落とす
 > 際は一度だけ警告を出します。
-
+>
 > **注意:** Pi バックエンドは**ツール承認機構を自前で持たない**唯一のバックエンドです。Pi は
 > `bash` の実行前に確認せず、JSON/RPC モードではプロンプト自体を出せません。したがって
 > vibing.nvim の権限レイヤーが唯一の関門であり、それは Pi 拡張(`pi-extension/`)として提供され、
 > `./build.sh` がビルドし `pi --extension` が読み込みます。このバンドルが無い場合、Pi のターンは
-> 無防備に走るのではなく読み取り専用ツールへ縮退し、その旨を一度警告します。Pi は MCP クライアント
-> も持たないため、`nvim_*` ツールとチャット内の質問 UI は(Grok と同様に)使えません。
+> 読み取り専用ツールへ制限し、その旨を一度警告します。Pi 1.2.0はMCPクライアントを内蔵し、
+> Pi自身の`mcp.json`でサーバーを設定できます。このバックエンドはClaudeプラグインのMCP設定を
+> 注入しません。実Pi・ローカルモデルでの検証は未実施です。
+> [手動確認手順](handbook/pi-backend.md)を参照してください。
 >
 > モデル選択は vibing.nvim ではなく Pi の担当です。`model:` には Pi が自身の
 > `~/.pi/agent/models.json` かログイン済みプロバイダで解決できる id を書きます。ローカル
@@ -486,7 +477,7 @@ frontmatter に `agent: claude` / `agent: codex` / `agent: copilot` / `agent: gr
 > }
 > ```
 >
-> そのうえで `backends.pi.provider = "mlx-local"`、`model: mlx-community/Qwen3.6-27B-4bit` とします。
+> そのうえで `ai.agents.pi.extensions.provider = "mlx-local"`、`model: mlx-community/Qwen3.6-27B-4bit` とします。
 > ローカルエンドポイントでは provider の指定は省略できません。`--model` は Pi の組み込みクラウド
 > カタログも含めたあいまい一致なので、provider 無しの `model: qwen` はクラウドのモデルに解決され、
 > API キーが無いとしてターンが失敗します。指定しておけば、エンドポイントが扱える ID なら models.json

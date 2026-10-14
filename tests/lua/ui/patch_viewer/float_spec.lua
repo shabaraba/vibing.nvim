@@ -64,6 +64,33 @@ describe("patch_viewer float", function()
     vim.o.columns = saved_columns
   end)
 
+  for _, format in ipairs({
+    { name = "diff", path = ".vibing/diffs/test.diff", prefix = "Diff: ", suffix = "" },
+    { name = "legacy patch", path = ".vibing/patches/test.patch", prefix = "Patch: ", suffix = "" },
+    { name = "hidden patch", path = ".vibing/patches/test.patch", prefix = "<!-- patch: ", suffix = " -->" },
+  }) do
+    it("opens " .. format.name .. " from a saved chat through gd", function()
+      local path = repo .. "/" .. format.path
+      vim.fn.mkdir(vim.fn.fnamemodify(path, ":h"), "p")
+      vim.fn.writefile(vim.fn.readfile(patch_path), path)
+      local chat = vim.api.nvim_create_buf(false, true)
+      vim.api.nvim_buf_set_lines(chat, 0, -1, false, {
+        "---", "session_id: sess", "---", "## Assistant", "### Modified Files",
+        "2 files changed: a.txt, b.txt", format.prefix .. path .. format.suffix,
+      })
+      vim.api.nvim_win_set_buf(0, chat)
+      vim.api.nvim_win_set_cursor(0, { 6, 0 })
+      require("vibing.presentation.chat.modules.diff_opener").open(chat)
+      assert.equals(path, state.patch_filename)
+      assert.same({ "a.txt", "b.txt" }, state.files)
+      if state.layout ~= "split" then PatchViewer._toggle_layout() end
+      assert.same({ "one", "two", "three" }, vim.api.nvim_buf_get_lines(state.buf_before, 0, -1, false))
+      assert.same({ "one", "TWO", "three", "four" }, vim.api.nvim_buf_get_lines(state.buf_after, 0, -1, false))
+      PatchViewer._close()
+      vim.api.nvim_buf_delete(chat, { force = true })
+    end)
+  end
+
   it("opens three floats and puts the two diff panes in diff mode", function()
     open_split()
 

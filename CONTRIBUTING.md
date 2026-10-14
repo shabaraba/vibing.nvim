@@ -11,7 +11,7 @@ instructions for contributing.
 - Node.js >= 16.0.0
 - npm or yarn
 - Git
-- `luac` for Lua syntax checking
+- Neovim's Lua parser is used for syntax checking; a separate `luac` is not required.
 
 ### Development Setup
 

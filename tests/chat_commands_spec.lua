@@ -162,6 +162,8 @@ describe("vibing.application.chat.commands", function()
       -- answer first -- see tests/helpers/model_catalog.lua.
       local restore_clis = require("tests.helpers.model_catalog").without_clis()
       local completions = Commands.get_argument_completions("model")
+      assert.is_false(vim.tbl_contains(Commands.get_argument_completions("model", "claude"), "default"))
+      assert.is_true(vim.tbl_contains(Commands.get_argument_completions("model", "codex"), "default"))
       restore_clis()
 
       assert.is_true(vim.tbl_contains(completions, "sonnet"))

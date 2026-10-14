@@ -68,7 +68,8 @@ function M.render(win, path, file_diff, display)
   highlights.define()
   M._decorate(buf, rows)
 
-  local ft = path and vim.filetype.match({ filename = path })
+  -- .txtなど、拡張子の判定でも内容を読む検出器があるため、描画済みバッファも渡す。
+  local ft = path and vim.filetype.match({ filename = path, buf = buf })
   if ft then
     vim.bo[buf].filetype = ft
   end

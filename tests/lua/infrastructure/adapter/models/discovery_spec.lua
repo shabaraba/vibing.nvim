@@ -82,11 +82,22 @@ end)
 describe("grok model discovery", function()
   it("looks the CLI up on PATH by default", function()
     assert.are.same({ "grok", "models" }, Grok.command({}))
-    assert.are.same({ "grok", "models" }, Grok.command({ backends = { grok = { executable = "auto" } } }))
+    assert.are.same({ "grok", "models" }, Grok.command({}))
   end)
 
   it("uses the configured executable when there is one", function()
-    assert.are.same({ "/opt/grok", "models" }, Grok.command({ backends = { grok = { executable = "/opt/grok" } } }))
+    assert.are.same(
+      { "/opt/grok", "models" },
+      Grok.command({
+        ai = {
+          agents = {
+            grok = {
+              path = "/opt/grok",
+            },
+          },
+        },
+      })
+    )
   end)
 
   it("reads the bulleted entries and not the 'Default model:' line", function()

@@ -25,10 +25,10 @@ local ToolVocabulary = require("vibing.infrastructure.adapter.modules.pi_tool_vo
 ---@type Vibing.BackendDescriptor
 local M = {
   id = "pi",
+  process = "duplex",
+  duplex = require("vibing.infrastructure.adapter.modules.pi_duplex_protocol"),
 
-  -- No `dynamic_permissions`: Pi ships no MCP client, so it reaches no vibing-nvim MCP server.
-  -- (Third-party adapter packages add one, but a feature flag may not depend on what the user
-  -- happens to have installed.)
+  -- Tool decisions use the extension bridge. MCP server discovery stays in Pi's own config.
   features = {
     streaming = true,
     tools = true,
@@ -40,10 +40,13 @@ local M = {
   -- `pi --mode json [--provider P] [--model M] [--thinking L] [--session-id S]
   --     [--extension <bridge>] -- <prompt>`
   request = {
+    agent_id = "pi",
     binary = PiCommandBuilder.BINARY,
     parts = {
-      { kind = "args", "--mode", "json" },
+      { kind = "args", "--mode", "json", unless = "duplex" },
+      { kind = "args", "--mode", "rpc", when = "duplex" },
       { kind = "extra", fn = PiCommandBuilder.provider_args },
+      { kind = "extra", fn = PiCommandBuilder.mcp_args, unless = "lightweight" },
       { kind = "model", flag = "--model", names = "native" },
       -- Pi's `--thinking` accepts off/minimal/low/medium/high/xhigh/max, a strict superset of
       -- vibing's effort values, so the neutral value passes through with no mapping.
@@ -58,11 +61,8 @@ local M = {
       -- `--` first, because Pi treats leading positional arguments beginning with `-` as flags and
       -- `@`-prefixed ones as file attachments.
       --
-      -- `language_prefix`, because Pi has no system-prompt flag: `cli_command_builder` appends
-      -- claude's language instruction to `--append-system-prompt`, and there is nowhere here to
-      -- put it but the prompt itself. A local model is where it matters most — the harness is how
-      -- one gets asked for a language it was not trained to volunteer.
-      { kind = "prompt", terminator = "--", language_prefix = true },
+      -- The same language/context prefix is used by JSON argv and RPC stdin prompts.
+      { kind = "prompt", terminator = "--", language_prefix = true, unless = "duplex" },
     },
   },
   build = PiCommandBuilder.build,
@@ -74,7 +74,7 @@ local M = {
   --
   -- `keep_in_bypass` is true for the reason codex's is: bypassPermissions bypasses the decision,
   -- not the git-snapshot baseline that the same round trip takes. Dropping it here would cost
-  -- `### Modified Files`, `.vibing/patches/*.patch` and `gd` in that mode.
+  -- `### Modified Files`, `.vibing/diffs/*.diff` and `gd` in that mode.
   --
   -- No `measured_wait_floor_sec`: nobody has timed how long Pi lets an extension handler block, so
   -- an approval still kills the turn and comes back as a retry. Unlike the other backends this is
@@ -88,9 +88,8 @@ local M = {
 
   vocabulary = ToolVocabulary,
 
-  -- Pi has no MCP client of its own, so `nvim_ask_user_question` cannot reach it and there is no
-  -- choice-list UI to name a chat buffer for. Same position as grok.
-  register_chat_bufnr = false,
+  -- Register ownership for RPC tools; without a measured wait floor, approvals still kill/retry.
+  register_chat_bufnr = true,
 
   -- Not `nil`: see the module comment. An open stdin makes Pi hang before its first request.
   stdin = "",

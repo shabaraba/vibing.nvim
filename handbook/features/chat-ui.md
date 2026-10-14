@@ -7,7 +7,7 @@ that file; the reasoning and the traps are here.
 
 The Claude CLI hides everything a subagent says unless it is launched with
 `--forward-subagent-text`; without the flag a `Task`/`Agent` call shows only its header and final
-result. `agent.subagent.enabled` (default `false`) opts in, and
+result. `ui.subagents.show_output` (default `false`) opts in, and
 `modules/subagent_display.lua` renders the forwarded text under the tool header behind a `│` rail
 (`show_prefix` adds a `[<subagent_type>]` label per line).
 
@@ -59,7 +59,7 @@ result, but hold the process open for a subagent. Do not generalise from one to 
 
 The wait is bounded by a **ten-minute idle ceiling**, past which Claude Code "stops whatever is
 still running and drops its partial result". That suits a one-shot CI invocation and not a chat,
-so `backends.claude.background_wait_sec` (default 3600, `0` for no limit) is passed as
+so `ai.agents.claude.extensions.background_wait_sec` (default 3600, `0` for no limit) is passed as
 `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS`.
 
 ### What the stream carries
@@ -124,7 +124,7 @@ finished and here is nothing" is still worse than staying quiet; "these two are 
 collect them" is a different sentence and an actionable one. The first describes a subagent, the
 second describes the chat's own predicament.
 
-Two things bound it. It is **not** behind `agent.chat_notifications.enabled` — the same
+Two things bound it. It is **not** behind `automation.orchestration.notifications.enabled` — the same
 "cannot leave this stop on its own" class as `asked_question` / `waiting_approval` / `error`, and an
 opt-in would leave the silent stall as the default behaviour. And it **does not wake a `_cancelled`
 turn**: that flag covers both `:VibingCancel` and the kill that draws a question or an approval, and
@@ -152,8 +152,8 @@ ledger at that point interrupts every fan-out the instant it starts. #840 moves 
 moment the statement becomes true again, which is `duplex_pool`'s reclaim.
 
 **A reclaim route declares what it meant; nothing infers it.** All of them are "the process is gone",
-and they differ on two things: whether anybody still needs telling, and whether the CLI's children went
-down with it. `duplex_pool` resolves both from the route into a `Vibing.DuplexReclaimVerdict` before
+and they differ on two things: whether anybody still needs telling, and whether the pool explicitly killed
+the CLI. `duplex_pool` resolves both from the route into a `Vibing.DuplexReclaimVerdict` before
 announcing it, so `Vibing.DuplexReclaimReason` reaches no signature outside that module and no consumer
 re-decides what a route means. `QUIET_RECLAIM` names the four routes nobody needs telling about —
 `restart` (a turn is being started on the replacement in that same call), `shutdown` and `chat_closed`
@@ -171,17 +171,76 @@ transport picks up yet), so it trades a woken chat for a resident 200MB process 
 five minutes are not wasted either — they are the window in which the CLI's own notification can still
 arrive and take the entry off the ledger, and then there is nothing to report.
 
-So the notice has two forms, and the difference is the instruction — but **it is not keyed on which
-producer called.** A background subagent runs inside the CLI, so a reclaim that killed that process
-took it with it: nothing is coming, and "go and collect them" would tell the model to wait for
-something that cannot arrive. A CLI that merely _exited_, though, leaves the same state on both
-transports — the work may have finished with its notification dropped, and its transcript is on disk.
-That is oneshot's ordinary end of turn and it is also duplex's `exited` route, so the flag is
-`subagents_lost`, answered by `Vibing.DuplexReclaimVerdict` rather than by the entry point. Keying it
-on
-the producer instead would have told the model to stop looking for output a `TaskOutput` could still
-return. Recovery is in any case worth more on the reclaim route: minutes passed while the process sat
-idle, so a subagent that finished in them has written its transcript by the time it is read.
+The notice keeps two forms to explain how the CLI ended, with a separate question for saved
+answers. `process_killed` says whether the pool explicitly killed the process; its false value on
+`exited` does **not** assert that any subagent survived. Both forms preserve the recovered
+transcript text. The exit form asks for saved output and re-dispatch or resume if no answer is
+available, and explicitly says not to wait for a notification from the exited CLI. This corrects
+`COPY.alive`'s former "may still be running" claim without replacing it with an unmeasured promise
+that every possible exit always kills every possible kind of work.
+
+### CLI lifetime measurement
+
+Measured on 2026-10-13 with Claude Code **2.1.286**, parent and general-purpose background agent
+both **`claude-haiku-4-5-20251001`**. Driver: `tests/perf/background_subagent_lifetime.py`, guarded by
+`VIBING_PERF=1` and outside `npm test`. The adjacent Node tests exercise only its accounting and
+classification, with no paid CLI calls.
+
+The observations were selected before the run: parent/descendant process state, new work after
+parent exit, and output recovery. Each agent wrote a start marker, waited, then had to use a
+**separate Write tool** to create a completion marker. A surviving sleep process or an old
+transcript alone could not prove agent survival. Samples every 0.5 seconds retained discovered
+PIDs after reparenting and their process state; a zombie was not treated as a live worker.
+
+Ordinary print mode waits for background agents. To obtain an exit while work remained pending,
+the two exit cells used **`CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=2000`**, the CLI's own wait ceiling,
+rather than a harness signal. The live duplex control used the same setting but kept stdin open
+until the work progressed. These are different from forcing the CLI to exit with SIGTERM.
+The [upstream headless documentation](https://code.claude.com/docs/en/headless#background-tasks-at-exit)
+describes the wait ceiling; the timings and observations below are from the actual local run.
+
+| Condition                                                | State at parent exit                                                                        | Work afterward                                                                                             | Saved-answer recovery                                                                                                       |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| oneshot, stdin already closed                            | exit 0 at 11.895s; start marker present, completion marker absent; agent notified `stopped` | No completion marker or further agent-transcript growth in the following 90s; no live recorded descendants | Same-session `--resume`: actual Bash tool called the plugin's `claude_subagent_transcript.recover`, returned `[]`           |
+| duplex, stdin closed after launching `result` at 11.388s | exit 0 at 14.603s; start marker present, completion marker absent; agent notified `stopped` | Same absence of new work for 90s; no live recorded descendants                                             | Same reader through an actual resumed CLI tool call, returned `[]`                                                          |
+| duplex with open stdin                                   | Parent alive and a successful separate completion Write observed by 56.651s                 | Establishes only that the task can progress while the parent is alive                                      | Not a natural-exit or recovery cell; final agent `task_notification` completion was not confirmed before budget termination |
+
+The live control is accepted **only** as evidence that work can progress with a live parent. It was
+stopped for budget reasons and supplies no evidence about natural exit. A completion notification
+for its nested Bash command is not the background agent's own completion. The driver now matches
+that notification to the launched agent's task id before declaring full control completion.
+Completed-before-exit cells, missing launch/start markers, failed exits and forced exit cells are
+excluded from conclusions about post-exit lifetime.
+
+Under the two measured ceiling exits, pending work did not continue and no answer was recovered.
+That contradicts using "may still be running" as advice for **these** exits. It does not prove what
+happens for every CLI version, backend, model, abrupt crash, server-side operation or wait setting.
+The production oneshot normally waits too: it may have an unreported **finished** agent whose
+notification was lost, while an unfinished agent at process exit may require the wait ceiling to
+have expired. The production default ceiling is 3600s (0 disables it), not the measured 2s. No
+claim that shortening it reproduces every production exit is made, and the new copy consequently
+states only that the CLI exited and no answer was recovered; existing saved answers remain useful.
+The duplex `exited` predicate records the same observed action, not an opposing agent-lifetime
+verdict. Its internal field is now named `process_killed` to make that distinction explicit.
+
+**Cost and failures:** cumulative observed input **308,148 tokens**, output **5,571 tokens**,
+including cache reads/creation. This exceeded the approved 300k input cap by 8,148. Polling usage
+cannot stop a model request already in flight; the live cell needed extra requests beyond its
+estimate. No additional paid run followed. Accounting deduplicates API message ids and takes
+per-session cumulative `modelUsage` high-water marks across resume, including cache usage, rather
+than adding replayed results. The live cell has no final complete usage result; its latest
+assistant/transcript usage is included conservatively.
+
+The guard now reserves 120k input before a new cell, 50k before a recovery turn, and 20k for a
+request in flight during observation, plus output headroom. With the measured 203,882 tokens
+already spent before the live cell, the revised admission guard would refuse that launch. This is
+a conservative stop guard, **not** an exact upstream token cap. It preserves evidence on a budget
+stop. Re-running with `--prior` includes earlier attempts in the same budget.
+The first TaskOutput recovery prompt was unusable because 2.1.286 advertises no TaskOutput tool;
+its prose `UNAVAILABLE` was excluded and replaced by the actual plugin-reader tool observation.
+An initial duplex attempt stopped just after init was also excluded. The later oneshot reader
+finished and saved its result before a log-only `NameError`; that print error was fixed without
+re-running inference. The three accepted observations and both reader results were retained.
 
 **The ledger has to follow the process, not the turn** (`background_tasks.share`). A
 `task_notification` for a subagent launched in turn N arrives after turn N — most often between turns,
@@ -335,55 +394,31 @@ Single-select questions render as a numbered list (`1. 2. 3.`); multi-select que
 bullet list (`- - -`). The user deletes unwanted options with standard Vim commands (`dd`, etc.)
 and sends the remainder with `<CR>`.
 
-**Implementation:** the primary path is vibing.nvim's own MCP tool
-`nvim_ask_user_question` (`claude-plugin/mcp-server/src/tools/chat.ts`), which the Claude and Codex
-prompts instruct the model to use instead of the native tool. The backend-specific qualified tool
-names differ, but both prompts use the shared text in
-`adapter/modules/ask_user_question_instructions.lua`. Its handler calls
-`M.ask_user_question()` in `infrastructure/rpc/handlers/permission.lua`, which renders the choice
-list via `on_insert_choices`.
+**Implementation: a block in the reply, not a tool.** Every backend's prompt
+(`adapter/modules/ask_user_question_instructions.lua`) tells the model to end its reply with one
+fenced block whose info string is `vibing-question`, holding
+`{"questions": [{"question", "multiSelect", "options": [{"label", "description"}]}]}`, and to stop.
+When the turn succeeds, `send_message.lua` calls `ChatBuffer:take_question_block`, which asks
+`presentation/chat/modules/question_block.lua` for a block that ends the reply, takes it out of the
+transcript (otherwise the question shows twice, once as JSON) and stages it with `insert_choices`.
+The turn's closing `add_user_section` draws the choices; the user's `<CR>` is the next turn.
 
-**What happens to the turn depends on the backend** (#788). Where a measurement covers it — claude
-only, `mcp.measured_answer_wait_sec` — the reply to the MCP call is withheld, the turn stays open,
-and the user's `<CR>` becomes the tool's return value. Everywhere else the turn is cancelled as
-before and the answer arrives as the next `--resume`d turn's user message. The withheld reply, its
-four exits and what expiry means are
-`handbook/architecture/approval-without-kill.md` → "The other channel".
+**Why it stopped being a tool.** `nvim_ask_user_question` (#788) held its MCP reply open until the
+human answered, which needed a withheld-reply registry with four exits, a measured ceiling on how
+late an answer is still consumed (960s on claude), an exemption from every "this chat is
+responding" guard, and a rule for which of two blocked questions an answer belonged to. All of it
+bought one thing over ending the turn: the CLI process surviving while the human thinks. Once
+duplex became the default the resident process survives between turns anyway, and the prompt cache
+is server-side either way, so the cost bought nothing. A block also reaches Grok, which never could
+call the MCP tool. The tool's design history is `handbook/superpowers/specs/2026-07-10-ask-user-question-mcp-tool-design.md`.
 
-**The choice list is only staged, so the staging has to be synchronous.** `on_insert_choices`
-writes `_pending_choices` and nothing else; the one thing that renders it is `add_user_section()`
-at the end of `_handle_response`. But `cancel()` runs the adapter's wrapped `on_done`, and that is
-what queues the completion — so a staging deferred by its own `vim.schedule` lands one tick too
-late, the completion consumes a nil, and the turn ends cut short with nothing in the buffer to
-answer (#649). Neither this callback nor `on_approval_required` may add an inner `vim.schedule`:
-both are already on the main thread when `permission.lua` calls them. `on_approval_required` had
-always obeyed that rule; `on_insert_choices` was the one that did not.
+**Only the last thing written counts.** `find_trailing` accepts nothing but blank lines after the
+closing fence and refuses when a later fence closes the reply, so a quoted example of the format
+never becomes a live prompt. That is also why the block is taken **before** `### Tokens` and
+`### Modified Files` are appended under the reply.
 
-Rendering from `insert_choices` itself is not the alternative — `### Modified Files` and the patch
-comment are appended _before_ the User section, so the diff would land underneath the choices.
+**The chat reports `asked_question` until its next send** (`insert_choices` sets `_stop_reason`).
+It is idle, so an orchestrator answers with an ordinary delivery.
 
-Native `AskUserQuestion` is unavailable in headless `claude -p` mode and is opaque to vibing.nvim,
-so the PreToolUse hook intercepts and denies it, rendering the same UI as a fallback.
-
-### Codex backend
-
-Codex 0.153 and later use the same choice-list path. `codex_plugin_config.lua` names the normalized
-`mcp__vibing_nvim__nvim_ask_user_question` tool and embeds the stable chat buffer number in
-`developer_instructions`; `codex_cli.lua` puts that same number in the process registry, so the
-shared RPC handler resolves the correct turn even when several chats are active.
-
-The two things that originally made this impossible (#532) were added in Codex 0.153:
-
-- Codex now takes a system prompt seam: `-c developer_instructions` becomes the first `developer`
-  message. Context and language are still prepended to the user prompt.
-- Headless `codex exec` still auto-cancels an MCP call at its own approval prompt — stdin is
-  closed, so EOF reads as a denial ([openai/codex#24135][codex-24135]) — but
-  `-c mcp_servers.<name>.default_tools_approval_mode="approve"` is a per-server answer to it, and
-  is how the bundled server reaches codex at all (`handbook/architecture/plugin-and-commands.md` →
-  "Codex").
-
-The UI path is covered by the same E2E spec as Claude. Ordinary tool approval remains a different
-route: the `ask` permission list resolves on the turn id, while the model-called question tool
-resolves on the stable `chat_bufnr` to avoid putting a per-turn identifier in the prompt.
-
-[codex-24135]: https://github.com/openai/codex/issues/24135
+Native `AskUserQuestion` is unavailable in headless `claude -p` mode and opaque to vibing.nvim, so
+the PreToolUse hook denies it — without killing the turn — with a reason that names the block.

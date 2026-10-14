@@ -39,6 +39,12 @@ describe("E2E: pi completes a turn through the shared adapter", function()
 
   before_each(function()
     nvim_instance = helper.spawn_backend_instance("pi")
+    helper.setup_child(nvim_instance, {
+      ai = {
+        chat = { agent = "pi", model = vim.env.VIBING_PI_MODEL or "mlx-community/Qwen3.6-27B-4bit" },
+        agents = { pi = { extensions = { provider = vim.env.VIBING_PI_PROVIDER or "mlx-local" } } },
+      },
+    })
   end)
 
   after_each(function()

@@ -14,7 +14,7 @@ local M = {}
 
 --- The language the response should be written in, or nil to leave it to the CLI.
 ---
---- `config.language` is accepted both as a plain string and as a table with `default`/`chat`,
+--- `vim.tbl_get(config, "chat", "language")` is accepted both as a plain string and as a table with `default`/`chat`,
 --- which is why this is not a one-line lookup.
 ---
 --- @param opts Vibing.AdapterOpts
@@ -22,12 +22,9 @@ local M = {}
 --- @return string|nil
 function M.resolve_language(opts, config)
   local language = opts.language
-  if not language and config.language then
-    if type(config.language) == "table" then
-      language = config.language.default or config.language.chat
-    else
-      language = config.language
-    end
+  if not language then
+    local configured = vim.tbl_get(config, "chat", "language")
+    language = type(configured) == "table" and (configured.default or configured.chat) or configured
   end
   return type(language) == "string" and language or nil
 end
@@ -37,7 +34,7 @@ end
 --- Returns nil for English (the CLIs' own default) and for a code with no display name, so the
 --- caller never has to repeat those two guards. Where the sentence goes is the caller's business:
 --- claude and grok put it at the top of the system prompt, codex, copilot and pi prepend it to the
---- user prompt -- copilot and pi take no system prompt, and codex's `developer_instructions` is
+--- user prompt; codex's `developer_instructions` is
 --- reserved for the plugin material (`codex_plugin_config`), which has to stay byte-stable across
 --- turns.
 ---

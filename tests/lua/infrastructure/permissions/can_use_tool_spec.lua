@@ -17,6 +17,69 @@ local function make_config(overrides)
 end
 
 describe("can_use_tool", function()
+  describe("backend-specific always-allowed tools", function()
+    local vocabulary = require("vibing.infrastructure.adapter.modules.codex_tool_vocabulary")
+    local function decision(name, overrides, input)
+      return can_use_tool.can_use_tool(
+        name,
+        input or {},
+        make_config(vim.tbl_extend("force", {
+          allowed_tools = { "Read" },
+          is_always_allowed = vocabulary.is_always_allowed,
+        }, overrides or {}))
+      ).behavior
+    end
+
+    it("only applies when the backend supplies the predicate", function()
+      assert.equals("allow", decision("collaborationspawn_agent"))
+      assert.equals(
+        "ask",
+        can_use_tool.can_use_tool(
+          "collaborationspawn_agent",
+          {},
+          make_config({
+            allowed_tools = { "Read" },
+          })
+        ).behavior
+      )
+      assert.equals("ask", decision("mcp__other__write"))
+    end)
+
+    it("keeps canonical operations under their existing permission settings", function()
+      for _, name in ipairs({ "Bash", "Edit", "Write", "WebSearch", "WebFetch" }) do
+        assert.equals("ask", decision(name), name)
+        assert.equals("allow", decision(name, { allowed_tools = { name } }), name)
+      end
+      for _, name in ipairs({ "Read", "Glob", "Grep" }) do
+        assert.equals("allow", decision(name), name)
+        assert.equals("deny", decision(name, { denied_tools = { name } }), name)
+      end
+    end)
+
+    it("respects explicit ask, deny and session deny", function()
+      assert.equals("ask", decision("collaborationspawn_agent", { asked_tools = { "collaboration*" } }))
+      assert.equals("deny", decision("collaborationspawn_agent", { denied_tools = { "collaboration*" } }))
+      assert.equals("deny", decision("collaborationspawn_agent", { session_denied_tools = { "collaboration*" } }))
+      assert.equals(
+        "deny",
+        decision("collaborationspawn_agent", {
+          asked_tools = { "collaboration*" },
+          permission_mode = "dontAsk",
+        })
+      )
+    end)
+
+    it("keeps command deny rules and the background-job invariant ahead of built-in allowances", function()
+      assert.equals(
+        "deny",
+        decision("Bash", {
+          permission_rules = { { tools = { "Bash" }, action = "deny", commands = { "echo" } } },
+        }, { command = "echo forbidden" })
+      )
+      assert.equals("deny", decision("Bash", { mcp_enabled = true }, { command = "npm run dev &" }))
+    end)
+  end)
+
   describe("Neovim-owned background-job policy", function()
     local function decision(input, overrides)
       return can_use_tool.can_use_tool("Bash", input, make_config(vim.tbl_extend("force", {
@@ -248,17 +311,104 @@ describe("can_use_tool", function()
       assert.is_false(can_use_tool.is_vibing_nvim_mcp_tool("AskUserQuestion", "nvim_ask_user_question"))
     end)
 
+    it("matches grok's unprefixed server__tool form", function()
+      -- grok 1.0.50 qualifies an MCP tool as `server__tool` with no `mcp__` prefix, so vibing's
+      -- own server arrives with nothing at all before its name.
+      assert.is_true(can_use_tool.is_vibing_nvim_mcp_tool("vibing-nvim__nvim_get_info"))
+      assert.is_true(
+        can_use_tool.is_vibing_nvim_mcp_tool("vibing-nvim__nvim_ask_user_question", "nvim_ask_user_question")
+      )
+    end)
+
     it("does not match a server whose name merely ends with vibing-nvim", function()
-      -- Matching here would grant an unrelated server the CLI-gate bypass. Both real registration
-      -- styles put a separator right before the name, so requiring one costs nothing.
+      -- Matching here would grant an unrelated server the CLI-gate bypass. grok's form has no
+      -- leading separator, so the rejection rests on the server name being anchored -- either at
+      -- the start of the tool name or right after a `_` -- rather than on requiring a separator.
       assert.is_false(can_use_tool.is_vibing_nvim_mcp_tool("mcp__my-vibing-nvim__nvim_get_buffer"))
+      assert.is_false(can_use_tool.is_vibing_nvim_mcp_tool("my-vibing-nvim__nvim_get_buffer"))
       assert.is_false(
         can_use_tool.is_vibing_nvim_mcp_tool("mcp__my-vibing-nvim__nvim_ask_user_question", "nvim_ask_user_question")
+      )
+      assert.is_false(
+        can_use_tool.is_vibing_nvim_mcp_tool("my-vibing-nvim__nvim_ask_user_question", "nvim_ask_user_question")
       )
     end)
 
     it("does not match a non-nvim_ tool on the vibing-nvim server", function()
       assert.is_false(can_use_tool.is_vibing_nvim_mcp_tool("mcp__vibing-nvim__something_else"))
+    end)
+  end)
+
+  describe("an exclusive tool set", function()
+    local function decision(tool, overrides, input)
+      return can_use_tool.can_use_tool(
+        tool,
+        input or {},
+        make_config(vim.tbl_extend("force", {
+          exclusive_tools = { "Grep", "mcp__vibing-nvim__nvim_session_read" },
+          mcp_enabled = true,
+        }, overrides or {}))
+      ).behavior
+    end
+
+    it("allows what it names", function()
+      assert.equals("allow", decision("Grep"))
+      assert.equals("allow", decision("mcp__vibing-nvim__nvim_session_read"))
+    end)
+
+    it("denies what is otherwise always allowed", function()
+      assert.equals("deny", decision("Read"))
+      assert.equals("deny", decision("Agent"))
+      assert.equals("deny", decision("mcp__vibing-nvim__nvim_execute"))
+    end)
+
+    it("holds even under bypassPermissions", function()
+      assert.equals("deny", decision("Bash", { permission_mode = "bypassPermissions" }, { command = "ls" }))
+    end)
+
+    it("does not lift a deny rule on a tool it names", function()
+      assert.equals("deny", decision("Grep", { denied_tools = { "Grep" } }))
+    end)
+
+    it("is absent from an ordinary chat", function()
+      assert.equals("allow", can_use_tool.can_use_tool("Read", {}, make_config({})).behavior)
+    end)
+  end)
+
+  describe("a Bash prefix in the allow list", function()
+    local function decision(command, overrides)
+      return can_use_tool.can_use_tool(
+        "Bash",
+        { command = command },
+        make_config(vim.tbl_extend("force", {
+          allowed_tools = { "Bash(gh pr view:*)", "Bash(rg:*)" },
+        }, overrides or {}))
+      ).behavior
+    end
+
+    it("matches a multi-word prefix word for word", function()
+      assert.equals("allow", decision("gh pr view 876"))
+      assert.equals("allow", decision("gh  pr   view"))
+      assert.equals("ask", decision("gh pr merge 876"))
+      assert.equals("ask", decision("gh pr viewer"))
+    end)
+
+    it("still matches a single-word prefix only as a whole word", function()
+      assert.equals("allow", decision("rg -c foo"))
+      assert.equals("ask", decision("rgx foo"))
+    end)
+
+    it("counts as pre-approved in dontAsk mode", function()
+      assert.equals("allow", decision("gh pr view 876", { permission_mode = "dontAsk" }))
+      assert.equals("allow", decision("rg -c foo", { permission_mode = "dontAsk" }))
+      assert.equals("deny", decision("gh pr merge 876", { permission_mode = "dontAsk" }))
+    end)
+
+    it("is still taken back by the ask list in dontAsk mode", function()
+      assert.equals(
+        "deny",
+        decision("rg -c foo", { permission_mode = "dontAsk", asked_tools = { "Bash(rg:*)" } })
+      )
     end)
   end)
 end)

@@ -9,6 +9,6 @@ Only two things must be known without reading anything:
 
 The full GitHub workflow (REST API instead of `gh`, PR creation/update, review-comment resolution)
 is the `github-flow-for-claude-on-web` skill. The `SessionStart` hook that installs Neovim, plenary
-and `lua5.3` so the CI gates can run in the container at all — and the five decisions inside it —
+and Node dependencies so the CI gates can run in the container — and the five decisions inside it —
 is `handbook/web-container-setup.md`. Taking a screenshot from the container is the
 `remote-screenshot` skill.

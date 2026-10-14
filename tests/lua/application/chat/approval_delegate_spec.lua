@@ -39,7 +39,9 @@ describe("ApprovalDelegate", function()
   ---@param mode boolean|"scoped"
   local function configure(mode)
     local cfg = vim.tbl_deep_extend("force", vim.deepcopy(Config.defaults), {
-      agent = { orchestration = { delegated_approval = mode } },
+      permissions = {
+        delegated_approval = mode,
+      },
     })
     Config.get = function()
       return cfg
@@ -239,6 +241,67 @@ describe("ApprovalDelegate", function()
     assert.is_true(result.success)
   end)
 
+  describe("native Codex delegation", function()
+    local Decisions = require("vibing.infrastructure.adapter.modules.codex_native_decisions")
+    local Request = require("vibing.infrastructure.adapter.modules.codex_native_request")
+    local amendment = { acceptWithExecpolicyAmendment = { execpolicy_amendment = { "npm" } } }
+
+    before_each(function()
+      pending.tool, pending.input = Request.describe("item/commandExecution/requestApproval", { command = "npm install" })
+      pending.options = Decisions.options({ "accept", "acceptForSession", amendment, "cancel" })
+      pending.kind = require("vibing.infrastructure.rpc.pending_native_approvals").KIND
+    end)
+
+    it("passes each offered native value through the human option-line grammar", function()
+      local vocabulary = vim.tbl_map(function(option) return option.value end, pending.options)
+      for _, option in ipairs(pending.options) do
+        sends = {}
+        answer(option.value)
+        assert.same({ { action = option.value, request_id = "req-1" } },
+          ApprovalParser.parse_answers(sends[1].message, vocabulary))
+      end
+    end)
+
+    it("keeps native delegation disabled when the setting is false", function()
+      configure(false)
+      local ok = pcall(answer, "accept")
+      assert.same({ false, 0 }, { ok, #sends })
+    end)
+
+    it("rejects values not offered by this native prompt", function()
+      local hook = pcall(answer, "allow_once")
+      local unoffered = pcall(answer, "accept_unoffered")
+      assert.same({ false, false, 0 }, { hook, unoffered, #sends })
+    end)
+
+    it("matches native command approvals against Bash command scope", function()
+      configure("scoped")
+      worker_scope = { "Bash(npm:*)" }
+      answer("accept")
+      answer("accept_for_session")
+      assert.equals(2, #sends)
+    end)
+
+    it("refuses native allows outside command scope but always passes native refusals", function()
+      configure("scoped")
+      worker_scope = { "Bash(rm:*)" }
+      local once = pcall(answer, "accept")
+      local session = pcall(answer, "accept_for_session")
+      local refused_sends = #sends
+      worker_scope = {}
+      answer("decline")
+      answer("cancel")
+      assert.same({ false, false, 0, 2 }, { once, session, refused_sends, #sends })
+    end)
+
+    it("refuses a policy amendment in scoped mode even with a matching bare tool", function()
+      configure("scoped")
+      worker_scope = { "Bash" }
+      local ok, err = pcall(answer, "accept_with_execpolicy_amendment")
+      assert.same({ false, true, 0 }, { ok, tostring(err):find("delegated_approval=true", 1, true) ~= nil, #sends })
+    end)
+  end)
+
   describe('"scoped" mode', function()
     before_each(function()
       configure("scoped")
@@ -260,6 +323,14 @@ describe("ApprovalDelegate", function()
       answer("allow_once")
 
       assert.equals(1, #sends)
+    end)
+
+    it("does not let hook input override the tool checked against scope", function()
+      worker_scope = { "Bash(npm:*)" }
+      pending.tool = "Write"
+      pending.input.scope_tool = "Bash"
+      local ok = pcall(answer, "allow_once")
+      assert.same({ false, 0 }, { ok, #sends })
     end)
 
     it("allows a bare tool-name scope entry with no command pattern", function()

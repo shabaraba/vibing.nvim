@@ -6,6 +6,7 @@
 --- overrides. `build()` remains as the historical entry point over that spec.
 --- @module vibing.infrastructure.adapter.modules.codex_command_builder
 
+local CodexTurnSettings = require("vibing.infrastructure.adapter.modules.codex_turn_settings")
 local CodexPluginConfig = require("vibing.infrastructure.adapter.modules.codex_plugin_config")
 local CodexPermissionProfile = require("vibing.infrastructure.adapter.modules.codex_permission_profile")
 local TokenUsage = require("vibing.core.utils.token_usage")
@@ -27,14 +28,13 @@ M.BINARY = { name = "codex", missing = "Codex CLI not found in PATH. Please inst
 --- @return string[]
 function M.auto_compact_args(ctx)
   local config = ctx.config
-  local agent = type(config) == "table" and config.agent or nil
-  local token_usage = type(agent) == "table" and agent.token_usage or nil
-  local auto_compact = type(token_usage) == "table" and token_usage.auto_compact or nil
+  local auto_compact = vim.tbl_get(config or {}, "chat", "context", "compaction")
+
   if type(auto_compact) ~= "table" or not auto_compact.enabled then
     return {}
   end
 
-  local at = tonumber(auto_compact.at) or TokenUsage.DEFAULT_AUTO_COMPACT_AT
+  local at = tonumber(auto_compact.threshold_tokens) or TokenUsage.DEFAULT_AUTO_COMPACT_AT
   if at <= 0 or at ~= at or at == math.huge then
     return {}
   end
@@ -96,7 +96,38 @@ end
 --- every title generation. With the user config unread, it validates our overrides and nothing
 ---
 --- @type string[]
-M.LIGHTWEIGHT_ARGS = { "--ignore-user-config", "--strict-config", "-c", 'sandbox_mode="read-only"', "-c", "tools.web_search=false", "-c", 'approval_policy="never"', "-c", "project_doc_max_bytes=0" }
+M.LIGHTWEIGHT_ARGS = {
+  "--ignore-user-config",
+  "--strict-config",
+  "-c",
+  'sandbox_mode="read-only"',
+  "-c",
+  "tools.web_search=false",
+  "-c",
+  'approval_policy="never"',
+  "-c",
+  "project_doc_max_bytes=0",
+}
+
+--- The user's `ai.agents.codex.extensions.approval_policy`, as the `-c` pair it becomes, or nothing.
+---
+--- Applied only on the branches that make no statement of their own: `bypassPermissions` already
+--- means "ask nothing" and `plan` already means "write nothing", and a configured policy must not
+--- quietly undo either. On every other branch this is what turns codex's own approval requests on
+--- (#861) — the argv is the duplex reuse key, so changing it starts a fresh process and therefore
+--- reaches resumed threads as well as new ones.
+---
+--- Returning nothing means "say nothing", which is the right answer on the exec path and the wrong
+--- one on the resident path; `resident_permission_args` is where that difference is decided.
+--- @param ctx Vibing.RequestContext
+--- @return string[]
+local function approval_policy_args(ctx)
+  local policy = vim.tbl_get(ctx.config or {}, "ai", "agents", "codex", "extensions", "approval_policy")
+  if type(policy) ~= "string" or policy == "" then
+    return {}
+  end
+  return { "-c", string.format('approval_policy="%s"', policy) }
+end
 
 --- The permission mapping for an ordinary call. A project-local permission profile is a config
 --- layer, so unlike `-s` it is valid on `codex exec resume` and must be supplied on every process
@@ -105,6 +136,45 @@ M.LIGHTWEIGHT_ARGS = { "--ignore-user-config", "--strict-config", "-c", 'sandbox
 --- the prompt.
 --- @param ctx Vibing.RequestContext
 --- @return string[]
+--- The permission mapping for a resident app-server.
+---
+--- Its own builder rather than a branch inside `permission_args`, because "is this call duplex"
+--- is already a first-class condition on the parts list (`when = "duplex"`), which is how every
+--- other argv difference in this descriptor is stated. A second spelling of the same condition
+--- inside a builder is one the parts list cannot see.
+---
+--- Two things differ from the exec mapping, and only two. `-s` does not exist here, so every mode
+--- travels as a `-c` override -- the shape exec already uses when resuming. And the approval
+--- policy is **always stated**, never left at codex's own default: a request this transport
+--- cannot put in front of a human is declined (#861 routes the ones it can, and refuses the rest
+--- when there is no chat to ask or the configured wait is longer than the backend was measured to
+--- tolerate), so an unstated policy turns a sandboxed action into a silent denial instead of
+--- something vibing's own PreToolUse hook and permission rules get to decide. `never` unless the
+--- user asked for something else; the exec path below has no such channel to fail on and keeps
+--- passing nothing.
+--- @param ctx Vibing.RequestContext
+--- @return string[]
+function M.resident_permission_args(ctx)
+  -- `bypassPermissions` already means "ask nothing" and `plan` already means "write nothing", so
+  -- neither consults the configured policy -- it must not quietly undo either.
+  if ctx.opts.permission_mode == "bypassPermissions" then
+    return { "-c", 'sandbox_mode="danger-full-access"', "-c", 'approval_policy="never"' }
+  elseif ctx.opts.permission_mode == "plan" then
+    return { "-c", 'sandbox_mode="read-only"', "-c", 'approval_policy="never"' }
+  end
+
+  local profile_args = CodexPermissionProfile.args(ctx.opts.cwd, ctx.config)
+  -- A fresh table, never the profile's own: `CodexPermissionProfile.args` is memoised per cwd,
+  -- so appending below would grow the cached argv on every turn.
+  local args = #profile_args > 0 and vim.list_extend({}, profile_args) or { "-c", 'sandbox_mode="workspace-write"' }
+
+  local policy = approval_policy_args(ctx)
+  if #policy == 0 then
+    policy = { "-c", 'approval_policy="never"' }
+  end
+  return vim.list_extend(args, policy)
+end
+
 function M.permission_args(ctx)
   local opts, session_id, config = ctx.opts, ctx.session_id, ctx.config
   local cmd = {}
@@ -131,6 +201,9 @@ function M.permission_args(ctx)
       table.insert(cmd, "-s")
       table.insert(cmd, "workspace-write")
     end
+    -- Same branch condition as the duplex path above, for the same reason: the two explicit modes
+    -- already say what they want about asking, and this one must not undo them.
+    vim.list_extend(cmd, approval_policy_args(ctx))
   end
   return cmd
 end
@@ -148,6 +221,32 @@ end
 --- @return string[]
 function M.plugin_args(ctx)
   return CodexPluginConfig.args(ctx.opts.cwd, ctx.config, ctx.opts.chat_bufnr)
+end
+
+--- app-server accepts the hook override but not exec's trust-bypass flag.
+--- The protocol checks hooks/list before starting a thread, rather than silently losing the gate.
+function M.resident_hook_args(ctx)
+  local trust_flag = require("vibing.infrastructure.hooks.codex_settings_generator").TRUST_FLAG
+  local args = {}
+  for _, arg in ipairs(ctx.hook_arg or {}) do
+    if arg ~= trust_flag then
+      table.insert(args, arg)
+    end
+  end
+  return args
+end
+
+--- One shared selection for the one-shot argv; app-server sends the same selection per turn.
+function M.oneshot_selection_args(ctx)
+  local selection = CodexTurnSettings.resolve(ctx.opts, ctx.config)
+  local args = {}
+  if selection.model then
+    vim.list_extend(args, { "-m", selection.model })
+  end
+  if selection.effort then
+    vim.list_extend(args, { "-c", string.format('model_reasoning_effort="%s"', selection.effort) })
+  end
+  return args
 end
 
 --- Build the `codex exec --json` command array from the request spec in `backends/codex.lua`.

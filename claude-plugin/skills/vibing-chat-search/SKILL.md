@@ -40,25 +40,32 @@ phrased.
 Example: query "前にwebfetchのURL表示について話した?" → candidates: `webfetch`, `WebFetch`,
 `URL表示`, `閲覧したurl`.
 
-## Step 3: Narrow candidates with Grep
+## Step 3: Narrow candidates with rg
 
 Search both User and Assistant content — don't restrict to `## User` sections only, since the
 user's original phrasing may be vague while the topic keyword shows up clearly in Claude's own
 reply.
 
-Use the `Grep` tool with `path: ".vibing/chat"`, one call per keyword (or a regex alternation),
-`output_mode: "files_with_matches"`. Union the results across all keywords into one candidate
-list.
+Run `rg` through Bash with `--no-ignore`. `.vibing/` is usually git-ignored, and the `Grep` and
+`Glob` tools respect ignore files, so they report no matches even when the chats contain the
+keyword:
+
+```bash
+rg --no-ignore --fixed-strings -l -e <keyword> -e <keyword> .vibing/chat
+```
+
+`--fixed-strings` keeps keywords such as URLs literal. Union the results across all keywords into
+one candidate list.
 
 If the candidate list is larger than ~15 files, don't read them all — narrow further:
 
-- Re-run with `output_mode: "count"` and keep only the files with the highest match counts, or
+- Re-run with `-c` instead of `-l` and keep only the files with the highest match counts, or
 - Tighten the keyword list to more specific terms before re-searching.
 
 ## Step 4: Read candidates and judge relevance
 
-Read each remaining candidate file (or just the matched region with `-C` context via `Grep`'s
-content mode, for longer files) and judge whether it's actually about what the user is asking —
+Read each remaining candidate file (or just the matched region with
+`rg --no-ignore -C`, for longer files) and judge whether it's actually about what the user is asking —
 a keyword hit alone isn't enough; discard files where the match is incidental or off-topic.
 
 ## Step 5: Present results

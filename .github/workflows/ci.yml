@@ -39,11 +39,6 @@ jobs:
         working-directory: claude-plugin/mcp-server
         run: npm ci
 
-      - name: Install Lua
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y lua5.3
-
       - name: Setup Neovim
         uses: rhysd/action-setup-vim@v1
         with:

@@ -41,7 +41,7 @@ Read the linked file before changing that path.
 - **A turn ending with subagents still unreported is a chat nothing will wake**, so the outstanding
   ledger is the wake signal — not what transcript recovery found. Recovery is empty for a subagent
   that is still running, which is exactly the case that needs the turn. Not gated on
-  `agent.chat_notifications.enabled`; never for a `_cancelled` turn.
+  `automation.orchestration.notifications.enabled`; never for a `_cancelled` turn.
 - **Only a process that will serve no more turns may conclude "nothing will report these."** On
   oneshot that is the end of the turn — `finish` _is_ the exit handler. Under duplex `finish` runs on
   `result` with the process resident, where a ledger entry is usually one still running, so duplex
@@ -52,20 +52,17 @@ Read the linked file before changing that path.
 - **A reclaim route declares what it meant; nothing downstream infers it.** `duplex_pool` resolves
   the route into a `Vibing.DuplexReclaimVerdict` before announcing it, so no reason name appears in a
   signature outside that module. Two separate bits: `reports` (false only for `QUIET_RECLAIM`'s four
-  — a turn is coming, or there is nobody to tell) and `subagents_lost` (false for `exited`, the one
-  route that killed nothing and so leaves the state an ordinary oneshot exit leaves). **Reporting is
+  — a turn is coming, or there is nobody to tell) and `process_killed` (false for `exited`, the one
+  route where the pool killed nothing; it says nothing about whether a subagent survived). **Reporting is
   the default**, so a route added later wakes rather than silently dropping the wake.
 
 ## AskUserQuestion
 
-`handbook/features/chat-ui.md`
+`handbook/features/chat-ui.md`; the invariants are in `permissions.md` → "Asking a Question".
 
-- **Neither `on_insert_choices` nor `on_approval_required` may add an inner `vim.schedule`.** Both
-  are already on the main thread when `permission.lua` calls them, and a deferred staging lands
-  after the completion has consumed it — the turn ends with nothing in the buffer to answer (#649).
-- **Claude and Codex route this UI by `chat_bufnr`.** The same stable buffer number must appear in
-  the model-visible prompt and the adapter's `process_registry` / `turn_registry` entry; a per-turn
-  `turn_id` would churn the prompt cache. Grok still cannot reach the MCP tool.
+- **A question is a block the model writes, not a tool call**, so it reaches every backend, Grok
+  included. `on_approval_required` still may not add an inner `vim.schedule` (#649): it is already
+  on the main thread when `permission.lua` calls it.
 
 ## Message Timestamps and Delivered Sections
 

@@ -65,7 +65,7 @@ thing in the prefix, so a value that moves invalidates the cache for it _and_ th
 conversation behind it — floor plus history, re-written at cache-creation price, which is 12.5× the
 read price. A long-lived process pays that once per session; here it is once per change.
 
-`agent.git_instructions` is the case that was found (#681). The CLI embeds a block like
+`ai.agents.claude.extensions.git_instructions` is the case that was found (#681). The CLI embeds a block like
 
 ```text
 This is the git status at the start of the conversation. ...
@@ -105,7 +105,7 @@ that shape:
   changes under them. The environment is the one channel every call goes through.
 - **Both settings write the variable**, because the CLI reads it as a tri-state: `"1"` suppresses,
   `"0"` forces on, unset defers to `includeGitInstructions` — which
-  `--setting-sources user,project,local` still loads. So `agent.git_instructions = true` writes
+  `--setting-sources user,project,local` still loads. So `ai.agents.claude.extensions.git_instructions = true` writes
   `"0"` rather than nothing; writing nothing would leave the opt-in unable to deliver what it
   promises to a user who has that key set to `false`. Verified against the CLI: `0` and `false`
   both put the block back, `1` removes it.
@@ -135,7 +135,7 @@ These are the seams that stop backend identity leaking into shared code. The rul
 ADR 009 each backend is a descriptor (`adapter/backends/<id>.lua`) that names its hook transport
 and dialect from `hooks/transports.lua`; the five generators described below are those transports.
 
-- **Pi has no external-process hook, and no gate of its own.** Measured against Pi 0.87.1: its only
+- **Pi has no external-process hook, and no gate of its own.** The original PR author reported on Pi 0.87.1: its only
   interception point is an in-process TypeScript `tool_call` handler, and its own documentation
   states it "does not ask for approval before every tool call" while print/JSON/RPC modes cannot
   show even the trust prompt. Both halves matter separately. The first is why the `extension_file`
@@ -143,9 +143,9 @@ and dialect from `hooks/transports.lua`; the five generators described below are
   with `--extension`; the bundle spawns `bin/hooks/pre-tool-use.sh` and reads its exit code, so the
   dialect is `claude` and there is still exactly one implementation of what a decision means. The
   second is why a failed installation cannot be the usual warn-and-continue:
-  `pi_command_builder.permission_args` drops the run to `--tools read,grep,find,ls` instead, except
-  under `bypassPermissions` where no configured rule is being skipped. Verified end to end against
-  the real CLI: `deny` reaches the model as the tool result verbatim, `allow` runs the tool, and an
+  `pi_command_builder.permission_args` drops the run to `--no-mcp --tools read,grep,find,ls` instead, except
+  under `bypassPermissions` where no configured rule is being skipped. The original author reported:
+  `deny` reaches the model as the tool result verbatim, `allow` runs the tool, and an
   unreachable RPC server blocks every call.
 - **Pi's extension enforces its own deadline, and fails closed doing it.** Every other transport
   reports a timeout its CLI was configured with, and the ordering
@@ -162,9 +162,8 @@ and dialect from `hooks/transports.lua`; the five generators described below are
   carries something recordable; reading the update would multiply the turn's tokens by its delta
   count.
 - **Process model.** `descriptor.process` names the most capable way a backend can be run, not the
-  way it will be: `oneshot` (a process per turn, the default and the only model for codex, copilot,
-  grok and pi) or `duplex` (one resident process per chat, serving many turns over an open stdin —
-  claude only, and still reached only through `backends.claude.process` or a chat's own `process:`
+  way it will be: `oneshot` (a process per turn) or `duplex` (one resident process per chat,
+  serving many turns over open stdin, selected through `ai.agents.<id>.process` or a chat's `process:`
   frontmatter). The field is `process` and not `transport` because `Vibing.HookSpec.transport`
   already owns that word in the same descriptor. `duplex-transport.md` is the whole story;
   what matters here is that the hook protocol below is unchanged by it — `VIBING_PROCESS_ID` is
@@ -192,10 +191,10 @@ and dialect from `hooks/transports.lua`; the five generators described below are
 
 - **No MCP on every backend.** Grok registers no `chat_bufnr` and reaches no vibing-nvim MCP
   server, so `grok_command_builder` deliberately keeps `--rules` to the backend-agnostic
-  conventions. Naming `nvim_ask_user_question` there would hand the model a tool it cannot call —
-  see `features.md` → AskUserQuestion Support. Codex reaches the server through
-  `codex_plugin_config` (`plugin-and-commands.md` → "Codex") and registers `chat_bufnr` for the
-  shared choice-list route.
+  conventions — which include asking a multiple-choice question, since that is a `vibing-question`
+  block in the reply rather than a tool (`features/chat-ui.md` → AskUserQuestion Support). Codex
+  reaches the server through `codex_plugin_config` (`plugin-and-commands.md` → "Codex") and
+  registers `chat_bufnr` for the waiting approval route.
 
 - **Grok's hooks need a git repository.** `grok_settings_generator.lua` writes
   `<cwd>/.grok/hooks/` and marks the cwd trusted in `<$GROK_HOME|~/.grok>/trusted_folders.toml`,
@@ -273,7 +272,7 @@ and dialect from `hooks/transports.lua`; the five generators described below are
      codex at all**. That took two things with it, neither of which looks like a hook problem from
      the outside: the permission gate (every tool ran ungated, `deny` rules included), and the
      git-snapshot diff baseline — which is taken in the hook, so `### Modified Files` fell back to
-     tool-event paths, `.vibing/patches/*.patch` stopped being written, and `gd` stopped opening
+     tool-event paths, `.vibing/diffs/*.diff` stopped being written, and `gd` stopped opening
      the patch float because `patch_finder` had no `<!-- patch: … -->` to find.
 
      `hooks/list` on the app-server is the cheap oracle for this, and the one to reach for before
@@ -393,4 +392,4 @@ metadata for 'luna' not found`, then HTTP 400 `The 'luna' model is not supported
 `BINARY.resolve` raises when the CLI is absent and sniffs the binary for officialness with two
 blocking `vim.fn.system` calls; paying that per keystroke is what the module's own comments warn
 about. `BINARY.configured` + `BINARY.name` is the non-raising half, and is the one interpretation of
-the `backends.grok.executable` `auto` sentinel.
+the omitted `ai.agents.grok.path` (PATH lookup).

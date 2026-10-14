@@ -18,7 +18,8 @@ local Fs = require("vibing.core.utils.fs")
 ---@field update_session_id fun(session_id: string) セッションIDを更新
 ---@field add_user_section fun() ユーザーセクションを追加
 ---@field get_bufnr fun(): number バッファ番号を取得
----@field insert_choices fun(questions: table, request_id?: string) AskUserQuestion選択肢を挿入
+---@field take_question_block fun(): boolean ターン本文の末尾の質問ブロックを選択肢に変える（`question_block.lua`）
+---@field insert_choices fun(questions: table) 質問の選択肢を挿入
 ---@field set_pending_user_text fun(text: string) 次のユーザーセクションに差し込む本文を保存
 ---@field insert_approval_request fun(tool: string, input: table, options: table) ツール承認要求UIを挿入
 ---@field show_pending_prompts fun() 走っているターンの途中で溜まっている承認プロンプトを描く
@@ -149,7 +150,7 @@ function M.execute(adapter, callbacks, message, config)
   local language_utils = require("vibing.core.utils.language")
   local lang_code = frontmatter.language
   if not lang_code then
-    lang_code = language_utils.get_language_code(config.language, "chat")
+    lang_code = language_utils.get_language_code(vim.tbl_get(config, "chat", "language"), "chat")
   end
 
   -- Get cwd from frontmatter working_dir
@@ -187,9 +188,9 @@ function M.execute(adapter, callbacks, message, config)
     mode = M._validate_frontmatter_mode(frontmatter.mode),
     model = frontmatter.model,
     effort = frontmatter.effort,
-    -- What the chat asked for, untouched. `process_model.resolve` decides what this turn actually
-    -- runs under, because a lightweight call and a subagent chat cannot honour `duplex` at all.
     process = frontmatter.process,
+    -- Read per request, so editing it (or `/profile`) takes effect on the next send.
+    profile = frontmatter.profile,
     permissions_allow = frontmatter.permissions_allow,
     permissions_deny = frontmatter.permissions_deny,
     permissions_ask = frontmatter.permissions_ask,
@@ -199,59 +200,33 @@ function M.execute(adapter, callbacks, message, config)
     env = frontmatter.env,
     language = lang_code,
     cwd = session_cwd,
-    -- ツリースナップショット差分の帰属判定に使う。アダプタはこれをそのまま
-    -- TurnRegistry のエントリに載せるだけで、git を呼ばない（`stream()` は同期I/Oを
-    -- 増やさない）。
-    --
-    -- ここは `rev-parse --show-toplevel` 1回ぶんメインループを止める。
-    -- handbook/architecture/plugin-and-commands.md の「Startup Cost」が同期I/Oに神経質なのに
-    -- 対して意図的に許容している箇所で、根拠は
-    -- 呼ばれる回数のほう: git_snapshot 側でcwd単位にキャッシュされるので、1つのcwdにつき
-    -- 最初の送信の1回だけで、以降はゼロ。setup() と違ってNeovim起動時には走らない
     _worktree_root = require("vibing.core.utils.git_snapshot").worktree_root(session_cwd),
-    -- Canonical tool names on every backend (event_renderer.lua canonicalises through the
-    -- backend's vocabulary), and one call per file for a tool that touches several.
     on_tool_use = function(tool, file_path, _command)
       if (tool == "Write" or tool == "Edit" or tool == "MultiEdit" or tool == "NotebookEdit") and file_path then
         modified_file_paths[file_path] = true
       end
     end,
-    on_insert_choices = function(questions, waiting, request_id)
-      -- `on_approval_required` と同じ理由で vim.schedule を挟まない。呼び出し元
-      -- （permission.lua の `cancel_and_deny` / `M.ask_user_question`）はすでにメインスレッド上。
-      --
-      -- kill する経路では**その直前に cancel が済んでいる**。cancel は `wrapped_on_done` を同期で
-      -- 呼ぶので、ここで一段スケジュールすると `_handle_response` が `vim.schedule` した
-      -- `add_user_section` の後ろに並ぶ。そうなると選択肢はそのターンのユーザーセクションに
-      -- 描画されず、`_stop_reason` も `VibingResponseDone` に間に合わない（#649）。
-      --
-      -- **待たせる経路（#788）ではその前提が消える** — cancel していないので合流点が来ない。
-      -- 制約は同じままだが、理由は「合流点より先に置く」ではなく「合流点が存在しない」になる
-      callbacks.insert_choices(questions, request_id)
-
-      -- `on_approval_required` の `waiting` と同じ。ターンが終わらない以上、ここで描かないと
-      -- 選択肢は保存されるだけで画面に出ず、モデルは上限まで答えを待つ
-      if waiting then
-        callbacks.show_pending_prompts()
-      end
-    end,
     -- 常駐プロセス（duplex）が回収され、まだ報告していない background subagent を連れていった
     -- ときの起床（#840）。`adapter/` から `application/` を require しないための経路 —
     -- 「このチャットにターンが必要か」はアダプタの問いではない（`outstanding_subagents.lua`）。
-    -- ここだけ `on_insert_choices` などと違ってターンをまたいで生き残る: プロセスはターンより
+    -- ここだけ `on_approval_required` などと違ってターンをまたいで生き残る: プロセスはターンより
     -- 長生きするので、これを呼ぶのは「これを渡したターン」ではなく、そのプロセスの最後のターン
-    on_subagents_orphaned = function(unreported, recovered, subagents_lost)
+    on_subagents_orphaned = function(unreported, recovered, process_killed)
       require("vibing.application.chat.outstanding_subagents").wake_orphaned(
         bufnr,
         unreported,
         recovered,
-        subagents_lost
+        process_killed
       )
     end,
-    on_approval_required = function(tool, input, options, hook_request_id, waiting)
+    on_approval_required = function(tool, input, options, hook_request_id, waiting, kind)
       -- permission.lua の vim.schedule 内から呼ばれるためすでにメインスレッド上
       -- 二重 vim.schedule を避けることで _pending_approval が add_user_section より確実に先に設定される
-      callbacks.insert_approval_request(tool, input, options, hook_request_id, waiting)
+      --
+      -- `kind` は「どのチャネルの承認か」（#861）。落とすと、プロンプトは描かれ、ユーザーは
+      -- 答えられ、**その答えだけが別レイヤの語彙検証に落ちて捨てられる** — どこにもエラーが
+      -- 出ないまま、CLI は待ち上限まで放置される
+      callbacks.insert_approval_request(tool, input, options, hook_request_id, waiting, kind)
 
       -- `waiting` は「このプロンプトは走り続けているターンを止めている」（#778）。
       -- kill する経路ではプロセスが死に、`_handle_response` → `add_user_section` が描画の
@@ -413,6 +388,12 @@ function M._handle_response(response, callbacks, adapter, config, modified_file_
   elseif not response.error then
     pcall(AutoResume.on_success, chat_file_path)
     pcall(LimitState.clear, chat_dir, agent)
+    -- ターンが選択肢付きの質問で終わっていれば、ここで選択肢に変える。**`### Tokens` と
+    -- `### Modified Files` より前**でなければならない: どちらもアシスタント本文の末尾に追記され、
+    -- 質問ブロックは「ターンが最後に書いたもの」としてしか認めない（`question_block.lua`）
+    if callbacks.take_question_block then
+      pcall(callbacks.take_question_block)
+    end
   else
     -- リミット以外のエラーで終わったターンも、未送信Userセクションは消費済み。予約
     -- （scheduled）を残すと、その後そこに入った別のテキスト（書きかけの続きや承認UIの
@@ -426,9 +407,8 @@ function M._handle_response(response, callbacks, adapter, config, modified_file_
     -- 「壊れた」ではなく、`chat_status` がそう報告すると `completion_notifier` の分岐2が
     -- 例外扱いして親を起こし、オーケストレーターは動いているワーカーを失敗と読む:
     --
-    --   * `_cancelled` — 質問（`nvim_ask_user_question`）と `ask` の承認要求はどちらも
-    --     ターンをkillして戻る。理由はその時点で `insert_choices` /
-    --     `insert_approval_request` が書いている
+    --   * `_cancelled` — `ask` の承認要求はターンをkillして戻る（待てないバックエンド）。
+    --     理由はその時点で `insert_approval_request` が書いている
     --   * `_rate_limit_info` — リミットで弾かれたターン。上の分岐が予約や auto_resume に
     --     回しているので、これは自動で再開する「待ち」。`response.error` はリミットの本文が
     --     入ったまま残る（`RateLimit.merge` はそれを入力に使うだけでクリアしない）ので、
@@ -607,16 +587,14 @@ end
 ---@param config Vibing.Config|nil
 ---@param started_fresh_session boolean|nil ターン開始時点で session_id が無かったか
 function M._report_token_usage(response, callbacks, config, started_fresh_session)
-  local settings = config and config.agent and config.agent.token_usage or nil
-  if settings and settings.enabled == false then
-    return
-  end
+  local settings = vim.tbl_get(config or {}, "chat", "context")
+  local show_usage = vim.tbl_get(config or {}, "ui", "usage", "enabled") ~= false
 
   local TokenUsage = require("vibing.core.utils.token_usage")
   -- Luaでは 0 が truthy なので、`warn_context = 0` はここで既定値に差し替えられずそのまま
   -- 通る。それが意図で、`TokenUsage.warning` 側の `warn_context <= 0` が「警告だけ止めて
   -- 内訳は出す」という指定として受ける。`or` が拾うのは未設定と数値でない値だけ
-  local warn_context = (settings and tonumber(settings.warn_context)) or TokenUsage.DEFAULT_WARN_CONTEXT
+  local warn_context = (settings and tonumber(settings.warn_tokens)) or TokenUsage.DEFAULT_WARN_CONTEXT
 
   local acc = response._token_usage
   if TokenUsage.is_cumulative(acc) then
@@ -625,7 +603,7 @@ function M._report_token_usage(response, callbacks, config, started_fresh_sessio
     acc = TokenUsage.cumulative_delta(acc, previous, started_fresh_session)
 
     local section = TokenUsage.section(acc)
-    if section then
+    if section and show_usage then
       callbacks.append_chunk("\n\n" .. section)
     end
     return
@@ -647,7 +625,11 @@ function M._report_token_usage(response, callbacks, config, started_fresh_sessio
   -- 警告は章の中に含まれる。通知ではなくバッファに残すのは、`vim.notify` は次のターンを
   -- 読む頃には消えていて、読み手がコストを実際に見ている唯一の瞬間（この章）に何も
   -- 無いことになるため
-  local section = TokenUsage.section(acc, warn_context, extras)
+  local section = show_usage and TokenUsage.section(acc, warn_context, extras)
+    or TokenUsage.warning(acc.context, warn_context)
+  if not show_usage and section then
+    section = "### Tokens <!-- context=" .. tostring(acc.context or 0) .. " -->\n" .. section
+  end
   if section then
     callbacks.append_chunk("\n\n" .. section)
   end
@@ -761,7 +743,7 @@ end
 ---@param progressed boolean|nil 弾かれたターンが途中まで進んでいたか（M._turn_progressed）
 ---@return boolean rescheduled 予約に切り替えられたか
 function M._reschedule_rejected_message(callbacks, chat_file_path, info, message, config, progressed)
-  local opts = (config.agent and config.agent.scheduled_requests) or {}
+  local opts = (config and vim.tbl_get(config, "automation", "limits", "queue")) or {}
   if not opts.enabled then
     return false
   end
@@ -795,8 +777,7 @@ function M._reschedule_rejected_message(callbacks, chat_file_path, info, message
   local retry_count = (existing and existing.retry_count or 0) + 1
 
   local AutoResume = require("vibing.application.chat.auto_resume")
-  local grace = (config.agent and config.agent.auto_resume_on_limit and config.agent.auto_resume_on_limit.grace_sec)
-    or 10
+  local grace = (config and vim.tbl_get(config, "automation", "limits", "grace_sec")) or 10
 
   local ok, reason = AutoResume.schedule_request(chat_file_path, info.resets_at + grace, {
     limit_type = info.limit_type,
@@ -805,11 +786,7 @@ function M._reschedule_rejected_message(callbacks, chat_file_path, info, message
   })
   if not ok then
     vim.notify(
-      string.format(
-        "[vibing] Not re-scheduling %s: %s",
-        vim.fn.fnamemodify(chat_file_path, ":t"),
-        tostring(reason)
-      ),
+      string.format("[vibing] Not re-scheduling %s: %s", vim.fn.fnamemodify(chat_file_path, ":t"), tostring(reason)),
       vim.log.levels.WARN
     )
     return false
@@ -826,10 +803,7 @@ end
 ---@param config table
 ---@return string
 function M._continuation_prompt(config)
-  local prompt = config
-    and config.agent
-    and config.agent.auto_resume_on_limit
-    and config.agent.auto_resume_on_limit.prompt
+  local prompt = config and config.automation and vim.tbl_get(config, "automation", "limits", "continue_prompt")
   if type(prompt) == "string" and vim.trim(prompt) ~= "" then
     return prompt
   end
@@ -874,19 +848,19 @@ function M._emit_diff_output(callbacks, base_dir, files, abs_files, patch_conten
   end
 
   if patch_content then
-    local patch_dir = base_dir .. "/.vibing/patches"
+    local patch_dir = base_dir .. "/.vibing/diffs"
     Fs.ensure_dir(patch_dir)
     local suffix = tostring(turn_id or ""):gsub("%W", ""):sub(-6)
-    local patch_path = string.format("%s/%s_%s.patch", patch_dir, os.date("%Y%m%d_%H%M%S"), suffix)
+    local patch_path = string.format("%s/%s_%s.diff", patch_dir, os.date("%Y%m%d_%H%M%S"), suffix)
     local f = io.open(patch_path, "w")
     if f then
       f:write(patch_content)
       f:close()
       -- HTMLコメントではなく素の行で出す。patchはこれから前面に出る扱いなので、
       -- 読み手に見えている必要がある。旧形式の `<!-- patch: ... -->` も読めるままにしてある
-      callbacks.append_chunk("\nPatch: " .. patch_path .. "\n")
+      callbacks.append_chunk("\nDiff: " .. patch_path .. "\n")
     else
-      vim.notify("[vibing] Failed to write patch file: " .. patch_path, vim.log.levels.WARN)
+      vim.notify("[vibing] Failed to write diff file: " .. patch_path, vim.log.levels.WARN)
     end
   end
 
@@ -909,8 +883,7 @@ function M._finalize_snapshot_diff(callbacks, turn_id, modified_file_paths)
   local GitSnapshot = require("vibing.core.utils.git_snapshot")
 
   local base_dir = GitSnapshot.get_root(turn_id) or vim.fn.getcwd()
-  local files, abs_files, patch_content, ok, extra_only =
-    GitSnapshot.generate(turn_id, modified_file_paths)
+  local files, abs_files, patch_content, ok, extra_only = GitSnapshot.generate(turn_id, modified_file_paths)
   GitSnapshot.clear(turn_id)
 
   if not ok then

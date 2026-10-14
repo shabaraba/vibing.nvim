@@ -257,7 +257,7 @@ function M.win_open_file(params)
   end
   return {
     success = true,
-    bufnr = opened_bufnr
+    bufnr = opened_bufnr,
   }
 end
 return M

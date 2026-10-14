@@ -32,6 +32,44 @@ function M.processor(decoder, vocabulary)
 
   local processor = { decoder = decoder, vocabulary = vocabulary }
 
+  --- Decode one already-in-memory message and hand its events to the renderer.
+  ---
+  --- The entry point for a caller that built the message itself rather than reading it off a
+  --- wire -- a resident JSON-RPC transport's own notifications and locally-built notices, which
+  --- otherwise had no way to reach the renderer except encoding back to JSON only for
+  --- `processLine` to immediately decode it again.
+  --- @param msg table
+  --- @param context table
+  --- @return boolean processed
+  function processor.apply(msg, context)
+    if not context then
+      return false
+    end
+
+    if context.vocabulary == nil then
+      context.vocabulary = vocabulary
+    end
+    context._decoder_state = context._decoder_state or {}
+
+    -- **A message the decoder cannot handle costs that message, and nothing else.** Letting the
+    -- raise out takes the caller with it, and the caller is a stdout callback: on the resident
+    -- transport the rest of that batch is dropped -- the `result` that ends the turn is routinely
+    -- in it -- and the chat then sits at `responding` with no process left to end it. Reported
+    -- once per stream, because the shape that fails once usually fails on every line that carries
+    -- it.
+    local ok, err = pcall(apply, decoder, msg, context)
+    if not ok then
+      if not context._decode_failed then
+        context._decode_failed = true
+        require("vibing.core.utils.notify").error(
+          string.format("Could not decode a '%s' line from the CLI: %s", tostring(msg.type or msg.method), tostring(err))
+        )
+      end
+      return false
+    end
+    return true
+  end
+
   --- Process one JSON line from the CLI's stdout.
   --- @param line string
   --- @param context table
@@ -41,32 +79,16 @@ function M.processor(decoder, vocabulary)
       return false
     end
 
+    -- `type` and nothing else: every caller of this entry point reads stream-json off a stdout
+    -- pipe. A resident JSON-RPC transport's `method`-keyed messages reach the renderer through
+    -- `apply`, never through here, so widening the gate to accept them would only let a malformed
+    -- stream-json line past the one check that rejects it.
     local ok, msg = pcall(vim.json.decode, line)
     if not ok or type(msg) ~= "table" or not msg.type then
       return false
     end
 
-    if context.vocabulary == nil then
-      context.vocabulary = vocabulary
-    end
-    context._decoder_state = context._decoder_state or {}
-
-    -- **A line the decoder cannot handle costs that line, and nothing else.** Letting the raise out
-    -- takes the caller with it, and the caller is a stdout callback: on the resident transport the
-    -- rest of that batch is dropped -- the `result` that ends the turn is routinely in it -- and the
-    -- chat then sits at `responding` with no process left to end it. Reported once per stream,
-    -- because the shape that fails once usually fails on every line that carries it.
-    local ok, err = pcall(apply, decoder, msg, context)
-    if not ok then
-      if not context._decode_failed then
-        context._decode_failed = true
-        require("vibing.core.utils.notify").error(
-          string.format("Could not decode a '%s' line from the CLI: %s", tostring(msg.type), tostring(err))
-        )
-      end
-      return false
-    end
-    return true
+    return processor.apply(msg, context)
   end
 
   return processor

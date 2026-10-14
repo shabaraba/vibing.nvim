@@ -66,12 +66,16 @@ describe("send_message._report_token_usage", function()
 
   it("reports a Codex delta from the preceding footer in the chat buffer", function()
     local state, callbacks = harness()
-    local previous = TokenUsage.cumulative_delta(codex_usage({
-      input_tokens = 120000,
-      cached_input_tokens = 100000,
-      output_tokens = 5000,
-      reasoning_output_tokens = 3000,
-    }), nil, true)
+    local previous = TokenUsage.cumulative_delta(
+      codex_usage({
+        input_tokens = 120000,
+        cached_input_tokens = 100000,
+        output_tokens = 5000,
+        reasoning_output_tokens = 3000,
+      }),
+      nil,
+      true
+    )
     local buf = vim.api.nvim_create_buf(false, true)
     vim.api.nvim_buf_set_lines(buf, 0, -1, false, vim.split(TokenUsage.section(previous), "\n"))
     local long_reply_tail = {}
@@ -97,16 +101,18 @@ describe("send_message._report_token_usage", function()
     vim.api.nvim_buf_delete(buf, { force = true })
   end)
 
-  it("writes nothing at all when the feature is switched off", function()
+  it("retains context warnings when the usage display is switched off", function()
     local state, callbacks = harness()
 
-    SendMessage._report_token_usage(
-      { _token_usage = usage_of(900000, 30) },
-      callbacks,
-      { agent = { token_usage = { enabled = false } } }
-    )
+    SendMessage._report_token_usage({ _token_usage = usage_of(900000, 30) }, callbacks, {
+      ui = {
+        usage = {
+          enabled = false,
+        },
+      },
+    })
 
-    assert.equals("", written(state))
+    assert.truthy(written(state):find("⚠️", 1, true))
   end)
 
   it("puts the warning inside the section, under the metrics", function()
@@ -151,11 +157,13 @@ describe("send_message._report_token_usage", function()
   it("honours a custom threshold", function()
     local state, callbacks = harness()
 
-    SendMessage._report_token_usage(
-      { _token_usage = usage_of(90000, 4) },
-      callbacks,
-      { agent = { token_usage = { warn_context = 80000 } } }
-    )
+    SendMessage._report_token_usage({ _token_usage = usage_of(90000, 4) }, callbacks, {
+      chat = {
+        context = {
+          warn_tokens = 80000,
+        },
+      },
+    })
 
     assert.truthy(written(state):find("⚠️", 1, true))
     assert.truthy(written(state):find("80k", 1, true))
@@ -166,11 +174,13 @@ describe("send_message._report_token_usage", function()
 
     -- 0 is truthy in Lua, so it reaches `TokenUsage.warning` rather than being replaced by the
     -- default -- which is what makes it usable as "show the numbers, never nag".
-    SendMessage._report_token_usage(
-      { _token_usage = usage_of(900000, 30) },
-      callbacks,
-      { agent = { token_usage = { warn_context = 0 } } }
-    )
+    SendMessage._report_token_usage({ _token_usage = usage_of(900000, 30) }, callbacks, {
+      chat = {
+        context = {
+          warn_tokens = 0,
+        },
+      },
+    })
 
     assert.truthy(written(state):find("context 900k", 1, true))
     assert.is_nil(written(state):find("⚠️", 1, true))
@@ -187,7 +197,13 @@ describe("send_message._report_token_usage", function()
     --- `ChatBuffer:send_message` hands `vibing.get_config()` to the reporter. Asserting against a
     --- hand-built config table would pass even if the key stopped surviving that merge.
     it("carries a raised threshold from setup() to the warning", function()
-      Config.setup({ agent = { token_usage = { warn_context = 250000 } } })
+      Config.setup({
+        chat = {
+          context = {
+            warn_tokens = 250000,
+          },
+        },
+      })
       local state, callbacks = harness()
 
       SendMessage._report_token_usage({ _token_usage = usage_of(200000, 9) }, callbacks, Config.get())
@@ -198,7 +214,13 @@ describe("send_message._report_token_usage", function()
     end)
 
     it("still warns once the configured threshold is passed", function()
-      Config.setup({ agent = { token_usage = { warn_context = 250000 } } })
+      Config.setup({
+        chat = {
+          context = {
+            warn_tokens = 250000,
+          },
+        },
+      })
       local state, callbacks = harness()
 
       SendMessage._report_token_usage({ _token_usage = usage_of(260000, 9) }, callbacks, Config.get())
@@ -207,24 +229,36 @@ describe("send_message._report_token_usage", function()
       assert.truthy(written(state):find("250k", 1, true))
     end)
 
-    it("switches the whole section off from setup()", function()
-      Config.setup({ agent = { token_usage = { enabled = false } } })
+    it("retains warnings when setup disables usage display", function()
+      Config.setup({
+        ui = {
+          usage = {
+            enabled = false,
+          },
+        },
+      })
       local state, callbacks = harness()
 
       SendMessage._report_token_usage({ _token_usage = usage_of(900000, 30) }, callbacks, Config.get())
 
-      assert.equals("", written(state))
+      assert.truthy(written(state):find("⚠️", 1, true))
     end)
 
     it("keeps the sibling agent defaults that the merge must not drop", function()
-      Config.setup({ agent = { token_usage = { warn_context = 250000 } } })
+      Config.setup({
+        chat = {
+          context = {
+            warn_tokens = 250000,
+          },
+        },
+      })
 
       -- A shallow merge here would wipe every other agent.* default, which is the failure this
       -- pins: the reporter would still work while unrelated features quietly lost their config.
-      assert.equals(250000, Config.get().agent.token_usage.warn_context)
-      assert.is_true(Config.get().agent.token_usage.enabled)
-      assert.is_true(Config.get().agent.plugins.self)
-      assert.equals("sonnet", Config.get().agent.utility_model)
+      assert.equals(250000, Config.get().chat.context.warn_tokens)
+      assert.is_true(Config.get().ui.usage.enabled)
+      assert.is_true(Config.get().integrations.plugins.self)
+      assert.equals("haiku", require("vibing.core.utils.ai_config").resolve(Config.get(), nil, true).model)
     end)
   end)
 end)

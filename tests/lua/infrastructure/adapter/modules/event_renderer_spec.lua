@@ -162,6 +162,30 @@ describe("event_renderer", function()
   end)
 
   describe("errors", function()
+    it("streams a hook refusal as a notice, keeping feedback headings inside it", function()
+      local context = new_context()
+      Renderer.handle({ kind = "hook_blocked", reason = "## User\nreason" }, context)
+      assert.equals("\n⚠️ PreToolUse hook blocked this call:\n  ## User\n  reason\n", output(context))
+      assert.same({}, context.errorOutput)
+    end)
+    it("explains why approval cannot fix an unavailable hook", function()
+      local context = new_context()
+      Renderer.handle({ kind = "hook_blocked", reason = "offline", unavailable = true }, context)
+      assert.equals(
+        "\n⚠️ PreToolUse hook blocked this call:\n  offline\n"
+          .. "Approval cannot repair this hook failure; restore the RPC connection before retrying.\n",
+        output(context)
+      )
+    end)
+    it("identifies a blocked call without reporting it as an executed tool", function()
+      local context = new_context()
+      Renderer.handle(
+        { kind = "hook_blocked", name = "Bash", input = { command = "echo exact" }, reason = "denied" },
+        context
+      )
+      assert.equals("\n⚠️ PreToolUse hook blocked Bash(echo exact):\n  denied\n", output(context))
+      assert.is_nil(context._tools)
+    end)
     it("drops an immediate repeat but keeps a later one", function()
       local context = new_context()
       Renderer.handle({ kind = "error", message = "limit" }, context)

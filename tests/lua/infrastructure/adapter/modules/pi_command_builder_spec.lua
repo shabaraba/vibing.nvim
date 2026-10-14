@@ -54,7 +54,7 @@ describe("pi_command_builder", function()
     it("takes the writing tools away in plan mode, which pi has no concept of", function()
       -- Pi cannot be told "plan"; the only way to make the label true is to remove the tools.
       local args = Builder.permission_args({ opts = { permission_mode = "plan" }, hook_arg = "/x.js" })
-      assert.same({ "--tools", "read,grep,find,ls,web_fetch,web_search" }, args)
+      assert.same({ "--no-mcp", "--tools", "read,grep,find,ls,web_fetch,web_search" }, args)
     end)
 
     it("still lets plan mode look things up on the web", function()
@@ -63,8 +63,8 @@ describe("pi_command_builder", function()
       -- written without being able to open the linked issue is the worse failure, and claude's own
       -- plan mode allows WebFetch/WebSearch for the same reason.
       local args = Builder.permission_args({ opts = { permission_mode = "plan" }, hook_arg = "/x.js" })
-      assert.is_truthy(args[2]:find("web_fetch", 1, true))
-      assert.is_truthy(args[2]:find("web_search", 1, true))
+      assert.is_truthy(args[3]:find("web_fetch", 1, true))
+      assert.is_truthy(args[3]:find("web_search", 1, true))
     end)
 
     it("degrades to read-only when the permission bridge could not be installed", function()
@@ -72,7 +72,7 @@ describe("pi_command_builder", function()
       -- which on every other backend still leaves the CLI's own gate in charge. Pi has none, so an
       -- ungated turn here runs bash with the user's deny rules silently inert.
       local args = Builder.permission_args({ opts = {}, hook_arg = nil })
-      assert.same({ "--tools", "read,grep,find,ls" }, args)
+      assert.same({ "--no-mcp", "--tools", "read,grep,find,ls" }, args)
     end)
 
     it("withholds the web tools from an ungated turn, unlike plan mode", function()
@@ -81,7 +81,7 @@ describe("pi_command_builder", function()
       -- `read` alone is not. (It is also moot in practice — the tools live in the extension that
       -- failed to load — but the argv must not be the thing that would have allowed them.)
       local args = Builder.permission_args({ opts = {}, hook_arg = nil })
-      assert.is_nil(args[2]:find("web_", 1, true))
+      assert.is_nil(args[3]:find("web_", 1, true))
     end)
 
     it("says so, rather than degrading in silence", function()
@@ -122,14 +122,26 @@ describe("pi_command_builder", function()
 
   describe("provider_args", function()
     it("passes a configured provider", function()
-      local ctx = { config = { backends = { pi = { provider = "mlx-local" } } } }
+      local ctx = { config = { ai = { chat = { agent = "pi", model = "local-model" }, helpers = { agent = "pi", model = "local-model" }, agents = { pi = { extensions = { provider = "mlx-local" } } } } } }
       assert.same({ "--provider", "mlx-local" }, Builder.provider_args(ctx))
     end)
 
     it("lets pi choose when none is configured", function()
-      assert.same({}, Builder.provider_args({ config = { backends = { pi = { provider = "" } } } }))
+      assert.same({}, Builder.provider_args({ config = { ai = { agents = { pi = { extensions = { provider = "" } } } } } }))
       assert.same({}, Builder.provider_args({ config = {} }))
     end)
+  end)
+
+  it("fails visibly when a local provider has no helper model instead of choosing a cloud default", function()
+    local config = { ai = { chat = { agent = "pi", model = "local-model" }, agents = { pi = { extensions = { provider = "mlx-local" } } } } }
+    local ok, err = pcall(Builder.build, "hi", { lightweight = true }, nil, config, nil)
+    assert.is_false(ok)
+    assert.is_truthy(tostring(err):find("ai.helpers.model", 1, true))
+  end)
+
+  it("honors the common MCP disable option", function()
+    local argv = Builder.build("hi", {}, nil, { ai = { agents = { pi = { mcp = { enabled = false } } } } }, "/x.js")
+    assert.is_true(has(argv, "--no-mcp"))
   end)
 
   describe("the binary", function()
@@ -141,14 +153,16 @@ describe("pi_command_builder", function()
         looked_up = true
         return "/somewhere/else/pi"
       end
-      local argv = Builder.build("hi", {}, nil, { backends = { pi = { executable = "/opt/pi/bin/pi" } } }, "/x.js")
-      assert.equals("/opt/pi/bin/pi", argv[1])
+      local path = helper.fake_binary("configured-pi")
+      vim.fn.setfperm(path, "rwx------")
+      local argv = Builder.build("hi", {}, nil, { ai = { agents = { pi = { path = path } } } }, "/x.js")
+      assert.equals(path, argv[1])
       assert.is_false(looked_up)
     end)
   end)
 
   describe("the argv", function()
-    local CONFIG = { backends = { pi = { provider = "mlx-local" } } }
+    local CONFIG = { ai = { chat = { agent = "pi", model = "local-model" }, helpers = { agent = "pi", model = "local-model" }, agents = { pi = { extensions = { provider = "mlx-local" } } } } }
 
     it("runs pi in json mode with the prompt behind a -- terminator", function()
       local argv = Builder.build("hello", {}, nil, CONFIG, "/x.js")
@@ -173,7 +187,7 @@ describe("pi_command_builder", function()
 
     it("fences a lightweight call off from the user's project configuration", function()
       local argv = Builder.build("hello", { lightweight = true }, nil, CONFIG, nil)
-      for _, flag in ipairs({ "--no-context-files", "--no-skills", "--no-extensions", "--no-approve", "--no-session" }) do
+      for _, flag in ipairs({ "--no-mcp", "--no-context-files", "--no-skills", "--no-extensions", "--no-approve", "--no-session" }) do
         assert.is_true(has(argv, flag), "lightweight argv is missing " .. flag)
       end
     end)
@@ -212,7 +226,7 @@ describe("pi_command_builder", function()
 
     it("names the configured web_search backend", function()
       local env = {}
-      Builder.apply_env(env, {}, { backends = { pi = { web_search = "brave" } } })
+      Builder.apply_env(env, {}, { ai = { agents = { pi = { extensions = { web_search = "brave" } } } } })
       assert.equals("brave", env.VIBING_PI_WEB_SEARCH)
     end)
 
@@ -229,7 +243,7 @@ describe("pi_command_builder", function()
       -- The keys stay in the user's own environment. A search API key routed through setup() is a
       -- key in a dotfiles repository, and this is the only place it could have been put.
       local env = {}
-      Builder.apply_env(env, {}, { backends = { pi = { web_search = "tavily" } } })
+      Builder.apply_env(env, {}, { ai = { agents = { pi = { extensions = { web_search = "tavily" } } } } })
       for name, value in pairs(env) do
         assert.is_nil(name:upper():find("KEY"), name .. " looks like a credential")
         assert.is_nil(tostring(value):find("sk-", 1, true))

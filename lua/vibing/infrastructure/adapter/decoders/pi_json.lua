@@ -133,12 +133,15 @@ by_type["message_update"] = function(msg, events)
   end
 end
 
-by_type["message_end"] = function(msg, events)
+by_type["message_end"] = function(msg, events, state)
   local message = msg.message
-  if type(message) ~= "table" or message.role ~= "assistant" or type(message.usage) ~= "table" then
+  if type(message) ~= "table" or message.role ~= "assistant" then
     return
   end
-  table.insert(events, { kind = "usage", record = usage_record(message.usage) })
+  state.terminal_error = message.stopReason == "error" and (message.errorMessage or "Pi provider failed") or nil
+  if type(message.usage) == "table" then
+    table.insert(events, { kind = "usage", record = usage_record(message.usage) })
+  end
 end
 
 by_type["tool_execution_start"] = function(msg, events)
@@ -166,7 +169,11 @@ by_type["tool_execution_end"] = function(msg, events)
 end
 
 --- The one terminal record. See the module comment for why Pi's own `turn_end` is not it.
-by_type["agent_settled"] = function(_, events)
+by_type["agent_settled"] = function(_, events, state)
+  if state.terminal_error then
+    table.insert(events, { kind = "error", message = tostring(state.terminal_error), fatal = true })
+  end
+  state.terminal_error = nil
   table.insert(events, { kind = "turn_end" })
 end
 

@@ -1,4 +1,4 @@
--- `gf` が「どのファイルのことか」を決める三段。順序が入れ替わると、リンク記法の中で
+-- `gf` が「どのファイルのことか」を決める順序。順序が入れ替わると、リンク記法の中で
 -- `<cfile>` がラベルの文字列を拾う（記法の中なのに別物を開くか、何も開かない）。
 local FileUnderCursor = require("vibing.presentation.chat.modules.file_under_cursor")
 
@@ -24,6 +24,26 @@ describe("file_under_cursor.resolve", function()
       vim.api.nvim_buf_delete(buf, { force = true })
     end
   end)
+
+  for _, format in ipairs({
+    { label = "Diff: ", path = ".vibing/diffs/x.diff" },
+    { label = "Patch: ", path = ".vibing/patches/x.patch" },
+  }) do
+    it("reads the full " .. format.label .. "path containing spaces for gf", function()
+      local path = dir .. "/My Project/" .. format.path
+      vim.fn.mkdir(vim.fn.fnamemodify(path, ":h"), "p")
+      vim.fn.writefile({ "diff --git a/x b/x" }, path)
+      local line = format.label .. path
+      open({ "### Modified Files", "", line }, 3, line:find("My Project"))
+      assert.equals(path, FileUnderCursor.resolve(buf))
+    end)
+
+    it("does not open a truncated " .. format.label .. "path when the full path is missing", function()
+      local line = format.label .. target .. " /missing." .. format.path:match("%.(%a+)$")
+      open({ "### Modified Files", "", line }, 3, #format.label + 1)
+      assert.is_nil(FileUnderCursor.resolve(buf))
+    end)
+  end
 
   it("takes a path line in the Modified Files section first", function()
     open({ "### Modified Files", "", target }, 3, 1)

@@ -54,7 +54,7 @@ was never fixed because nothing said it had failed.
 - **`tests/e2e_init.lua`, not `tests/minimal_init.lua`.** The latter is the _parent's_ init (it
   wires up plenary); a child started with it has vibing.nvim on `runtimepath` but never calls
   `setup()`, so no `:Vibing*` command exists and `:VibingChat` does nothing. `e2e_init.lua` also
-  points `chat.save_dir` at a per-child temp directory, so running the suite stops writing real
+  points `chat.storage.path` at a per-child temp directory, so running the suite stops writing real
   chat files into the repository.
 - **`wait_for_buffer_name`, not `wait_for_buffer_content`, for a filename.** The latter matches
   against buffer _text_, so `wait_for_buffer_content(inst, "%.md")` can never match. That one line,
@@ -155,7 +155,7 @@ file the model has to read.
 #### `wait_for_response(instance, pattern, timeout)`
 
 Whole buffer, for what the chat UI renders into the **user** section as a result of a turn: the
-tool-approval prompt, the `nvim_ask_user_question` choice list.
+tool-approval prompt, the choice list drawn from a `vibing-question` block.
 
 ### `cleanup_instance(instance)`
 

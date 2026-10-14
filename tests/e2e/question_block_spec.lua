@@ -1,7 +1,8 @@
--- E2E Tests: nvim_ask_user_question MCP tool
--- Verifies vibing.nvim's dedicated question-asking tool is intercepted the same way as
--- AskUserQuestion (deny + render an editable choice list in the chat buffer), which matters
--- because native AskUserQuestion is unavailable in headless `claude -p` mode.
+-- E2E Tests: a multiple-choice question asked as a block at the end of the reply
+-- The model is told (system prompt) to end its turn with a ```vibing-question block; vibing.nvim
+-- turns that block into an editable choice list in the next unsent section
+-- (`presentation/chat/modules/question_block.lua`). Native AskUserQuestion is unavailable in
+-- headless `claude -p` mode, and the old `nvim_ask_user_question` MCP tool is gone.
 local helper = require("vibing.testing.e2e_helper")
 
 -- tests/e2e is swept by `test:lua` too, and some of these specs send a real request to the CLI.
@@ -19,8 +20,8 @@ end
 local TIMEOUTS = {
   CHAT_CREATION = 2000,
   BUFFER_READY = 5000,
-  -- Longer than chat_basic_flow's 30s: those turns answer directly, while these have to find
-  -- the tool through ToolSearch and round-trip through the MCP server first. Measured, not guessed.
+  -- Kept at the tool-era budget until a run of the block protocol is measured: no ToolSearch or
+  -- MCP round trip any more, so this should only be generous.
   ASSISTANT_RESPONSE = 60000,
 }
 
@@ -40,7 +41,7 @@ local function count_lines_matching(nvim_instance, pattern)
 end
 
 local function define_backend_case(backend, timeouts)
-  describe("E2E: nvim_ask_user_question MCP tool (" .. backend.name .. ")", function()
+  describe("E2E: question block (" .. backend.name .. ")", function()
     local nvim_instance
 
     before_each(function()
@@ -55,7 +56,7 @@ local function define_backend_case(backend, timeouts)
       helper.cleanup_instance(nvim_instance)
     end)
 
-    it("renders the shared choice-list UI exactly once", function()
+    it("renders the choice list exactly once and drops the raw block", function()
       helper.send_keys(nvim_instance, ":VibingChat<CR>")
       vim.wait(timeouts.CHAT_CREATION)
 
@@ -66,7 +67,7 @@ local function define_backend_case(backend, timeouts)
       helper.send_keys(nvim_instance, "i")
       helper.send_keys(
         nvim_instance,
-        "Use the " .. backend.tool .. " tool to ask me: 'Which option?' with options A and B."
+        "Ask me to choose, the way your system prompt says to: 'Which option?' with options A and B."
       )
       helper.send_keys(nvim_instance, "<Esc>")
       helper.send_keys(nvim_instance, "<CR>")
@@ -77,6 +78,11 @@ local function define_backend_case(backend, timeouts)
 
       local count = count_lines_matching(nvim_instance, "^1%. A$")
       assert.equals(1, count, "The question must be rendered exactly once — no duplicate UI insertion")
+      assert.equals(
+        0,
+        count_lines_matching(nvim_instance, "^%s*```vibing%-question"),
+        "The JSON block must be taken out of the transcript once it is drawn as choices"
+      )
     end)
   end)
 end
@@ -84,7 +90,7 @@ end
 -- Keep each backend's TIMEOUTS references explicit. The timeout gate counts those references to
 -- model the file's serial worst case, while define_backend_case keeps the test behaviour shared.
 define_backend_case(
-  { name = "claude", tool = "mcp__vibing-nvim__nvim_ask_user_question" },
+  { name = "claude" },
   {
     CHAT_CREATION = TIMEOUTS.CHAT_CREATION,
     BUFFER_READY = TIMEOUTS.BUFFER_READY,
@@ -92,7 +98,7 @@ define_backend_case(
   }
 )
 define_backend_case(
-  { name = "codex", tool = "mcp__vibing_nvim__nvim_ask_user_question" },
+  { name = "codex" },
   {
     CHAT_CREATION = TIMEOUTS.CHAT_CREATION,
     BUFFER_READY = TIMEOUTS.BUFFER_READY,

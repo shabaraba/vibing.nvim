@@ -13,12 +13,20 @@
 local Harness = require("vibing.testing.eval_harness")
 
 require("vibing").setup({
-  mcp = { enabled = true },
+  integrations = {
+    nvim = {
+      enabled = true,
+    },
+  },
   permissions = { mode = "acceptEdits" },
 })
 
 local adapter = require("vibing.infrastructure.adapter.claude_cli"):new({
-  agent = { default_model = os.getenv("VIBING_EVAL_MODEL") or "haiku" },
+  ai = {
+    chat = {
+      model = os.getenv("VIBING_EVAL_MODEL") or "haiku",
+    },
+  },
 })
 
 local tasks = require("tests.evals.tasks")
@@ -44,9 +52,8 @@ local results = Harness.run_suite(adapter, tasks, {
   base_opts = {
     permissions_allow = { "Read", "Glob", "Grep" },
     permission_mode = "acceptEdits",
-    -- A real chat always has one, and the system prompt tells the model to echo it back as the
-    -- chat_bufnr argument. Without it the model cannot fill in a required argument and falls back
-    -- to free text — which would fail the ask_user_question tasks for a harness reason rather than
+    -- A real chat always has one, and the system prompt tells the model to echo it back as
+    -- `from_bufnr`. Without it the orchestration tasks would fail for a harness reason rather than
     -- a contract reason.
     chat_bufnr = vim.api.nvim_create_buf(false, true),
   },

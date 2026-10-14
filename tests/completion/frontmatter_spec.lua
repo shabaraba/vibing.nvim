@@ -408,8 +408,14 @@ describe("Frontmatter completion", function()
       end
     end)
 
-    it("uses config.adapter for model candidates when frontmatter has no agent", function()
-      config.setup({ adapter = "codex" })
+    it("uses config.ai.chat.agent for model candidates when frontmatter has no agent", function()
+      config.setup({
+        ai = {
+          chat = {
+            agent = "codex",
+          },
+        },
+      })
       open({ "---", "model: gpt", "---", "# Vibing Chat" })
 
       local ctx = frontmatter_source.get_trigger_context("model: gpt", 10)
@@ -421,8 +427,14 @@ describe("Frontmatter completion", function()
       assert.is_true(vim.tbl_contains(values, "gpt-5.6-terra"))
     end)
 
-    it("falls back to config.adapter when frontmatter agent is invalid", function()
-      config.setup({ adapter = "codex" })
+    it("falls back to config.ai.chat.agent when frontmatter agent is invalid", function()
+      config.setup({
+        ai = {
+          chat = {
+            agent = "codex",
+          },
+        },
+      })
       open({ "---", "agent: cdoex", "model: gpt", "---", "# Vibing Chat" })
 
       local ctx = frontmatter_source.get_trigger_context("model: gpt", 10)

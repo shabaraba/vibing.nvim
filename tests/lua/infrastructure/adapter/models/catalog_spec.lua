@@ -29,9 +29,13 @@ describe("model catalog", function()
 
   --- @return string[] the values `agents.lua` falls back to for this backend
   local function fallback(agent)
-    return vim.tbl_map(function(candidate)
+    local values = vim.tbl_map(function(candidate)
       return candidate.value
     end, Agents.models_for(agent))
+    if agent == "codex" then
+      table.insert(values, 1, "default")
+    end
+    return values
   end
 
   before_each(function()
@@ -61,11 +65,30 @@ describe("model catalog", function()
     assert.are.same({ "codex", "debug", "models" }, spawned[1])
   end)
 
+  it("discovers models using the configured agent executable", function()
+    local Config = require("vibing.config")
+    local original_get = Config.get
+    Config.get = function()
+      return { ai = { agents = { codex = { path = "/custom/codex" } } } }
+    end
+    local ok, err = pcall(function()
+      ModelCatalog.candidates_for("codex")
+      assert.same({ "/custom/codex", "debug", "models" }, spawned[1])
+    end)
+    Config.get = original_get
+    assert.is_true(ok, err)
+  end)
+
+  it("keeps backend-specific default out of the shared model list", function()
+    assert.is_true(vim.tbl_contains(offered("codex"), "default"))
+    assert.is_false(vim.tbl_contains(ModelCatalog.all_values(), "default"))
+  end)
+
   it("offers agents.lua's list until the CLI has answered, then the CLI's own", function()
     assert.are.same(fallback("codex"), offered("codex"))
 
     flush()
-    assert.are.same({ "gpt-7-nova" }, offered("codex"))
+    assert.are.same({ "default", "gpt-7-nova" }, offered("codex"))
   end)
 
   it("asks once and answers from what it was told after that", function()

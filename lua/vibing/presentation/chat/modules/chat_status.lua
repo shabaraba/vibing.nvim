@@ -37,21 +37,20 @@ function M.get(bufnr)
   -- 読むのは `_stop_reason` ではなく「実際にフックが1つ以上ブロックされているか」。
   -- `_stop_reason` は次の送信まで前のターンの値が残るので、先に読むと本当に走っている
   -- ターンを承認待ちと誤報する。保留レジストリは答えが出た瞬間に空になるので古くならない
-  if require("vibing.infrastructure.rpc.pending_approvals").has_for_chat(bufnr) then
+  --
+  -- **CLI 自身の承認要求も同じ状態（#861）。** 待たせているものがフックの `.res` か JSON-RPC の
+  -- 応答かはオーケストレーターには関係がなく、「人間の答えが要る」という1つの状態。片方だけ
+  -- 見ると、codex のサンドボックス昇格待ちのチャットが `responding` を装う
+  if
+    require("vibing.infrastructure.rpc.pending_approvals").has_for_chat(bufnr)
+    or require("vibing.infrastructure.rpc.pending_native_approvals").has_for_chat(bufnr)
+  then
     return "waiting_approval"
   end
 
-  -- 質問も同じ位置に、同じ理由で入る（#788）。その場で答えられるようになった時点で、質問待ちの
-  -- ターンも開いたままになった — `is_responding()` の後ろに置くと、質問待ちのチャットは最大
-  -- `question_wait_sec` のあいだ `responding` を装い、オーケストレーターからは「まだ走っている」
-  -- に見える。これは #778 が承認に対して塞いだ穴とまったく同じもの。
-  --
-  -- ここでもレジストリを読む。`_stop_reason` は次の送信まで前のターンの値が残るので、先に読むと
-  -- 本当に走っているターンを質問待ちと誤報する
-  if require("vibing.infrastructure.rpc.pending_questions").has_for_chat(bufnr) then
-    return "asked_question"
-  end
-
+  -- 質問は承認と違ってターンを止めない。モデルが質問ブロックを書いてターンを終え
+  -- （`question_block.lua`）、`insert_choices` が停止理由を `asked_question` にする。なので
+  -- 下の `get_stop_reason()` がそのまま答える — 次の送信まで「答えを待っている」が正しい
   if chat_buf:is_responding() then
     return "responding"
   end

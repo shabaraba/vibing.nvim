@@ -60,7 +60,10 @@ describe("approval_decision", function()
       )
       -- 逆向きにも外れていた: `WebFetch` は `query` を持たないので、2本の fetch を
       -- 区別できる唯一のものが落ちていた
-      assert.equals(" (url: https://example.com)", ApprovalDecision.input_summary("WebFetch", { url = "https://example.com" }))
+      assert.equals(
+        " (url: https://example.com)",
+        ApprovalDecision.input_summary("WebFetch", { url = "https://example.com" })
+      )
     end)
 
     it("summarises nothing for a tool it has no identifying field for", function()
@@ -135,7 +138,12 @@ describe("approval_decision", function()
       chats = {}
 
       local cfg = vim.tbl_deep_extend("force", vim.deepcopy(Config.defaults), {
-        chat = { save_location_type = "custom", save_dir = save_dir },
+        chat = {
+          storage = {
+            location = "custom",
+            path = save_dir,
+          },
+        },
       })
       Config.get = function()
         return cfg

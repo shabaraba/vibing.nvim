@@ -72,6 +72,17 @@ evaluating it first would let one approved `Bash` call whitelist every later one
 after the tool-level lists. Full field/matching table and the rest of the ordering:
 `handbook/configuration.md` → "Granular Permission Rules". `patterns` are **Lua patterns, not regex**.
 
+**A turn with no chat names its whole toolset.** `:VibingChatSearch` and `:VibingSessionSearch`
+run an agent turn with no chat buffer, so there is nowhere to show an approval. They pass
+`exclusive_tools`, and `can_use_tool` denies everything outside it right after the session deny
+list — ahead of the internal tools, `bypassPermissions` and the vibing-nvim MCP grant, all of which
+would otherwise let `Agent` or `nvim_execute` through. The CLI side runs in `dontAsk` with the same
+list as `--allowedTools`. A user's own deny list still applies inside the set.
+
+A `Bash(<prefix>:*)` entry matches its prefix word for word, so `Bash(gh pr view:*)` covers
+`gh pr view 876`; until this was fixed only the first word was compared and every multi-word prefix
+silently matched nothing. In `dontAsk`, a tool the allow list names counts as pre-approved.
+
 **Default deny rules:** `permissions.default_deny_rules` (default `true`) prepends bundled deny
 rules for destructive Bash commands, defined in
 `lua/vibing/core/constants/destructive_commands.lua`. The blocked list and its known gaps live in
@@ -224,7 +235,7 @@ appended under it.
 - **Waiting takes two descriptor fields, and `transports.can_wait_for_approval` requires both.**
   `hook.measured_wait_floor_sec` against the currently configured wait says the CLI tolerates a
   blocked hook; `register_chat_bufnr` says the turn carries the chat back. They read as unrelated —
-  one times the hook, the other is about `nvim_ask_user_question` — but `_ask_without_killing`
+  one times the hook, the other is about routing back to a chat — but `_ask_without_killing`
   names the chat that draws the prompt through `turn.process.chat_bufnr`, and `cli_adapter` fills
   that in **only** for a backend with the flag. Enabled on the floor alone the waiting branch is
   still taken, finds nil, and denies every `ask` with an internal-error reason: not a prompt in the
@@ -271,7 +282,7 @@ wrong chat — being per-chat is a correctness property here, not only an isolat
 **Another chat can answer a worker's prompt only when the user opted in.** A worker chat that hits
 this prompt is `waiting_approval`: it can neither continue nor report that it is stuck, and in an
 orchestration run the user has to find each blocked worker by hand. With
-`agent.orchestration.delegated_approval = true` the orchestrator answers instead, via the MCP tool
+`permissions.delegated_approval = true` the orchestrator answers instead, via the MCP tool
 `nvim_chat_answer_approval` → `application/chat/approval_delegate.lua`. The default is off because
 what it buys is an agent clearing another agent's permission gate, not because of anything in the
 implementation.

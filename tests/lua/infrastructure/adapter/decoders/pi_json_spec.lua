@@ -126,6 +126,17 @@ describe("decoders.pi_json", function()
     end)
   end)
 
+  it("reports a terminal provider failure but clears a recovered retry", function()
+    -- Synthetic message shapes from the upstream JSON event reference.
+    local state = {}
+    decode({ type = "message_end", message = { role = "assistant", stopReason = "error", errorMessage = "unavailable" } }, state)
+    local events = decode({ type = "agent_settled" }, state)
+    assert.same({ { kind = "error", message = "unavailable", fatal = true }, { kind = "turn_end" } }, events)
+    decode({ type = "message_end", message = { role = "assistant", stopReason = "error", errorMessage = "retry" } }, state)
+    decode({ type = "message_end", message = { role = "assistant", stopReason = "stop" } }, state)
+    assert.same({ { kind = "turn_end" } }, decode({ type = "agent_settled" }, state))
+  end)
+
   describe("usage", function()
     it("records the settled per-message figure from an assistant message_end", function()
       local events = decode({

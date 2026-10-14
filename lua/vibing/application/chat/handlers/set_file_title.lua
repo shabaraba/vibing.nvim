@@ -193,7 +193,9 @@ return function(_, chat_buffer, opts)
       -- 明示設定が無ければ `target_dir` から辿る — `save_dir` に決め打つと別プロジェクトの
       -- チャットを改名したとき（上の `target_dir` と同じ理由）、そのプロジェクトの daily
       -- summary ではなく現在の cwd の daily summary を（誤って）走査してしまう
-      local daily_dir = (config.daily_summary and config.daily_summary.save_dir) or target_dir
+      local daily_dir = (
+        vim.tbl_get(config, "chat", "daily_summary") and vim.tbl_get(config, "chat", "daily_summary", "save_dir")
+      ) or target_dir
       RenameSync.apply(old_file_path, new_file_path, target_dir, daily_dir)
     end
 

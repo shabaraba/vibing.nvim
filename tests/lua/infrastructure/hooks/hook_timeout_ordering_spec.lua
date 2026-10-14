@@ -126,31 +126,6 @@ describe("hook timeout ordering", function()
       assert.is_true(ok, tostring(err))
     end)
 
-    it("stays inside the CLI's patience for a silent MCP tool", function()
-      -- A fourth deadline on a different path. `nvim_ask_user_question` is an MCP tool call rather
-      -- than a hook, so it is bounded by how long the CLI will hold a silent MCP tool open —
-      -- measured at 1800s on claude — and nothing in the three numbers above knows that. Raising
-      -- `approval_wait_sec` past it has to fail here rather than become a silent 30-minute hang.
-      assert.is_true(
-        WaitBudget.cli_timeout_sec() < WaitBudget.MCP_TOOL_IDLE_TIMEOUT_SEC,
-        string.format(
-          "the derived budget is %ss against a measured MCP ceiling of %ss",
-          tostring(WaitBudget.cli_timeout_sec()),
-          tostring(WaitBudget.MCP_TOOL_IDLE_TIMEOUT_SEC)
-        )
-      )
-    end)
-
-    it("fails when a configured wait would outlast that ceiling", function()
-      local original = Config.get().permissions.approval_wait_sec
-      Config.get().permissions.approval_wait_sec = WaitBudget.MCP_TOOL_IDLE_TIMEOUT_SEC
-      local ok = pcall(function()
-        assert.is_true(WaitBudget.cli_timeout_sec() < WaitBudget.MCP_TOOL_IDLE_TIMEOUT_SEC)
-      end)
-      Config.get().permissions.approval_wait_sec = original
-      assert.is_false(ok, "a wait at the MCP ceiling must not read as inside it")
-    end)
-
     it("ignores a nonsense configured wait instead of deriving nonsense from it", function()
       local original = Config.get().permissions.approval_wait_sec
       for _, bad in ipairs({ 0, -1, "900" }) do
@@ -234,10 +209,7 @@ describe("hook timeout ordering", function()
       --
       -- The floor stays in copilot's descriptor because it is a real measurement; what is asserted
       -- here is that the floor alone does not switch waiting on.
-      --   pi          — no `measured_wait_floor_sec`, and not wired either. Its gate is an
-      --     in-process extension rather than a hook the CLI times out, so nobody has measured how
-      --     long Pi lets a `tool_call` handler block; and it registers no chat_bufnr, having no
-      --     MCP client to draw a prompt through.
+      -- Pi has no measured wait floor. Registering chat ownership alone must not enable waiting.
       local expected = { claude = true, copilot = false, codex = false, grok = false, pi = false }
       for _, def in ipairs(Agents.list()) do
         local descriptor = require(def.descriptor_module)

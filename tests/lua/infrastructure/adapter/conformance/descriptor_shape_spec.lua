@@ -63,9 +63,9 @@ describe("conformance: descriptor shape", function()
 
       it("says out loud whether it registers chat_bufnr, rather than leaving it absent", function()
         -- Required explicitly, because an absent field and `false` mean the same thing to the code
-        -- and very different things to a reader. This flag now decides two features — the
-        -- `nvim_ask_user_question` route and whether an approval may be answered without killing
-        -- the CLI — so a descriptor that simply omits it looks like nobody considered either.
+        -- and very different things to a reader. This flag decides whether an approval may be
+        -- answered without killing the CLI, so a descriptor that simply omits it looks like nobody
+        -- considered it.
         -- Same reason codex and grok write their missing floor as a comment instead of silence.
         assert.is_true(
           type(descriptor.register_chat_bufnr) == "boolean",
@@ -75,7 +75,7 @@ describe("conformance: descriptor shape", function()
 
       it("may wait for an approval only when it is both measured and wired", function()
         -- The two fields read as independent — `measured_wait_floor_sec` times the hook,
-        -- `register_chat_bufnr` is about `nvim_ask_user_question` — and nothing but this assertion
+        -- `register_chat_bufnr` is about routing back to a chat — and nothing but this assertion
         -- connects them. Waiting needs both: `_ask_without_killing` names the chat through
         -- `turn.process.chat_bufnr`, and `cli_adapter` fills that in only when
         -- `register_chat_bufnr` is true. With the floor alone the waiting branch is still taken,
@@ -109,8 +109,47 @@ describe("conformance: descriptor shape", function()
         )
       end)
 
+      it("may wait for its own approval requests only when that was measured and it can ask", function()
+        -- The third gate (#861), and it needs the same pair for the same reason: the bridge names
+        -- the chat through `turn.process.chat_bufnr`, which `register_chat_bufnr` is what fills in.
+        -- A floor without the flag would take the waiting branch, find no chat, and refuse every
+        -- request without drawing anything — the copilot failure one gate over, repeated.
+        --
+        -- Recomputed from the raw fields rather than asserted as an implication, so the case stays
+        -- able to fail if the gate stops reading either of them.
+        local floor = descriptor.native_approval and descriptor.native_approval.measured_wait_floor_sec
+        local WaitBudget = require("vibing.infrastructure.hooks.wait_budget")
+        local measured = type(floor) == "number" and WaitBudget.native_approval_budget_sec() <= floor
+
+        assert.equals(
+          measured,
+          WaitBudget.can_wait_for_native_approval(descriptor.native_approval),
+          string.format("%s: the gate disagrees with the descriptor's own measurement", def.id)
+        )
+        if measured then
+          assert.is_true(
+            descriptor.register_chat_bufnr == true,
+            def.id .. ": a measured native-approval floor with no chat to ask in refuses everything silently"
+          )
+        end
+      end)
+
       it("closes stdin or leaves it alone, nothing else", function()
         assert.is_true(descriptor.stdin == nil or descriptor.stdin == "")
+      end)
+
+      it("declares all resident protocol functions with the shared signatures", function()
+        if descriptor.process ~= "duplex" then
+          return
+        end
+        assert.is_table(descriptor.duplex, def.id .. " declares duplex without a protocol")
+        for name, arity in pairs({ send_prompt = 3, process_line = 2, interrupt = 2 }) do
+          local fn = descriptor.duplex[name]
+          assert.is_function(fn, def.id .. ".duplex." .. name)
+          local shape = debug.getinfo(fn, "u")
+          assert.equals(arity, shape.nparams, def.id .. ".duplex." .. name .. " has the wrong signature")
+          assert.is_false(shape.isvararg, def.id .. ".duplex." .. name .. " must name its arguments")
+        end
       end)
 
       it("declares a process model it can actually run", function()
@@ -122,8 +161,6 @@ describe("conformance: descriptor shape", function()
         if descriptor.process ~= "duplex" then
           return
         end
-        assert.is_nil(descriptor.stdin, def.id .. " runs duplex but closes stdin")
-
         local prompt_part
         for _, part in ipairs(descriptor.request.parts) do
           if part.kind == "prompt" then

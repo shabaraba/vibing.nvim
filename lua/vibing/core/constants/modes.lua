@@ -18,7 +18,7 @@ M.PERMISSION_MODES = { "default", "acceptEdits", "bypassPermissions", "plan", "d
 ---@type string[]
 M.VALID_AGENTS = Agents.ORDER
 
----エージェントモード（`agent.default_mode` / frontmatter の `mode`）
+---エージェントモード（既存 frontmatter の `mode`。setup既定値は廃止）
 ---ユーザーがそのチャットの意図を記録するためのメタデータで、現状は挙動を変えない。
 ---CLIにフラグとしては渡らない（権限モードの`plan`とは別物）。
 ---@type string[]
@@ -73,7 +73,7 @@ function M.is_valid_agent_mode(mode)
 end
 
 ---チャットが実際に話す相手のバックエンドを解決する
----frontmatterの`agent` > `config.adapter` > 既定（claude）。未知の名前は
+---frontmatterの`agent` > `vim.tbl_get(config, "ai", "chat", "agent")` > 既定（claude）。未知の名前は
 ---`send_message._resolve_adapter`と同じくフォールバックする（警告はそちらが1度だけ出す）。
 ---バックエンド単位のスコープを持つもの（使用量リミットの記録など）は、実際に使われる
 ---アダプターとここで一致していないと、使われないバックエンドに対して働いてしまう。
@@ -86,7 +86,7 @@ function M.resolve_agent(frontmatter, config)
     return from_frontmatter
   end
 
-  local from_config = config and config.adapter
+  local from_config = config and vim.tbl_get(config, "ai", "chat", "agent")
   if M.is_valid_agent(from_config) then
     return from_config
   end

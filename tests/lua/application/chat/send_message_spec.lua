@@ -52,15 +52,14 @@ describe("send_message", function()
       vim.api.nvim_buf_delete(buf, { force = true })
     end)
 
-    -- The choice list is only staged here; add_user_section() at the end of _handle_response is
-    -- what renders it, and cancel() queues that completion. Deferring the staging by one tick put
-    -- it after that completion, so the questions were consumed as nil and the turn ended with the
-    -- reply cut short and nothing to answer (#649).
-    it("stages AskUserQuestion choices synchronously rather than a tick later", function()
+    -- `/profile default` is how a narrowed chat is taken back into ordinary use, and it only works
+    -- if the profile is read from the frontmatter on every send rather than fixed at creation.
+    it("passes the frontmatter profile through on every send, so switching it takes effect", function()
       local buf = vim.api.nvim_create_buf(false, true)
       vim.api.nvim_buf_set_name(buf, vim.fn.tempname() .. ".md")
+      local frontmatter = { profile = "focused" }
+      local captured = {}
 
-      local staged, staged_request_id
       local callbacks = {
         get_bufnr = function()
           return buf
@@ -69,7 +68,7 @@ describe("send_message", function()
           return "test-session"
         end,
         parse_frontmatter = function()
-          return {}
+          return frontmatter
         end,
         extract_conversation = function()
           return {}
@@ -83,33 +82,22 @@ describe("send_message", function()
           return {}
         end,
         add_user_section = function() end,
-        insert_choices = function(questions, request_id)
-          staged = questions
-          staged_request_id = request_id
-        end,
       }
-
-      local captured = {}
       local adapter = {
-        supports = function(_, _feature)
+        supports = function()
           return false
         end,
-        execute = function(_, _prompt, opts)
-          captured.opts = opts
+        execute = function(_, _, opts)
+          table.insert(captured, opts.profile)
           return { content = "ok" }
         end,
       }
 
-      SendMessage.execute(adapter, callbacks, "hello", {})
+      SendMessage.execute(adapter, callbacks, "first", {})
+      frontmatter.profile = "default"
+      SendMessage.execute(adapter, callbacks, "second", {})
 
-      local questions = { { question = "Which one?", options = { { label = "a" } } } }
-      captured.opts.on_insert_choices(questions, nil, "q-77")
-      -- Asserted without running the event loop: a vim.schedule here would leave this nil.
-      assert.same(questions, staged)
-      -- The id of the question the chat is being asked to draw for. Dropped here, the chat cannot
-      -- tell whose options it holds, and retiring an expired question's block takes a live one's.
-      assert.equals("q-77", staged_request_id)
-
+      assert.same({ "focused", "default" }, captured)
       vim.api.nvim_buf_delete(buf, { force = true })
     end)
   end)
@@ -156,6 +144,9 @@ describe("send_message", function()
       local callbacks = {
         mark_turn_error = function()
           marked_error = true
+        end,
+        take_question_block = function()
+          table.insert(appended, "<question block taken>")
         end,
         clear_sending = function() end,
         get_bufnr = function()
@@ -210,6 +201,33 @@ describe("send_message", function()
         local _, _, marked_error = handle_turn({ error = "Cancelled", _cancelled = true })
 
         assert.is_false(marked_error)
+      end)
+    end)
+
+    describe("a question the turn ended on", function()
+      -- The model asks by ending its reply with a ```vibing-question block
+      -- (`question_block.lua`), and the block is recognised only as the last thing the turn wrote.
+
+      it("is looked for on a turn that succeeded", function()
+        local _, appended = handle_turn({ content = "ok" })
+
+        assert.same({ "<question block taken>" }, vim.tbl_filter(function(chunk)
+          return chunk == "<question block taken>"
+        end, appended))
+      end)
+
+      it("is looked for before anything is appended after the reply", function()
+        -- `### Tokens` and `### Modified Files` go under the assistant's text; looked for after
+        -- them, the block is no longer the last thing written and is never found.
+        local _, appended = handle_turn({ content = "ok" })
+
+        assert.equals("<question block taken>", appended[1], vim.inspect(appended))
+      end)
+
+      it("is not looked for on a turn that failed", function()
+        local _, appended = handle_turn({ error = "boom" })
+
+        assert.is_false(vim.tbl_contains(appended, "<question block taken>"))
       end)
     end)
 
@@ -473,7 +491,10 @@ describe("send_message", function()
       for _, line in ipairs(vim.split(out, "\n", { plain = true })) do
         patch_path = patch_path or PatchFinder.parse_patch_line(line)
       end
-      assert.is_truthy(patch_path, "no patch annotation written: " .. out)
+      assert.is_truthy(out:match("\nDiff: "), out)
+      assert.is_truthy(patch_path:find(root .. "/.vibing/diffs/", 1, true), patch_path)
+      assert.is_truthy(patch_path:match("%.diff$"), patch_path)
+      assert.equals(0, vim.fn.isdirectory(root .. "/.vibing/patches"))
       local pf = assert(io.open(patch_path, "r"))
       local content = pf:read("*a")
       pf:close()
@@ -924,8 +945,8 @@ describe("send_message", function()
       local Outstanding = require("vibing.application.chat.outstanding_subagents")
       local original = Outstanding.wake_orphaned
       local woken = {}
-      Outstanding.wake_orphaned = function(bufnr, unreported, recovered, subagents_lost)
-        table.insert(woken, { bufnr = bufnr, unreported = unreported, recovered = recovered, lost = subagents_lost })
+      Outstanding.wake_orphaned = function(bufnr, unreported, recovered, process_killed)
+        table.insert(woken, { bufnr = bufnr, unreported = unreported, recovered = recovered, killed = process_killed })
       end
 
       local callbacks = execute_callbacks(buf)
@@ -944,11 +965,11 @@ describe("send_message", function()
 
       assert.is_function(captured.on_subagents_orphaned, "the adapter was given no way to report them")
       -- The fourth argument travels too: it is what decides whether the chat is told its subagents are
-      -- gone or still worth collecting, and dropping it silently picks the second on every route.
+      -- explicitly killed or exited; saved answers remain useful on either route.
       captured.on_subagents_orphaned({ { task_id = "a1" } }, {}, true)
 
       Outstanding.wake_orphaned = original
-      assert.same({ { bufnr = buf, unreported = { { task_id = "a1" } }, recovered = {}, lost = true } }, woken)
+      assert.same({ { bufnr = buf, unreported = { { task_id = "a1" } }, recovered = {}, killed = true } }, woken)
 
       vim.api.nvim_buf_delete(buf, { force = true })
     end)

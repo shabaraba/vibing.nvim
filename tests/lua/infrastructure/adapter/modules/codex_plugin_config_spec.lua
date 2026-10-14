@@ -8,7 +8,11 @@ describe("codex_plugin_config", function()
   local original_notify
   local original_self_plugin_dir
   local notifications
-  local config = { agent = { plugins = { project_dir = ".vibing/plugins" } } }
+  local config = {
+    integrations = {
+      plugins = { project_dir = ".vibing/plugins" },
+    },
+  }
 
   ---Create a project plugin under `.vibing/plugins/<dir>`.
   ---@param dir string
@@ -90,10 +94,7 @@ describe("codex_plugin_config", function()
         override(args, "mcp_servers.vibing-nvim.args")
       )
       assert.equals('{ VIBING_RPC_TIMEOUT = "30000" }', override(args, "mcp_servers.vibing-nvim.env"))
-      assert.equals(
-        '["VIBING_NVIM_RPC_PORT"]',
-        override(args, "mcp_servers.vibing-nvim.env_vars")
-      )
+      assert.equals('["VIBING_NVIM_RPC_PORT"]', override(args, "mcp_servers.vibing-nvim.env_vars"))
     end)
 
     -- Only the first of its servers is named in the developer message, but every one of them
@@ -110,7 +111,11 @@ describe("codex_plugin_config", function()
         return root
       end
 
-      local args = CodexPluginConfig.args(nil, { agent = { plugins = { self = false, project_dir = ".vibing/plugins" } } })
+      local args = CodexPluginConfig.args(nil, {
+        integrations = {
+          plugins = { self = false, project_dir = ".vibing/plugins" },
+        },
+      })
 
       assert.equals('["VIBING_NVIM_RPC_PORT"]', override(args, "mcp_servers.vibing-nvim.env_vars"))
       assert.equals('["VIBING_NVIM_RPC_PORT"]', override(args, "mcp_servers.vibing-nvim-lsp.env_vars"))
@@ -137,13 +142,12 @@ describe("codex_plugin_config", function()
       assert.is_nil(instructions:find("rpc_port for this turn", 1, true))
     end)
 
-    it("uses the shared choice-list tool instructions with this chat buffer", function()
+    it("tells the model to ask with a vibing-question block, and names this chat buffer", function()
       local instructions = override(CodexPluginConfig.args(nil, config, 12), "developer_instructions")
 
-      assert.is_truthy(instructions:find("mcp__vibing_nvim__nvim_ask_user_question", 1, true))
-      assert.is_truthy(instructions:find("chat_bufnr argument", 1, true))
+      assert.is_truthy(instructions:find("vibing-question", 1, true))
+      assert.is_nil(instructions:find("nvim_ask_user_question", 1, true))
       assert.is_truthy(instructions:find("Current vibing.nvim chat buffer number: 12", 1, true))
-      assert.is_nil(instructions:find("choice UI is not wired", 1, true))
     end)
 
     it("requires Neovim-owned jobs for processes that outlive the turn", function()
@@ -235,7 +239,11 @@ describe("codex_plugin_config", function()
   end)
 
   it("is empty when no plugin applies", function()
-    local args = CodexPluginConfig.args(nil, { agent = { plugins = { self = false, project_dir = false } } })
+    local args = CodexPluginConfig.args(nil, {
+      integrations = {
+        plugins = { self = false, project_dir = false },
+      },
+    })
     assert.same({}, args)
   end)
 
@@ -265,10 +273,14 @@ describe("codex_plugin_config", function()
     write_plugin("tooling", { name = "tooling", mcpServers = { a = { command = "c" } } })
 
     local with_plugins = CodexPluginConfig.args(nil, config)
-    -- plugin_dirs memoizes by cwd alone and documents that a different `agent.plugins` needs its
+    -- plugin_dirs memoizes by cwd alone and documents that a different `integrations.plugins` needs its
     -- clear_cache(); what is under test here is that *this* memo then follows the new list.
     PluginDirs.clear_cache()
-    local without = CodexPluginConfig.args(nil, { agent = { plugins = { self = false, project_dir = false } } })
+    local without = CodexPluginConfig.args(nil, {
+      integrations = {
+        plugins = { self = false, project_dir = false },
+      },
+    })
 
     assert.is_not_nil(override(with_plugins, "mcp_servers.a.command"))
     assert.same({}, without)

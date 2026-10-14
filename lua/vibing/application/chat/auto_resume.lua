@@ -5,7 +5,7 @@
 --- and sends a single continuation message so the conversation picks up where it stopped.
 ---
 --- Deliberately conservative, because every path here spends tokens without a human present:
----   * opt-in (`agent.auto_resume_on_limit.enabled`, default false)
+---   * opt-in (`automation.limits.resume.enabled`, default false)
 ---   * a retry budget per limit hit (`max_retries`, default 1)
 ---   * never overwrites text the user has already typed into the pending `## User` section
 ---   * an entry is marked in_flight before sending, so a restart can't replay it for free
@@ -37,8 +37,12 @@ local timers = {}
 --- @return table
 local function get_options()
   local config = require("vibing.config").get()
-  local agent = config.agent or {}
-  return agent.auto_resume_on_limit or {}
+  local limits = vim.tbl_get(config, "automation", "limits") or {}
+  return vim.tbl_extend("force", {}, limits.resume or {}, {
+    prompt = limits.continue_prompt,
+    fallback_delay_sec = limits.fallback_delay_sec,
+    grace_sec = limits.grace_sec,
+  })
 end
 
 --- @param path string
@@ -201,10 +205,8 @@ local function announce_gave_up(chat_file_path, max_retries)
     return
   end
 
-  local message = string.format(
-    "> auto-resume: retry budget exhausted (max_retries=%d). Not resuming automatically.",
-    max_retries
-  )
+  local message =
+    string.format("> auto-resume: retry budget exhausted (max_retries=%d). Not resuming automatically.", max_retries)
 
   local bufnr = chat_buf:get_buffer()
   append_gave_up_notice(bufnr, message)
@@ -427,8 +429,7 @@ local function schedule(entry, opts)
 
   -- A scheduled entry is a request the user typed a time for, so a refusal must not be reported
   -- as an auto-resume that did not happen.
-  local label = (entry.kind or "auto_resume") == "scheduled" and "Request not scheduled"
-    or "Auto-resume not scheduled"
+  local label = (entry.kind or "auto_resume") == "scheduled" and "Request not scheduled" or "Auto-resume not scheduled"
 
   local delay_sec, reason = compute_delay(entry, opts)
   if not delay_sec then
@@ -562,10 +563,7 @@ function M.on_rate_limited(chat_file_path, info)
   end
 
   if not opts.enabled then
-    vim.notify(
-      "[vibing] Usage limit reached (" .. RateLimit.describe(info) .. ")",
-      vim.log.levels.WARN
-    )
+    vim.notify("[vibing] Usage limit reached (" .. RateLimit.describe(info) .. ")", vim.log.levels.WARN)
     return
   end
 

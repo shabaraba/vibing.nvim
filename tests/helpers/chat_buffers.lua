@@ -19,7 +19,14 @@ local M = {}
 function M.setup()
   local save_dir = vim.fn.tempname() .. "_chat/"
   vim.fn.mkdir(save_dir, "p")
-  require("vibing").setup({ chat = { save_location_type = "custom", save_dir = save_dir } })
+  require("vibing").setup({
+    chat = {
+      storage = {
+        location = "custom",
+        path = save_dir,
+      },
+    },
+  })
 
   M.reset()
   return save_dir

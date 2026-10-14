@@ -126,7 +126,7 @@ https://github.com/user-attachments/assets/8182307e-83f6-428a-af11-1122b69f4483
 | Codex CLI          | `npm install -g @openai/codex` (**0.140+**)               |
 | GitHub Copilot CLI | `npm install -g @github/copilot` (needs Node.js 22+)      |
 | Grok Build CLI     | [xAI's install docs](https://github.com/xai-org/grok-cli) |
-| Pi coding agent    | `curl -fsSL https://pi.dev/install.sh | sh` (Node.js 22.19+) |
+| Pi coding agent    | [Pi installer](https://pi.dev) (Node.js 22.19+)           |
 
 <details>
 <summary><b>Codex version note</b></summary>
@@ -143,7 +143,7 @@ that.
 custom or local provider, **those lightweight calls go to the default OpenAI endpoint instead**.
 Ordinary chat still uses your provider. vibing.nvim warns once per Neovim session when this applies
 to you, asking Codex itself (`codex doctor --json`) which provider is configured; it says nothing
-if Codex cannot answer. Set `backends.codex.provider_notice = false` to turn the warning and its
+if Codex cannot answer. Set `ai.agents.codex.extensions.provider_notice = false` to turn the warning and its
 probe off.
 
 </details>
@@ -162,7 +162,7 @@ With [lazy.nvim](https://github.com/folke/lazy.nvim):
     "stevearc/oil.nvim", -- optional: add context straight from the file browser
   },
   opts = {},
-}
+},
 ```
 
 `opts` is passed to `require("vibing").setup()`. See [Configuration](#️-configuration).
@@ -171,13 +171,13 @@ With [lazy.nvim](https://github.com/folke/lazy.nvim):
 <summary><b>packer.nvim</b></summary>
 
 ```lua
-use {
+use({
   "shabaraba/vibing.nvim",
   run = "./build.sh",
   config = function()
     require("vibing").setup()
   end,
-}
+}),
 ```
 
 </details>
@@ -212,9 +212,9 @@ skills are listed for the model in `developer_instructions`. Subagents do not ca
 `.claude-plugin/plugin.json`) is loaded the same way, for chats in that project only. Run
 `:VibingReloadCommands` after adding one, or `:VibingCreatePlugin <name>` to write a working
 skeleton in the first place. Note that a plugin may declare `mcpServers`, so a plugin in a
-repository you cloned can start a process on your machine — set `agent.plugins.project_dir = false`
+repository you cloned can start a process on your machine — set `integrations.plugins.project_dir = false`
 for repositories you do not trust. See
-[handbook/configuration.md](handbook/configuration.md) for `agent.plugins`.
+[handbook/configuration.md](handbook/configuration.md) for `integrations.plugins`.
 
 **Upgrading from an older vibing.nvim:** `build.sh` removes the user-scope install and its
 marketplace entry for you. To do it by hand:
@@ -244,41 +244,24 @@ keeps its highlighting.
 
 ```lua
 require("vibing").setup({
-  adapter = "claude",              -- "claude" | "codex" | "copilot" | "grok"
+  ai = {
+    chat = { agent = "claude", model = "sonnet", effort = "default" },
+    helpers = { model = "haiku", effort = "low" },
+  },
   chat = {
-    window = {
-      position = "current",        -- "current" | "right" | "left" | "top" | "bottom" | "back" | "float"
-      width = 0.4,                 -- screen-width ratio (0-1)
-    },
-    save_location_type = "project", -- "project" | "user" | "custom"
+    language = "ja",
+    storage = { location = "project" },
   },
-  agent = {
-    default_model = "sonnet",      -- backend model id, e.g. "sonnet" or "gpt-5.6-terra"
-    default_effort = "default",     -- "default" | "low" | "medium" | "high" | "xhigh" | "max"
-    scheduled_requests = {
-      enabled = true,              -- during a usage limit, <CR> schedules instead of sending
-    },
-  },
-  permissions = {
-    mode = "acceptEdits",          -- "default" | "acceptEdits" | "plan" | "auto" | "dontAsk" | "bypassPermissions"
-    allow = { "Read", "Edit", "Write", "Glob", "Grep", "Skill", "StructuredOutput" },
-    deny = { "Bash" },
-  },
-  backends = {
-    codex = {
-      profile_file = ".vibing/codex-permissions.toml", -- false disables loading the generated profile
-      -- profile_content = [[...]], -- initial TOML used only when creating the profile
-      allow_tracked_profile = false, -- true explicitly trusts a Git-tracked profile
-    },
-    grok = { executable = "auto" }, -- or a path to the official Grok Build CLI
-    pi = { executable = "auto", provider = "" }, -- name the provider for a local endpoint
-  },
-  language = nil,                  -- e.g. "ja", or { default = "ja", chat = "ja" }
+  ui = { window = { position = "current", width = 0.4 } },
+  permissions = { mode = "acceptEdits", deny = { "Bash" } },
 })
 ```
 
 The permissions above are a **template** for new chat files; each chat's frontmatter carries its
 own permissions, and those are what is enforced at runtime.
+
+Old setup keys are rejected with migration hints. Objects merge recursively and lists replace
+(including empty lists). See [the migration guide](./handbook/configuration-redesign.md).
 
 **Full reference:** every option (window details, UI/gradient/tool markers, diff backends, granular
 permission rules, MCP, Node.js executable, daily summary, …) is documented in
@@ -290,7 +273,7 @@ permission rules, MCP, Node.js executable, daily summary, …) is documented in
 For the Codex backend, vibing.nvim creates `.vibing/codex-permissions.toml` when it initializes a
 project. Its default profile permits workspace and Git metadata writes without using full bypass
 mode; edit the file to narrow or extend the OS sandbox. Existing files are never overwritten.
-Git-tracked profiles are rejected unless `backends.codex.allow_tracked_profile = true` explicitly
+Git-tracked profiles are rejected unless `ai.agents.codex.extensions.allow_tracked_profile = true` explicitly
 trusts the reviewed file; locally generated, untracked profiles continue to load automatically. See
 [Project-local Codex permission profiles](./handbook/configuration.md#project-local-codex-permission-profiles).
 
@@ -473,11 +456,11 @@ graph TB
 - **Codex CLI** (`codex exec --json`) — OpenAI Codex backend
 - **GitHub Copilot CLI** (`copilot -p --output-format json`) — GitHub Copilot backend
 - **Grok Build CLI** (`grok --single --output-format streaming-json`) — xAI Grok backend
-- **Pi coding agent** (`pi --mode json`) — a harness rather than a vendor CLI; it uses the provider
+- **Pi coding agent** (`pi --mode rpc`) — a harness rather than a vendor CLI; it uses the provider
   selected in Pi's own configuration, including local models served through OpenAI-compatible
   endpoints
 
-Switch globally with `adapter = "claude"|"codex"|"copilot"|"grok"|"pi"` in setup, or per-chat by adding
+Switch globally with `ai.chat.agent = "claude"|"codex"|"copilot"|"grok"|"pi"` in setup, or per-chat by adding
 `agent: claude`, `agent: codex`, `agent: copilot`, `agent: grok` or `agent: pi` to a chat file's YAML
 frontmatter. `effort: low|medium|high|xhigh|max` controls reasoning for Claude, Codex and Grok when
 the selected model supports that level. New chats use `effort: default`, which passes no override
@@ -490,13 +473,14 @@ the field has the same runtime behaviour for existing chats.
 > login are never touched. Copilot's static `--deny-tool` flags are still passed as a backstop;
 > they cover `Bash` (including `Bash(cmd:*)` patterns), `Write`, `Edit`, `WebFetch` and
 > `WebSearch`, and vibing.nvim warns once when it drops a tool name Copilot cannot express.
-
+>
 > **Note:** the Pi backend is the one backend with **no tool approval of its own** — Pi does not ask
 > before running `bash`, and its JSON/RPC modes cannot prompt at all. vibing.nvim's permission
 > layer is therefore the only one, and it is delivered as a Pi extension (`pi-extension/`) that
 > `./build.sh` compiles and `pi --extension` loads. If that bundle is missing, a Pi turn is
-> restricted to read-only tools rather than run ungated, and says so once. Pi also ships no MCP
-> client, so the `nvim_*` tools and the in-chat question UI are unavailable there (as on Grok).
+> restricted to read-only tools and says so once. Pi 1.2.0 includes an MCP client; configure
+> servers in Pi's own `mcp.json`. Claude plugin servers are not injected by this backend.
+> Real Pi/local-model verification is pending; see [the manual procedure](handbook/pi-backend.md).
 >
 > Model selection is Pi's, not vibing.nvim's: `model:` has to name something Pi can resolve through
 > its own `~/.pi/agent/models.json` or a provider you are logged into. For a local endpoint:
@@ -514,7 +498,7 @@ the field has the same runtime behaviour for existing chats.
 > }
 > ```
 >
-> then `backends.pi.provider = "mlx-local"` and `model: mlx-community/Qwen3.6-27B-4bit`. Naming
+> then `ai.agents.pi.extensions.provider = "mlx-local"` and `model: mlx-community/Qwen3.6-27B-4bit`. Naming
 > the provider is not optional for a local endpoint: `--model` is a fuzzy pattern Pi matches over
 > its built-in cloud catalogue as well, so an unqualified `model: qwen` picks a cloud model and the
 > turn fails on a missing API key. With it named, any id your endpoint can serve works from

@@ -1,0 +1,113 @@
+{
+  "cli_version": "0.162.0",
+  "note": "Captured from real app-server; paths and ids sanitized. Blocked calls emitted no item/started or standard approval request.",
+  "cases": {
+    "deny": {
+      "hook_input": {
+        "tool_use_id": "exec-deny",
+        "tool_name": "Bash",
+        "tool_input": {
+          "command": "printf hook > marker.txt"
+        }
+      },
+      "notification": {
+        "params": {
+          "turnId": "turn-1",
+          "run": {
+            "statusMessage": null,
+            "durationMs": 681,
+            "completedAt": 1791939861,
+            "handlerType": "command",
+            "eventName": "preToolUse",
+            "startedAt": 1791939861,
+            "source": "sessionFlags",
+            "scope": "turn",
+            "sourcePath": "/<session-flags>/config.toml",
+            "entries": [
+              {
+                "text": "Tool Bash is in the denied list",
+                "kind": "feedback"
+              }
+            ],
+            "status": "blocked",
+            "displayOrder": 0,
+            "executionMode": "sync",
+            "id": "pre-tool-use:0:/<session-flags>/config.toml:exec-deny"
+          },
+          "threadId": "thread-1"
+        },
+        "emittedAtMs": 1791939861912,
+        "method": "hook/completed"
+      }
+    },
+    "ask": {
+      "hook_input": {
+        "tool_use_id": "exec-ask",
+        "tool_name": "Bash",
+        "tool_input": {
+          "command": "printf hook > marker.txt"
+        }
+      },
+      "notification": {
+        "emittedAtMs": 1791939868274,
+        "method": "hook/completed",
+        "params": {
+          "run": {
+            "id": "pre-tool-use:0:/<session-flags>/config.toml:exec-ask",
+            "source": "sessionFlags",
+            "scope": "turn",
+            "durationMs": 375,
+            "handlerType": "command",
+            "executionMode": "sync",
+            "sourcePath": "/<session-flags>/config.toml",
+            "displayOrder": 0,
+            "eventName": "preToolUse",
+            "completedAt": 1791939868,
+            "status": "blocked",
+            "startedAt": 1791939867,
+            "statusMessage": null,
+            "entries": [
+              {
+                "kind": "feedback",
+                "text": "Tool Bash requires manual approval in the chat. This call was not executed; do not retry it until the user answers the approval prompt."
+              }
+            ]
+          },
+          "threadId": "thread-1",
+          "turnId": "turn-1"
+        }
+      }
+    },
+    "rpc": {
+      "notification": {
+        "params": {
+          "threadId": "thread-1",
+          "turnId": "turn-1",
+          "run": {
+            "sourcePath": "/<session-flags>/config.toml",
+            "scope": "turn",
+            "executionMode": "sync",
+            "displayOrder": 0,
+            "status": "blocked",
+            "source": "sessionFlags",
+            "eventName": "preToolUse",
+            "durationMs": 310,
+            "completedAt": 1791939880,
+            "handlerType": "command",
+            "entries": [
+              {
+                "text": "Failed to connect to vibing.nvim RPC server",
+                "kind": "feedback"
+              }
+            ],
+            "statusMessage": null,
+            "id": "pre-tool-use:0:/<session-flags>/config.toml:exec-rpc",
+            "startedAt": 1791939880
+          }
+        },
+        "method": "hook/completed",
+        "emittedAtMs": 1791939880988
+      }
+    }
+  }
+}

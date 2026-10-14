@@ -45,19 +45,25 @@ function M.init_content(buf, session)
   end
 
   -- agent
-  local agent = frontmatter.agent or (config.adapter or "claude")
+  local agent = frontmatter.agent or (vim.tbl_get(config, "ai", "chat", "agent") or "claude")
   table.insert(lines, "agent: " .. agent)
 
   -- model
-  local model = frontmatter.model or (config.agent and config.agent.default_model)
+  local model = frontmatter.model or require("vibing.core.utils.ai_config").resolve(config, agent).model
   if model then
     table.insert(lines, "model: " .. model)
   end
 
   -- Always show the effective choice. `default` deliberately produces no CLI override, which is
   -- the exact behaviour chats had before effort became configurable.
-  local effort = frontmatter.effort or (config.agent and config.agent.default_effort) or Modes.DEFAULT_EFFORT
+  local effort = frontmatter.effort or require("vibing.core.utils.ai_config").resolve(config, agent).effort
   table.insert(lines, "effort: " .. effort)
+
+  -- Written only when something chose it (`nvim_chat_create`'s `profile`), unlike effort: an
+  -- ordinary chat keeps the file shape it has always had.
+  if frontmatter.profile then
+    table.insert(lines, "profile: " .. frontmatter.profile)
+  end
 
   -- permission_mode
   local permission_mode = frontmatter.permission_mode or (config.permissions and config.permissions.mode)
@@ -159,7 +165,7 @@ end
 -- Backward compatibility alias
 M.move_cursor_to_end = M.moveCursorToEnd
 
----`nvim_ask_user_question` の選択肢ブロックを組み立てる（**唯一の組み立て口**）
+---質問ブロック（`question_block.lua`）の選択肢を組み立てる（**唯一の組み立て口**）
 ---
 ---関数として切り出してあるのは、**剥がす側が同じものを読むため**（#788）。承認プロンプトは
 ---`approval_parser.strip_prompt_lines` が固定の接頭辞と `<!-- vibing:req=... -->` から
@@ -178,7 +184,7 @@ M.move_cursor_to_end = M.moveCursorToEnd
 ---**この関数の出力はキュー全体の純関数である。** 件数の1行が入るということは、待っている質問が
 ---1件増減しただけで**組み立て直したものが変わる**ということで、描いた後にキューを触ると
 ---`strip_choice_lines` が一致しなくなり、描いてあるブロックがユーザーの本文として残る。
----キューを変える出来事は、変える前に畳んで、変えた後に描き直すこと（`ChatBuffer:expire_question`）
+---キューを変える出来事は、変える前に畳んで、変えた後に描き直すこと
 ---@param pendingChoices Vibing.PendingChoiceEntry[]? 保持している質問、古い順
 ---@return string[] lines 末尾の空行まで含めたブロック
 function M.choice_lines(pendingChoices)
@@ -231,7 +237,14 @@ function M.choice_lines(pendingChoices)
     table.insert(choiceLines, "")
   end
 
-  return flatten_lines(choiceLines)
+  local lines = flatten_lines(choiceLines)
+  -- 生成文中のセクションヘッダーで回答欄の印が隠されないよう、引用行として描く。
+  for i, line in ipairs(lines) do
+    if Timestamp.is_header(line) then
+      lines[i] = "> " .. line
+    end
+  end
+  return lines
 end
 
 ---描かれた選択肢ブロックだけを落とし、ユーザーが打った本文は残す（#788）
@@ -294,7 +307,7 @@ function M.addUserSection(buf, win, pendingChoices, pendingApprovals, initial_me
 
   local newLines = {
     "",
-    header or Timestamp.create_unsent_user_header(),
+    header or Timestamp.create_header("User", nil, nil, pendingChoices ~= nil),
     "",
   }
 
@@ -353,6 +366,16 @@ function M.addUserSection(buf, win, pendingChoices, pendingApprovals, initial_me
         if pendingApproval.input.url then
           table.insert(approvalLines, "URL: " .. tostring(pendingApproval.input.url))
         end
+        -- Anything a channel wants shown that has no field of its own: the cwd and the reason on a
+        -- Codex command approval, the per-file kinds and the diff on a file-change one (#861).
+        --
+        -- **Indented, never given a new `Foo: ` prefix.** `approval_parser.continues_block` already
+        -- counts a three-space indent as part of a prompt block, so these are stripped with the
+        -- rest of it; a new prefix would have to be added to `FIELD_PREFIXES`, which widens what
+        -- `strip_prompt_lines` eats out of the user's own prose for every chat.
+        for _, line in ipairs(pendingApproval.input.details or {}) do
+          table.insert(approvalLines, "   " .. tostring(line))
+        end
       end
 
       table.insert(approvalLines, "")
@@ -366,10 +389,7 @@ function M.addUserSection(buf, win, pendingChoices, pendingApprovals, initial_me
         for _, opt in ipairs(pendingApproval.options or {}) do
           local label = (opt.label and opt.label ~= "") and opt.label or ""
           if label ~= "" then
-            table.insert(
-              approvalLines,
-              ApprovalParser.option_line(optionIndex, label, pendingApproval.request_id)
-            )
+            table.insert(approvalLines, ApprovalParser.option_line(optionIndex, label, pendingApproval.request_id))
             optionIndex = optionIndex + 1
           end
         end
@@ -408,7 +428,6 @@ function M.addUserSection(buf, win, pendingChoices, pendingApprovals, initial_me
     end
   end
 end
-
 
 -- Backward compatibility alias
 M.add_user_section = M.addUserSection

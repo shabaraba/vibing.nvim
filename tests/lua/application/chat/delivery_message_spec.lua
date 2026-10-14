@@ -198,3 +198,107 @@ describe("DeliveryMessage.build (blocked chats)", function()
     assert.is_truthy(text:find("A chat listed without a status", 1, true))
   end)
 end)
+
+-- The report duty also lives in the worker's system prompt, but claude records that prompt on the
+-- conversation's first request and replays it on every resume. A chat that gained an orchestrator
+-- after its first message never sees the line naming it, so the request itself has to say where to
+-- report — the per-turn body is the one thing the recording does not freeze.
+describe("DeliveryMessage.deliver (report instructions)", function()
+  local DeliveryMessage
+  local saved, sent, direction_answers, buffers
+
+  local function make_buf(name)
+    local bufnr = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_name(bufnr, vim.fn.tempname() .. "-" .. name)
+    table.insert(buffers, bufnr)
+    return bufnr
+  end
+
+  before_each(function()
+    buffers, sent, direction_answers = {}, {}, {}
+    saved = {}
+    for _, name in ipairs({
+      "vibing.application.chat.orchestration_link",
+      "vibing.application.chat.auto_compact",
+      "vibing.presentation.chat.modules.programmatic_sender",
+    }) do
+      saved[name] = package.loaded[name]
+    end
+    package.loaded["vibing.application.chat.orchestration_link"] = {
+      direction = function(from_bufnr)
+        return direction_answers[from_bufnr] or "Request"
+      end,
+    }
+    package.loaded["vibing.application.chat.auto_compact"] = {
+      before_delivery = function()
+        return false
+      end,
+    }
+    package.loaded["vibing.presentation.chat.modules.programmatic_sender"] = {
+      send = function(bufnr, text)
+        table.insert(sent, { bufnr = bufnr, text = text })
+        return { success = true, bufnr = bufnr }
+      end,
+    }
+    package.loaded["vibing.application.chat.delivery_message"] = nil
+    DeliveryMessage = require("vibing.application.chat.delivery_message")
+  end)
+
+  after_each(function()
+    for name, module in pairs(saved) do
+      package.loaded[name] = module
+    end
+    package.loaded["vibing.application.chat.delivery_message"] = nil
+    for _, bufnr in ipairs(buffers) do
+      if vim.api.nvim_buf_is_valid(bufnr) then
+        vim.api.nvim_buf_delete(bufnr, { force = true })
+      end
+    end
+  end)
+
+  it("tells the receiving chat where and how to report on a request", function()
+    local orchestrator, worker = make_buf("orchestrator.md"), make_buf("worker.md")
+
+    DeliveryMessage.deliver({ { bufnr = orchestrator, body = "implement it" } }, worker)
+
+    local text = sent[1].text
+    assert.is_truthy(text:find("implement it", 1, true))
+    assert.is_truthy(text:find("nvim_chat_send_message", 1, true))
+    assert.is_truthy(text:find("orchestrator.md", text:find("nvim_chat_send_message", 1, true), true), text)
+    assert.is_truthy(text:find("from_bufnr " .. worker, 1, true), text)
+    assert.is_truthy(text:find("queue_if_busy true", 1, true))
+  end)
+
+  it("names every sender once when several requests coalesce", function()
+    local a, b, worker = make_buf("a.md"), make_buf("b.md"), make_buf("worker.md")
+
+    DeliveryMessage.deliver({ { bufnr = a, body = "one" }, { bufnr = a, body = "two" }, { bufnr = b, body = "three" } }, worker)
+
+    local text = sent[1].text
+    local instructions = text:sub((text:find("Report back", 1, true)))
+    local _, a_count = instructions:gsub("a%.md", "")
+    assert.equals(1, a_count)
+    assert.is_truthy(instructions:find("b.md", 1, true))
+  end)
+
+  it("adds nothing to a report going back to the orchestrator", function()
+    local worker, orchestrator = make_buf("worker.md"), make_buf("orchestrator.md")
+    direction_answers[worker] = "Report"
+
+    DeliveryMessage.deliver({ { bufnr = worker, body = "done" } }, orchestrator)
+
+    assert.is_nil(sent[1].text:find("nvim_chat_send_message", 1, true))
+  end)
+
+  -- An answer to a blocked question reaches the model as the human's answer, word for word, so
+  -- anything appended would be read as part of that answer.
+  it("adds nothing to a delivery that answers a blocked question", function()
+    local orchestrator, worker = make_buf("orchestrator.md"), make_buf("worker.md")
+
+    DeliveryMessage.deliver({ { bufnr = orchestrator, body = "option B" } }, worker, nil, {
+      answers_blocked_question = true,
+    })
+
+    assert.is_nil(sent[1].text:find("Report back", 1, true))
+  end)
+end)

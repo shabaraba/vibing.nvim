@@ -23,10 +23,7 @@ function M.find_vibing_files(directory, opts)
   -- If both searches completely failed with no results, return empty
   local has_results = (vibing_files and #vibing_files > 0) or (md_files and #md_files > 0)
   if err1 and err2 and not has_results then
-    vim.notify(
-      string.format("vibing.nvim: Failed to search directory %s: %s", directory, err1),
-      vim.log.levels.WARN
-    )
+    vim.notify(string.format("vibing.nvim: Failed to search directory %s: %s", directory, err1), vim.log.levels.WARN)
     return {}
   end
   -- Warn about partial errors (permission denied on some subdirectories)
@@ -66,10 +63,7 @@ function M.collect_messages_from_file(file_path, target_date)
   local messages, err = parser:extract_messages(file_path, target_date)
 
   if err then
-    vim.notify(
-      string.format("vibing.nvim: Failed to parse file %s: %s", file_path, err),
-      vim.log.levels.WARN
-    )
+    vim.notify(string.format("vibing.nvim: Failed to parse file %s: %s", file_path, err), vim.log.levels.WARN)
     return {}
   end
 
@@ -123,8 +117,12 @@ function M.get_search_directories(include_all, config)
 
   if include_all then
     -- Use only search_dirs if configured
-    if config.daily_summary and config.daily_summary.search_dirs and #config.daily_summary.search_dirs > 0 then
-      for _, dir in ipairs(config.daily_summary.search_dirs) do
+    if
+      vim.tbl_get(config, "chat", "daily_summary")
+      and vim.tbl_get(config, "chat", "daily_summary", "search_dirs")
+      and #vim.tbl_get(config, "chat", "daily_summary", "search_dirs") > 0
+    then
+      for _, dir in ipairs(vim.tbl_get(config, "chat", "daily_summary", "search_dirs")) do
         -- Validate: skip invalid values
         if type(dir) ~= "string" or dir == "" then
           vim.notify(
@@ -139,10 +137,7 @@ function M.get_search_directories(include_all, config)
 
         -- Check existence and warn if missing
         if vim.fn.isdirectory(expanded_dir) ~= 1 then
-          vim.notify(
-            string.format("vibing.nvim: search_dir does not exist: %s", expanded_dir),
-            vim.log.levels.WARN
-          )
+          vim.notify(string.format("vibing.nvim: search_dir does not exist: %s", expanded_dir), vim.log.levels.WARN)
           goto continue
         end
 
@@ -153,14 +148,25 @@ function M.get_search_directories(include_all, config)
         local vibing_dirs = vim.fn.systemlist({
           "find",
           expanded_dir,
-          "-type", "d",
-          "-name", ".vibing",
-          "-maxdepth", "5",
+          "-type",
+          "d",
+          "-name",
+          ".vibing",
+          "-maxdepth",
+          "5",
           -- Exclude common large directories
-          "-not", "-path", "*/node_modules/*",
-          "-not", "-path", "*/.git/*",
-          "-not", "-path", "*/build/*",
-          "-not", "-path", "*/dist/*",
+          "-not",
+          "-path",
+          "*/node_modules/*",
+          "-not",
+          "-path",
+          "*/.git/*",
+          "-not",
+          "-path",
+          "*/build/*",
+          "-not",
+          "-path",
+          "*/dist/*",
         })
 
         -- Use partial results even if find had errors (e.g., permission denied on some dirs)
@@ -172,7 +178,10 @@ function M.get_search_directories(include_all, config)
           -- Warn about partial errors (but don't fallback to expanded_dir)
           if vim.v.shell_error ~= 0 then
             vim.notify(
-              string.format("vibing.nvim: find command had errors for %s (some directories may be skipped)", expanded_dir),
+              string.format(
+                "vibing.nvim: find command had errors for %s (some directories may be skipped)",
+                expanded_dir
+              ),
               vim.log.levels.DEBUG
             )
           end
@@ -192,8 +201,8 @@ function M.get_search_directories(include_all, config)
       -- Default behavior: search multiple standard directories
       add_directory_if_exists(project_root .. "/.vibing/chat", directories)
       add_directory_if_exists(vim.fn.stdpath("data") .. "/vibing/chats", directories)
-      if config.chat and config.chat.save_dir then
-        local save_dir = config.chat.save_dir:gsub("/$", "")
+      if config.chat and vim.tbl_get(config, "chat", "storage", "path") then
+        local save_dir = vim.tbl_get(config, "chat", "storage", "path"):gsub("/$", "")
         add_directory_if_exists(save_dir, directories)
       end
     end
@@ -219,7 +228,9 @@ function M.collect_all_messages(target_date, include_all, config)
   -- Set to 3 days for -all option to find recent files containing today's messages
   local mtime_days = include_all and 3 or nil
   -- Get strategy from config (default: "auto")
-  local strategy = config.daily_summary and config.daily_summary.file_finder_strategy or "auto"
+  local strategy = vim.tbl_get(config, "chat", "daily_summary")
+      and vim.tbl_get(config, "chat", "daily_summary", "file_finder_strategy")
+    or "auto"
 
   for _, directory in ipairs(M.get_search_directories(include_all, config)) do
     for _, file_path in ipairs(M.find_vibing_files(directory, { mtime_days = mtime_days, strategy = strategy })) do

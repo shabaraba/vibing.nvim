@@ -70,7 +70,12 @@ local function probe(id)
     return
   end
 
-  local argv = spec.command(require("vibing.config").get())
+  local config = require("vibing.config").get()
+  local argv = spec.command(config)
+  local path = vim.tbl_get(config, "ai", "agents", id, "path")
+  if path then
+    argv[1] = vim.fn.expand(path)
+  end
   -- A backend whose CLI is not installed is the ordinary case, not a failure to report.
   if vim.fn.executable(argv[1]) ~= 1 then
     record.retry_after = vim.uv.now() + FAILURE_COOLDOWN_MS
@@ -119,7 +124,12 @@ function M.candidates_for(agent)
   local id = Agents.get(agent).id
   probe(id)
   local record = state[id]
-  return (record and record.candidates) or Agents.models_for(id)
+  local candidates = (record and record.candidates) or Agents.models_for(id)
+  if id == "codex" then
+    -- A Codex chat can bypass agent.default_model and select its CLI-configured model.
+    return vim.list_extend({ { value = "default", description = "Codex CLI configured model" } }, candidates)
+  end
+  return candidates
 end
 
 --- Every backend's candidates, in backend order, de-duplicated.
@@ -134,7 +144,7 @@ function M.all_values()
 
   for _, definition in ipairs(Agents.list()) do
     for _, candidate in ipairs(M.candidates_for(definition.id)) do
-      if not seen[candidate.value] then
+      if candidate.value ~= "default" and not seen[candidate.value] then
         seen[candidate.value] = true
         table.insert(values, candidate.value)
       end

@@ -35,13 +35,19 @@ describe("CompletionNotifier", function()
   local function configure(opts, orchestration)
     Config.get = function()
       return {
-        agent = {
-          chat_notifications = vim.tbl_extend(
+        automation = {
+          orchestration = vim.tbl_extend(
             "force",
-            { enabled = true, max_round_trips = 8, max_wakes = 50 },
-            opts or {}
+            {},
+            orchestration or { max_concurrent = 0 },
+            {
+              notifications = vim.tbl_extend(
+                "force",
+                { enabled = true, max_round_trips = 8, max_wakes = 50 },
+                opts or {}
+              ),
+            }
           ),
-          orchestration = orchestration or { max_concurrent = 0 },
         },
       }
     end

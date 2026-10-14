@@ -121,13 +121,17 @@ function M.start(bufnr, opts)
   local config = require("vibing.config").get()
 
   -- Check if gradient animation is enabled
-  if not config.ui or not config.ui.gradient or not config.ui.gradient.enabled then
+  if
+    not config.ui
+    or not vim.tbl_get(config, "ui", "gradient")
+    or not vim.tbl_get(config, "ui", "gradient", "enabled")
+  then
     return
   end
 
-  local start_color = config.ui.gradient.colors[1]
-  local end_color = config.ui.gradient.colors[2]
-  local interval = config.ui.gradient.interval
+  local start_color = vim.tbl_get(config, "ui", "gradient", "colors")[1]
+  local end_color = vim.tbl_get(config, "ui", "gradient", "colors")[2]
+  local interval = vim.tbl_get(config, "ui", "gradient", "interval_ms")
   local is_waiting = opts.is_waiting
 
   -- Generate gradient colors
@@ -153,7 +157,7 @@ function M.start(bufnr, opts)
   end
   -- 共有グループなので hl_groups には入れない（停止時にクリアすると他チャットの待機表示が消える）
   vim.api.nvim_set_hl(0, M.WAITING_HL, {
-    fg = config.ui.gradient.waiting_color or M.DEFAULT_WAITING_COLOR,
+    fg = vim.tbl_get(config, "ui", "gradient", "waiting_color") or M.DEFAULT_WAITING_COLOR,
     bg = "NONE",
     bold = true,
   })

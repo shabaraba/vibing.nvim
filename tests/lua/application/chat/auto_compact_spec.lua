@@ -2,7 +2,7 @@ describe("auto_compact", function()
   local AutoCompact = require("vibing.application.chat.auto_compact")
   local Timestamp = require("vibing.core.utils.timestamp")
 
-  local ON = { enabled = true, at = 200000 }
+  local ON = { enabled = true, threshold_tokens = 200000 }
 
   describe("should_compact", function()
     it("inserts a compaction once the last turn reached the threshold", function()
@@ -16,7 +16,9 @@ describe("auto_compact", function()
 
     it("is off by default", function()
       assert.is_false(AutoCompact.should_compact({}, "claude", 310000, false))
-      assert.is_false(AutoCompact.should_compact({ enabled = false, at = 200000 }, "claude", 310000, false))
+      assert.is_false(
+        AutoCompact.should_compact({ enabled = false, threshold_tokens = 200000 }, "claude", 310000, false)
+      )
     end)
 
     it("skips the send right after a compaction, so a compaction that did not shrink cannot loop", function()
@@ -37,8 +39,8 @@ describe("auto_compact", function()
     end)
 
     it("treats at <= 0 as off, matching how warn_context = 0 silences the warning", function()
-      assert.is_false(AutoCompact.should_compact({ enabled = true, at = 0 }, "claude", 900000, false))
-      assert.is_false(AutoCompact.should_compact({ enabled = true, at = -1 }, "claude", 900000, false))
+      assert.is_false(AutoCompact.should_compact({ enabled = true, threshold_tokens = 0 }, "claude", 900000, false))
+      assert.is_false(AutoCompact.should_compact({ enabled = true, threshold_tokens = -1 }, "claude", 900000, false))
     end)
 
     it("falls back to the shared default when at is unset", function()
@@ -184,12 +186,20 @@ describe("auto_compact", function()
       vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
     end
 
-    --- @param opts table? overrides for agent.token_usage.auto_compact
+    --- @param opts table? overrides for chat.context.compaction
     local function configure(opts)
       Config.get = function()
         return {
-          adapter = "claude",
-          agent = { token_usage = { auto_compact = vim.tbl_extend("force", { enabled = true, at = 200000 }, opts or {}) } },
+          ai = {
+            chat = {
+              agent = "claude",
+            },
+          },
+          chat = {
+            context = {
+              compaction = vim.tbl_extend("force", { enabled = true, threshold_tokens = 200000 }, opts or {}),
+            },
+          },
         }
       end
     end

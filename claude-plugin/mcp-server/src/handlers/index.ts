@@ -10,8 +10,11 @@ import * as annotations from './annotations.js';
 import * as qflist from './qflist.js';
 import * as dap from './dap.js';
 import * as jobs from './jobs.js';
+import * as sessions from './sessions.js';
 
 export const handlers: Record<string, (args: any) => Promise<any>> = {
+  nvim_session_search: sessions.handleSessionSearch,
+  nvim_session_read: sessions.handleSessionRead,
   // Buffer operations
   nvim_get_buffer: buffer.handleGetBuffer,
   nvim_set_buffer: buffer.handleSetBuffer,
@@ -38,14 +41,7 @@ export const handlers: Record<string, (args: any) => Promise<any>> = {
   nvim_win_open_file: window.handleWinOpenFile,
 
   // LSP operations
-  nvim_lsp_definition: lsp.handleLspDefinition,
-  nvim_lsp_references: lsp.handleLspReferences,
-  nvim_lsp_hover: lsp.handleLspHover,
-  nvim_diagnostics: lsp.handleDiagnostics,
-  nvim_lsp_document_symbols: lsp.handleLspDocumentSymbols,
-  nvim_lsp_type_definition: lsp.handleLspTypeDefinition,
-  nvim_lsp_call_hierarchy_incoming: lsp.handleLspCallHierarchyIncoming,
-  nvim_lsp_call_hierarchy_outgoing: lsp.handleLspCallHierarchyOutgoing,
+  nvim_lsp: lsp.handleLsp,
 
   // Instance management
   nvim_list_instances: instances.handleListInstances,
@@ -53,7 +49,6 @@ export const handlers: Record<string, (args: any) => Promise<any>> = {
   // Chat operations
   nvim_chat_create: chat.handleChatCreate,
   nvim_chat_send_message: chat.handleChatSendMessage,
-  nvim_ask_user_question: chat.handleAskUserQuestion,
   nvim_chat_answer_approval: chat.handleChatAnswerApproval,
   nvim_chat_list: chat.handleChatList,
   nvim_chat_conflicts: chat.handleChatConflicts,
@@ -69,9 +64,7 @@ export const handlers: Record<string, (args: any) => Promise<any>> = {
   nvim_set_qflist: qflist.handleSetQflist,
 
   // Debugger (nvim-dap)
-  nvim_dap_get_state: dap.handleDapGetState,
-  nvim_dap_get_stack_trace: dap.handleDapGetStackTrace,
-  nvim_dap_get_variables: dap.handleDapGetVariables,
+  nvim_dap_inspect: dap.handleDapInspect,
   nvim_dap_set_breakpoint: dap.handleDapSetBreakpoint,
   nvim_dap_evaluate: dap.handleDapEvaluate,
 

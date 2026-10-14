@@ -100,9 +100,8 @@ return {
   hook = { transport = "settings_file", dialect = "claude", keep_in_bypass = true },
 
   vocabulary = Vocabulary,
-  -- true only once nvim_ask_user_question is wired for this CLI. It also gates answering an
-  -- approval without killing the CLI: that path names the chat through `turn.process.chat_bufnr`,
-  -- which is filled in only when this is true, so `hook.measured_wait_floor_sec` does nothing on
+  -- Gates answering an approval without killing the CLI: that path names the chat through
+  -- `turn.process.chat_bufnr`, which is filled in only when this is true, so `hook.measured_wait_floor_sec` does nothing on
   -- its own. Both or neither — `transports.can_wait_for_approval` requires the pair.
   register_chat_bufnr = false,
 }
@@ -113,6 +112,21 @@ Then register it in `core/constants/agents.lua` (`adapter_module`, `descriptor_m
 option of its own), add the two-line `adapter/<id>_cli.lua` and `adapter/modules/<id>_event_processor.lua`
 shims the other backends have, and run `npm run test:lua`. The conformance suite tells you which
 contracts the descriptor does not yet meet.
+
+## Resident protocol
+
+A descriptor declaring `process = "duplex"` must supply `duplex` with three functions:
+`send_prompt(record, prompt, params)`, `process_line(record, line)`, and
+`interrupt(record, seq)`. The conformance suite checks their presence and fixed signatures for
+all registered duplex backends. `params` is `Vibing.DuplexRunParams`; `seq` is the shared
+per-process interrupt counter and may be ignored by a protocol with its own request ids.
+
+The protocol owns the wire envelopes and resolves the current or idle event context from the
+record when it handles a line. Claude's stream-json is explicit too
+(`claude_duplex_protocol.lua`); an absent protocol has no fallback. Shared sending and routing
+read `descriptor.duplex`, including interruption through `adapter.descriptor`, without storing
+a second protocol copy on the process. The pool, argv reuse key, turn, timers and reclaim paths
+remain shared.
 
 ## The decoder
 
@@ -135,6 +149,17 @@ Three optional functions, applied in this order by `permission.normalize_hook_in
 `normalize_input` (where the path lives). Every entry should come from a captured payload; an alias
 the CLI never sends is inert, a missing one lets a deny rule fall open.
 
+An optional `is_always_allowed(tool_name)` predicate classifies backend built-ins after name
+normalization. The permission handler passes it to the shared evaluator alongside the chat's
+lists. It is evaluated with `ALWAYS_ALLOWED_TOOLS`, after deny rules and session denials, and
+respects explicit `ask`. Codex uses this to permit control tools without requiring allow-list
+entries for each one; the patterns live in `core/constants/tools.lua`. Operations mapped to
+canonical tools such as Bash, Edit, Read and WebSearch use their normal permission settings,
+including when wrapped in the `functions` namespace. MCP tool names
+are excluded from that predicate, including names wrapped in the `functions` namespace. Other
+backends that omit it keep their existing behavior. Hook responses still defer to the CLI's
+native permission gate, so this classification does not override its sandbox or approvals.
+
 ## What stays code, and where
 
 - **Hook transport quirks** live in the transport module: codex hangs on an untrusted hook or a
@@ -145,10 +170,11 @@ the CLI never sends is inert, a missing one lets a deny rule fall open.
 - **Lightweight fencing** is `args` when the CLI has a flag for it and an `extra` when it needs a
   scratch directory or environment (grok).
 - **Anything that names a `vibing.nvim` MCP tool in a prompt** must only be sent to a CLI that can
-  reach the server (`.claude/rules/features.md` → AskUserQuestion).
+  reach the server (`handbook/architecture/plugin-and-commands.md`). Questions use the shared
+  reply-block protocol in `adapter/modules/ask_user_question_instructions.lua`, without an MCP tool.
 
 ## Per-backend options
 
-Declare them as `config_fields` on the registry entry; they surface as `backends.<id>.<field>` in
+Declare them as `config_fields` on the registry entry; they surface as `ai.agents.<id>.extensions.<field>` in
 `setup()`, with defaults and validation derived from the declaration (`kind`: `string`, `boolean`,
-`path_or_false`, `executable_or_auto`). `config.lua` never names a backend.
+`path_or_false`, `string_list`). `config.lua` never names a backend.

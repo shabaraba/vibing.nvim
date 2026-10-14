@@ -25,8 +25,16 @@ local BackgroundTasks = require("vibing.infrastructure.adapter.modules.backgroun
 local ProcessModel = require("vibing.infrastructure.adapter.modules.process_model")
 local DuplexStream = require("vibing.infrastructure.adapter.modules.duplex_stream")
 local HookTransports = require("vibing.infrastructure.hooks.transports")
-local WaitBudget = require("vibing.infrastructure.hooks.wait_budget")
 local PluginScaffold = require("vibing.infrastructure.plugins.scaffold")
+
+---@class Vibing.DuplexProtocol
+---@field send_prompt fun(record: Vibing.DuplexProcess, prompt: string, params: Vibing.DuplexRunParams): boolean
+---@field process_line fun(record: Vibing.DuplexProcess, line: string)
+---@field interrupt fun(record: Vibing.DuplexProcess, seq: number): boolean
+---@field retry_hook_approval? boolean Refuse an ask and finish normally before retrying from chat.
+---@field hook_approval_options? table[] Options for that retry, consumed by the usual answer path.
+---@field observe_hook_input? fun(scope: table, payload: table, tool: string, input: table)
+---  seq is a shared per-process interrupt counter; protocols with their own request ids ignore it.
 
 ---@class Vibing.BackendDescriptor
 ---@field id string The agent id (`claude`, `codex`, ...). `adapter.name` is `<id>_cli`.
@@ -50,13 +58,8 @@ local PluginScaffold = require("vibing.infrastructure.plugins.scaffold")
 ---@field event_context_fields? fun(): table Extra fields on the event context (claude pre-creates
 ---  its token accumulator and `cliInfo` so mid-stream events always have somewhere to land).
 ---@field vocabulary? table Tool-name/payload normalisation handed to the permission handler.
----@field register_chat_bufnr? boolean Whether `nvim_ask_user_question` can route back to this
----  stream's chat buffer. Only the backends whose MCP route is wired say yes.
----@field mcp? Vibing.McpSpec What has been **measured** about this CLI's patience on the MCP route,
----  which is where `nvim_ask_user_question` lives. Separate from `hook` because it is a separate
----  channel with separate evidence: the hook's floor times a blocking hook, and borrowing it here
----  would be the substitution #788 exists to stop. Absent means unmeasured, and an unmeasured
----  backend keeps killing the turn to ask.
+---@field register_chat_bufnr? boolean Whether the turn carries this stream's chat buffer back, so
+---  an approval waiting in place can draw into it (`hooks/transports.lua`).
 ---@field stdin? string What to hand the child on stdin; `""` closes it so a CLI that reads stdin
 ---  when no prompt argument is present does not wait on a terminal that isn't there.
 ---@field stderr_filter? fun(data: string): string? Drops or rewrites a stderr chunk before it is
@@ -72,9 +75,11 @@ local PluginScaffold = require("vibing.infrastructure.plugins.scaffold")
 ---  Read back what a background subagent said when the CLI dropped its completion notification
 ---  (anthropics/claude-code#87675). Absent means this backend never backgrounds a subagent, so
 ---  `BackgroundTasks.unreported()` is always empty for it and this is never called.
+---@field duplex? Vibing.DuplexProtocol Required when process == "duplex". The protocol resolves
+---  its context at delivery time, including deferred callbacks and lines received between turns.
 ---@field process? "oneshot"|"duplex" The most capable process model this backend can run; absent
----  means `oneshot` only. Not the default — that is `oneshot` for everyone, and a chat opts in
----  through `backends.<id>.process` or its own frontmatter (`process_model.lua`). Named `process`
+---  means `oneshot` only. Defaults live in `ai.agents.<id>.process`; a chat can override them
+---  through its own frontmatter (`process_model.lua`). Named `process`
 ---  rather than `transport` because `Vibing.HookSpec.transport` already owns that word.
 
 local M = {}
@@ -151,6 +156,7 @@ function M.define(descriptor)
     -- spec branches on it (`--input-format`, and whether the prompt goes into the argv at all), and
     -- re-deriving it there would let the argv and the transport disagree. `opts.process` stays as
     -- the chat wrote it.
+    opts = vim.tbl_extend("force", {}, opts, { _agent_id = descriptor.id })
     local process_model = ProcessModel.resolve(descriptor, opts, self.config)
     opts._process_model = process_model
     local is_duplex = process_model == ProcessModel.DUPLEX
@@ -249,6 +255,7 @@ function M.define(descriptor)
     end
 
     local env = vim.fn.environ()
+    require("vibing.infrastructure.adapter.modules.agent_environment").apply(env, self.config, opts, descriptor.id)
     -- Backend edits first, so a variable the user declared reads exactly like one they exported:
     -- the `VIBING_*` binding below still overwrites it.
     if descriptor.apply_env then
@@ -285,6 +292,9 @@ function M.define(descriptor)
       vim.tbl_extend("force", opts, {
         _tool_vocabulary = descriptor.vocabulary,
         _can_wait_for_approval = HookTransports.can_wait_for_approval(descriptor),
+        _retry_hook_approval = process_model == "duplex" and descriptor.duplex.retry_hook_approval,
+        _hook_approval_options = process_model == "duplex" and descriptor.duplex.hook_approval_options or nil,
+        _observe_hook_input = process_model == "duplex" and descriptor.duplex.observe_hook_input or nil,
       })
     )
 
@@ -383,8 +393,6 @@ function M.define(descriptor)
     -- begin and end together, so both are torn down together below.
     local process = {
       process_id = ids.process_id,
-      -- Only where the nvim_ask_user_question route is wired: registering a value nothing
-      -- consumes would only look like a working route (see features.md → AskUserQuestion).
       chat_bufnr = descriptor.register_chat_bufnr and opts.chat_bufnr or nil,
       session_id = opts._session_id,
       adapter = self,
@@ -394,32 +402,31 @@ function M.define(descriptor)
       turn_id = ids.turn_id,
       process = process,
       worktree_root = opts._worktree_root,
-      on_insert_choices = opts.on_insert_choices,
       on_approval_required = opts.on_approval_required,
-      -- Whether `nvim_ask_user_question` may hold its MCP reply open instead of killing the turn
-      -- (#788). Travels on the turn for the same reason `_can_wait_for_approval` travels on the
-      -- opts: it is a property of *this* backend's measured floor against the currently configured
-      -- budget, and the RPC handler must not be the place that knows which backend it is.
-      -- Resolved per turn, so raising `permissions.approval_wait_sec` past what was measured turns
-      -- the behaviour off on the next send rather than waiting past the evidence.
-      can_answer_question_in_place = WaitBudget.can_answer_question_in_place(descriptor.mcp),
     })
     close_process = function()
       ProcessRegistry.unregister(ids.process_id)
     end
 
-    local started = CliRuntime.spawn(self._processes, ids, cmd, {
-      text = true,
-      stdin = descriptor.stdin,
-      cwd = cwd,
-      env = env,
-      stdout = StreamHandler.create_stdout_handler(descriptor.event_processor, event_context, function()
-        return self._processes[ids.process_id] == nil
+    local started = CliRuntime.spawn(
+      self._processes,
+      ids,
+      cmd,
+      {
+        text = true,
+        stdin = descriptor.stdin,
+        cwd = cwd,
+        env = env,
+        stdout = StreamHandler.create_stdout_handler(descriptor.event_processor, event_context, function()
+          return self._processes[ids.process_id] == nil
+        end),
+        stderr = stderr_handler(descriptor, error_output),
+      },
+      StreamHandler.create_exit_handler(ids, self._processes, output, error_output, finish, function()
+        return event_context.resultErrors
       end),
-      stderr = stderr_handler(descriptor, error_output),
-    }, StreamHandler.create_exit_handler(ids, self._processes, output, error_output, finish, function()
-      return event_context.resultErrors
-    end), finish)
+      finish
+    )
 
     if not started then
       return ids.turn_id, ids.process_id

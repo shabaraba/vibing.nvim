@@ -34,11 +34,6 @@ local M = {}
 --- @field on_exit fun(code: number)
 --- @field stopping boolean Set before a deliberate kill so `on_exit` can tell it from a crash.
 
---- Interrupts are correlated by id like every other control request; the CLI echoes it back in the
---- `control_response`. Nothing waits on that response today (the turn ends on `result`), but a
---- request with no id is one the CLI is free to reject.
-local INTERRUPT_REQUEST_PREFIX = "vibing-interrupt-"
-
 --- @param record Vibing.DuplexProcess
 --- @param data string[] one `on_stdout` batch
 local function absorb(record, data)
@@ -152,6 +147,29 @@ function M.is_alive(record)
   return record ~= nil and record.job_id ~= nil
 end
 
+--- Write to a channel named by its id alone.
+---
+--- Writing needs nothing from a record but `job_id`, and a caller that must **outlive the turn**
+--- should hold the id rather than the record. A reply closure parked in a registry for a whole
+--- approval wait (#861, up to 960s) otherwise keeps a reclaimed process's `decoder_state` and its
+--- cached file-change diffs reachable for that long, with no sweep able to free them early.
+--- @param job_id number|nil
+--- @param payload table
+--- @return boolean sent
+local function write_to(job_id, payload)
+  if type(job_id) ~= "number" then
+    return false
+  end
+  -- The byte count decides, not `pcall`. A job that has been killed but whose `on_exit` has not
+  -- yet run still has a valid channel id — `job_id` is cleared only there — so `is_alive` says yes
+  -- and `chansend` quietly returns 0. Reading that as success is how a turn gets bound to a dying
+  -- process and then waits out the whole first-response watchdog with nothing to show for it.
+  local ok, written = pcall(vim.fn.chansend, job_id, vim.json.encode(payload) .. "\n")
+  return ok and type(written) == "number" and written > 0
+end
+
+M.write_to = write_to
+
 --- @param record Vibing.DuplexProcess
 --- @param payload table
 --- @return boolean sent
@@ -159,49 +177,10 @@ local function write(record, payload)
   if not M.is_alive(record) then
     return false
   end
-  -- The byte count decides, not `pcall`. A job that has been killed but whose `on_exit` has not
-  -- yet run still has a valid channel id — `job_id` is cleared only there — so `is_alive` says yes
-  -- and `chansend` quietly returns 0. Reading that as success is how a turn gets bound to a dying
-  -- process and then waits out the whole first-response watchdog with nothing to show for it.
-  local ok, written = pcall(vim.fn.chansend, record.job_id, vim.json.encode(payload) .. "\n")
-  return ok and type(written) == "number" and written > 0
+  return write_to(record.job_id, payload)
 end
 
---- Begin a turn by handing the CLI a user message on stdin.
----
---- `--input-format stream-json` takes the same envelope the CLI emits, so the prompt travels as a
---- plain `user` message rather than as an argv argument. The content is a string rather than a
---- one-element block list: both are accepted, and the string form is what the CLI's own replay
---- emits back.
----
---- **The envelope's `uuid` is the only thing that says which turn is ours.** The CLI echoes it
---- back on that prompt's `result` as `user_message_uuid`, and on the `command_lifecycle` lines it
---- only emits when one was supplied. A turn the CLI started by itself carries neither field, which
---- is what `duplex_turn.ends_this_turn` reads. Any string is accepted -- it is not validated as a
---- UUID. `handbook/architecture/duplex-transport.md` -> "Whose `result` is this?".
---- @param record Vibing.DuplexProcess
---- @param prompt string
---- @param prompt_uuid string|nil correlation id echoed back on this prompt's own `result`
---- @return boolean sent
-function M.send_prompt(record, prompt, prompt_uuid)
-  return write(record, { type = "user", uuid = prompt_uuid, message = { role = "user", content = prompt } })
-end
-
---- Stop the turn without stopping the process.
----
---- The CLI answers with `control_response { still_queued = [] }` and then a `result` of subtype
---- `error_during_execution`; the process stays alive and serves the next turn normally. That
---- `result` is what ends the turn here, so nothing waits on the control response.
---- @param record Vibing.DuplexProcess
---- @param seq number a per-process counter, so two interrupts never share a request id
---- @return boolean sent
-function M.interrupt(record, seq)
-  return write(record, {
-    type = "control_request",
-    request_id = INTERRUPT_REQUEST_PREFIX .. tostring(seq),
-    request = { subtype = "interrupt" },
-  })
-end
+M.write = write
 
 --- Stop the process, and everything holding its pipes open.
 ---

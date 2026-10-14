@@ -43,10 +43,10 @@ describe("vibing.presentation.chat.view", function()
 
       local chat_buf = view.render({ session_id = "session-1" }, "back")
 
-      assert.equals("back", chat_buf.config.window.position)
-      assert.equals("current", config.chat.window.position)
-      assert.equals("current", require("vibing.config").defaults.chat.window.position)
-      assert.is_false(chat_buf.config.window == config.chat.window)
+      assert.equals("back", chat_buf.config.ui.window.position)
+      assert.equals("current", config.ui.window.position)
+      assert.equals("current", require("vibing.config").defaults.ui.window.position)
+      assert.is_false(chat_buf.config.ui.window == config.ui.window)
     end)
   end)
 

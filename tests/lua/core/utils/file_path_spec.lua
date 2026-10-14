@@ -19,6 +19,26 @@ describe("file_path.is_cursor_on_file_path", function()
     end
   end)
 
+  it("declines annotation Diff: /tmp/My Project/.vibing/diffs/x.diff", function()
+    open({ "### Modified Files", "", "Diff: /tmp/My Project/.vibing/diffs/x.diff" }, 3)
+    assert.is_nil(FilePath.is_cursor_on_file_path(buf))
+  end)
+
+  it("declines annotation Patch: /tmp/My Project/.vibing/patches/x.patch", function()
+    open({ "### Modified Files", "", "Patch: /tmp/My Project/.vibing/patches/x.patch" }, 3)
+    assert.is_nil(FilePath.is_cursor_on_file_path(buf))
+  end)
+
+  it("declines annotation Diff: /tmp/My Project/x.patch", function()
+    open({ "### Modified Files", "", "Diff: /tmp/My Project/x.patch" }, 3)
+    assert.is_nil(FilePath.is_cursor_on_file_path(buf))
+  end)
+
+  it("declines annotation Patch: /tmp/My Project/x.diff", function()
+    open({ "### Modified Files", "", "Patch: /tmp/My Project/x.diff" }, 3)
+    assert.is_nil(FilePath.is_cursor_on_file_path(buf))
+  end)
+
   it("declines the one-line summary", function()
     open({ "### Modified Files", "", "3 files changed: a.lua, b.lua, c.lua" }, 3)
     assert.is_nil(FilePath.is_cursor_on_file_path(buf))

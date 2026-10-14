@@ -97,6 +97,99 @@ the floor to matter — one without the other does not hold.
 `claude-plugin/skills/vibing-orchestrate/SKILL.md` → "Reuse a worker chat or start a new
 one?" carries the operating rule; this section is the reasoning and the measurement behind it.
 
+## What the floor is made of, and profiles
+
+The floor is re-read on **every request** of a worker, not paid once, so it is the multiplier the
+"new chat by default" rule above leaves on the table. `tests/perf/system_prompt_floor.lua` breaks
+it down by changing one flag at a time against the argv vibing.nvim actually builds. Measured on
+claude 2.1.295, haiku, in this repository, with the vibing-nvim MCP server connected and
+`CLAUDE_CODE_REMOTE` unset (as on a local machine):
+
+| Variant                                           | Floor (tokens) | Delta   | Tools |
+| ------------------------------------------------- | -------------- | ------- | ----- |
+| vibing chat, as sent                              | 66,974         | —       | 80    |
+| without the two editor-watching lines             | 66,654         | −320    | 80    |
+| no `--append-system-prompt` at all                | 66,192         | −782    | 80    |
+| no `--plugin-dir` (vibing skills, MCP)            | 63,555         | −3,419  | 31    |
+| `--setting-sources ""` (CLAUDE.md, rules, skills) | 36,895         | −30,079 | 80    |
+| `--strict-mcp-config`, no servers                 | 65,274         | −1,700  | 31    |
+| `--tools` six built-ins, no ToolSearch            | 50,914         | −16,060 | 55    |
+| `--tools` six built-ins + Skill                   | 60,657         | −6,317  | 56    |
+| `--tools` six built-ins + Agent                   | 53,636         | −13,338 | 56    |
+| `--tools` six built-ins + ToolSearch              | 36,898         | −30,076 | 56    |
+| **six + ToolSearch, no editor lines, user,local** | **11,266**     | −55,708 | 56    |
+| bare `claude -p`, no vibing flags                 | 61,207         | −5,767  | 29    |
+
+And the first request of a **subagent**, launched from a bare `claude -p` (61k):
+
+| Subagent                                         | First request |
+| ------------------------------------------------ | ------------- |
+| `general-purpose`                                | 50,343        |
+| custom, `tools: [Read, Edit, Bash]` (`--agents`) | 29,392        |
+| `Explore`                                        | 13,024        |
+
+What the numbers say:
+
+- **vibing.nvim's own additions are small** — 782 tokens of instructions, ~1.7k for 49 deferred MCP
+  tools. Trimming them cannot be the lever: the two editor-watching lines (−320) were what an
+  earlier built-in `worker` profile dropped, and that profile was removed for saving nothing. A
+  profile narrows the tools and the setting sources instead; the instruction block is always sent.
+- **The two large parts are the built-in tool set and the project's own settings, ~30k each.**
+  The tool part is mostly not the six tools an implementer uses: the Skill tool's description
+  carries every skill (+9.7k on top of the six) and the other ~20 built-ins the rest. The settings
+  part is CLAUDE.md, `.claude/rules/` and the project's skills.
+- **`ToolSearch` must stay in a narrowed tool list.** Without it the CLI has nowhere to defer MCP
+  tools to and loads every schema (50.9k vs 36.9k, the same six tools). `--tools` narrows built-ins
+  only: `nvim_chat_send_message` stays reachable either way, so a narrowed worker can still report.
+- **A subagent is not free either.** `general-purpose` is ~50k, close to a chat; it is `Explore`
+  (read-only) that is cheap. A narrowed chat (11k) is cheaper than a `general-purpose` subagent and
+  can run on another CLI — which is what profiles are for.
+- **Dropping the project settings is a correctness trade.** Those files are the invariants a worker
+  would otherwise break, and a worker that has to rediscover one pays for it in re-reads (chat 882
+  above). `context_files` exists so a profile can carry the few that apply to its kind of work.
+
+What the built-in profiles come to, read off the table (the rows were measured before the
+profiles existed, with the flags each one now sends):
+
+| Profile    | Floor (tokens)                                                                |
+| ---------- | ----------------------------------------------------------------------------- |
+| `default`  | 66,974 measured ("as sent")                                                   |
+| `focused`  | 36,898 measured ("six + ToolSearch", the same `--tools` list)                 |
+| `reviewer` | ~36k **estimated**: four of the same tools, Edit and Write not measured apart |
+
+The 11,266 row is the `implementer` example in `handbook/configuration.md` (`focused`'s tools,
+`user,local`), measured without the two editor lines; with them it is ~11.6k **estimated**.
+`tests/perf/system_prompt_floor.lua` now has `profile: focused` / `profile: reviewer` rows and a
+`focused`-based lean row, not yet re-run.
+
+Two caveats bound the table: rows where the model made more than one request report a sum, not a
+floor (the script prints `turns`; the `--strict-mcp-config` row needed three attempts), and a
+plugin MCP server that is still connecting when a one-request run ends contributes nothing.
+
+### What a switch reaches: the system prompt is recorded
+
+`claude -p` records the system prompt on a conversation's **first** request and replays it on
+every resume (`--system-prompt-snapshot`, default `on`). Measured: a session started with
+`--append-system-prompt "codename ALPHA"` and resumed with `"codename BETA"` still answered ALPHA;
+a resume with `--system-prompt-snapshot off` saw the new text, and the next default resume went
+back to ALPHA — the record is not replaced. So for a profile switch:
+
+- `context_files` (inside `--append-system-prompt`) stay as the chat started.
+- `tools` and `setting_sources` are re-read per launch: a resume with the full tool set rose from
+  31.6k to 61.2k, and a CLAUDE.md fact unknown under `--setting-sources ""` was answered correctly
+  after a resume with `project`. Narrowing again did **not** shrink it (61.6k): what a request
+  loaded stays in the conversation's history.
+
+That is why `/profile default` on a narrowed chat is the direction that works, and why a profile is
+chosen at creation rather than toggled to save tokens on a running chat.
+
+The same recording broke two older assumptions. An `orchestrated_by` entry added **after** a chat's
+first message — a chat later messaged by a second orchestrator — never reached its report line;
+every delivered `## Request` now ends with where and how to report
+(`delivery_message.reply_instructions`), since the per-turn body is the one thing the recording
+does not freeze. `.vibing/system-prompt.md` is still not read "on every request" as far as the
+model is concerned: an edit reaches new chats only, and that is left for a fix of its own.
+
 ## Task assignment (`orchestrated`'s `task`, #696)
 
 `nvim_chat_create` and `nvim_chat_send_message` both take an optional `task`: one free-text line
@@ -315,7 +408,7 @@ works from whichever side did get written. Fork and subagent chats do **not** in
 — `inherited_frontmatter.from_source` is an explicit whitelist, and a fork claiming its parent's
 relationships would be claiming work it was never given.
 
-**Completion is pushed, not polled** — `agent.chat_notifications.enabled`, default `false` because
+**Completion is pushed, not polled** — `automation.orchestration.notifications.enabled`, default `false` because
 it spends tokens unattended. The whole mechanism is that **the send is the subscription**: when
 `nvim_chat_create` / `nvim_chat_send_message` receive `from_bufnr`, `completion_notifier.subscribe`
 records an A←B edge, and when B's turn ends A is given a new turn saying "B stopped, go read it".
@@ -686,7 +779,7 @@ The removed `max_hops` is not silently ignored: `config.lua` drops it and warns 
 flag. A limit that reads as configured while doing nothing is worse than one that was never set.
 
 **The notification says "stopped", never "succeeded".** `idle` is also what a failed turn, a
-pending tool approval, and an `nvim_ask_user_question` look like, so judging outcomes from the
+pending tool approval, and a question the worker asked look like, so judging outcomes from the
 event would repeat `chat_status`'s mistake. The message names each finished chat by path (with its
 current bufnr in parentheses) and instructs A to read the transcript's tail — not the worker's
 text, which would pull B's context into A for no reason.
@@ -789,7 +882,7 @@ methods do not each re-implement the git-root lookup and the `orchestrated_entry
 ## Tree operations
 
 `:VibingOrchestrationTree [path]` draws the tree a chat belongs to with each node's status,
-`:VibingCancelTree [path]` stops a subtree, and `agent.orchestration.max_concurrent` (default
+`:VibingCancelTree [path]` stops a subtree, and `automation.orchestration.max_concurrent` (default
 `0` = unlimited) caps how many chats may be responding at once (#645). Three decisions carry
 the design:
 
@@ -1031,7 +1124,7 @@ to whoever messaged it, and — by default — the only thing that orchestrator 
 name the worker and the tool and hand it to the user. With a fan of five workers all hitting the
 same `Bash` prompt, that is five buffers the user has to find by hand.
 
-`agent.orchestration.delegated_approval` (default `false`) lets the orchestrator answer instead,
+`permissions.delegated_approval` (default `false`) lets the orchestrator answer instead,
 through the MCP tool `nvim_chat_answer_approval` →`rpc/handlers/chat.lua:answer_approval` →
 `application/chat/approval_delegate.lua`. Set to `true` it delegates unconditionally; set to
 `"scoped"` (#703) it delegates only `allow_once`/`allow_for_session` answers whose tool and input
@@ -1052,6 +1145,13 @@ not remove it: nothing can auto-approve anything unless a human first sets
 `delegated_approval` to `true` or `"scoped"`. The refusal is worded for the model that will read
 it: it says what to do instead (name the blocked chat and the tool) and names the setting, so a
 chat running without it does not spend a turn probing.
+
+Codex native actions travel unchanged through MCP; the prompt in Lua owns the accepted values.
+Command prompts provide `input.scope_tool = "Bash"` so scoped delegation uses the same command
+matcher as hooks. File prompts retain their descriptive tool name and require a bare scope entry.
+The adapter marks execpolicy amendments `delegation_requires_unscoped`: they can remember a
+broader pattern than the command being judged, so matching the current call is insufficient.
+Only full delegation (`true`) may select them; the human option and reply path stay the same.
 
 Four things about the implementation:
 

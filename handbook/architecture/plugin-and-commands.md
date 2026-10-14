@@ -13,7 +13,7 @@ vibing.nvim's own Claude Code plugin — the `vibing-nvim` MCP server, the bundl
 `infrastructure/plugins/plugin_dirs.lua`, which loads a plugin for that CLI invocation only and
 writes nothing to Claude Code's global state.
 
-The resolved list is `self` → `.vibing/plugins/*/` → `agent.plugins.extra`, and it is the single
+The resolved list is `self` → `.vibing/plugins/*/` → `integrations.plugins.extra`, and it is the single
 definition of "which plugin directories apply here": the argv, the skill completion provider and
 the agent completion provider all read it rather than each re-deriving the convention.
 
@@ -71,7 +71,7 @@ re-resolve from it, so clearing it second would refill them from the list being 
 plugin may declare `mcpServers`, so a directory committed to a cloned repository can start a
 process on the user's machine on the first message. That is a stronger thing than the instruction
 injection an unreviewed `.claude/skills/` allows, and it is why Claude Code gates a project's own
-`.mcp.json` behind approval. The convenience was preferred; `agent.plugins.project_dir = false`
+`.mcp.json` behind approval. The convenience was preferred; `integrations.plugins.project_dir = false`
 is the opt-out.
 
 **A worktree reads both its own `.vibing/plugins` and the project root's.** `.vibing/` is
@@ -88,7 +88,7 @@ deleting it can happen later.
 
 ## User MCP servers, and what `--strict-mcp-config` takes with them
 
-`agent.mcp.user_servers = false` (#677) is served by `adapter/modules/cli_mcp_config.lua`. The
+`ai.agents.claude.mcp.inherit_cli_servers = false` (#677) is served by `adapter/modules/cli_mcp_config.lua`. The
 user-facing half — what it costs, what else it drops, the escape hatch — is
 `handbook/configuration.md` → "Excluding User MCP Servers". Two things belong here.
 
@@ -173,7 +173,7 @@ codex scans are the user's own; `skills.config` only toggles skills codex alread
 skills are listed in the developer message in the same shape codex uses for its own list — name,
 description and the absolute `SKILL.md` to read — and the model reads the file with its shell,
 which the sandbox allows. The same message names the tool prefix and carries the shared
-`nvim_ask_user_question` instruction plus the stable `chat_bufnr`; the RPC port remains out of
+question-block instruction plus the stable `chat_bufnr`; the RPC port remains out of
 band in the MCP subprocess environment. It is byte-stable across the turns of one chat because
 the plugin list and buffer number are stable, and codex's prompt cache matches on a prefix like
 Anthropic's (#469).

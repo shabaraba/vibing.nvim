@@ -22,8 +22,14 @@ describe("context manager", function()
   end)
 
   describe("format_for_display", function()
-    it("includes auto-collected buffers when chat.auto_context is true", function()
-      config.options = { chat = { auto_context = true } }
+    it("includes auto-collected buffers when chat.context.auto_include is true", function()
+      config.options = {
+        chat = {
+          context = {
+            auto_include = true,
+          },
+        },
+      }
 
       local display = Manager.format_for_display()
 
@@ -31,8 +37,14 @@ describe("context manager", function()
       assert.is_truthy(display:find("auto.lua", 1, true))
     end)
 
-    it("omits auto-collected buffers when chat.auto_context is false", function()
-      config.options = { chat = { auto_context = false } }
+    it("omits auto-collected buffers when chat.context.auto_include is false", function()
+      config.options = {
+        chat = {
+          context = {
+            auto_include = false,
+          },
+        },
+      }
 
       local display = Manager.format_for_display()
 

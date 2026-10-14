@@ -10,7 +10,6 @@
 --- @module vibing.infrastructure.adapter.modules.duplex_routing
 
 local BackgroundTasks = require("vibing.infrastructure.adapter.modules.background_tasks")
-local DuplexProcess = require("vibing.infrastructure.adapter.modules.duplex_process")
 local Pool = require("vibing.infrastructure.adapter.modules.duplex_pool")
 local StreamHandler = require("vibing.infrastructure.adapter.modules.stream_handler")
 local TurnOutcome = require("vibing.infrastructure.adapter.modules.turn_outcome")
@@ -71,7 +70,8 @@ function M.line_router(chat_key, descriptor)
     local turn = M.turn_of(record)
     local context = turn and turn.context or record._idle_context
     if context then
-      descriptor.event_processor.processLine(line, context)
+      -- A protocol can render from deferred callbacks too, so it resolves its context itself.
+      descriptor.duplex.process_line(record, line)
     end
   end
 end
@@ -128,7 +128,7 @@ end
 --- The process is gone, by any of the routes `duplex_pool` reclaims one through.
 ---
 --- The verdict is the pool's reading of the route it took (`Vibing.DuplexReclaimVerdict`): whether
---- anybody still needs telling, and whether the CLI's own children went down with it.
+--- anybody still needs telling, and whether the pool deliberately killed the CLI.
 --- @param adapter table
 --- @return fun(record: Vibing.DuplexProcess, code: number, verdict: Vibing.DuplexReclaimVerdict)
 function M.exit_handler(adapter)
@@ -153,7 +153,7 @@ function M.exit_handler(adapter)
       -- that teardown, and `vim.schedule` is FIFO, so completing the turn first is what puts the wake
       -- behind it. Moving this call above `take_turn` would reintroduce exactly that race.
       vim.schedule(function()
-        BackgroundTasks.report_orphaned(record, verdict.subagents_lost)
+        BackgroundTasks.report_orphaned(record, verdict.process_killed)
       end)
     end
   end
@@ -261,7 +261,7 @@ function M.stop_turn(adapter, process_id)
   end
 
   record._interrupts = (record._interrupts or 0) + 1
-  if not DuplexProcess.interrupt(record, record._interrupts) then
+  if not adapter.descriptor.duplex.interrupt(record, record._interrupts) then
     -- The request could not even be written -- a dying process, a closed stdin. Waiting out the
     -- grace period would be waiting for an answer to a question nobody was asked.
     return false, false

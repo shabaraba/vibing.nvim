@@ -21,7 +21,6 @@
 -- methods, so this direction is the only one resolved while either module is still loading.
 local BackgroundTasks = require("vibing.infrastructure.adapter.modules.background_tasks")
 local CliRuntime = require("vibing.infrastructure.adapter.modules.cli_runtime")
-local DuplexProcess = require("vibing.infrastructure.adapter.modules.duplex_process")
 local DuplexTurn = require("vibing.infrastructure.adapter.modules.duplex_turn")
 local Pool = require("vibing.infrastructure.adapter.modules.duplex_pool")
 local RequestBuilder = require("vibing.infrastructure.adapter.modules.request_builder")
@@ -71,8 +70,8 @@ end
 ---
 --- The chat is not woken from here: `adapter/` requires nothing from `application/`, and whether a
 --- chat needs a turn is not an adapter question — only *what this backend wrote and where* is. So the
---- finding leaves through the callback the chat layer handed in, the same shape as `on_insert_choices`
---- and `on_approval_required`. Nothing is stored at all when there is no callback, which is every
+--- finding leaves through the callback the chat layer handed in, the same shape as
+--- `on_approval_required`. Nothing is stored at all when there is no callback, which is every
 --- lightweight call.
 --- @param params Vibing.DuplexRunParams
 --- @param record Vibing.DuplexProcess
@@ -167,7 +166,8 @@ function M.run(params)
 
   local prompt =
     RequestBuilder.prompt_text(descriptor.request, params.prompt, params.opts, params.opts._session_id, params.config)
-  if not DuplexProcess.send_prompt(record, prompt or params.prompt, params.event_context.promptUuid) then
+  local sent = descriptor.duplex.send_prompt(record, prompt or params.prompt, params)
+  if not sent then
     -- Reported before the kill, for the reason `turn_outcome.first_response_timeout` states:
     -- `Pool.stop` completes this turn as "Cancelled" on its way out, and `complete` is idempotent,
     -- so killing first would replace this message with one that says nothing about what went wrong.

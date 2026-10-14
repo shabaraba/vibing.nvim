@@ -11,8 +11,8 @@ local M = {}
 ---@param config table
 ---@return string
 local function get_save_directory(config)
-  if config.daily_summary and config.daily_summary.save_dir then
-    local save_dir = config.daily_summary.save_dir
+  if vim.tbl_get(config, "chat", "daily_summary") and vim.tbl_get(config, "chat", "daily_summary", "save_dir") then
+    local save_dir = vim.tbl_get(config, "chat", "daily_summary", "save_dir")
     return save_dir:match("/$") and save_dir or (save_dir .. "/")
   end
 
@@ -119,7 +119,7 @@ end
 ---@return string|nil error
 function M._build_summary_prompt(messages, date, config)
   local language_utils = require("vibing.core.utils.language")
-  local lang_code = language_utils.get_language_code(config.language, "chat")
+  local lang_code = language_utils.get_language_code(vim.tbl_get(config, "chat", "language"), "chat")
 
   local PromptLoader = require("vibing.core.utils.prompt_loader")
   return PromptLoader.load("daily_summary", {
@@ -174,11 +174,7 @@ function M._save_summary(date, content, source_files, total_messages, config, on
   local file_path = save_dir .. date .. ".md"
 
   if vim.fn.filereadable(file_path) == 1 then
-    local choice = vim.fn.confirm(
-      string.format("Summary for %s already exists. Overwrite?", date),
-      "&Yes\n&No",
-      2
-    )
+    local choice = vim.fn.confirm(string.format("Summary for %s already exists. Overwrite?", date), "&Yes\n&No", 2)
     if choice ~= 1 then
       notify.info("Summary generation cancelled", "Daily Summary")
       on_complete(false, nil)
@@ -214,7 +210,7 @@ function M.generate_summary(date, include_all, on_complete)
   on_complete = on_complete or function() end
 
   local config = require("vibing.config").get()
-  local adapter = require("vibing").get_adapter()
+  local adapter = require("vibing").get_helper_adapter()
 
   if not adapter then
     notify.error("No adapter configured", "Daily Summary")
@@ -266,24 +262,31 @@ function M.generate_summary(date, include_all, on_complete)
         notify.warn("JSON parse failed, using raw output: " .. render_err, "Daily Summary")
       end
 
-      M._save_summary(date, final_content, result.source_files, result.total_messages, config, function(success, file_path)
-        if success and file_path then
-          notify.info(string.format("Summary saved: %s", vim.fn.fnamemodify(file_path, ":.")), "Daily Summary")
+      M._save_summary(
+        date,
+        final_content,
+        result.source_files,
+        result.total_messages,
+        config,
+        function(success, file_path)
+          if success and file_path then
+            notify.info(string.format("Summary saved: %s", vim.fn.fnamemodify(file_path, ":.")), "Daily Summary")
 
-          -- Expand ~ to full path for buffer operations
-          local expanded_path = vim.fn.expand(file_path)
+            -- Expand ~ to full path for buffer operations
+            local expanded_path = vim.fn.expand(file_path)
 
-          -- Delete existing buffer if present to avoid stale content issues
-          local existing_bufnr = vim.fn.bufnr(expanded_path)
-          if existing_bufnr ~= -1 then
-            pcall(vim.api.nvim_buf_delete, existing_bufnr, { force = true })
+            -- Delete existing buffer if present to avoid stale content issues
+            local existing_bufnr = vim.fn.bufnr(expanded_path)
+            if existing_bufnr ~= -1 then
+              pcall(vim.api.nvim_buf_delete, existing_bufnr, { force = true })
+            end
+
+            -- Open file fresh
+            vim.cmd("edit " .. vim.fn.fnameescape(expanded_path))
           end
-
-          -- Open file fresh
-          vim.cmd("edit " .. vim.fn.fnameescape(expanded_path))
+          on_complete(success, file_path)
         end
-        on_complete(success, file_path)
-      end)
+      )
     end)
   end)
 end

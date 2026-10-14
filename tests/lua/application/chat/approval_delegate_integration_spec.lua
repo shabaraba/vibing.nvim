@@ -34,8 +34,15 @@ describe("delegated approval, end to end", function()
   ---@param enabled boolean|"scoped"
   local function configure(enabled)
     local cfg = vim.tbl_deep_extend("force", vim.deepcopy(Config.defaults), {
-      chat = { save_location_type = "custom", save_dir = save_dir },
-      agent = { orchestration = { delegated_approval = enabled } },
+      chat = {
+        storage = {
+          location = "custom",
+          path = save_dir,
+        },
+      },
+      permissions = {
+        delegated_approval = enabled,
+      },
     })
     Config.get = function()
       return cfg
@@ -115,6 +122,79 @@ describe("delegated approval, end to end", function()
     assert.is_truthy(requests[1]:match("^I approved the Bash tool"), requests[1])
     -- 入力の要約まで渡すのは、モデルに同じ操作をやり直させるため
     assert.is_truthy(requests[1]:match("npm install"), requests[1])
+  end)
+
+  it("answers a resident hook retry through the MCP handler without persisting permissions", function()
+    local orchestrator, worker = open_chat(), open_chat()
+    worker:insert_approval_request(
+      "Bash",
+      { command = "echo hook" },
+      require("vibing.infrastructure.adapter.modules.codex_duplex_protocol").hook_approval_options,
+      "hook-retry",
+      nil,
+      require("vibing.application.chat.approval_decision").HOOK_RETRY_KIND
+    )
+    worker:add_user_section()
+    local before = { worker:get_frontmatter_list("permissions_allow"), worker:get_frontmatter_list("permissions_deny") }
+    require("vibing.infrastructure.rpc.handlers.chat").answer_approval({
+      bufnr = worker.buf,
+      action = "allow_once",
+      request_id = "hook-retry",
+      from_bufnr = orchestrator.buf,
+    })
+    assert.same(
+      { nil, "I approved the Bash tool (command: echo hook). Please proceed with the same operation." },
+      { worker:get_pending_approval(), requests[1] }
+    )
+    assert.same(
+      before,
+      { worker:get_frontmatter_list("permissions_allow"), worker:get_frontmatter_list("permissions_deny") }
+    )
+  end)
+
+  it("keeps a retry answer unspent while a native approval holds the turn open", function()
+    local worker = open_chat()
+    local Native = require("vibing.infrastructure.rpc.pending_native_approvals")
+    Native.open({ request_id = "native-open", chat_bufnr = worker.buf, respond = function() end })
+    worker:insert_approval_request(
+      "Bash",
+      { command = "echo retry" },
+      require("vibing.infrastructure.adapter.modules.codex_duplex_protocol").hook_approval_options,
+      "retry-open",
+      nil,
+      require("vibing.application.chat.approval_decision").HOOK_RETRY_KIND
+    )
+    worker:add_user_section()
+    worker._is_sending = true
+    local lines = vim.api.nvim_buf_get_lines(worker.buf, 0, -1, false)
+    local header
+    for i = #lines, 1, -1 do
+      if lines[i]:match("^## User") then
+        header = i
+        break
+      end
+    end
+    vim.api.nvim_buf_set_lines(
+      worker.buf,
+      header,
+      -1,
+      false,
+      {
+        "",
+        require("vibing.presentation.chat.modules.approval_parser").option_line(
+          1,
+          "allow_once - Allow this execution only",
+          "retry-open"
+        ),
+      }
+    )
+    local handled = worker:send_message()
+    Native.forget("native-open")
+    assert.same(
+      { false, 1, {}, 0 },
+      { handled, #worker:get_pending_approvals(), worker:get_session_allow(), #requests }
+    )
+    assert.matches("the retry approval is still pending", buffer_text(worker))
   end)
 
   it("replaces the prompt in the transcript with a section naming who answered", function()

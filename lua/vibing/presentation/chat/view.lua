@@ -4,6 +4,7 @@
 local M = {}
 
 local ChatBuffer = require("vibing.presentation.chat.buffer")
+local FileBuffer = require("vibing.core.utils.file_buffer")
 local notify = require("vibing.core.utils.notify")
 
 ---現在アクティブなチャットバッファ（:VibingChatで作成）
@@ -14,6 +15,65 @@ M._current_buffer = nil
 ---@type table<number, Vibing.ChatBuffer>
 M._attached_buffers = {}
 
+---位置指定が指定されている場合はこのバッファに限ってオーバーライドする。
+---ChatBuffer:new はグローバル設定テーブルへの参照をそのまま持つので、`window`テーブルまで
+---差し替えないと `:VibingChat back` 1回でユーザーの既定位置が永久にbackになる。
+---tbl_deep_extendでは足りない: 空テーブルをベースにすると衝突が起きず、ネストした値は
+---参照のまま代入されるので `config.window` は同じテーブルのままになる（実測でConfig.defaults
+---まで書き換わった）。nvim_chat_createはワーカーを常にbackで作るため、この漏れは致命的になる
+---@param chat_buf Vibing.ChatBuffer
+---@param position string?
+local function apply_position(chat_buf, position)
+  if not position then
+    return
+  end
+
+  chat_buf.config = vim.tbl_extend("force", {}, chat_buf.config, {
+    ui = vim.tbl_extend("force", {}, chat_buf.config.ui, {
+      window = vim.tbl_extend("force", {}, chat_buf.config.ui.window, { position = position }),
+    }),
+  })
+end
+
+---そのファイルのバッファが既にあるときの描画。
+---
+---`ChatBuffer:_create_buffer` は毎回 `nvim_buf_set_name` するので、同じ名前のバッファが
+---残っていると `E95: Buffer with this name already exists` で落ちる。踏む経路は
+---`:VibingChat <path>` と `:VibingChatSearch` の両方にあり、後者は裏に読み込んだチャットを
+---次の検索で選ぶだけで必ず踏む。
+---
+---**ファイルの中身は読み直さない。** 既に開いているバッファには未保存の編集がありうる。
+---**既にChatBufferが付いているなら、その状態には触らない。** 実行中のターンを持っている
+---かもしれず、`session` を差し替えるのはそれを黙って奪うこと
+---@param bufnr integer
+---@param session Vibing.ChatSession
+---@param position string?
+---@param opts {background?: boolean}?
+---@return Vibing.ChatBuffer
+function M._render_existing(bufnr, session, position, opts)
+  local chat_buf = M.get_chat_buffer(bufnr)
+
+  if not chat_buf then
+    chat_buf = M.attach_to_buffer(bufnr, session.file_path)
+    chat_buf.session = session
+    if session.session_id and session.session_id ~= "" then
+      chat_buf.session_id = session.session_id
+    end
+  end
+
+  apply_position(chat_buf, position)
+
+  if not (opts and opts.background) then
+    M._current_buffer = chat_buf
+  end
+
+  chat_buf:open()
+  M._attached_buffers[bufnr] = chat_buf
+  M._apply_chat_buffer_settings(bufnr)
+
+  return chat_buf
+end
+
 ---セッションをチャットバッファに描画
 ---@param session Vibing.ChatSession
 ---@param position? string 位置指定（core/constants/chat.lua の POSITIONS）
@@ -23,8 +83,19 @@ function M.render(session, position, opts)
   local vibing = require("vibing")
   local config = vibing.get_config()
 
+  local existing = FileBuffer.find(session.file_path)
+  if existing then
+    -- FileBufferはロード済みかどうかを問わず一致させるので、`bufadd`だけされた未ロードの
+    -- バッファはここでロードしておく。しないと`ChatBuffer:open`が行数0を「中身なし」と見て
+    -- 新規チャットの骨組みで上書きし、その後の保存で実際の会話が消える
+    if not vim.api.nvim_buf_is_loaded(existing) then
+      vim.fn.bufload(existing)
+    end
+    return M._render_existing(existing, session, position, opts)
+  end
+
   -- 毎回新規バッファを作成（既存バッファを再利用しない）
-  local chat_buf = ChatBuffer:new(config.chat)
+  local chat_buf = ChatBuffer:new(config)
 
   -- M._current_buffer は「ユーザーが最後に開いたチャット」を指すシングルトンで、
   -- :VibingCancel / :VibingToggleChat がカーソルがチャット外にあるときの
@@ -38,7 +109,7 @@ function M.render(session, position, opts)
   end
 
   -- セッションデータをバッファに反映
-  chat_buf.session = session  -- セッション全体を保持（後方互換性のため）
+  chat_buf.session = session -- セッション全体を保持（後方互換性のため）
   if session.file_path then
     chat_buf.file_path = session.file_path
   end
@@ -48,17 +119,7 @@ function M.render(session, position, opts)
   end
   -- NOTE: cwdはfrontmatterのworking_dirから算出されるため、ここでの転送は不要
 
-  -- 位置指定が指定されている場合はこのバッファに限ってオーバーライドする。
-  -- ChatBuffer:new はグローバル設定テーブルへの参照をそのまま持つので、`window`テーブルまで
-  -- 差し替えないと `:VibingChat back` 1回でユーザーの既定位置が永久にbackになる。
-  -- tbl_deep_extendでは足りない: 空テーブルをベースにすると衝突が起きず、ネストした値は
-  -- 参照のまま代入されるので `config.window` は同じテーブルのままになる（実測でConfig.defaults
-  -- まで書き換わった）。nvim_chat_createはワーカーを常にbackで作るため、この漏れは致命的になる
-  if position then
-    chat_buf.config = vim.tbl_extend("force", {}, chat_buf.config, {
-      window = vim.tbl_extend("force", {}, chat_buf.config.window, { position = position }),
-    })
-  end
+  apply_position(chat_buf, position)
 
   chat_buf:open()
 
@@ -70,7 +131,7 @@ function M.render(session, position, opts)
   if session.file_path and vim.fn.filereadable(session.file_path) == 1 then
     local content = vim.fn.readfile(session.file_path)
     vim.api.nvim_buf_set_lines(chat_buf.buf, 0, -1, false, content)
-    -- NOTE: Diff display now uses patch files stored in .vibing/patches/<session_id>/
+    -- NOTE: Diff display now uses patch files stored in .vibing/diffs/
     -- The gd keymap reads patch files directly via PatchFinder and PatchViewer
   end
 
@@ -90,7 +151,7 @@ end
 
 -- NOTE: Patch-based diff system
 -- Modified Filesセクションの差分表示はpatchファイル方式に移行済み
--- - `.vibing/patches/<session_id>/<timestamp>.patch`に保存
+-- - `.vibing/diffs/<timestamp>_<turn_id>.diff`に保存
 -- - `gd`キーマップでPatchViewerを使用して表示
 -- - SessionStorage/GitBlobStorage/PreviewDataは不要になった
 
@@ -167,7 +228,7 @@ function M.attach_to_buffer(bufnr, file_path)
   local vibing = require("vibing")
   local config = vibing.get_config()
 
-  local chat_buf = ChatBuffer:new(config.chat)
+  local chat_buf = ChatBuffer:new(config)
   chat_buf.buf = bufnr
   chat_buf.file_path = file_path
 
@@ -178,7 +239,7 @@ function M.attach_to_buffer(bufnr, file_path)
     chat_buf.session_id = sid
   end
 
-  -- NOTE: Diff display uses patch files in .vibing/patches/<session_id>/
+  -- NOTE: Diff display uses patch files in .vibing/diffs/
   -- The gd keymap reads patch files directly via PatchFinder and PatchViewer
 
   chat_buf:_setup_keymaps()
@@ -279,7 +340,8 @@ function M._apply_chat_buffer_settings(bufnr)
         "The chat this %s was asked in went away before it was answered."
       )
 
-      local chat_buffer = M._attached_buffers[bufnr] or (M._current_buffer and M._current_buffer.buf == bufnr and M._current_buffer)
+      local chat_buffer = M._attached_buffers[bufnr]
+        or (M._current_buffer and M._current_buffer.buf == bufnr and M._current_buffer)
       if chat_buffer then
         local adapter = chat_buffer:_get_active_adapter()
         if adapter then

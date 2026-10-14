@@ -77,6 +77,8 @@ end
 
 describe("duplex transport", function()
   local jobs, adapter, config
+  local protocol = require("vibing.infrastructure.adapter.modules.claude_duplex_protocol")
+  local original_protocol = vim.tbl_extend("force", {}, protocol)
   local Routing = require("vibing.infrastructure.adapter.modules.duplex_routing")
   local original_grace
   -- `stub_jobstart` does not own `exepath` — only `stub_system` saves and restores it. Left
@@ -93,13 +95,27 @@ describe("duplex transport", function()
       return helper.fake_binary("duplex-claude")
     end
     config = {
-      agent = { default_model = "sonnet", plugins = { self = false, project_dir = false } },
-      backends = { claude = { process = "duplex" } },
+      ai = {
+        chat = {
+          model = "sonnet",
+        },
+        agents = {
+          claude = {
+            process = "duplex",
+          },
+        },
+      },
+      integrations = {
+        plugins = { self = false, project_dir = false },
+      },
     }
     adapter = ClaudeAdapter:new(config)
   end)
 
   after_each(function()
+    for name, fn in pairs(original_protocol) do
+      protocol[name] = fn
+    end
     Routing.INTERRUPT_GRACE_MS = original_grace
     Pool._reset()
     jobs.restore()
@@ -124,6 +140,23 @@ describe("duplex transport", function()
     return { turn_id = turn_id, process_id = process_id, responses = responses, chunks = chunks }
   end
 
+  it("routes sending, lines and interruption through the descriptor protocol", function()
+    local calls = {}
+    for _, name in ipairs({ "send_prompt", "process_line", "interrupt" }) do
+      protocol[name] = function(...)
+        calls[name] = { ... }
+        return original_protocol[name](...)
+      end
+    end
+    local turn = send("hi")
+    local call = jobs.only_call()
+    jobs.emit(call, { text_line("sess-1", "hello") })
+    adapter:stop_turn(turn.process_id)
+    assert.equals(Pool.get(CHAT_BUFNR), calls.send_prompt and calls.send_prompt[1])
+    assert.equals(Pool.get(CHAT_BUFNR), calls.process_line and calls.process_line[1])
+    assert.equals(Pool.get(CHAT_BUFNR), calls.interrupt and calls.interrupt[1])
+  end)
+
   describe("the argv", function()
     it("takes its prompt on stdin instead of in the argv", function()
       local turn = send("what is the airspeed velocity")
@@ -146,7 +179,7 @@ describe("duplex transport", function()
     end)
 
     it("leaves the oneshot argv alone when the chat did not opt in", function()
-      config.backends.claude.process = "oneshot"
+      config.ai.agents.claude.process = "oneshot"
       local system = helper.stub_system()
       send("hi")
       assert.equals(0, #jobs.calls)
@@ -562,12 +595,12 @@ describe("duplex transport", function()
       -- A killed job keeps a valid channel id until its `on_exit` runs, so `is_alive` still says
       -- yes and `chansend` quietly returns 0. Treating that as sent binds the turn to a dying
       -- process, which then waits out the whole first-response watchdog.
-      local DuplexProcess = require("vibing.infrastructure.adapter.modules.duplex_process")
+      local Protocol = require("vibing.infrastructure.adapter.modules.claude_duplex_protocol")
       local original = vim.fn.chansend
       vim.fn.chansend = function()
         return 0
       end
-      local sent = DuplexProcess.send_prompt({ job_id = 1, pid = 2 }, "hi")
+      local sent = Protocol.send_prompt({ job_id = 1, pid = 2 }, "hi", { event_context = {} })
       vim.fn.chansend = original
 
       assert.is_false(sent)
@@ -638,8 +671,8 @@ describe("duplex transport", function()
       return send(
         prompt,
         vim.tbl_extend("force", {
-          on_subagents_orphaned = function(unreported, recovered, subagents_lost)
-            table.insert(reports, { unreported = unreported, recovered = recovered, lost = subagents_lost })
+          on_subagents_orphaned = function(unreported, recovered, process_killed)
+            table.insert(reports, { unreported = unreported, recovered = recovered, killed = process_killed })
           end,
         }, extra or {})
       )
@@ -713,7 +746,7 @@ describe("duplex transport", function()
       local report = wait_for_report()
       assert.same({ { task_id = "task-a", description = "review task-a" } }, report.unreported)
       assert.is_true(call.stopped, "the idle process was not reclaimed")
-      assert.is_true(report.lost, "the idle reclaim killed the CLI, so its subagents went with it")
+      assert.is_true(report.killed, "the idle reclaim killed the CLI, so its subagents went with it")
     end)
 
     it("reports when the CLI dies on its own under an idle chat", function()
@@ -721,12 +754,10 @@ describe("duplex transport", function()
       local call = fan_out("task-a")
       jobs.exit(call, 1)
 
-      -- **And says the subagents may still be out there.** This is the one reclaim route that killed
-      -- nothing: the CLI ended by itself, leaving exactly the state an ordinary oneshot turn leaves, so
-      -- a transcript may still hold the answer. Reporting it as lost would tell the model to stop
-      -- looking (`Vibing.DuplexReclaimVerdict`).
+      -- False records that the pool did not kill the CLI. It does not assert
+      -- that agents survived; the exit copy now asks for saved output only.
       assert.same({ "task-a" }, reported_ids())
-      assert.is_false(reports[1].lost, "a CLI that exited on its own was reported as having been killed")
+      assert.is_false(reports[1].killed, "a CLI that exited on its own was reported as having been killed")
     end)
 
     it("reports when the CLI could not be talked to", function()

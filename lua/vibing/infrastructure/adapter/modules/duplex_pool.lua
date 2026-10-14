@@ -17,9 +17,11 @@ local ProcessRegistry = require("vibing.infrastructure.adapter.modules.process_r
 
 local M = {}
 
---- A resident process with no turn in flight is ~200MB of RSS doing nothing. Long enough that a
---- reading-and-replying rhythm keeps the process (and its warm prompt cache), short enough that a
---- chat left open over lunch does not.
+--- A resident process with no turn in flight is ~200MB of RSS doing nothing, plus ~75MB for the
+--- MCP server it keeps as a child. Long enough that a reading-and-replying rhythm keeps the process
+--- (and its warm prompt cache), short enough that a chat left open over lunch does not. Reviewed
+--- when duplex became the default: five minutes is also the prompt cache's own default TTL, so
+--- holding the process longer keeps only the startup saving while every idle chat pays the RSS.
 M.IDLE_TIMEOUT_MS = 5 * 60 * 1000
 
 --- @alias Vibing.DuplexReclaimReason
@@ -45,7 +47,7 @@ M.IDLE_TIMEOUT_MS = 5 * 60 * 1000
 ---
 --- What is left is a process that stopped serving turns while its chat was not looking: the CLI
 --- dying, the idle timer, and a CLI that could not be talked to. Whether the work it was holding is
---- also *lost* is a second question, answered differently on one of those three — see
+--- ended by our *kill* is a second question, answered differently on one of those three — see
 --- `Vibing.DuplexReclaimVerdict`.
 --- @type table<Vibing.DuplexReclaimReason, true>
 local QUIET_RECLAIM = { restart = true, shutdown = true, cancelled = true, chat_closed = true }
@@ -53,18 +55,16 @@ local QUIET_RECLAIM = { restart = true, shutdown = true, cancelled = true, chat_
 --- @class Vibing.DuplexReclaimVerdict what a reclaim means downstream, resolved from the route here so
 --- the vocabulary above reaches no other signature.
 --- @field reports boolean whether anybody still needs telling — false on `QUIET_RECLAIM`'s four
---- @field subagents_lost boolean whether the CLI's own children went down with it
+--- @field process_killed boolean whether the pool deliberately killed the CLI
 ---
---- **The two are not the same question, and one route answers them differently.** Every reclaim that
---- goes through `M.stop` kills the tree (`DuplexProcess.stop` → `kill_tree`), so a background subagent
---- running inside that CLI is gone. `exited` does not: the CLI ended on its own, which leaves exactly
---- the state the oneshot transport's ordinary exit leaves — the work may have finished and had its
---- notification dropped, with a transcript on disk to show for it. Collapsing both into one flag is
---- what would have the notice tell the model not to wait for output it could still collect.
+--- This records the reclaim action, not whether an agent is still running.
+--- `M.stop` kills the tree; `exited` observes a CLI that ended on its own.
+--- Saved transcript recovery remains useful in either case. The natural-exit
+--- copy must not infer agent survival from a false value (#851).
 --- @param reason Vibing.DuplexReclaimReason|nil
 --- @return Vibing.DuplexReclaimVerdict
 local function verdict_for(reason)
-  return { reports = not QUIET_RECLAIM[reason], subagents_lost = reason ~= "exited" }
+  return { reports = not QUIET_RECLAIM[reason], process_killed = reason ~= "exited" }
 end
 
 --- @type table<number|string, Vibing.DuplexProcess>

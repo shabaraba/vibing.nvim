@@ -64,14 +64,26 @@ describe("cli_command_builder --effort", function()
     assert.equals("xhigh", cmd[idx + 1])
   end)
 
-  it("falls back to config.agent.default_effort", function()
-    local config = { agent = { default_effort = "high" } }
+  it("falls back to config.ai.chat.effort", function()
+    local config = {
+      ai = {
+        chat = {
+          effort = "high",
+        },
+      },
+    }
     local cmd = cli_command_builder.build("hello", {}, nil, config, nil)
     assert.equals("high", cmd[find_flag(cmd, "--effort") + 1])
   end)
 
   it("prefers the chat's effort over the configured default", function()
-    local config = { agent = { default_effort = "high" } }
+    local config = {
+      ai = {
+        chat = {
+          effort = "high",
+        },
+      },
+    }
     local cmd = cli_command_builder.build("hello", { effort = "low" }, nil, config, nil)
     assert.equals("low", cmd[find_flag(cmd, "--effort") + 1])
   end)
@@ -79,7 +91,16 @@ describe("cli_command_builder --effort", function()
   it("uses utility_effort for lightweight calls, ignoring the chat's effort", function()
     -- Pairs with utility_model: title generation and summaries get the cheap model AND the cheap
     -- effort, rather than inheriting whatever the conversation was set to.
-    local config = { agent = { default_effort = "max", utility_effort = "low" } }
+    local config = {
+      ai = {
+        chat = {
+          effort = "max",
+        },
+        helpers = {
+          effort = "low",
+        },
+      },
+    }
     local cmd = cli_command_builder.build("hello", { lightweight = true, effort = "max" }, nil, config, nil)
     assert.equals("low", cmd[find_flag(cmd, "--effort") + 1])
   end)
@@ -103,7 +124,14 @@ describe("cli_command_builder --effort", function()
   end)
 
   it("sits next to --model so both tiers are visible together", function()
-    local config = { agent = { default_model = "opus", default_effort = "xhigh" } }
+    local config = {
+      ai = {
+        chat = {
+          model = "opus",
+          effort = "xhigh",
+        },
+      },
+    }
     local cmd = cli_command_builder.build("hello", {}, nil, config, nil)
     assert.equals("opus", cmd[find_flag(cmd, "--model") + 1])
     assert.equals("xhigh", cmd[find_flag(cmd, "--effort") + 1])

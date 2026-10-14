@@ -35,6 +35,7 @@ local PLAN_TOOLS = READ_ONLY_TOOLS .. ",web_fetch,web_search"
 --- @type string[]
 M.LIGHTWEIGHT_ARGS = {
   "--no-tools",
+  "--no-mcp",
   "--no-context-files",
   "--no-skills",
   "--no-extensions",
@@ -43,37 +44,12 @@ M.LIGHTWEIGHT_ARGS = {
   "--no-session",
 }
 
-local MISSING_MESSAGE = "Pi CLI not found. Install it with `curl -fsSL https://pi.dev/install.sh | sh`, "
-  .. "or set backends.pi.executable to its path."
+local MISSING_MESSAGE = "Pi CLI not found. Install it from https://pi.dev, or set ai.agents.pi.path."
+M.BINARY = { name = "pi", missing = MISSING_MESSAGE }
 
---- PATH lookup for the default `executable = "auto"`, with the shared cache — which re-resolves
---- when the binary it remembered is no longer on disk, the case a plain memo gets wrong after a
---- package upgrade moves it.
-local auto_resolver = require("vibing.infrastructure.adapter.modules.command_builder_common").binary_resolver(
-  "pi",
-  MISSING_MESSAGE
-)
-
---- @param config Vibing.Config
---- @return string
-local function resolve_pi_path(config)
-  local configured = (((config or {}).backends or {}).pi or {}).executable or "auto"
-  if configured == "auto" or configured == "" then
-    return auto_resolver.resolve()
-  end
-  -- Used as given and never silently reset: a user who named a path wants that binary, and falling
-  -- back to PATH would run a different one without saying so. No caching to do — the value is
-  -- already the answer.
-  return configured
-end
-
---- Test seam, discovered by `tests/helpers/adapter_stream.lua`.
 function M._reset_path_cache()
-  auto_resolver.reset()
+  RequestBuilder.reset_binary(require("vibing.infrastructure.adapter.backends.pi").request)
 end
-
---- @type Vibing.RequestBinary
-M.BINARY = { resolve = resolve_pi_path, reset = M._reset_path_cache }
 
 --- `--provider <name>`, when one is configured.
 ---
@@ -87,11 +63,23 @@ M.BINARY = { resolve = resolve_pi_path, reset = M._reset_path_cache }
 --- @param ctx Vibing.RequestContext
 --- @return string[]
 function M.provider_args(ctx)
-  local provider = (((ctx.config or {}).backends or {}).pi or {}).provider
+  local provider = vim.tbl_get(ctx.config or {}, "ai", "agents", "pi", "extensions", "provider")
   if type(provider) ~= "string" or provider == "" then
     return {}
   end
+  if not require("vibing.infrastructure.adapter.modules.non_claude_model").resolve(ctx.opts, ctx.config) then
+    local helpers = ctx.opts and (ctx.opts.lightweight or ctx.opts._ai_purpose == "helpers")
+    error("Pi provider requires a model; configure " .. (helpers and "ai.helpers.model" or "ai.chat.model or chat model frontmatter"))
+  end
   return { "--provider", provider }
+end
+
+--- Pi's user/project MCP configuration is opt-out through the common agent setting.
+function M.mcp_args(ctx)
+  if vim.tbl_get(ctx.config or {}, "ai", "agents", "pi", "mcp", "enabled") == false then
+    return { "--no-mcp" }
+  end
+  return {}
 end
 
 --- Which session this run continues, and whether it forks.
@@ -155,11 +143,11 @@ function M.permission_args(ctx)
         .. "read-only tools: unrestricted, it does not ask before running bash and your "
         .. "permissions rules would not apply to it. Run ./build.sh to build pi-extension/."
     )
-    return { "--tools", READ_ONLY_TOOLS }
+    return { "--no-mcp", "--tools", READ_ONLY_TOOLS }
   end
 
   if mode == "plan" then
-    return { "--tools", PLAN_TOOLS }
+    return { "--no-mcp", "--tools", PLAN_TOOLS }
   end
   return {}
 end
@@ -206,7 +194,7 @@ function M.apply_env(env, opts, config)
   env.VIBING_PI_HOOK_SCRIPT = SettingsGenerator.get_hook_script_path()
   env.VIBING_PI_HOOK_TIMEOUT_SEC = tostring(WaitBudget.cli_timeout_sec())
 
-  local web_search = (((config or {}).backends or {}).pi or {}).web_search
+  local web_search = vim.tbl_get(config or {}, "ai", "agents", "pi", "extensions", "web_search")
   env.VIBING_PI_WEB_SEARCH = type(web_search) == "string" and web_search ~= "" and web_search or "auto"
 end
 
