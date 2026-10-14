@@ -138,6 +138,57 @@ describe("Codex duplex app-server", function()
     end
     assert.is_string(hook)
   end)
+  it("enables hook retry options only for a resident turn", function()
+    local result = send()
+    local opts = require("vibing.infrastructure.rpc.handlers.permission")._get_active_opts(result.turn)
+    assert.same({ true, { "allow_once", "deny_once" } }, {
+      opts._retry_hook_approval,
+      vim.tbl_map(function(option)
+        return option.value
+      end, opts._hook_approval_options),
+    })
+  end)
+  it("filters foreign hook notifications and renders the owned block immediately", function()
+    local result = send()
+    local call = jobs.only_call()
+    ready(call)
+    local run = { eventName = "preToolUse", status = "blocked", entries = { { text = "blocked reason" } } }
+    emit(call, { method = "hook/completed", params = { threadId = "foreign", turnId = "turn-1", run = run } })
+    note(call, "hook/completed", { turnId = "stale", run = run })
+    vim.wait(20)
+    assert.same({}, result.chunks)
+    note(call, "hook/completed", { run = run })
+    vim.wait(20)
+    assert.matches("blocked reason", table.concat(result.chunks, ""))
+  end)
+  it("observes only the current turn's hook input and clears it on the next turn", function()
+    local first = send()
+    local call = jobs.only_call()
+    ready(call)
+    local opts = require("vibing.infrastructure.rpc.handlers.permission")._get_active_opts(first.turn)
+    local record = Pool.get(CHAT)
+    opts._observe_hook_input(
+      { process_id = first.process, turn_id = "foreign" },
+      { tool_use_id = "wrong" },
+      "Bash",
+      { command = "wrong" }
+    )
+    assert.is_nil(record.decoder_state.hook_inputs)
+    opts._observe_hook_input(
+      { process_id = first.process, turn_id = first.turn },
+      { tool_use_id = "exec-real" },
+      "Bash",
+      { command = "echo real" }
+    )
+    assert.same(
+      { ["exec-real"] = { name = "Bash", input = { command = "echo real" } } },
+      record.decoder_state.hook_inputs
+    )
+    finish(call)
+    send()
+    reply(call, { turn = { id = "turn-2" } })
+    assert.is_nil(record.decoder_state.hook_inputs)
+  end)
   it("finishes two turns on one process and stores the thread session", function()
     local first = send()
     local call = jobs.only_call()

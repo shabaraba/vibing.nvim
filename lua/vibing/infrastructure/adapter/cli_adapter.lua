@@ -31,6 +31,9 @@ local PluginScaffold = require("vibing.infrastructure.plugins.scaffold")
 ---@field send_prompt fun(record: Vibing.DuplexProcess, prompt: string, params: Vibing.DuplexRunParams): boolean
 ---@field process_line fun(record: Vibing.DuplexProcess, line: string)
 ---@field interrupt fun(record: Vibing.DuplexProcess, seq: number): boolean
+---@field retry_hook_approval? boolean Refuse an ask and finish normally before retrying from chat.
+---@field hook_approval_options? table[] Options for that retry, consumed by the usual answer path.
+---@field observe_hook_input? fun(scope: table, payload: table, tool: string, input: table)
 ---  seq is a shared per-process interrupt counter; protocols with their own request ids ignore it.
 
 ---@class Vibing.BackendDescriptor
@@ -289,6 +292,9 @@ function M.define(descriptor)
       vim.tbl_extend("force", opts, {
         _tool_vocabulary = descriptor.vocabulary,
         _can_wait_for_approval = HookTransports.can_wait_for_approval(descriptor),
+        _retry_hook_approval = process_model == "duplex" and descriptor.duplex.retry_hook_approval,
+        _hook_approval_options = process_model == "duplex" and descriptor.duplex.hook_approval_options or nil,
+        _observe_hook_input = process_model == "duplex" and descriptor.duplex.observe_hook_input or nil,
       })
     )
 

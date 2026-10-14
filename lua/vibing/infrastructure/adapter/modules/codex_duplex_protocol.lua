@@ -15,7 +15,32 @@ local Rpc = require("vibing.infrastructure.adapter.modules.duplex_jsonrpc").bind
 })
 local fail, render, request = Rpc.fail, Rpc.render, Rpc.request
 
-local M = {}
+-- Refuse the current hook call and let its turn finish before the chat retries it. Killing
+-- app-server inside PreToolUse made the subsequent retry hang in real runs. This policy applies
+-- only to this resident protocol, not codex exec.
+local M = {
+  retry_hook_approval = true,
+  hook_approval_options = {
+    { value = "allow_once", label = "allow_once - Allow this execution only" },
+    { value = "deny_once", label = "deny_once - Deny this execution only" },
+  },
+}
+
+-- Blocked calls have no item/started notification. Keep their actual RPC input instead, keyed
+-- by Codex's tool_use_id, which is the final component of the hook run id on the wire.
+function M.observe_hook_input(scope, payload, tool, input)
+  local _, record = require("vibing.infrastructure.adapter.modules.duplex_pool").find_by_process_id(scope.process_id)
+  if not record or not record._turn or record._turn.turn_id ~= scope.turn_id then
+    return
+  end
+  local id = payload.tool_use_id
+  if type(id) ~= "string" or id == "" then
+    return
+  end
+  local state = record.decoder_state
+  state.hook_inputs = state.hook_inputs or {}
+  state.hook_inputs[id] = { name = tool, input = input }
+end
 
 local function notification(record, msg)
   -- The owned session comes from thread/start or thread/resume's correlated reply.
@@ -88,6 +113,7 @@ local function start_turn(record, prompt, params)
     -- Per-item state belongs to the turn that opened the items, not to the resident process, so
     -- nothing survives into the next turn and nothing accumulates over the process's whole life.
     record.decoder_state.started, record.decoder_state.streamed_items = nil, nil
+    record.decoder_state.hook_inputs = nil
     -- Same reasoning, one table further out: what lets a fileChange approval show its diff is
     -- filed per item too, and an approval always arrives in the turn its item started in (#861).
     rpc.file_changes = {}
