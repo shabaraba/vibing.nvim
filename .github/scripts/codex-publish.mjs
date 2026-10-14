@@ -38,6 +38,20 @@ export function validatePaths(paths) {
     throw new Error('Automation or control-file changes require human review');
   }
 }
+export function validateStagedDiff(raw) {
+  const records = raw.split('\0');
+  if (records.at(-1) === '') records.pop();
+  if (records.length % 2 !== 0) throw new Error('Invalid staged diff');
+  const paths = [];
+  for (let i = 0; i < records.length; i += 2) {
+    const modes = /^:[0-7]{6} ([0-7]{6}) /.exec(records[i]);
+    if (!modes || !['000000', '100644', '100755'].includes(modes[1]) || !records[i + 1]) {
+      throw new Error('Symlink, submodule, or invalid staged entry requires human review');
+    }
+    paths.push(records[i + 1]);
+  }
+  validatePaths(paths);
+}
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, { encoding: 'utf8', ...options });
   if (result.error || result.status !== 0) {
@@ -122,7 +136,7 @@ export function publish(env = process.env) {
       if (patch.trim()) {
         git(['apply', '--check', '--index', join(data, 'changes.patch')]);
         git(['apply', '--index', join(data, 'changes.patch')]);
-        validatePaths(git(['diff', '--cached', '--name-only', '-z']).split('\0').filter(Boolean));
+        validateStagedDiff(git(['diff', '--cached', '--raw', '--no-abbrev', '--no-renames', '-z']));
         if (mode === 'review' && result.status !== 'fixed')
           throw new Error('Review status does not authorize fixes');
         git(['config', 'user.name', 'github-actions[bot]']);
@@ -171,18 +185,23 @@ export function publish(env = process.env) {
   } catch {
     failed = true;
   }
-  gh([
-    'label',
-    'create',
-    'codex:failed',
-    '--repo',
-    repo,
-    '--force',
-    '--color',
-    'D73A4A',
-    '--description',
-    'The latest Codex run failed or needs input',
-  ]);
+  try {
+    gh([
+      'label',
+      'create',
+      'codex:failed',
+      '--repo',
+      repo,
+      '--force',
+      '--color',
+      'D73A4A',
+      '--description',
+      'The latest Codex run failed or needs input',
+    ]);
+  } catch {
+    // The label may already exist; still try to reflect the actual run outcome.
+    console.error('Could not ensure codex:failed exists; attempting label update.');
+  }
   const args = [
     mode === 'issue' ? 'issue' : 'pr',
     'edit',

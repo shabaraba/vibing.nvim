@@ -25,15 +25,17 @@ cannot affect its own installation. Its Codex home is outside the checkout too. 
 `.codex` directory or symlink are refused before the secret is used, so project-controlled profiles,
 MCP servers, and hooks cannot change the runtime policy.
 
-The review uses `pull_request_target` only to load trusted base-branch workflow code. Both sender
-and actor must be `shabaraba`, forks are rejected, and the source checkout is pinned to the head
+The review uses `pull_request_target` only to load trusted base-branch workflow code. Sender,
+actor, and `github.triggering_actor` must all be `shabaraba`; a rerun by anyone else is skipped.
+Forks are rejected, and the source checkout is pinned to the head
 SHA authorized by that label event. Issue/PR context and repository guidance remain untrusted
 model input; prompt instructions alone are not the credential boundary.
 
 A separate, fresh publishing job receives only a patch and structured JSON. It runs the fixed
 publisher from the workflow's trusted SHA and never executes scripts from the proposed changes.
 It validates the result and paths, disables git hooks, rechecks the PR head, and pushes an explicit
-refspec without force. Changes to `.github/` require human review and produce `codex:failed`.
+refspec without force. Changes to `.github/`, new or modified symlinks, and submodule entries
+require human review and produce `codex:failed`. Unchanged repository symlinks are allowed.
 Reviewing a PR whose head is its base branch is also refused. No GitHub write token is available
 on the Codex runner. Git authentication is supplied only to fixed context-fetch/push commands.
 

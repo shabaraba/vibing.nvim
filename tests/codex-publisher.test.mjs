@@ -5,7 +5,11 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath, URL } from 'node:url';
-import { validatePaths, validateResult } from '../.github/scripts/codex-publish.mjs';
+import {
+  validatePaths,
+  validateResult,
+  validateStagedDiff,
+} from '../.github/scripts/codex-publish.mjs';
 
 const publisher = fileURLToPath(new URL('../.github/scripts/codex-publish.mjs', import.meta.url));
 const review = {
@@ -47,6 +51,20 @@ test('protected paths reject workflow changes and traversal, while ordinary file
   }
 });
 
+test('staged entry validation rejects symlinks, submodules and malformed records', () => {
+  const entry = (mode, path) => `:100644 ${mode} ${'a'.repeat(40)} ${'b'.repeat(40)} M\0${path}\0`;
+  validateStagedDiff(entry('100644', 'lua/file with spaces\nand newline.lua'));
+  validateStagedDiff(entry('100755', 'scripts/command.sh'));
+  validateStagedDiff(entry('000000', 'old-symlink'));
+  validateStagedDiff('');
+  for (const mode of ['120000', '160000']) {
+    assert.throws(() => validateStagedDiff(entry(mode, 'ordinary-name')), /human review/);
+  }
+  assert.throws(() => validateStagedDiff(entry('100644', '.github/workflows/ci.yml')));
+  assert.throws(() => validateStagedDiff('metadata\0'));
+  assert.throws(() => validateStagedDiff('invalid\0filename\0'));
+});
+
 function scenario(options = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'codex-publisher-test-'));
   const bin = join(dir, 'bin');
@@ -86,6 +104,7 @@ const args = process.argv.slice(2);
 const command = require("node:path").basename(process.argv[1]);
 fs.appendFileSync(process.env.TEST_LOG, JSON.stringify({ command, args }) + "\\n");
 if (command === "gh") {
+  if (args[0] === "label" && process.env.TEST_LABEL_CREATE_FAIL === "1") process.exit(1);
   if (args[0] === "api") console.log(process.env.TEST_CURRENT);
   if (args[0] === "pr" && args[1] === "create") console.log("https://github.com/owner/repo/pull/8");
   if (args[1] === "comment") {
@@ -94,7 +113,7 @@ if (command === "gh") {
   }
 } else {
   if (args.includes("rev-parse")) console.log(process.env.CODEX_SOURCE_SHA);
-  if (args.includes("diff")) process.stdout.write(process.env.TEST_PATHS + "\\0");
+  if (args.includes("diff")) process.stdout.write(":100644 " + process.env.TEST_MODE + " " + "a".repeat(40) + " " + "b".repeat(40) + " M\\0" + process.env.TEST_PATHS + "\\0");
   if (args.includes("push") && process.env.TEST_PUSH_FAIL === "1") process.exit(1);
 }
 `;
@@ -120,6 +139,8 @@ if (command === "gh") {
     TEST_LOG: log,
     TEST_CURRENT: JSON.stringify(current),
     TEST_PATHS: options.path || 'lua/file.lua',
+    TEST_MODE: options.entryMode || '100644',
+    TEST_LABEL_CREATE_FAIL: options.labelCreateFail ? '1' : '0',
     TEST_COMMENT: join(dir, 'comment.md'),
     TEST_PUSH_FAIL: options.pushFail ? '1' : '0',
     TEST_COMMENT_FAIL: options.commentFail ? '1' : '0',
@@ -171,6 +192,9 @@ for (const [name, options] of [
   ['stale head', { stale: true }],
   ['closed PR', { closed: true }],
   ['protected workflow change', { path: '.github/workflows/ci.yml' }],
+  ['changed symlink', { entryMode: '120000' }],
+  ['changed submodule', { entryMode: '160000' }],
+  ['label creation failure on a failed run', { worker: 'failure', labelCreateFail: true }],
   ['clean status with edits', { result: { status: 'clean' } }],
   ['push failure', { pushFail: true }],
   ['comment failure', { commentFail: true }],
@@ -207,6 +231,18 @@ test('clean review posts once without commit or push', () => {
   });
   assert.equal(result.status, 0, result.stderr);
   assert.ok(!calls.some((call) => call.command === 'git' && call.args.includes('push')));
+  assert.equal(calls.filter((call) => call.args[1] === 'comment').length, 1);
+});
+
+test('label creation failure still attempts the successful outcome label edit', () => {
+  const { result, calls } = scenario({
+    empty: true,
+    result: { status: 'clean' },
+    labelCreateFail: true,
+  });
+  assert.equal(result.status, 0, result.stderr);
+  const labels = calls.find((call) => call.args[1] === 'edit').args;
+  assert.deepEqual(labels.slice(-2), ['--remove-label', 'codex:failed']);
   assert.equal(calls.filter((call) => call.args[1] === 'comment').length, 1);
 });
 
