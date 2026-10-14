@@ -134,16 +134,6 @@ describe("conformance: request", function()
         local cmd = descriptor.build(prompt, { _process_model = "duplex" }, "sess-1", config, nil)
 
         assert.equals(0, count_prompt(cmd, prompt), def.id .. " duplex still carries its prompt in the argv")
-        if descriptor.duplex then
-          assert.is_function(descriptor.duplex.send_prompt)
-          assert.is_function(descriptor.duplex.process_line)
-          assert.is_function(descriptor.duplex.interrupt)
-          return -- session resumption travels in the protocol, not the argv
-        end
-        assert.is_true(vim.tbl_contains(cmd, "--input-format"), def.id .. " duplex does not read stdin as stream-json")
-        -- The session is still named in the argv: a resident process is started resuming its
-        -- conversation and then kept, so this is the one place `--resume` can appear.
-        assert.is_true(vim.tbl_contains(cmd, "sess-1") or vim.tbl_contains(cmd, "--resume=sess-1"))
       end)
 
       it("keeps the hook wanted-rules and the request in agreement in bypassPermissions", function()

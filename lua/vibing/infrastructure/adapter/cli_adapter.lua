@@ -27,6 +27,12 @@ local DuplexStream = require("vibing.infrastructure.adapter.modules.duplex_strea
 local HookTransports = require("vibing.infrastructure.hooks.transports")
 local PluginScaffold = require("vibing.infrastructure.plugins.scaffold")
 
+---@class Vibing.DuplexProtocol
+---@field send_prompt fun(record: Vibing.DuplexProcess, prompt: string, params: Vibing.DuplexRunParams): boolean
+---@field process_line fun(record: Vibing.DuplexProcess, line: string)
+---@field interrupt fun(record: Vibing.DuplexProcess, seq: number): boolean
+---  seq is a shared per-process interrupt counter; protocols with their own request ids ignore it.
+
 ---@class Vibing.BackendDescriptor
 ---@field id string The agent id (`claude`, `codex`, ...). `adapter.name` is `<id>_cli`.
 ---@field features table<string, boolean> What `supports()` answers.
@@ -66,13 +72,11 @@ local PluginScaffold = require("vibing.infrastructure.plugins.scaffold")
 ---  Read back what a background subagent said when the CLI dropped its completion notification
 ---  (anthropics/claude-code#87675). Absent means this backend never backgrounds a subagent, so
 ---  `BackgroundTasks.unreported()` is always empty for it and this is never called.
----@field duplex? table Resident wire protocol: send_prompt(record, prompt, params),
----  process_line(record, line), interrupt(record, seq). Absent uses stream-json. `process_line`
----  takes no context: a protocol renders from deferred callbacks as well as from lines, so it
----  resolves the turn itself rather than being handed the one that was current when a line landed.
+---@field duplex? Vibing.DuplexProtocol Required when process == "duplex". The protocol resolves
+---  its context at delivery time, including deferred callbacks and lines received between turns.
 ---@field process? "oneshot"|"duplex" The most capable process model this backend can run; absent
----  means `oneshot` only. Not the default — that is `oneshot` for everyone, and a chat opts in
----  through `backends.<id>.process` or its own frontmatter (`process_model.lua`). Named `process`
+---  means `oneshot` only. Defaults live in `ai.agents.<id>.process`; a chat can override them
+---  through its own frontmatter (`process_model.lua`). Named `process`
 ---  rather than `transport` because `Vibing.HookSpec.transport` already owns that word.
 
 local M = {}

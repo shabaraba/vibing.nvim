@@ -21,7 +21,6 @@
 -- methods, so this direction is the only one resolved while either module is still loading.
 local BackgroundTasks = require("vibing.infrastructure.adapter.modules.background_tasks")
 local CliRuntime = require("vibing.infrastructure.adapter.modules.cli_runtime")
-local DuplexProcess = require("vibing.infrastructure.adapter.modules.duplex_process")
 local DuplexTurn = require("vibing.infrastructure.adapter.modules.duplex_turn")
 local Pool = require("vibing.infrastructure.adapter.modules.duplex_pool")
 local RequestBuilder = require("vibing.infrastructure.adapter.modules.request_builder")
@@ -163,17 +162,11 @@ function M.run(params)
   -- thing, and one of them travelling under a second identity is a third id to keep in step.
   params.event_context.promptUuid = M.prompt_uuid(ids.turn_id)
 
-  record.protocol = descriptor.duplex
   local complete = DuplexTurn.open(params, record, chat_key)
 
   local prompt =
     RequestBuilder.prompt_text(descriptor.request, params.prompt, params.opts, params.opts._session_id, params.config)
-  local sent
-  if record.protocol then
-    sent = record.protocol.send_prompt(record, prompt or params.prompt, params)
-  else
-    sent = DuplexProcess.send_prompt(record, prompt or params.prompt, params.event_context.promptUuid)
-  end
+  local sent = descriptor.duplex.send_prompt(record, prompt or params.prompt, params)
   if not sent then
     -- Reported before the kill, for the reason `turn_outcome.first_response_timeout` states:
     -- `Pool.stop` completes this turn as "Cancelled" on its way out, and `complete` is idempotent,

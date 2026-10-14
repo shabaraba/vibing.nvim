@@ -10,7 +10,6 @@
 --- @module vibing.infrastructure.adapter.modules.duplex_routing
 
 local BackgroundTasks = require("vibing.infrastructure.adapter.modules.background_tasks")
-local DuplexProcess = require("vibing.infrastructure.adapter.modules.duplex_process")
 local Pool = require("vibing.infrastructure.adapter.modules.duplex_pool")
 local StreamHandler = require("vibing.infrastructure.adapter.modules.stream_handler")
 local TurnOutcome = require("vibing.infrastructure.adapter.modules.turn_outcome")
@@ -71,14 +70,8 @@ function M.line_router(chat_key, descriptor)
     local turn = M.turn_of(record)
     local context = turn and turn.context or record._idle_context
     if context then
-      if descriptor.duplex then
-        -- Deliberately not handed the context resolved above: a wire protocol renders from
-        -- deferred callbacks too, so it resolves the turn when it renders rather than when the
-        -- line arrived. What the guard above still decides is whether anything is listening at all.
-        descriptor.duplex.process_line(record, line)
-      else
-        descriptor.event_processor.processLine(line, context)
-      end
+      -- A protocol can render from deferred callbacks too, so it resolves its context itself.
+      descriptor.duplex.process_line(record, line)
     end
   end
 end
@@ -268,8 +261,7 @@ function M.stop_turn(adapter, process_id)
   end
 
   record._interrupts = (record._interrupts or 0) + 1
-  local interrupt = record.protocol and record.protocol.interrupt or DuplexProcess.interrupt
-  if not interrupt(record, record._interrupts) then
+  if not adapter.descriptor.duplex.interrupt(record, record._interrupts) then
     -- The request could not even be written -- a dying process, a closed stdin. Waiting out the
     -- grace period would be waiting for an answer to a question nobody was asked.
     return false, false

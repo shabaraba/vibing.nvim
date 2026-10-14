@@ -12,6 +12,7 @@ local ClaudeSubagentTranscript = require("vibing.infrastructure.adapter.modules.
 ---@type Vibing.BackendDescriptor
 local M = {
   id = "claude",
+  duplex = require("vibing.infrastructure.adapter.modules.claude_duplex_protocol"),
 
   features = {
     streaming = true,

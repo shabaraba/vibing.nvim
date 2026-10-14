@@ -77,6 +77,8 @@ end
 
 describe("duplex transport", function()
   local jobs, adapter, config
+  local protocol = require("vibing.infrastructure.adapter.modules.claude_duplex_protocol")
+  local original_protocol = vim.tbl_extend("force", {}, protocol)
   local Routing = require("vibing.infrastructure.adapter.modules.duplex_routing")
   local original_grace
   -- `stub_jobstart` does not own `exepath` — only `stub_system` saves and restores it. Left
@@ -111,6 +113,9 @@ describe("duplex transport", function()
   end)
 
   after_each(function()
+    for name, fn in pairs(original_protocol) do
+      protocol[name] = fn
+    end
     Routing.INTERRUPT_GRACE_MS = original_grace
     Pool._reset()
     jobs.restore()
@@ -134,6 +139,23 @@ describe("duplex transport", function()
     )
     return { turn_id = turn_id, process_id = process_id, responses = responses, chunks = chunks }
   end
+
+  it("routes sending, lines and interruption through the descriptor protocol", function()
+    local calls = {}
+    for _, name in ipairs({ "send_prompt", "process_line", "interrupt" }) do
+      protocol[name] = function(...)
+        calls[name] = { ... }
+        return original_protocol[name](...)
+      end
+    end
+    local turn = send("hi")
+    local call = jobs.only_call()
+    jobs.emit(call, { text_line("sess-1", "hello") })
+    adapter:stop_turn(turn.process_id)
+    assert.equals(Pool.get(CHAT_BUFNR), calls.send_prompt and calls.send_prompt[1])
+    assert.equals(Pool.get(CHAT_BUFNR), calls.process_line and calls.process_line[1])
+    assert.equals(Pool.get(CHAT_BUFNR), calls.interrupt and calls.interrupt[1])
+  end)
 
   describe("the argv", function()
     it("takes its prompt on stdin instead of in the argv", function()
@@ -573,12 +595,12 @@ describe("duplex transport", function()
       -- A killed job keeps a valid channel id until its `on_exit` runs, so `is_alive` still says
       -- yes and `chansend` quietly returns 0. Treating that as sent binds the turn to a dying
       -- process, which then waits out the whole first-response watchdog.
-      local DuplexProcess = require("vibing.infrastructure.adapter.modules.duplex_process")
+      local Protocol = require("vibing.infrastructure.adapter.modules.claude_duplex_protocol")
       local original = vim.fn.chansend
       vim.fn.chansend = function()
         return 0
       end
-      local sent = DuplexProcess.send_prompt({ job_id = 1, pid = 2 }, "hi")
+      local sent = Protocol.send_prompt({ job_id = 1, pid = 2 }, "hi", { event_context = {} })
       vim.fn.chansend = original
 
       assert.is_false(sent)

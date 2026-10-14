@@ -82,13 +82,21 @@ on each `assistant` message, and `claude_stream_json`'s `result` arm emits only 
 | module               | what it is about                                                             |
 | -------------------- | ---------------------------------------------------------------------------- |
 | `process_model.lua`  | Which model this turn runs under, and the three cases held at `oneshot`      |
-| `duplex_process.lua` | One OS process: `jobstart`, line assembly, `chansend`, interrupt, stop       |
+| `duplex_process.lua` | One OS process: `jobstart`, line assembly, generic JSON writes, stop         |
 | `duplex_pool.lua`    | One process per chat; the reuse decision and the four ways one is reclaimed  |
 | `duplex_stream.lua`  | The duplex tail of `stream()`: the reuse key, acquire, send                  |
 | `duplex_turn.lua`    | One turn's lifetime on a process that outlives it                            |
 | `duplex_routing.lua` | The four things that reach a process, not a turn, and how they find the turn |
 | `duplex_jsonrpc.lua` | Shared by the two JSON-RPC backends: correlated requests, reply dispatch     |
 | `turn_outcome.lua`   | Shared with the oneshot path: the first-byte budget and every response shape |
+
+Each duplex-capable descriptor supplies the same explicit protocol contract:
+`send_prompt(record, prompt, params)`, `process_line(record, line)`, `interrupt(record, seq)`.
+Claude's wire envelopes live in `claude_duplex_protocol.lua`; Codex and Grok supply their own
+protocols. `params.event_context.promptUuid` carries Claude's existing correlation id, while
+protocols with their own request ids ignore the shared interrupt `seq`. Shared code reads only
+`descriptor.duplex` (through `adapter.descriptor` when cancelling), with no `record.protocol`
+copy or absent-field fallback. The protocol resolves the current or idle context when rendering.
 
 ## What had to move
 

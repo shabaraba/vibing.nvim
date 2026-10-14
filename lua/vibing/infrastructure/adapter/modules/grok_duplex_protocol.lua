@@ -194,7 +194,7 @@ end
 --- agent answers with `stopReason = "cancelled"` within milliseconds.
 --- @param record Vibing.DuplexProcess
 --- @return boolean sent
-function M.interrupt(record)
+function M.interrupt(record, _seq)
   local rpc = record._rpc
   if not rpc or not rpc.session_id then
     return false

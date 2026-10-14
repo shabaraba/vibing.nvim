@@ -100,6 +100,21 @@ option of its own), add the two-line `adapter/<id>_cli.lua` and `adapter/modules
 shims the other backends have, and run `npm run test:lua`. The conformance suite tells you which
 contracts the descriptor does not yet meet.
 
+## Resident protocol
+
+A descriptor declaring `process = "duplex"` must supply `duplex` with three functions:
+`send_prompt(record, prompt, params)`, `process_line(record, line)`, and
+`interrupt(record, seq)`. The conformance suite checks their presence and fixed signatures for
+all registered duplex backends. `params` is `Vibing.DuplexRunParams`; `seq` is the shared
+per-process interrupt counter and may be ignored by a protocol with its own request ids.
+
+The protocol owns the wire envelopes and resolves the current or idle event context from the
+record when it handles a line. Claude's stream-json is explicit too
+(`claude_duplex_protocol.lua`); an absent protocol has no fallback. Shared sending and routing
+read `descriptor.duplex`, including interruption through `adapter.descriptor`, without storing
+a second protocol copy on the process. The pool, argv reuse key, turn, timers and reclaim paths
+remain shared.
+
 ## The decoder
 
 A decoder is `{ decode = function(msg, state) return events end }`: one JSON line in, a list of
