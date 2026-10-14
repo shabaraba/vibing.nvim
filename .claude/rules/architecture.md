@@ -90,7 +90,7 @@ over every registered descriptor.
 - **Codex's hook key is `hooks.PreToolUse` and it travels with
   `--dangerously-bypass-hook-trust`.** Both halves fail silently on their own: codex drops an
   unrecognised `hooks.*` key without a warning (the snake_case spelling meant no hook fired at all
-  — no permission gate, and no diff baseline, so no `.vibing/patches/*.patch` and no `gd` float),
+  — no permission gate, and no diff baseline, so no `.vibing/diffs/*.diff` and no `gd` float),
   and a registered-but-untrusted hook makes `codex exec` **hang** rather than skip. So
   `codex_settings_generator.get_hook_args()` returns the flag and the `-c` pair as one fragment;
   do not split them. Verify with `hooks/list` on `codex app-server`, never by eye.
@@ -168,7 +168,7 @@ The full field list is `doc/vibing.txt` → "CHAT FILE FORMAT".
 
 ## Per-Request Diffs
 
-Each turn's `### Modified Files` and its `.vibing/patches/*.patch` come from **two git tree
+Each turn's `### Modified Files` and its `.vibing/diffs/*.diff` come from **two git tree
 snapshots of the working tree** (`core/utils/git_snapshot.lua`), so a change made by `sed -i`, `mv`
 or a formatter run through Bash still shows up (#625).
 
@@ -183,6 +183,7 @@ or a formatter run through Bash still shows up (#625).
   applied when `extra_paths` is merged into either diff implementation, or tool events add the
   directory back after git excluded it. Test the path relative to the current worktree root — a
   worktree itself normally lives below an outer `.vibing/worktrees/`.
+- **Saved `Patch:` lines, `.patch` files and `.vibing/patches/` are still read, never written** (#761).
 - **The git calls block the main loop** (`vim.system():wait()`), synchronously inside the hook.
 - **`request_diff.lua` stays as the fallback**, and a turn where both come up empty **warns**
   rather than rendering as a turn that changed nothing.
@@ -199,12 +200,12 @@ come back. `handbook/architecture/processes-and-turns.md`.
   `_processes` table and everything `kill_tree` reaches, the SessionManager (`--resume` names a
   conversation the _process_ holds open), the child's `VIBING_PROCESS_ID`,
   `ChatBuffer._current_process_id`. Turn-keyed: both diff baselines and
-  `refs/worktree/vibing/<turn_id>`, the `.vibing/patches/*.patch` suffix, `response._turn_id` and
+  `refs/worktree/vibing/<turn_id>`, the `.vibing/diffs/*.diff` suffix, `response._turn_id` and
   the chunk staleness filters, the parked rate-limit failure, `permission.lua`'s
   `active_opts_by_turn`.
 - **Nothing parses an id to learn its kind** — both minters emit the same shape on purpose. Both
   ids must survive `[^A-Za-z0-9_]` deletion unchanged: `bin/hooks/*.sh` interpolates the process id
-  after exactly that substitution, and the turn id names a git ref and a patch filename.
+  after exactly that substitution, and the turn id names a git ref and a diff filename.
   `identity_spec.lua` reads the character class back out of the shell scripts, because `test:lua`
   never runs them.
 - **The hook can only ever name a process**, because `VIBING_PROCESS_ID` is fixed at spawn and an
