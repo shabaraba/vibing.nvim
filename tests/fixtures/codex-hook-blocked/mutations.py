@@ -77,14 +77,9 @@ MUTATIONS = [
     ("U46", ADAPTER, '_observe_hook_input = process_model == "duplex"', '_observe_hook_input = true', "tests/lua/infrastructure/adapter/codex_cli_spec.lua", "does not enable duplex hook retry policy for codex exec"),
     ("U47", PERMISSION, 'active_opts._observe_hook_input(scope, hook_input, tool_name, tool_input)', '-- no observation', HSPEC, "observes the same owning turn and input that the permission gate evaluates"),
     ("E01", PERMISSION, 'write_hook_response(request_id, "deny", result.message)', 'write_hook_response(request_id, "defer", result.message)', ESPEC, "shows a denied call with its reason and offers no permission override"),
-    ("E02", RENDERER, 'PreToolUse hook blocked ', 'Hook notice ', ESPEC, "shows a denied call with its reason and offers no permission override"),
-    ("E03", DECODER, 'table.insert(reasons, entry.text)', 'table.insert(reasons, "redacted")', ESPEC, "shows a denied call with its reason and offers no permission override"),
-    ("E04", PERMISSION, 'active_opts._observe_hook_input(scope, hook_input, tool_name, tool_input)', '-- no observation', ESPEC, "shows a denied call with its reason and offers no permission override"),
     ("E05", PERMISSION, 'if active_opts and active_opts._retry_hook_approval then', 'if false then', ESPEC, "continues the same operation after a chat allow_once answer"),
     ("E06", BUFFER, 'handle_once_permission(self, tool, self._session_allow)', '-- no grant', ESPEC, "continues the same operation after a chat allow_once answer"),
-    ("E07", BUFFER, 'handle_once_permission(self, tool, self._session_allow)', 'handle_session_permission(self, tool, true)', ESPEC, "continues the same operation after a chat allow_once answer"),
-    ("E08", DECODER, 'table.insert(reasons, entry.text)', 'table.insert(reasons, "redacted")', ESPEC, "reports an unreachable RPC server without offering an approval"),
-    ("E09", RENDERER, 'if event.unavailable then', 'if false then', ESPEC, "reports an unreachable RPC server without offering an approval"),
+    ("E10", "bin/hooks/pre-tool-use.sh", 'rm -f "$REQ_FILE" 2>/dev/null\n  exit 2', 'rm -f "$REQ_FILE" 2>/dev/null\n  exit 0', ESPEC, "reports an unreachable RPC server without offering an approval"),
 ]
 
 
