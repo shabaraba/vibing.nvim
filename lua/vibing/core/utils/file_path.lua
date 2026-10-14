@@ -47,8 +47,8 @@ function M.is_cursor_on_file_path(buf)
     return nil
   end
 
-  -- `Diff: /path/to.diff` と旧 `Patch:` も同様。行そのものはパスではないので弾き、`<cfile>` 経路に回す。
-  -- そうするとパスの上で `gf` を押せばpatchファイルが普通に開く
+  -- `Diff: /path/to.diff` と旧 `Patch:` も同様。行そのものはパスではないので弾く。
+  -- `gf` の FileUnderCursor が注釈を解析し、空白も含めた差分パスを開く
   if trimmed_line:match("^Patch:%s") or trimmed_line:match("^Diff:%s") then
     return nil
   end
