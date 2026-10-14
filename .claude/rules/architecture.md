@@ -250,11 +250,12 @@ configuration says. `handbook/architecture/duplex-transport.md`.
   cannot be configured into it. **That field is how a backend is admitted — never a backend name**:
   `process_model.lua` contains none, which is what let codex join without the exclusion list
   growing a second branch.
-- **The wire is the descriptor's; everything above it is not.** `descriptor.duplex` supplies
-  `send_prompt` / `process_line` / `interrupt` for a CLI that speaks its own protocol (codex's
-  `app-server` JSON-RPC); a backend that leaves it unset gets `duplex_process`'s stdin
-  stream-json. The pool, the reuse key, the turn, the timers and the reclaim routes are shared and
-  stay free of both.
+- **The wire is the descriptor's; everything above it is not.** Every duplex descriptor declares
+  `descriptor.duplex` with `send_prompt` / `process_line` / `interrupt` (claude's stdin stream-json
+  in `claude_duplex_protocol.lua`, codex's `app-server` JSON-RPC, grok's ACP), and shared code calls
+  it unconditionally — there is no fallback for an absent one and no `record.protocol` copy. The
+  pool, the reuse key, the turn, the timers and the reclaim routes are shared and stay free of
+  every protocol.
 - **The reuse key is the argv, and it is built with no session id.** `permission_mode` comes from
   frontmatter, changes between turns and changes the argv, and a live process cannot be re-flagged.
   Including the session makes the key differ by construction on every chat's second turn, which
