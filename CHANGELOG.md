@@ -206,6 +206,9 @@
 * feat(adapter): add Pi RPC backend for local models by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/816
 * refactor: rename claude-plugin to agent-plugin by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/900
 * chore: ignore the pnpm store directory by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/903
+* chore(deps-dev): bump @types/node from 26.6.4 to 26.6.5 in /agent-plugin/mcp-server in the minor-and-patch group by @dependabot[bot] in https://github.com/shabaraba/vibing.nvim/pull/901
+* chore(deps-dev): bump the minor-and-patch group with 2 updates by @dependabot[bot] in https://github.com/shabaraba/vibing.nvim/pull/902
+* chore(main): release 6.0.0 by @github-actions[bot] in https://github.com/shabaraba/vibing.nvim/pull/762
 
 
 **Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v5.9.0...v6.0.0
