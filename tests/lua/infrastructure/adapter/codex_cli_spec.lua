@@ -54,6 +54,14 @@ describe("codex_cli hook registration", function()
     helper.run_stream(adapter, { permission_mode = "default" })
     assert.is_true(registers_hook(system.cli_call().cmd))
   end)
+  it("does not enable duplex hook retry policy for codex exec", function()
+    local run = helper.run_stream(adapter, { permission_mode = "default" })
+    local opts = require("vibing.infrastructure.rpc.handlers.permission")._get_active_opts(run.turn_id)
+    assert.same(
+      { false, true, true },
+      { opts._retry_hook_approval, opts._hook_approval_options == nil, opts._observe_hook_input == nil }
+    )
+  end)
 
   it("registers chat_bufnr so a waiting approval can draw into the chat", function()
     local run = helper.run_stream(adapter, { permission_mode = "default", chat_bufnr = 42 })

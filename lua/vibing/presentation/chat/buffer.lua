@@ -977,6 +977,17 @@ function ChatBuffer:_answer_pending_approval()
   -- 黙って続けると失敗が見えない
   local ApprovalDecision = require("vibing.application.chat.approval_decision")
 
+  for _, approval in ipairs(resolved) do
+    local entry = self:get_pending_approval(approval.request_id)
+    if entry and entry.kind == ApprovalDecision.HOOK_RETRY_KIND and self:is_responding() then
+      self:_show_approval_refusal({
+        "This approval retries a refused call in a new turn. Answer the prompts holding this "
+          .. "turn open first, or wait for it to finish; the retry approval is still pending.",
+      })
+      return { outcome = "refused" }
+    end
+  end
+
   local answered_in_place, retry_messages, failures = 0, {}, {}
 
   for _, approval in ipairs(resolved) do

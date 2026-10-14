@@ -7,6 +7,67 @@ describe("Codex app-server decoder", function()
   local function decode(method, params)
     return Decoder.decode({ method = method, params = params }, state)
   end
+  describe("hook notifications", function()
+    it("uses captured RPC inputs to identify blocked calls and forgets completed hooks", function()
+      local fixture =
+        vim.json.decode(table.concat(vim.fn.readfile("tests/fixtures/streams/codex-app-server/hook_blocks.json"), "\n"))
+      for kind, case in pairs(fixture.cases) do
+        state.hook_inputs = {}
+        local hook = case.hook_input
+        if hook then
+          state.hook_inputs[hook.tool_use_id] = { name = hook.tool_name, input = hook.tool_input }
+        end
+        local event = Decoder.decode(case.notification, state)[1]
+        assert.same(
+          { hook and hook.tool_name, hook and hook.tool_input, kind == "rpc", {} },
+          { event.name, event.input, event.unavailable, state.hook_inputs }
+        )
+      end
+    end)
+    it("recognizes a started hook as proof of a live process", function()
+      assert.same({ { kind = "first_response" } }, decode("hook/started", {}))
+    end)
+    it("surfaces every feedback entry without inventing an approval", function()
+      assert.same(
+        { { kind = "hook_blocked", reason = "denied\nsecond reason", unavailable = false } },
+        decode("hook/completed", {
+          run = {
+            eventName = "preToolUse",
+            status = "blocked",
+            entries = { { text = "denied" }, { text = "second reason" } },
+          },
+        })
+      )
+    end)
+    it("marks the script's connection and timeout failures as unavailable", function()
+      for _, reason in ipairs({ "Failed to connect to vibing.nvim RPC server", "Permission check timed out" }) do
+        assert.same(
+          { { kind = "hook_blocked", reason = reason, unavailable = true } },
+          decode(
+            "hook/completed",
+            { run = { eventName = "preToolUse", status = "blocked", entries = { { text = reason } } } }
+          )
+        )
+      end
+    end)
+    it("uses statusMessage and then a fallback when feedback is absent", function()
+      local run = { eventName = "preToolUse", status = "blocked", entries = vim.NIL, statusMessage = "fallback" }
+      assert.equals("fallback", decode("hook/completed", { run = run })[1].reason)
+      run.statusMessage = vim.NIL
+      assert.equals("The hook supplied no reason.", decode("hook/completed", { run = run })[1].reason)
+    end)
+    it("ignores unknown statuses, other hook events and malformed runs", function()
+      for _, run in ipairs({
+        vim.NIL,
+        {},
+        { eventName = "preToolUse", status = "future" },
+        { eventName = "postToolUse", status = "blocked" },
+      }) do
+        assert.same({}, decode("hook/completed", { run = run }))
+      end
+      assert.equals("next", decode("item/agentMessage/delta", { itemId = "next", delta = "next" })[1].delta)
+    end)
+  end)
   it("uses the exec tool contract for command starts and completions", function()
     local item = { id = "shell", type = "commandExecution", command = "ls", aggregatedOutput = "files" }
     local started = decode("item/started", { item = item })

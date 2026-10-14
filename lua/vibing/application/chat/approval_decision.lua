@@ -30,6 +30,9 @@
 local NativeApprovals = require("vibing.infrastructure.rpc.pending_native_approvals")
 
 local M = {}
+-- This call has already been refused; answering it must start a new turn, even when a different
+-- prompt is holding the current one open. Native and waiting-hook prompts keep their own routes.
+M.HOOK_RETRY_KIND = "hook_retry"
 
 --- The four answers, in the vocabulary the whole feature shares: the option values
 --- `rpc/handlers/permission.lua` offers, the lines `approval_parser.lua` reads back out of the

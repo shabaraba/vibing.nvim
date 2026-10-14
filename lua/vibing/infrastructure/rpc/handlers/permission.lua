@@ -451,6 +451,9 @@ function M.check_tool_permission(params)
   -- supplies its own translation table as a generic `_tool_vocabulary`, so this handler stays
   -- ignorant of which backend it is serving -- adding a fourth needs no change here (#516).
   local tool_name, tool_input = M.normalize_hook_input(hook_input, active_opts and active_opts._tool_vocabulary)
+  if active_opts and active_opts._observe_hook_input then
+    active_opts._observe_hook_input(scope, hook_input, tool_name, tool_input)
+  end
 
   -- Kill process first, call UI callback, then write deny response. Used by both
   -- AskUserQuestion and "ask" permission paths. The deny response only reaches the model when
@@ -525,6 +528,35 @@ function M.check_tool_permission(params)
     if active_opts and active_opts._can_wait_for_approval then
       M._ask_without_killing(params, request_id, tool_name, tool_input)
       return { status = "pending" }
+    end
+
+    -- A resident protocol may need the refused tool call to reach a terminal state before its
+    -- thread can be resumed. The real hook payload, not notification feedback, owns this prompt.
+    -- Release the hook first; the existing completion callback draws the retry UI when the turn
+    -- ends. There is no withheld response and no change to the measured waiting path.
+    if active_opts and active_opts._retry_hook_approval then
+      local reason = string.format(
+        "Tool %s requires manual approval in the chat. This call was not executed; "
+          .. "do not retry it until the user answers the approval prompt.",
+        tool_name
+      )
+      write_hook_response(request_id, "deny", reason)
+      local options = active_opts._hook_approval_options or APPROVAL_OPTIONS
+      local turn_id = scope.turn_id
+      vim.schedule(function()
+        local turn = HookScope.of(params).entry
+        if turn and turn.turn_id == turn_id and turn.on_approval_required then
+          turn.on_approval_required(
+            tool_name,
+            tool_input,
+            options,
+            request_id,
+            nil,
+            require("vibing.application.chat.approval_decision").HOOK_RETRY_KIND
+          )
+        end
+      end)
+      return { status = "pending", reason = reason }
     end
 
     -- The fallback, and byte-for-byte what every backend did before #778: kill the process first,

@@ -33,6 +33,7 @@ local DuplexTurn = require("vibing.infrastructure.adapter.modules.duplex_turn")
 ---| { kind: "cli_info", version: string?, model: string?, tools: number?, mcp_servers: number?, compacted: boolean? }
 ---| { kind: "rate_limit", info: Vibing.RateLimitInfo }
 ---| { kind: "error", message: string, fatal: boolean?, prompt_uuid: string? } # fatal: the CLI declared the turn failed
+---| { kind: "hook_blocked", reason: string, unavailable: boolean?, name: string?, input: table? }
 ---| { kind: "turn_end", subtype: string?, prompt_uuid: string? }     # a turn is over; whose, and the process may not be
 ---| { kind: "structured_output", value: table, prompt_uuid: string? }
 ---| { kind: "prompt_ack", prompt_uuid: string, state: string? }      # the CLI named back a prompt written to its stdin
@@ -347,6 +348,19 @@ handlers.rate_limit = function(event, context)
   local previous = context.rateLimitInfo
   -- Merged newest-first: a warning may carry a reset time the rejection that ends the turn omits.
   context.rateLimitInfo = previous and RateLimit.merge(event.info, previous) or event.info
+end
+
+handlers.hook_blocked = function(event, context)
+  close_thinking(context)
+  local target = "this call"
+  if event.name then
+    target = string.format("%s(%s)", event.name, mark_continuations(input_summary(event.name, event.input or {})))
+  end
+  local message = "\n⚠️ PreToolUse hook blocked " .. target .. ":\n  " .. event.reason:gsub("\n", "\n  ")
+  if event.unavailable then
+    message = message .. "\nApproval cannot repair this hook failure; restore the RPC connection before retrying."
+  end
+  emit(message .. "\n", context)
 end
 
 handlers.error = function(event, context)

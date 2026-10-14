@@ -180,6 +180,14 @@ describe("permission handler hook decision", function()
     assert.equals("deny", output.permissionDecision)
     assert.is_truthy(output.permissionDecisionReason)
   end)
+  it("observes the same owning turn and input that the permission gate evaluates", function()
+    local observed
+    permission._get_active_opts(CHAT.turn_id)._observe_hook_input = function(scope, payload, tool, input)
+      observed = { scope.process_id, scope.turn_id, payload.tool_name, tool, input }
+    end
+    decide("req-observe", "Bash", { command = "echo observed" })
+    assert.same({ CHAT.process_id, CHAT.turn_id, "Bash", "Bash", { command = "echo observed" } }, observed)
+  end)
 
   describe("session permissions belong to one chat", function()
     -- 承認UIで出した答えは、答えたチャットのセッションに属する。以前はこれが
@@ -535,6 +543,53 @@ describe("permission handler hook decision", function()
       assert.equals("pending", status)
       assert.is_true(cancelled, "an unmeasured backend must still be killed")
       assert.is_nil(Pending.get("req-nowait"), "nothing may be left owed on the fallback path")
+    end)
+
+    it("releases a retry hook before asking with its actual input, without cancelling", function()
+      activate_waiting(false, 41)
+      local options = { { value = "allow_once", label = "allow_once - Allow this execution only" } }
+      local opts = permission._get_active_opts(WAITING.turn_id)
+      opts._retry_hook_approval, opts._hook_approval_options = true, options
+      registry.get(WAITING.turn_id).on_approval_required = function(tool, input, offered, request_id, waiting, kind)
+        local f = assert(io.open(comm_dir .. "/" .. request_id .. ".res", "r"))
+        local response = vim.json.decode(f:read("*a")).hookSpecificOutput
+        f:close()
+        table.insert(drawn, { tool, input, offered, request_id, waiting == nil, response.permissionDecision, kind })
+      end
+      local output, status = decide("req-retry", "Bash", { command = "echo exact" }, WAITING)
+      settle(function()
+        return #drawn > 0
+      end)
+      assert.same({ "deny", "pending", false, 0 }, { output.permissionDecision, status, cancelled, Pending.count() })
+      assert.matches("requires manual approval in the chat", output.permissionDecisionReason)
+      assert.same({ { "Bash", { command = "echo exact" }, options, "req-retry", true, "deny", "hook_retry" } }, drawn)
+    end)
+
+    it("never turns an explicit deny into a retry approval", function()
+      activate_waiting(false, 41)
+      local opts = permission._get_active_opts(WAITING.turn_id)
+      opts._retry_hook_approval, opts.permissions_deny = true, { "Bash" }
+      opts.permissions_session_allow = { "Bash:once" }
+      local output, status = decide("req-deny-retry", "Bash", {}, WAITING)
+      settle()
+      assert.same({ "deny", "denied", {} }, { output.permissionDecision, status, drawn })
+    end)
+
+    it("does not send a deferred retry prompt to a replacement turn", function()
+      activate_waiting(false, 41)
+      permission._get_active_opts(WAITING.turn_id)._retry_hook_approval = true
+      decide("req-stale-retry", "Bash", {}, WAITING)
+      registry.close(WAITING.turn_id)
+      registry.open({
+        turn_id = "replacement",
+        process = processes.get(WAITING.process_id),
+        on_approval_required = function()
+          table.insert(drawn, "wrong turn")
+        end,
+      })
+      settle()
+      registry.close("replacement")
+      assert.same({}, drawn)
     end)
 
     it("still owes the answer, and still tells the watchdog, when drawing fails", function()

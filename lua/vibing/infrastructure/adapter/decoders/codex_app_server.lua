@@ -2,6 +2,41 @@
 local Exec = require("vibing.infrastructure.adapter.decoders.codex_exec_json")
 local TokenUsage = require("vibing.core.utils.token_usage")
 local M = {}
+
+-- A notification is evidence of a refusal, never authority to override it. Only the permission
+-- RPC's `ask` branch may create an approval, using the actual hook input (blocked items are not
+-- announced by app-server). In particular, do not infer a retry grant from feedback text.
+local function hook_completed(run, state)
+  local item_id = type(run) == "table" and type(run.id) == "string" and run.id:match(":([^:]+)$") or nil
+  local call = item_id and state.hook_inputs and state.hook_inputs[item_id] or nil
+  if call then
+    state.hook_inputs[item_id] = nil
+  end
+  if type(run) ~= "table" or run.eventName ~= "preToolUse" or run.status ~= "blocked" then
+    return {}
+  end
+  local reasons, unavailable = {}, false
+  for _, entry in ipairs(type(run.entries) == "table" and run.entries or {}) do
+    if type(entry) == "table" and type(entry.text) == "string" and entry.text ~= "" then
+      table.insert(reasons, entry.text)
+      if entry.text == "Failed to connect to vibing.nvim RPC server" or entry.text == "Permission check timed out" then
+        unavailable = true
+      end
+    end
+  end
+  if #reasons == 0 and type(run.statusMessage) == "string" and run.statusMessage ~= "" then
+    table.insert(reasons, run.statusMessage)
+  end
+  return {
+    {
+      kind = "hook_blocked",
+      reason = #reasons > 0 and table.concat(reasons, "\n") or "The hook supplied no reason.",
+      unavailable = unavailable,
+      name = call and call.name,
+      input = call and call.input,
+    },
+  }
+end
 local TYPES = {
   commandExecution = "command_execution",
   fileChange = "file_change",
@@ -64,6 +99,10 @@ function M.decode(msg, state)
     end
   elseif method == "turn/started" then
     return { { kind = "first_response" } }
+  elseif method == "hook/started" then
+    return { { kind = "first_response" } }
+  elseif method == "hook/completed" then
+    return hook_completed(p.run, state)
   elseif method == "item/agentMessage/delta" then
     mark_streamed(state, p.itemId)
     return { { kind = "text", delta = p.delta or "" } }
