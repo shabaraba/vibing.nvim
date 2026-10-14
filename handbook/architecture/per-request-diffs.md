@@ -1,11 +1,11 @@
 # Per-Request Diffs
 
 Detail behind `.claude/rules/architecture.md` → "Per-Request Diffs". Each turn's
-`### Modified Files` list and its `.vibing/patches/*.patch` come from two git tree snapshots of
+`### Modified Files` list and its `.vibing/diffs/*.diff` come from two git tree snapshots of
 the working tree, taken before and after the turn. The point of that shape is what it does _not_
 need to know: which tool made the change (#625).
 
-Each turn's `### Modified Files` list and its `.vibing/patches/*.patch` come from **two git tree
+Each turn's `### Modified Files` list and its `.vibing/diffs/*.diff` come from **two git tree
 snapshots of the working tree**, taken before and after the turn and compared with `git diff`
 (`core/utils/git_snapshot.lua`). That is the main path, not the only one: a read-only turn takes
 no snapshot at all, and the two cases in the table below fall back to `request_diff.lua`.
@@ -14,6 +14,11 @@ The point of that shape is what it does _not_ need to know: which tool made the 
 mechanism it replaced (`request_diff.lua`) backed up the file named in a Write/Edit tool's
 arguments, so `sed -i`, `mv`, a formatter, or anything else run through Bash produced no diff
 section at all — the change simply did not exist as far as the chat was concerned. This is #625.
+
+New turns write `Diff: <absolute path>` below `### Modified Files`. Readers also accept saved
+`Patch:` lines pointing to `.vibing/patches/*.patch` and legacy `<!-- patch: ... -->` comments;
+files are not moved or migrated. Internal `patch_viewer` / `patch_finder` / `patch_text` names
+stay distinct from the existing `diff_opener`, `diff_mode` and related display modules.
 
 **The baseline is lazy, and that is what keeps it cheap.** It is taken at the PreToolUse hook for
 the first tool of the turn that could write, not at the start of the request, so a read-only turn
@@ -90,7 +95,7 @@ Three details are not interchangeable:
   here, against 20ms per `git add -A` (twice a turn). A turn whose patch came back empty skips it
   entirely, since an empty patch already answers "no files changed".
 - **`.vibing/` is excluded by pathspec**, not left to `.gitignore`. It holds the chat files and the
-  patches themselves and changes during the turn, so for anyone who has not git-ignored it every
+  diff files themselves and changes during the turn, so for anyone who has not git-ignored it every
   turn would list the conversation log as its own output and put the whole transcript in the patch.
   The removed mote integration excluded the same directory through `.moteignore`. The exclusion is
   unconditional on the diff calls (where it matters) and **conditional on `git add -A`**, where it

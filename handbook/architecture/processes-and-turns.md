@@ -38,7 +38,7 @@ SessionManager (`--resume <id>` names a conversation the _process_ holds open); 
 
 **Turn-keyed.** Both diff baselines (`git_snapshot` and the `request_diff` fallback) and the git ref
 `refs/worktree/vibing/<turn_id>`; `worktree_binding`'s pending observation; the
-`.vibing/patches/*.patch` filename suffix; `response._turn_id`, which is what
+`.vibing/diffs/*.diff` filename suffix; `response._turn_id`, which is what
 `_handle_response`'s staleness check compares; the chunk staleness filter in `append_chunk`; the
 parked rate-limit failure; the per-turn frontmatter in `permission.lua`'s `active_opts_by_turn`.
 

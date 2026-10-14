@@ -135,7 +135,7 @@ describe("request_diff", function()
     end)
 
     it("excludes .vibing paths from both captures and event fallback", function()
-      local internal = tmp_dir .. "/.vibing/worktrees/other/lua/plugin.lua"
+      local internal = tmp_dir .. "/.vibing/diffs/turn.diff"
       vim.fn.mkdir(vim.fn.fnamemodify(internal, ":h"), "p")
       write_file(internal, "before\n")
       RequestDiff.capture(turn_id, "Edit", { file_path = internal })

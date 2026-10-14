@@ -668,7 +668,7 @@ function ChatBuffer:load_from_file(file_path)
     if type(sid) == "string" and sid ~= "" and sid ~= "~" then
       self.session_id = sid
     end
-    -- NOTE: Diff display uses patch files in .vibing/patches/<session_id>/
+    -- NOTE: Diff display uses patch files in .vibing/diffs/
     -- The gd keymap reads patch files directly via PatchFinder and PatchViewer
   end
   return success

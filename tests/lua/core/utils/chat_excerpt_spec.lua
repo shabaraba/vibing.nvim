@@ -1,6 +1,30 @@
 local chat_excerpt = require("vibing.core.utils.chat_excerpt")
 
 describe("chat_excerpt.clean", function()
+  it("drops Diff: /tmp/My Project/.vibing/diffs/x.diff from excerpts", function()
+    assert.equals("前文\n後文", chat_excerpt.clean("前文\nDiff: /tmp/My Project/.vibing/diffs/x.diff\n後文"))
+  end)
+
+  it("drops Patch: /tmp/My Project/.vibing/patches/x.patch from excerpts", function()
+    assert.equals("前文\n後文", chat_excerpt.clean("前文\nPatch: /tmp/My Project/.vibing/patches/x.patch\n後文"))
+  end)
+
+  it("drops Diff: /tmp/My Project/x.patch from excerpts", function()
+    assert.equals("前文\n後文", chat_excerpt.clean("前文\nDiff: /tmp/My Project/x.patch\n後文"))
+  end)
+
+  it("drops Patch: /tmp/My Project/x.diff from excerpts", function()
+    assert.equals("前文\n後文", chat_excerpt.clean("前文\nPatch: /tmp/My Project/x.diff\n後文"))
+  end)
+
+  it("drops <!-- patch: /tmp/My Project/x.patch --> from excerpts", function()
+    assert.equals("前文\n\n後文", chat_excerpt.clean("前文\n<!-- patch: /tmp/My Project/x.patch -->\n後文"))
+  end)
+
+  it("drops <!-- patch: /tmp/My Project/x.diff --> from excerpts", function()
+    assert.equals("前文\n\n後文", chat_excerpt.clean("前文\n<!-- patch: /tmp/My Project/x.diff -->\n後文"))
+  end)
+
   it("drops tool call headers including multi-line arguments", function()
     local text = table.concat({
       "原因が特定できました。",

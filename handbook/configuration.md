@@ -1338,13 +1338,12 @@ completion nor the cycler offers anything there.
 Each turn that runs a tool capable of touching a file takes a snapshot of the working tree as a
 git tree object, and compares it against a second snapshot once the response completes. A turn
 that only reads takes no snapshot, and the two fallback cases below use a lighter mechanism. The
-resulting patch is stored under `.vibing/patches/` and summarised in the chat as a one-line
+resulting diff is stored under `.vibing/diffs/` and summarised in the chat as a one-line
 `### Modified Files` section (`3 files changed: a.lua, b.lua, c.lua`); `gd` anywhere in that
 section opens the patch viewer, whose own file list is where you pick between them. Under it, a
-plain `Patch: <path>` line names the patch file the turn saved. It used to be an HTML comment;
-it is visible now because the patch is something to reach for, not an implementation detail. Old
-chats keep the hidden form and are still read — `patch_finder.lua` accepts both, and is the only
-place either spelling is defined.
+plain `Diff: <path>` line names the `.diff` file the turn saved. Saved `Patch:` lines pointing
+to `.vibing/patches/*.patch` and older hidden `<!-- patch: ... -->` comments remain readable.
+`patch_finder.lua` accepts both labels and extensions, including paths containing spaces.
 
 Because the comparison is between two states of the whole tree, it does not matter which tool
 made the change — **a `sed -i`, a `mv`, or a formatter run through Bash shows up the same way an
@@ -1417,8 +1416,8 @@ stripping the column lets the real file's `filetype` be set and the code read as
 move to a `'statuscolumn'` that also carries each line's number in the file it belongs to —
 deletions numbered from before the turn, everything else from after. Added and removed lines then
 get the same background tint as the side-by-side panes, and the changed characters inside them the
-stronger one. Nothing here touches `.vibing/patches/*.patch`; `r` and `R` still hand the file on
-disk to `git apply --reverse`, and the `Patch:` line in the chat still points at a real patch.
+stronger one. Nothing here touches `.vibing/diffs/*.diff`; `r` and `R` still hand the file on
+disk to `git apply --reverse`, and the `Diff:` line in the chat still points at a real patch.
 
 Side by side gets its per-character spans from `'diffopt'`'s `inline:char`, which needs two windows
 and so cannot run here. `char_diff.lua` produces the same thing by handing `vim.diff()` a string

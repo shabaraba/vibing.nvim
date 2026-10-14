@@ -15,7 +15,7 @@
 ---     `VIBING_PROCESS_ID` before interpolating it into their JSON request. A dropped character
 ---     makes the hook name a process that is not in the registry, and the turn resolves to nil.
 ---   - `git_snapshot.sanitize` keeps `-` as well, for `refs/worktree/vibing/<turn_id>`.
----   - `send_message`'s `.vibing/patches/*.patch` suffix keeps alphanumerics only.
+---   - `send_message`'s `.vibing/diffs/*.diff` suffix keeps alphanumerics only.
 --- Those two keep their own expressions, because they are their own constraints rather than copies
 --- of this one — but neither can reject what is minted here.
 ---
