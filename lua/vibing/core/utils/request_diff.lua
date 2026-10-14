@@ -12,7 +12,7 @@
 ---
 ---ツールの引数に現れたファイルしか見ないので、**Bash由来の変更は捕捉できない**。それが
 ---git_snapshotを主経路にした理由でもある。コストは「そのリクエストで実際に触ったファイル数」
----にのみ比例し、バックアップはhandle_id（リクエスト）単位なので、並行するチャットバッファ間で
+---にのみ比例し、バックアップはturn_id（リクエスト）単位なので、並行するチャットバッファ間で
 ---差分が混ざることはない。
 local Fs = require("vibing.core.utils.fs")
 
@@ -31,7 +31,7 @@ local uv = vim.uv or vim.loop
 ---@field files table<string, Vibing.RequestDiff.Entry> 絶対パス→退避情報
 ---@field order string[] 退避順の絶対パスリスト
 
----handle_idごとの退避状態
+---turn_idごとの退避状態
 ---@type table<string, Vibing.RequestDiff.Session>
 local sessions = {}
 
@@ -81,45 +81,48 @@ local function is_vibing_state_path(rel)
   return rel == ".vibing" or rel:sub(1, 8) == ".vibing/"
 end
 
+---そのターンがまだ開いているか
+---
+---判定そのものは `TurnRegistry.is_open` が持つ。ここと `git_snapshot.lua` で同じ述語を書き写す
+---と、片方にだけ足した結果**フォールバック側が壊れたまま**になる — それが一度起きている。
+---遅延requireを残すのは、`core/utils` から infrastructure を掴む向きを起動時に固定しないため
+---@param turn_id string
+---@return boolean
+local function turn_still_open(turn_id)
+  local ok, registry = pcall(require, "vibing.infrastructure.adapter.modules.turn_registry")
+  return ok and registry.is_open(turn_id)
+end
+
 ---TTL超過した放置セッション（キャンセルされたリクエスト等）を破棄
+---
+---**年齢だけで刈ってはいけない。** これは `capture()` のたびに走る＝同じNeovim内の別チャットが
+---ツールを呼ぶたびに走るので、1時間を超えて開いているターン（承認待ちで人間を待っている間が
+---まさにそれ）のバックアップが、まだ実行中のまま消される。消えると `finalize` は退避内容を
+---見つけられず、そのターンの差分が警告もなく空になる。
+---
+---`git_snapshot.lua:375` の `sweep_stale` には同じ理由で `turn_still_open` が入っていた。主経路に
+---だけ入れてフォールバックに入れ忘れると、git が使えない場合（非gitの `working_dir`、同一
+---worktreeでの並行チャット）にだけ差分が消えるという、いちばん再現しにくい形になる。
+---TTL はテーブルが際限なく育たないための外枠として残す（registerされなかったターンはこちらで
+---回収される）。
 local function sweep_stale()
   local now = os.time()
-  for handle_id, s in pairs(sessions) do
-    if now - s.created > SESSION_TTL_SEC then
+  for turn_id, s in pairs(sessions) do
+    if now - s.created > SESSION_TTL_SEC and not turn_still_open(turn_id) then
       if s.dir then
         vim.fn.delete(s.dir, "rf")
       end
-      sessions[handle_id] = nil
+      sessions[turn_id] = nil
     end
   end
 end
 
----ツール実行前にファイル内容を退避する（PreToolUseフックの許可パスから呼ぶ）
----同一リクエスト内で同じファイルが複数回編集されても、最初の退避
----（=リクエスト開始時点の状態）を保持する。
----@param handle_id string|nil リクエストのハンドルID
----@param tool_name string ツール名
----@param tool_input table ツール入力
-function M.capture(handle_id, tool_name, tool_input)
-  if not handle_id or handle_id == "" then
-    return
-  end
-  local path_key = TOOL_PATH_KEYS[tool_name]
-  if not path_key or type(tool_input) ~= "table" then
-    return
-  end
-  local path = tool_input[path_key]
-  if type(path) ~= "string" or path == "" then
-    return
-  end
-
-  sweep_stale()
-
-  local abs = vim.fn.fnamemodify(path, ":p")
-  local s = sessions[handle_id]
+--- Back up one absolute path, retaining the first pre-edit state for the whole turn.
+local function capture_path(turn_id, abs)
+  local s = sessions[turn_id]
   if not s then
     s = { dir = nil, count = 0, created = os.time(), files = {}, order = {} }
-    sessions[handle_id] = s
+    sessions[turn_id] = s
   end
   if s.files[abs] then
     return
@@ -148,6 +151,37 @@ function M.capture(handle_id, tool_name, tool_input)
   end
   s.files[abs] = { existed = true, backup_path = backup_path }
   table.insert(s.order, abs)
+end
+
+--- Capture all diff targets before execution; cwd is the chat's working directory, not the
+--- editor's cwd. Existing single-file backends keep their ordinary path key.
+---@param turn_id string|nil
+---@param tool_name string
+---@param tool_input table
+---@param cwd? string
+function M.capture(turn_id, tool_name, tool_input, cwd)
+  local path_key = TOOL_PATH_KEYS[tool_name]
+  if not turn_id or turn_id == "" or not path_key or type(tool_input) ~= "table" then
+    return
+  end
+  local paths = {}
+  if type(tool_input[path_key]) == "string" then
+    table.insert(paths, tool_input[path_key])
+  end
+  if type(tool_input._diff_paths) == "table" then
+    for _, path in ipairs(tool_input._diff_paths) do
+      table.insert(paths, path)
+    end
+  end
+  sweep_stale()
+  for _, path in ipairs(paths) do
+    if type(path) == "string" and path ~= "" then
+      if cwd and cwd ~= "" and path:sub(1, 1) ~= "/" then
+        path = cwd .. "/" .. path
+      end
+      capture_path(turn_id, vim.fn.fnamemodify(path, ":p"))
+    end
+  end
 end
 
 ---git diff --no-index で2ファイル間のhunk部分（@@以降）を取得
@@ -212,20 +246,20 @@ local function build_file_section(rel, entry, abs, before, after)
 end
 
 ---リクエストの差分を生成する
----@param handle_id string|nil リクエストのハンドルID
+---@param turn_id string|nil リクエストのターンID
 ---@param base_dir string patch内パスの基準ディレクトリ（絶対パス）
 ---@param extra_paths table<string, boolean>|nil ツールイベント由来の変更ファイル（絶対/相対パス→true）。
 ---  フックで退避できなかったファイルもModified Files一覧には必ず含めるための補完。
 ---@return string[] files 変更ファイルの相対パス一覧（表示用）
 ---@return string[] abs_files 変更ファイルの絶対パス一覧（バッファリロード用）
 ---@return string|nil patch_content patch内容（diffを1つも生成できなければnil）
-function M.generate(handle_id, base_dir, extra_paths)
+function M.generate(turn_id, base_dir, extra_paths)
   local files = {}
   local abs_files = {}
   local sections = {}
   local seen = {}
 
-  local s = handle_id and sessions[handle_id] or nil
+  local s = turn_id and sessions[turn_id] or nil
   if s then
     for _, abs in ipairs(s.order) do
       local entry = s.files[abs]
@@ -283,17 +317,17 @@ end
 ---
 ---`resolved` に載らなかったパスは退避そのものが無い（Bash由来・退避失敗など）。その変更内容は
 ---どこにも残っていないので、呼び出し側は黙って流さず通知する。
----@param handle_id string|nil リクエストのハンドルID
+---@param turn_id string|nil リクエストのターンID
 ---@param base_dir string patch内パスの基準ディレクトリ（絶対パス）
 ---@param abs_paths string[] ツリー差分に現れなかった変更ファイルの絶対パス
 ---@return string[] sections 合成できたdiffセクション
 ---@return table<string, boolean> resolved 退避があったパス（キーは abs_paths の要素そのまま）。
 ---  セクションを作らなかったものも、generate() が意図的に一覧のみにする種類（変更なし・
 ---  バイナリ・base_dir外）なら resolved に入る
-function M.sections_for(handle_id, base_dir, abs_paths)
+function M.sections_for(turn_id, base_dir, abs_paths)
   local sections = {}
   local resolved = {}
-  local s = handle_id and sessions[handle_id] or nil
+  local s = turn_id and sessions[turn_id] or nil
   if not s then
     return sections, resolved
   end
@@ -320,31 +354,39 @@ function M.sections_for(handle_id, base_dir, abs_paths)
 end
 
 ---リクエストのバックアップを破棄する（レスポンス処理の最後に必ず呼ぶ）
----@param handle_id string|nil
-function M.clear(handle_id)
-  if not handle_id then
+---@param turn_id string|nil
+function M.clear(turn_id)
+  if not turn_id then
     return
   end
-  local s = sessions[handle_id]
+  local s = sessions[turn_id]
   if not s then
     return
   end
   if s.dir then
     vim.fn.delete(s.dir, "rf")
   end
-  sessions[handle_id] = nil
+  sessions[turn_id] = nil
 end
 
 ---テスト用: 退避済みかどうか
----@param handle_id string
+---@param turn_id string
 ---@param path string
 ---@return boolean
-function M.has_capture(handle_id, path)
-  local s = sessions[handle_id]
+function M.has_capture(turn_id, path)
+  local s = sessions[turn_id]
   if not s then
     return false
   end
   return s.files[vim.fn.fnamemodify(path, ":p")] ~= nil
+end
+
+---テスト用: セッションの内部状態を参照する（`created` を古くしてTTLを試すため）
+---`git_snapshot._session` と同じ役目・同じ名前にしてある
+---@param turn_id string
+---@return Vibing.RequestDiff.Session|nil
+function M._session(turn_id)
+  return sessions[turn_id]
 end
 
 return M

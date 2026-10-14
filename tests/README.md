@@ -48,7 +48,7 @@ npm run test:lua
 
 ## Test Structure
 
-```
+```text
 tests/
 ├── minimal_init.lua    # Minimal Neovim setup for tests
 ├── config_spec.lua     # Tests for config module

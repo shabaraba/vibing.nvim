@@ -1,10 +1,19 @@
 -- Minimal init.lua for running tests
 -- Sets up plenary and vibing.nvim for testing
 
--- Add vibing.nvim to runtimepath.
--- Resolved from this script's own path (always absolute when invoked via `-u <abs path>`),
--- not from the process cwd: E2E specs may spawn the child Neovim with cwd set to a throwaway
--- test repo, in which case "." would not point at the plugin root at all.
+-- Add vibing.nvim to runtimepath, resolved from this script's own path rather than from ".".
+--
+-- The comment here used to say "always absolute when invoked via `-u <abs path>`". It is not:
+-- every script in package.json passes `-u tests/minimal_init.lua`, a relative path, so `:p`
+-- resolves against the **process cwd**. That happens to give the right answer, because Neovim
+-- could only have found a relative `-u` from a directory that already holds `tests/`. What it
+-- does not give is any protection against running the suite from a different checkout of this
+-- repository: the cwd decides which tree is tested, end to end, and nothing here can tell that
+-- the caller meant another one.
+--
+-- Which is why the plugin root is printed below. A suite run against the wrong checkout passes,
+-- reporting on code the developer did not change; the one thing that turns that from silent into
+-- visible is saying out loud which tree was loaded.
 local this_file = debug.getinfo(1, "S").source:sub(2)
 local plugin_root = vim.fn.fnamemodify(this_file, ":p:h:h")
 vim.opt.runtimepath:append(plugin_root)
@@ -39,4 +48,4 @@ vim.opt.backup = false
 -- テストがユーザーのShaDa（コマンド履歴・マーク・レジスタ）を読む理由も、汚す理由も無い。
 vim.opt.shadafile = "NONE"
 
-print("Test environment initialized")
+print("Test environment initialized: " .. plugin_root)

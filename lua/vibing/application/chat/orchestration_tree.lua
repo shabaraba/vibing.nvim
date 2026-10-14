@@ -5,10 +5,9 @@
 ---追従させている。足りなかったのは**それを一望する手段**だけで、オーケストレータの
 ---トランスクリプトを読んでも分かるのは自分が配ったところまで — 孫は出てこない。
 ---
----読む先を「開いていればバッファ、そうでなければファイル」の順にするのがこのモジュールの
----肝になる。木のノードの大半は `back` で作られた窓なしのワーカーで、`:VibingChat` の性質上
----1ターン目までディスクに書かれないものもある。どちらか一方しか読まないと、木は黙って
----途中で切れる。
+---読む先を「開いていればバッファ、そうでなければファイル」の順にするのが肝で、その理由ごと
+---`Frontmatter.read` にある。木のノードの大半は `back` で作られた窓なしのワーカーで、
+---`:VibingChat` の性質上1ターン目までディスクに書かれないものもある。
 local M = {}
 
 local ChatLocator = require("vibing.application.chat.chat_locator")
@@ -27,33 +26,20 @@ local MAX_ASCENT = 64
 ---@field repeated boolean 木の上位に既に現れたノード。子は辿らない
 
 ---ノード1つぶんの frontmatter を読む
----
----バッファを優先するのは、保存前の編集も含めて「いまの関係」を答えるため。オーケストレータは
----配布のたびに `orchestrated` を書き足すので、保存が追いつく前に木を見ると新しい子が消える
 ---@param entry {path: string, abs: string, bufnr: number?}
 ---@return table
 local function frontmatter_of(entry)
-  local region
-  if entry.bufnr and vim.api.nvim_buf_is_valid(entry.bufnr) and vim.api.nvim_buf_is_loaded(entry.bufnr) then
-    region = Frontmatter.buffer_region(entry.bufnr)
-  end
-  region = region or Frontmatter.file_region(entry.abs)
-  if not region then
-    return {}
-  end
-
-  return (Frontmatter.parse(table.concat(region, "\n"))) or {}
+  return Frontmatter.read(entry.abs, entry.bufnr) or {}
 end
 
----`orchestrated` の要素はtaskを持つマップになりうる（#717）ので、パスを取り出してから
----`resolve_all` に渡す。要素をそのまま渡すと、マップは文字列でないので落ち、#712 以前の
+---`field_paths` を通すのは、`orchestrated` の要素がtaskを持つマップになりうるため（#717）。
+---要素をそのまま `resolve_all` に渡すと、マップは文字列でないので落ち、#712 以前の
 ---`<path>|<task>` 形式は task 込みの1本のパスとして解決されて存在しない子になる
 ---@param entry {path: string, abs: string, bufnr: number?}
 ---@param key "orchestrated"|"orchestrated_by"
 ---@return {path: string, abs: string, bufnr: number?}[]
 local function linked(entry, key)
-  local items = Frontmatter.as_list(frontmatter_of(entry)[key])
-  return ChatLocator.resolve_all(OrchestratedEntry.paths(items))
+  return ChatLocator.resolve_all(OrchestratedEntry.field_paths(frontmatter_of(entry), key))
 end
 
 ---@param display_path string

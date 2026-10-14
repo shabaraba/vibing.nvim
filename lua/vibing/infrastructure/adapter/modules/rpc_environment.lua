@@ -13,6 +13,12 @@ function M.bind(env)
   local value = tostring(port)
   env[M.PORT_VAR] = value
   env.VIBING_NVIM_CONTEXT = "true"
+
+  -- How long `bin/hooks/pre-tool-use.sh` may block waiting for a decision. It travels here rather
+  -- than in the generated hook settings because the script is one fixed file shared by every chat,
+  -- and it is bound to the port on purpose: the script only ever waits when it has a port to wait
+  -- on, so the two are meaningful together or not at all.
+  require("vibing.infrastructure.hooks.wait_budget").bind(env)
 end
 
 return M

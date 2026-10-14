@@ -40,4 +40,31 @@ describe("subagent_display", function()
       assert.equals("boolean", type(display.get_show_prefix()))
     end)
   end)
+
+  describe("format_completion", function()
+    it("names the task and reports duration and tokens", function()
+      local line = display.format_completion(
+        { task_id = "a1", status = "completed", usage = { total_tokens = 19469, duration_ms = 1610 } },
+        { description = "read the logs" },
+        {}
+      )
+      assert.matches("read the logs", line)
+      assert.matches("2s", line)
+      assert.matches("19k tokens", line)
+      -- "completed" is the ordinary case and saying so adds nothing.
+      assert.is_nil(line:find("completed", 1, true))
+    end)
+
+    it("names a status that is not plain completion", function()
+      assert.matches("failed", display.format_completion({ task_id = "a1", status = "failed" }, nil, {}))
+    end)
+
+    it("falls back to the task id when the launch was never seen", function()
+      assert.matches("a5a51adc038e56bf6", display.format_completion({ task_id = "a5a51adc038e56bf6" }, nil, {}))
+    end)
+
+    it("carries no metadata parentheses when the notification carried no usage", function()
+      assert.is_nil(display.format_completion({ task_id = "a1" }, nil, {}):find("(", 1, true))
+    end)
+  end)
 end)

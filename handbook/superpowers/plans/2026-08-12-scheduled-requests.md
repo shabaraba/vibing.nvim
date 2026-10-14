@@ -1,10 +1,15 @@
 # Scheduled Requests on Usage Limit — Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or
+> superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Let a user park a written chat message and have it sent verbatim once a usage limit resets — explicitly via `:VibingSchedule`, or automatically when `<CR>` lands during a known-active limit.
+**Goal:** Let a user park a written chat message and have it sent verbatim once a usage limit resets — explicitly via
+`:VibingSchedule`, or automatically when `<CR>` lands during a known-active limit.
 
-**Architecture:** Reuse the existing pending-resume store and libuv timers. Entries gain a `kind` field (`auto_resume` | `scheduled`); a `scheduled` entry's payload is the chat buffer's own unsent `## User` section rather than a fixed prompt. A new project-level `.vibing/limit-state.json` records the last observed reset time so a limit can be detected before a request is even sent.
+**Architecture:** Reuse the existing pending-resume store and libuv timers. Entries gain a `kind` field (`auto_resume` |
+`scheduled`); a `scheduled` entry's payload is the chat buffer's own unsent `## User` section rather than a fixed
+prompt. A new project-level `.vibing/limit-state.json` records the last observed reset time so a limit can be detected
+before a request is even sent.
 
 **Tech Stack:** Lua 5.1 (LuaJIT) / Neovim API, plenary.nvim busted-style specs, `vim.loop` timers, `vim.json`.
 
@@ -13,9 +18,12 @@
 - Spec of record: `docs/superpowers/specs/2026-08-12-scheduled-requests-design.md`. Read it before starting.
 - Worktree: `.vibing/worktrees/scheduled-requests`, branch `scheduled-requests`. All work happens there.
 - Existing `pending-resume.json` files must keep working: a missing `kind` reads as `auto_resume`.
-- Existing `auto_resume` behaviour must not change: `enabled` gate, `max_retries`, skip-when-unsent-text, `state` handling, 8-day ceiling.
+- Existing `auto_resume` behaviour must not change: `enabled` gate, `max_retries`, skip-when-unsent-text, `state`
+  handling, 8-day ceiling.
 - Comments in code: minimal, English, explaining _why_ not _what_ — match the density in `auto_resume.lua` and `pending_resume.lua`.
-- Commit messages: English, Semantic Commit format. A `pre-commit` hook runs `prettier --check` on `**/*.{js,mjs,ts,json,md,yml,yaml}`. If it fails, run `pnpm exec prettier --write <file>` and re-commit. **Use `pnpm`, never `npm`/`npx`** — `npm` is blocked in this shell.
+- Commit messages: English, Semantic Commit format. A `pre-commit` hook runs `prettier --check` on
+  `**/*.{js,mjs,ts,json,md,yml,yaml}`. If it fails, run `pnpm exec prettier --write <file>` and re-commit. **Use `pnpm`,
+  never `npm`/`npx`** — `npm` is blocked in this shell.
 - Run Lua tests with: `pnpm run test:lua`. Run a single spec with:
   `nvim --headless -u tests/minimal_init.lua -c "PlenaryBustedFile <path>" -c qa`
 - Do not add a `## Assistant`-side feature, UI, or config beyond what this plan lists.
@@ -60,9 +68,11 @@
 
 - Consumes: nothing.
 - Produces: `require("vibing.core.utils.when").parse(spec: string, now: number|nil) -> number|nil, string|nil`
-  Returns Unix seconds on success, or `nil, reason` on failure. `now` defaults to `os.time()` and exists so tests are not wall-clock dependent.
+  Returns Unix seconds on success, or `nil, reason` on failure. `now` defaults to `os.time()` and exists so tests are
+  not wall-clock dependent.
 
-**Note:** the spec's §7 lists `30m / 2h / 1h30m / 18:30 / 2026-08-12T18:30`, but its Testing section uses `:VibingSchedule 1s`. Seconds are therefore supported too — an E2E test cannot wait a minute.
+**Note:** the spec's §7 lists `30m / 2h / 1h30m / 18:30 / 2026-08-12T18:30`, but its Testing section uses
+`:VibingSchedule 1s`. Seconds are therefore supported too — an E2E test cannot wait a minute.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -267,7 +277,8 @@ git commit -m "feat(schedule): parse user time specs for scheduled requests"
 - Produces:
   - `LimitState.get_path(cwd: string|nil) -> string`
   - `LimitState.load(cwd: string|nil) -> Vibing.LimitState|nil`
-  - `LimitState.record(info: Vibing.RateLimitInfo, cwd: string|nil) -> boolean` — no-op returning `false` when `info.resets_at` is absent
+  - `LimitState.record(info: Vibing.RateLimitInfo, cwd: string|nil) -> boolean` — no-op returning `false` when
+    `info.resets_at` is absent
   - `LimitState.get_active(cwd: string|nil) -> Vibing.LimitState|nil` — the record only while `resets_at > os.time()`
   - `LimitState.clear(cwd: string|nil)`
   - `LimitState.clear_cache()`
@@ -355,7 +366,8 @@ end)
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `nvim --headless -u tests/minimal_init.lua -c "PlenaryBustedFile tests/lua/infrastructure/storage/limit_state_spec.lua" -c qa`
+Run: `nvim --headless -u tests/minimal_init.lua -c "PlenaryBustedFile
+tests/lua/infrastructure/storage/limit_state_spec.lua" -c qa`
 Expected: FAIL — `module 'vibing.infrastructure.storage.limit_state' not found`.
 
 - [ ] **Step 3: Write the implementation**
@@ -489,7 +501,8 @@ return M
 
 - [ ] **Step 4: Run the test to verify it passes**
 
-Run: `nvim --headless -u tests/minimal_init.lua -c "PlenaryBustedFile tests/lua/infrastructure/storage/limit_state_spec.lua" -c qa`
+Run: `nvim --headless -u tests/minimal_init.lua -c "PlenaryBustedFile
+tests/lua/infrastructure/storage/limit_state_spec.lua" -c qa`
 Expected: PASS, 9 successes.
 
 - [ ] **Step 5: Commit**
@@ -582,7 +595,8 @@ git commit -m "feat(schedule): add agent.scheduled_requests config and entry kin
 - Consumes: `PendingResume.put/get/remove`, the module-local `schedule()`, `stop_timer()`,
   `compute_delay()` already in `auto_resume.lua`.
 - Produces:
-  - `AutoResume.schedule_request(chat_file_path: string, fire_at: number, opts: {limit_type: string|nil, retry_count: number|nil, max_retries: number|nil}|nil) -> boolean, string|nil`
+  - `AutoResume.schedule_request(chat_file_path: string, fire_at: number, opts: {limit_type: string|nil, retry_count:
+number|nil, max_retries: number|nil}|nil) -> boolean, string|nil`
   - `AutoResume._may_schedule(retry_count: number|nil, max_retries: number|nil) -> boolean`
   - `AutoResume._is_restorable(entry: Vibing.PendingResume, opts: table) -> boolean`
 
@@ -690,7 +704,8 @@ Note: `schedule_request` resolves its store from the chat file's own directory (
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `nvim --headless -u tests/minimal_init.lua -c "PlenaryBustedFile tests/lua/application/chat/auto_resume_spec.lua" -c qa`
+Run: `nvim --headless -u tests/minimal_init.lua -c "PlenaryBustedFile tests/lua/application/chat/auto_resume_spec.lua"
+-c qa`
 Expected: FAIL — `attempt to call field '_may_schedule' (a nil value)` and similar.
 
 - [ ] **Step 3: Implement `_may_schedule` and `schedule_request`**
@@ -841,7 +856,8 @@ regardless; `restore()` now applies the per-entry rule itself. Keep the surround
 
 - [ ] **Step 7: Run the tests to verify they pass**
 
-Run: `nvim --headless -u tests/minimal_init.lua -c "PlenaryBustedFile tests/lua/application/chat/auto_resume_spec.lua" -c qa`
+Run: `nvim --headless -u tests/minimal_init.lua -c "PlenaryBustedFile tests/lua/application/chat/auto_resume_spec.lua"
+-c qa`
 Expected: PASS — the pre-existing `restore eligibility` and `compute_delay` groups still pass, plus
 12 new successes.
 
@@ -905,7 +921,8 @@ Append to `tests/lua/application/chat/auto_resume_spec.lua`, inside the top-leve
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `nvim --headless -u tests/minimal_init.lua -c "PlenaryBustedFile tests/lua/application/chat/auto_resume_spec.lua" -c qa`
+Run: `nvim --headless -u tests/minimal_init.lua -c "PlenaryBustedFile tests/lua/application/chat/auto_resume_spec.lua"
+-c qa`
 Expected: FAIL — `attempt to call field '_scheduled_decision' (a nil value)`.
 
 - [ ] **Step 3: Implement the decision function and the scheduled fire path**
@@ -990,7 +1007,8 @@ Leave the rest of `fire()` untouched — the `auto_resume` path keeps every exis
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `nvim --headless -u tests/minimal_init.lua -c "PlenaryBustedFile tests/lua/application/chat/auto_resume_spec.lua" -c qa`
+Run: `nvim --headless -u tests/minimal_init.lua -c "PlenaryBustedFile tests/lua/application/chat/auto_resume_spec.lua"
+-c qa`
 Expected: PASS, including the 4 new `_scheduled_decision` cases.
 
 Run the full suite: `pnpm run test:lua`

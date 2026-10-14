@@ -39,11 +39,15 @@ function M.agent_id(adapter)
 end
 
 --- Create an adapter instance for an agent type
+---
+--- Every backend is the one `cli_adapter` class built from that backend's descriptor (ADR 009);
+--- the `adapter_module` shims resolve to the same class, so either path yields the same type.
 --- @param agent_type string|nil
 --- @param config Vibing.Config
 --- @return Vibing.Adapter
 function M.create(agent_type, config)
-  return require(resolve_module(agent_type)):new(config)
+  local CliAdapter = require("vibing.infrastructure.adapter.cli_adapter")
+  return CliAdapter.define(require(Agents.get(agent_type).descriptor_module)):new(config)
 end
 
 return M

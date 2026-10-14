@@ -22,4 +22,13 @@ function M.is_valid_position(position)
   return vim.tbl_contains(M.POSITIONS, position)
 end
 
+---コマンドが受け付けるフラグ。`init.lua` の補完と controller のパースが**同じ**並びを見る。
+---二重に書くと、補完に出たフラグが「Unknown argument」で警告される形が作れてしまう
+---@type table<string, string[]>
+M.FLAGS = {
+  summarize = { "--with-title", "--linked" },
+  set_file_title = { "--linked" },
+  delete_chats = { "--unrenamed" },
+}
+
 return M

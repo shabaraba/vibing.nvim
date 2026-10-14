@@ -31,7 +31,7 @@ describe("summarize handler", function()
           permissions = { mode = "acceptEdits", allow = { "Read" }, deny = { "Bash" } },
         }
       end,
-      get_adapter = function()
+      get_helper_adapter = function()
         return {
           stream = function(_, prompt, opts, _on_chunk, on_done)
             captured_prompt = prompt
@@ -58,6 +58,26 @@ describe("summarize handler", function()
     assert.is_true(captured_opts._is_fork)
     assert.is_nil(captured_prompt:find("Hello", 1, true))
     assert.is_not_nil(captured_prompt:find("summarize", 1, true))
+  end)
+
+  it("sends conversation text when the helper uses a different agent", function()
+    package.loaded["vibing"].get_config = function()
+      return { ai = { chat = { agent = "claude" }, helpers = { agent = "codex" } } }
+    end
+    summarize({}, make_chat_buffer("claude-session"))
+    assert.is_nil(captured_opts._session_id)
+    assert.is_nil(captured_opts._is_fork)
+    assert.truthy(captured_prompt:find("Hello", 1, true))
+  end)
+
+  it("uses the source chat agent when deciding whether its session is reusable", function()
+    local chat = make_chat_buffer("codex-session")
+    chat.parse_frontmatter = function()
+      return { agent = "codex" }
+    end
+    summarize({}, chat)
+    assert.is_nil(captured_opts._session_id)
+    assert.truthy(captured_prompt:find("Hello", 1, true))
   end)
 
   it("marks the call as lightweight instead of passing configured permissions", function()

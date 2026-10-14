@@ -151,6 +151,8 @@ end
 --- @field effort string|nil reasoning effort in force
 --- @field version string|nil Claude Code version that ran it
 --- @field compacted boolean|nil the turn emitted a `compact_boundary`
+--- @field tools number|nil tool count the CLI's `init` reported
+--- @field mcp_servers number|nil MCP server count the CLI's `init` reported
 
 --- The likely causes, most decisive first.
 ---
@@ -187,6 +189,28 @@ function M.causes(prev, current, edited)
 
   if #edited > 0 then
     table.insert(causes, string.format("%s edited since the last turn", name_files(edited)))
+  end
+
+  -- The tool list is part of the cached prefix, so an MCP server that disconnected or
+  -- reconnected between two turns rewrites it (#808). Nothing else on this side shows it. The
+  -- two counts move independently -- a server can drop and a different one reconnect with the
+  -- same net tool total -- so either moving on its own is reported, and the MCP-reconnect guess
+  -- is only voiced when the MCP count itself is what moved.
+  --
+  -- Oneshot only in practice: the counts come from the CLI's `init`, which a resident (duplex)
+  -- process emits once at start, so from its second turn both sides are nil and nothing is claimed.
+  local tools_changed = changed(prev.tools, current.tools)
+  local mcp_changed = changed(prev.mcp_servers, current.mcp_servers)
+  if tools_changed or mcp_changed then
+    local parts = {}
+    if tools_changed then
+      table.insert(parts, string.format("%d to %d tools", prev.tools, current.tools))
+    end
+    if mcp_changed then
+      table.insert(parts, string.format("%d to %d MCP servers", prev.mcp_servers, current.mcp_servers))
+    end
+    local suffix = mcp_changed and " — an MCP server may have reconnected" or ""
+    table.insert(causes, string.format("the tool list changed (%s)%s", table.concat(parts, ", "), suffix))
   end
 
   if prev.compacted then

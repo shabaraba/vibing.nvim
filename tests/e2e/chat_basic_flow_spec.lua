@@ -26,9 +26,10 @@ describe("E2E: Chat basic flow", function()
       init_script = "tests/e2e_init.lua",
     })
     vim.wait(800)
-    -- minimal_init only puts the plugin on the runtimepath; the :Vibing* commands these specs
-    -- drive are registered by setup(), so the child has to be set up explicitly.
-    vim.fn.rpcrequest(nvim_instance.job_id, "nvim_exec_lua", "require('vibing').setup({})", {})
+    -- Through setup_child, not setup() directly: setup() replaces the whole options table, so a
+    -- bare setup({}) drops the throwaway chat directory and writes real chat files into the
+    -- repository.
+    helper.setup_child(nvim_instance)
   end)
 
   after_each(function()

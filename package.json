@@ -1,6 +1,6 @@
 {
   "name": "vibing-nvim",
-  "version": "5.8.0",
+  "version": "5.9.0",
   "description": "Neovim plugin that runs an AI chat inside Neovim via the claude or codex CLI",
   "keywords": [
     "neovim",
@@ -27,32 +27,35 @@
   },
   "homepage": "https://github.com/shabaraba/vibing.nvim#readme",
   "scripts": {
-    "test": "npm run test:lua && npm run test:node",
+    "test": "npm run test:lua && npm run test:node && npm run test:mcp && npm run audit:mcp-imports",
     "test:node": "find tests -name '*.test.mjs' -exec node --test {} +",
+    "test:mcp": "node scripts/run-mcp-server-tests.mjs",
     "test:lua": "nvim --headless -u tests/minimal_init.lua -c \"PlenaryBustedDirectory tests/ { minimal_init = 'tests/minimal_init.lua' }\"",
     "test:e2e": "VIBING_E2E=1 nvim --headless -u tests/minimal_init.lua -c \"PlenaryBustedDirectory tests/e2e/ { minimal_init = 'tests/minimal_init.lua', timeout = 240000 }\"",
+    "test:perf": "VIBING_PERF=1 nvim --headless -u tests/minimal_init.lua -l tests/perf/duplex_latency.lua",
     "test:eval": "nvim --headless -u tests/minimal_init.lua -l tests/evals/run.lua",
     "audit:deps": "node scripts/audit-dependencies.mjs",
-    "check": "find lua -name '*.lua' -exec luac -p {} +",
-    "check:lua": "luac -p lua/vibing/init.lua",
+    "audit:mcp-imports": "node scripts/audit-mcp-server-imports.mjs",
+    "check": "nvim --headless -u NONE -i NONE -l scripts/check-lua.lua",
+    "check:lua": "nvim --headless -u NONE -i NONE -l scripts/check-lua.lua lua/vibing/init.lua",
     "check:doc": "nvim --headless -l scripts/check-help.lua",
     "validate": "npm run check && echo 'All checks passed'",
     "format": "prettier --write '**/*.{js,mjs,ts,json,md,yml,yaml}'",
     "format:check": "prettier --check '**/*.{js,mjs,ts,json,md,yml,yaml}'",
     "lint": "eslint '**/*.{js,mjs,ts}'",
     "lint:fix": "eslint --fix '**/*.{js,mjs,ts}'",
-    "lint:md": "markdownlint '**/*.md' --ignore node_modules"
+    "lint:md": "markdownlint '**/*.md'"
   },
   "dependencies": {
-    "neovim": "^5.4.0",
-    "zod": "^4.6.1"
+    "neovim": "^5.5.0",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@types/node": "^26.5.1",
-    "eslint": "^10.10.0",
+    "@types/node": "^26.6.4",
+    "eslint": "^10.12.0",
     "markdownlint-cli": "^0.49.1",
-    "prettier": "^3.9.6",
+    "prettier": "^3.9.9",
     "typescript": "^7.0.2"
   }
 }

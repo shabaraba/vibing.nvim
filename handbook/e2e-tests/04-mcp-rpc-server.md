@@ -494,7 +494,7 @@ assert(pos[2] == 5)
 
 **RPC リクエスト:**
 
-```
+```text
 invalid json {{{
 ```
 

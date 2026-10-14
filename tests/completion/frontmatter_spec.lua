@@ -1,7 +1,20 @@
 local frontmatter_source = require("vibing.application.completion.sources.frontmatter")
 local frontmatter_provider = require("vibing.infrastructure.completion.providers.frontmatter")
+local catalog_helper = require("tests.helpers.model_catalog")
 
 describe("Frontmatter completion", function()
+  -- These assertions are about the constants the catalogue falls back to. The catalogue's own
+  -- behaviour is covered by `tests/lua/infrastructure/adapter/models/catalog_spec.lua`.
+  local restore_clis
+
+  before_each(function()
+    restore_clis = catalog_helper.without_clis()
+  end)
+
+  after_each(function()
+    restore_clis()
+  end)
+
   describe("Enum fields", function()
     it("should detect mode field trigger", function()
       local ctx = frontmatter_source.get_trigger_context("mode: ", 6)
@@ -59,11 +72,12 @@ describe("Frontmatter completion", function()
     it("should offer every registered backend in agent enum values", function()
       -- Derived from agents.lua, so a new backend appears here without touching the provider.
       local items = frontmatter_provider.get_enum_values("agent")
-      assert.are.equal(4, #items)
+      assert.are.equal(5, #items)
       assert.are.equal("claude", items[1].word)
       assert.are.equal("codex", items[2].word)
       assert.are.equal("copilot", items[3].word)
       assert.are.equal("grok", items[4].word)
+      assert.are.equal("pi", items[5].word)
     end)
 
     it("should get copilot model values via get_model_values", function()
@@ -81,8 +95,8 @@ describe("Frontmatter completion", function()
       end, items)
 
       assert.is_true(vim.tbl_contains(values, "gpt-6-astra"))
+      assert.is_true(vim.tbl_contains(values, "gpt-6-sol"))
       assert.is_true(vim.tbl_contains(values, "gpt-5.6-terra"))
-      assert.is_true(vim.tbl_contains(values, "gpt-5-codex"))
     end)
 
     it("should fall back to claude models for an unknown agent", function()
@@ -394,8 +408,14 @@ describe("Frontmatter completion", function()
       end
     end)
 
-    it("uses config.adapter for model candidates when frontmatter has no agent", function()
-      config.setup({ adapter = "codex" })
+    it("uses config.ai.chat.agent for model candidates when frontmatter has no agent", function()
+      config.setup({
+        ai = {
+          chat = {
+            agent = "codex",
+          },
+        },
+      })
       open({ "---", "model: gpt", "---", "# Vibing Chat" })
 
       local ctx = frontmatter_source.get_trigger_context("model: gpt", 10)
@@ -407,8 +427,14 @@ describe("Frontmatter completion", function()
       assert.is_true(vim.tbl_contains(values, "gpt-5.6-terra"))
     end)
 
-    it("falls back to config.adapter when frontmatter agent is invalid", function()
-      config.setup({ adapter = "codex" })
+    it("falls back to config.ai.chat.agent when frontmatter agent is invalid", function()
+      config.setup({
+        ai = {
+          chat = {
+            agent = "codex",
+          },
+        },
+      })
       open({ "---", "agent: cdoex", "model: gpt", "---", "# Vibing Chat" })
 
       local ctx = frontmatter_source.get_trigger_context("model: gpt", 10)

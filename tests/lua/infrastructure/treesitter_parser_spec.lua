@@ -1,25 +1,68 @@
+local VibingLanguage = require("tests.helpers.vibing_language")
+
 describe("vibing Tree-sitter parser", function()
+  local ensure_language = VibingLanguage.ensure
+
+  -- A tool call's argument is the tool's own input verbatim, so its parentheses are the only
+  -- thing that says where the call ends -- and a command whose parentheses never close would
+  -- otherwise read the rest of the conversation looking for one, taking the next `## Assistant`
+  -- with it. A chat boundary ends every construct; the same rule the fence scanner already keeps.
+  it("stops a tool call at a chat boundary rather than reading past it", function()
+    ensure_language()
+
+    local buf = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
+      '💻 Bash(echo "(((',
+      "",
+      "## Assistant",
+      "",
+      -- Enough closing parentheses to balance the line above, so only the boundary stops it.
+      "done)))",
+      "",
+      "答え。",
+    })
+
+    local kinds = {}
+    for node in vim.treesitter.get_parser(buf, "vibing"):parse(false)[1]:root():iter_children() do
+      kinds[node:type()] = true
+    end
+
+    assert.is_true(kinds.message_header, "the chat boundary was swallowed by the tool call")
+    assert.is_nil(kinds.tool_block)
+
+    vim.api.nvim_buf_delete(buf, { force = true })
+  end)
+
+  -- The parenthesis count cannot follow every argument -- a quote left open is enough to lose it.
+  -- When it does, the call still ends at the first line whose last character is `)`, which is what
+  -- this rule was before it counted anything. Without that floor a call it cannot follow produces
+  -- no block at all, and the whole of it reads as the assistant's prose.
+  it("falls back to the first closing line when the parentheses cannot be followed", function()
+    ensure_language()
+
+    local buf = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
+      '💻 Bash(echo "(((',
+      "still inside)",
+      "  ⎿  done",
+      "after",
+    })
+
+    local last
+    for node in vim.treesitter.get_parser(buf, "vibing"):parse(false)[1]:root():iter_children() do
+      if node:type() == "tool_block" then
+        local _, _, end_row, end_col = node:range()
+        last = end_col == 0 and end_row or end_row + 1
+      end
+    end
+
+    assert.equals(3, last, "the block should cover the two call lines and the result")
+
+    vim.api.nvim_buf_delete(buf, { force = true })
+  end)
+
   it("isolates chat sections and rendered tool blocks from Markdown injections", function()
-    local parser_source = assert(
-      vim.api.nvim_get_runtime_file("tree-sitter-vibing/src/parser.c", false)[1],
-      "generated parser source is missing"
-    )
-    local include_dir = vim.fn.fnamemodify(parser_source, ":h")
-    local scanner_source = include_dir .. "/scanner.c"
-    local parser_library = vim.fn.tempname() .. ".so"
-    local compile = vim.system({
-      "cc",
-      "-O2",
-      "-shared",
-      "-fPIC",
-      "-I" .. include_dir,
-      parser_source,
-      scanner_source,
-      "-o",
-      parser_library,
-    }, { text = true }):wait()
-    assert.equals(0, compile.code, compile.stderr)
-    assert.is_true(vim.treesitter.language.add("vibing", { path = parser_library }))
+    ensure_language()
     local outer_highlights = vim.treesitter.query.get("vibing", "highlights")
     assert.is_not_nil(
       outer_highlights,
@@ -60,7 +103,7 @@ describe("vibing Tree-sitter parser", function()
     local parser = vim.treesitter.get_parser(buf, "vibing")
     local root = parser:parse(true)[1]:root()
     assert.is_false(root:has_error())
-    assert.is_truthy(root:sexpr():find("tool_header_open", 1, true))
+    assert.is_truthy(root:sexpr():find("tool_header_multiline", 1, true))
     assert.is_truthy(root:sexpr():find("tool_result_continuation", 1, true))
 
     local found_nested_fence = false
@@ -150,6 +193,44 @@ describe("vibing Tree-sitter parser", function()
     for _, range in ipairs(ranges) do
       assert.is_false(range[1] < 13 and range[2] > 8)
     end
+
+    vim.api.nvim_buf_delete(buf, { force = true })
+  end)
+
+  -- A node name this query gets wrong does not degrade quietly: `query.get` raises, and the chat
+  -- window is left on a `foldmethod=expr` that errors once per line.
+  it("folds rendered tool blocks and reasoning, and leaves the answer alone", function()
+    ensure_language()
+    local folds = vim.treesitter.query.get("vibing", "folds")
+    assert.is_not_nil(folds, "queries/vibing/folds.scm must load against the grammar")
+    assert.same({ "fold" }, folds.captures)
+
+    local buf = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
+      "## Assistant", -- 0
+      "💭 first thought", -- 1
+      "💭", -- 2
+      "💭 second thought", -- 3
+      "Here is the answer.", -- 4
+      "", -- 5
+      "⏺ Bash(ls)", -- 6
+      "  ⎿  a.txt", -- 7
+      "     b.txt", -- 8
+      "", -- 9
+      "Done.", -- 10
+    })
+    local root = vim.treesitter.get_parser(buf, "vibing"):parse(true)[1]:root()
+    assert.is_false(root:has_error())
+
+    local folded = {}
+    for _, node in folds:iter_captures(root, buf) do
+      local start_row, _, end_row, end_col = node:range()
+      folded[#folded + 1] = { start_row, end_col == 0 and end_row - 1 or end_row }
+    end
+
+    -- Reasoning is rows 1..3 and the tool block rows 6..8. Row 4 is the answer and row 10 the
+    -- prose after the tool, and neither may be inside a fold.
+    assert.same({ { 1, 3 }, { 6, 8 } }, folded)
 
     vim.api.nvim_buf_delete(buf, { force = true })
   end)

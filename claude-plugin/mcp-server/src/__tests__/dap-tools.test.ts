@@ -7,13 +7,7 @@ vi.mock('../rpc.js', () => ({
   callNeovim: vi.fn(),
 }));
 
-const DAP_TOOLS = [
-  'nvim_dap_get_state',
-  'nvim_dap_get_stack_trace',
-  'nvim_dap_get_variables',
-  'nvim_dap_set_breakpoint',
-  'nvim_dap_evaluate',
-];
+const DAP_TOOLS = ['nvim_dap_inspect', 'nvim_dap_set_breakpoint', 'nvim_dap_evaluate'];
 
 describe('dap tools', () => {
   beforeEach(() => {
@@ -51,15 +45,15 @@ describe('dap tools', () => {
 
   describe('forwarding', () => {
     it('asks Neovim for the debugger state', async () => {
-      await handlers.nvim_dap_get_state({ rpc_port: 9876 });
+      await handlers.nvim_dap_inspect({ what: 'state', rpc_port: 9876 });
       expect(rpc.callNeovim).toHaveBeenCalledWith('dap_get_state', {}, 9876);
     });
 
     it('passes the optional thread and frame ids through', async () => {
-      await handlers.nvim_dap_get_stack_trace({ thread_id: 3, rpc_port: 9876 });
+      await handlers.nvim_dap_inspect({ what: 'stack_trace', thread_id: 3, rpc_port: 9876 });
       expect(rpc.callNeovim).toHaveBeenCalledWith('dap_get_stack_trace', { thread_id: 3 }, 9876);
 
-      await handlers.nvim_dap_get_variables({ frame_id: 7, rpc_port: 9876 });
+      await handlers.nvim_dap_inspect({ what: 'variables', frame_id: 7, rpc_port: 9876 });
       expect(rpc.callNeovim).toHaveBeenCalledWith('dap_get_variables', { frame_id: 7 }, 9876);
     });
 
@@ -81,7 +75,7 @@ describe('dap tools', () => {
     it('returns the state as readable JSON', async () => {
       vi.mocked(rpc.callNeovim).mockResolvedValue({ running: true, adapter: 'python' });
 
-      const result = await handlers.nvim_dap_get_state({ rpc_port: 9876 });
+      const result = await handlers.nvim_dap_inspect({ what: 'state', rpc_port: 9876 });
       expect(result.content[0].text).toContain('python');
       expect(result._meta.running).toBe(true);
     });
@@ -89,6 +83,8 @@ describe('dap tools', () => {
 
   describe('rejects before touching Neovim', () => {
     const rejected: Array<[string, string, Record<string, unknown>]> = [
+      ['an inspect with no what', 'nvim_dap_inspect', { rpc_port: 9876 }],
+      ['an inspect of something unknown', 'nvim_dap_inspect', { what: 'memory', rpc_port: 9876 }],
       ['an empty expression', 'nvim_dap_evaluate', { expression: '', rpc_port: 9876 }],
       ['no expression at all', 'nvim_dap_evaluate', { rpc_port: 9876 }],
       ['no line', 'nvim_dap_set_breakpoint', { file: 'a.py', rpc_port: 9876 }],
@@ -102,7 +98,7 @@ describe('dap tools', () => {
     ];
 
     it('accepts no rpc_port and lets callNeovim use the process binding', async () => {
-      await handlers.nvim_dap_get_state({});
+      await handlers.nvim_dap_inspect({ what: 'state' });
       expect(rpc.callNeovim).toHaveBeenCalledWith('dap_get_state', {}, undefined);
     });
 

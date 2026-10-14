@@ -17,42 +17,68 @@ describe("ChatBuffer session permissions", function()
 
     -- Mock dependencies
     package.loaded["vibing.presentation.chat.modules.window_manager"] = {
-      create_window = function() return 1 end,
-      apply_wrap_config = function() end,
+      create_window = function()
+        return 1
+      end,
+      apply_window_config = function() end,
     }
     package.loaded["vibing.presentation.chat.modules.file_manager"] = {
-      get_save_directory = function() return "/tmp/" end,
-      generate_unique_filename = function() return "test.md" end,
-      load_from_file = function() return true end,
+      get_save_directory = function()
+        return "/tmp/"
+      end,
+      generate_unique_filename = function()
+        return "test.md"
+      end,
+      load_from_file = function()
+        return true
+      end,
       update_filename_from_message = function() end,
     }
     package.loaded["vibing.presentation.chat.modules.frontmatter_handler"] = {
-      parse = function() return {} end,
+      parse = function()
+        return {}
+      end,
       update_session_id = function() end,
-      update_field = function() return true end,
-      update_list = function() return true end,
-      get_list = function() return {} end,
+      update_field = function()
+        return true
+      end,
+      update_list = function()
+        return true
+      end,
+      get_list = function()
+        return {}
+      end,
     }
     package.loaded["vibing.presentation.chat.modules.renderer"] = {
-      init_content = function() return 1 end,
+      init_content = function()
+        return 1
+      end,
       moveCursorToEnd = function() end,
       addUserSection = function() end,
       updateContextLine = function() end,
     }
     package.loaded["vibing.presentation.chat.modules.streaming_handler"] = {
       start_response = function() end,
-      flush_chunks = function(_, _, buffer) return buffer end,
+      flush_chunks = function(_, _, buffer)
+        return buffer
+      end,
     }
     package.loaded["vibing.presentation.chat.modules.conversation_extractor"] = {
-      extract_conversation = function() return {} end,
-      extract_user_message = function() return "test" end,
+      extract_conversation = function()
+        return {}
+      end,
+      extract_user_message = function()
+        return "test"
+      end,
       commit_user_message = function() end,
     }
     package.loaded["vibing.presentation.chat.modules.keymap_handler"] = {
       setup = function() end,
     }
     package.loaded["vibing.application.context.manager"] = {
-      get_all = function() return {} end,
+      get_all = function()
+        return {}
+      end,
     }
 
     mock_config = {
@@ -66,7 +92,9 @@ describe("ChatBuffer session permissions", function()
         cancel = "<C-c>",
       },
       chat = {
-        save_location_type = "user",
+        storage = {
+          location = "user",
+        },
       },
     }
 
@@ -76,9 +104,9 @@ describe("ChatBuffer session permissions", function()
   describe("update_session_permissions", function()
     it("should add tool with :once suffix for allow_once", function()
       local buffer = ChatBuffer:new(mock_config)
-      buffer._pending_approval = { tool = "WebSearch", input = {}, options = {} }
+      buffer._pending_approvals = { { tool = "WebSearch", input = {}, options = {} } }
 
-      buffer:update_session_permissions({ action = "allow_once" })
+      buffer:update_session_permissions({ action = "allow_once", tool = "WebSearch" })
 
       local allow_list = buffer:get_session_allow()
       assert.equals(1, #allow_list)
@@ -87,9 +115,9 @@ describe("ChatBuffer session permissions", function()
 
     it("should add tool with :once suffix for deny_once", function()
       local buffer = ChatBuffer:new(mock_config)
-      buffer._pending_approval = { tool = "Bash", input = {}, options = {} }
+      buffer._pending_approvals = { { tool = "Bash", input = {}, options = {} } }
 
-      buffer:update_session_permissions({ action = "deny_once" })
+      buffer:update_session_permissions({ action = "deny_once", tool = "Bash" })
 
       local deny_list = buffer:get_session_deny()
       assert.equals(1, #deny_list)
@@ -98,9 +126,9 @@ describe("ChatBuffer session permissions", function()
 
     it("should add tool for allow_for_session", function()
       local buffer = ChatBuffer:new(mock_config)
-      buffer._pending_approval = { tool = "Edit", input = {}, options = {} }
+      buffer._pending_approvals = { { tool = "Edit", input = {}, options = {} } }
 
-      buffer:update_session_permissions({ action = "allow_for_session" })
+      buffer:update_session_permissions({ action = "allow_for_session", tool = "Edit" })
 
       local allow_list = buffer:get_session_allow()
       assert.equals(1, #allow_list)
@@ -109,9 +137,9 @@ describe("ChatBuffer session permissions", function()
 
     it("should add tool for deny_for_session", function()
       local buffer = ChatBuffer:new(mock_config)
-      buffer._pending_approval = { tool = "Write", input = {}, options = {} }
+      buffer._pending_approvals = { { tool = "Write", input = {}, options = {} } }
 
-      buffer:update_session_permissions({ action = "deny_for_session" })
+      buffer:update_session_permissions({ action = "deny_for_session", tool = "Write" })
 
       local deny_list = buffer:get_session_deny()
       assert.equals(1, #deny_list)
@@ -120,11 +148,11 @@ describe("ChatBuffer session permissions", function()
 
     it("should prevent duplicates in allow list", function()
       local buffer = ChatBuffer:new(mock_config)
-      buffer._pending_approval = { tool = "Read", input = {}, options = {} }
+      buffer._pending_approvals = { { tool = "Read", input = {}, options = {} } }
 
       -- Add twice
-      buffer:update_session_permissions({ action = "allow_once" })
-      buffer:update_session_permissions({ action = "allow_once" })
+      buffer:update_session_permissions({ action = "allow_once", tool = "Read" })
+      buffer:update_session_permissions({ action = "allow_once", tool = "Read" })
 
       local allow_list = buffer:get_session_allow()
       -- Should only have one entry (duplicates prevented)
@@ -133,11 +161,11 @@ describe("ChatBuffer session permissions", function()
 
     it("should handle mutual exclusivity for allow_for_session", function()
       local buffer = ChatBuffer:new(mock_config)
-      buffer._pending_approval = { tool = "Grep", input = {}, options = {} }
+      buffer._pending_approvals = { { tool = "Grep", input = {}, options = {} } }
 
       -- First deny, then allow
-      buffer:update_session_permissions({ action = "deny_for_session" })
-      buffer:update_session_permissions({ action = "allow_for_session" })
+      buffer:update_session_permissions({ action = "deny_for_session", tool = "Grep" })
+      buffer:update_session_permissions({ action = "allow_for_session", tool = "Grep" })
 
       local allow_list = buffer:get_session_allow()
       local deny_list = buffer:get_session_deny()
@@ -149,11 +177,11 @@ describe("ChatBuffer session permissions", function()
 
     it("should handle mutual exclusivity for deny_for_session", function()
       local buffer = ChatBuffer:new(mock_config)
-      buffer._pending_approval = { tool = "Glob", input = {}, options = {} }
+      buffer._pending_approvals = { { tool = "Glob", input = {}, options = {} } }
 
       -- First allow, then deny
-      buffer:update_session_permissions({ action = "allow_for_session" })
-      buffer:update_session_permissions({ action = "deny_for_session" })
+      buffer:update_session_permissions({ action = "allow_for_session", tool = "Glob" })
+      buffer:update_session_permissions({ action = "deny_for_session", tool = "Glob" })
 
       local allow_list = buffer:get_session_allow()
       local deny_list = buffer:get_session_deny()
@@ -165,10 +193,10 @@ describe("ChatBuffer session permissions", function()
 
     it("should reject invalid action", function()
       local buffer = ChatBuffer:new(mock_config)
-      buffer._pending_approval = { tool = "Test", input = {}, options = {} }
+      buffer._pending_approvals = { { tool = "Test", input = {}, options = {} } }
 
       -- Should not throw error, just return early
-      buffer:update_session_permissions({ action = "invalid_action" })
+      buffer:update_session_permissions({ action = "invalid_action", tool = "Test" })
 
       local allow_list = buffer:get_session_allow()
       local deny_list = buffer:get_session_deny()
@@ -179,9 +207,9 @@ describe("ChatBuffer session permissions", function()
 
     it("should reject missing tool name", function()
       local buffer = ChatBuffer:new(mock_config)
-      buffer._pending_approval = { tool = nil, input = {}, options = {} }
+      buffer._pending_approvals = { { tool = nil, input = {}, options = {} } }
 
-      buffer:update_session_permissions({ action = "allow_once" })
+      buffer:update_session_permissions({ action = "allow_once", tool = nil })
 
       local allow_list = buffer:get_session_allow()
       assert.equals(0, #allow_list)
@@ -189,9 +217,9 @@ describe("ChatBuffer session permissions", function()
 
     it("should reject empty tool name", function()
       local buffer = ChatBuffer:new(mock_config)
-      buffer._pending_approval = { tool = "", input = {}, options = {} }
+      buffer._pending_approvals = { { tool = "", input = {}, options = {} } }
 
-      buffer:update_session_permissions({ action = "allow_once" })
+      buffer:update_session_permissions({ action = "allow_once", tool = "" })
 
       local allow_list = buffer:get_session_allow()
       assert.equals(0, #allow_list)
@@ -199,9 +227,9 @@ describe("ChatBuffer session permissions", function()
 
     it("should reject non-string tool name", function()
       local buffer = ChatBuffer:new(mock_config)
-      buffer._pending_approval = { tool = 123, input = {}, options = {} }
+      buffer._pending_approvals = { { tool = 123, input = {}, options = {} } }
 
-      buffer:update_session_permissions({ action = "allow_once" })
+      buffer:update_session_permissions({ action = "allow_once", tool = 123 })
 
       local allow_list = buffer:get_session_allow()
       assert.equals(0, #allow_list)
@@ -211,8 +239,8 @@ describe("ChatBuffer session permissions", function()
   describe("get_session_allow and get_session_deny", function()
     it("should return deep copy of allow list", function()
       local buffer = ChatBuffer:new(mock_config)
-      buffer._pending_approval = { tool = "Test", input = {}, options = {} }
-      buffer:update_session_permissions({ action = "allow_once" })
+      buffer._pending_approvals = { { tool = "Test", input = {}, options = {} } }
+      buffer:update_session_permissions({ action = "allow_once", tool = "Test" })
 
       local allow_list1 = buffer:get_session_allow()
       local allow_list2 = buffer:get_session_allow()
@@ -225,8 +253,8 @@ describe("ChatBuffer session permissions", function()
 
     it("should return deep copy of deny list", function()
       local buffer = ChatBuffer:new(mock_config)
-      buffer._pending_approval = { tool = "Test", input = {}, options = {} }
-      buffer:update_session_permissions({ action = "deny_once" })
+      buffer._pending_approvals = { { tool = "Test", input = {}, options = {} } }
+      buffer:update_session_permissions({ action = "deny_once", tool = "Test" })
 
       local deny_list1 = buffer:get_session_deny()
       local deny_list2 = buffer:get_session_deny()
@@ -239,8 +267,8 @@ describe("ChatBuffer session permissions", function()
 
     it("should not allow external mutation of allow list", function()
       local buffer = ChatBuffer:new(mock_config)
-      buffer._pending_approval = { tool = "Test", input = {}, options = {} }
-      buffer:update_session_permissions({ action = "allow_once" })
+      buffer._pending_approvals = { { tool = "Test", input = {}, options = {} } }
+      buffer:update_session_permissions({ action = "allow_once", tool = "Test" })
 
       local allow_list = buffer:get_session_allow()
       table.insert(allow_list, "Malicious:once")
@@ -251,35 +279,8 @@ describe("ChatBuffer session permissions", function()
     end)
   end)
 
-  describe("_build_approval_input_summary", function()
-    it("should build summary for Bash command", function()
-      local buffer = ChatBuffer:new(mock_config)
-      local summary = buffer:_build_approval_input_summary("Bash", { command = "npm install" })
-      assert.equals(" (command: npm install)", summary)
-    end)
-
-    it("should build summary for Read file_path", function()
-      local buffer = ChatBuffer:new(mock_config)
-      local summary = buffer:_build_approval_input_summary("Read", { file_path = "test.lua" })
-      assert.equals(" (file: test.lua)", summary)
-    end)
-
-    it("should build summary for WebSearch query", function()
-      local buffer = ChatBuffer:new(mock_config)
-      local summary = buffer:_build_approval_input_summary("WebSearch", { query = "Grok AI 2026" })
-      assert.equals(" (query: Grok AI 2026)", summary)
-    end)
-
-    it("should return empty string for unknown tool", function()
-      local buffer = ChatBuffer:new(mock_config)
-      local summary = buffer:_build_approval_input_summary("Unknown", { something = "value" })
-      assert.equals("", summary)
-    end)
-
-    it("should return empty string for missing input key", function()
-      local buffer = ChatBuffer:new(mock_config)
-      local summary = buffer:_build_approval_input_summary("Bash", { other_key = "value" })
-      assert.equals("", summary)
-    end)
-  end)
+  -- `_build_approval_input_summary` の describe はここにあった。関数は
+  -- `approval_decision.input_summary` に移り（承認の意味を1箇所に集めるため、#778）、同じ5ケースは
+  -- `tests/lua/application/chat/approval_decision_spec.lua` が持っている。
+  -- `update_session_permissions` はバッファの frontmatter を触るのでここに残る。
 end)

@@ -1,19 +1,24 @@
---- Grok CLI command builder for `grok -p` / `--single` execution
---- Builds the command array for the Grok Build CLI with streaming JSON output
+--- The parts of the `grok --single` argv a flag table cannot express (ADR 009 P2).
+---
+--- The request itself is `request` in `backends/grok.lua`; `request_builder.lua` resolves the
+--- shared values. What stays here is the binary resolution -- configurable, and sniffed for the
+--- official CLI -- plus the `--rules` block and the `--cwd` flag. `build()` remains as the
+--- historical entry point.
 --- @module vibing.infrastructure.adapter.modules.grok_command_builder
 
-local NonClaudeModel = require("vibing.infrastructure.adapter.modules.non_claude_model")
 local CommonBuilder = require("vibing.infrastructure.adapter.modules.command_builder_common")
-local ReasoningEffort = require("vibing.infrastructure.adapter.modules.reasoning_effort")
+local RequestBuilder = require("vibing.infrastructure.adapter.modules.request_builder")
 local GrokLightweight = require("vibing.infrastructure.adapter.modules.grok_lightweight")
 local worktree_constants = require("vibing.core.constants.worktree")
+local AskUserQuestionInstructions = require("vibing.infrastructure.adapter.modules.ask_user_question_instructions")
 
 local M = {}
 
--- Grok's --permission-mode only accepts default/dontAsk/acceptEdits/bypassPermissions/plan.
--- vibing's "auto" mode (Claude's background safety classifier) has no Grok equivalent, so it
--- falls back to asking for confirmation instead of forwarding an unsupported value.
-local GROK_PERMISSION_MODE_FALLBACK = {
+--- Grok's --permission-mode only accepts default/dontAsk/acceptEdits/bypassPermissions/plan.
+--- vibing's "auto" mode (Claude's background safety classifier) has no Grok equivalent, so it
+--- falls back to asking for confirmation instead of forwarding an unsupported value.
+--- @type table<string, string>
+M.PERMISSION_MODE_FALLBACK = {
   auto = "default",
 }
 
@@ -47,7 +52,7 @@ local function ensure_official_grok(path)
 
   error(
     "Found a 'grok' binary that does not appear to be the official xAI Grok Build CLI. "
-      .. "Install from https://x.ai/cli or set config.grok.executable to the official binary path."
+      .. "Install from https://x.ai/cli or set ai.agents.grok.path to the official binary path."
   )
 end
 
@@ -59,7 +64,7 @@ end
 --- ENOENT out of vim.system. Grok keeps its own cache because it resolves a *configurable*
 --- executable and sniffs it for officialness, neither of which the shared resolver does.
 ---
---- What is skipped is a **bare command name**: no `/` at all. `config.grok.executable` accepts one
+--- What is skipped is a **bare command name**: no `/` at all. `ai.agents.grok.path` accepts one
 --- (`vim.fn.executable("grok")` searches PATH for it), and `fs_stat` would resolve that against
 --- Neovim's cwd and answer nil forever -- defeating the cache on every request, which costs far
 --- more than the lookup: the fallthrough re-runs `ensure_official_grok`, and that blocks the main
@@ -83,18 +88,34 @@ local function still_installed(path)
   return vim.uv.fs_stat(path) ~= nil
 end
 
+--- What `ai.agents.grok.path` asks for, with an omitted path meaning PATH lookup.
+---
+--- The one interpretation of that option, so a caller that only needs the *name* of the binary --
+--- model discovery, which runs on the completion path -- does not re-derive this rule. It
+--- cannot use `resolve_grok_path`: that raises when the CLI is absent and sniffs the binary with
+--- two blocking `vim.fn.system` calls (the cost lines 68-70 discuss).
+--- @param config Vibing.Config|nil
+--- @return string|nil configured the configured path, or nil when it is omitted
+local function configured_executable(config)
+  local configured = vim.tbl_get(config or {}, "ai", "agents", "grok", "path")
+  if type(configured) == "string" and configured ~= "" then
+    return vim.fn.expand(configured)
+  end
+  return nil
+end
+
 --- Resolve path to the grok binary
 --- @param config Vibing.Config
 --- @return string
 local function resolve_grok_path(config)
-  local configured = config and config.grok and config.grok.executable
+  local configured = configured_executable(config)
 
   if cached_grok_path and cached_configured_executable == configured and still_installed(cached_grok_path) then
     return cached_grok_path
   end
 
   local resolved
-  if configured and configured ~= "auto" and configured ~= "" then
+  if configured then
     if vim.fn.executable(configured) == 0 then
       error(
         string.format(
@@ -109,7 +130,7 @@ local function resolve_grok_path(config)
     if found == "" then
       error(
         "Grok CLI not found in PATH. Install the official xAI Grok Build CLI "
-          .. "(curl -fsSL https://x.ai/cli/install.sh | bash) or set config.grok.executable."
+          .. "(curl -fsSL https://x.ai/cli/install.sh | bash) or set ai.agents.grok.path."
       )
     end
     resolved = found
@@ -126,18 +147,12 @@ local function resolve_grok_path(config)
   return cached_grok_path
 end
 
---- Build the `grok -p` (headless single-turn) CLI command array
---- Uses `--single=<value>` (one argv token) rather than `-p <value>` so hyphen-leading
---- prompts are not misparsed as flags by clap.
---- @param prompt string User prompt
---- @param opts Vibing.AdapterOpts Adapter options
---- @param session_id string|nil Session ID for resumption
-
 --- What goes into `--rules`, Grok's equivalent of a system prompt.
 ---
 --- Deliberately much smaller than the Claude adapter's block: Grok reaches no vibing-nvim MCP
---- server, so instructing it to call `nvim_ask_user_question` or `nvim_highlight_range` would
---- name tools it cannot invoke. Only the backend-agnostic conventions go here.
+--- server, so instructing it to call `nvim_highlight_range` would name a tool it cannot invoke.
+--- Only the backend-agnostic conventions go here — which now includes asking a multiple-choice
+--- question, since that is a block in the reply rather than a tool call.
 --- @param opts Vibing.AdapterOpts
 --- @param config Vibing.Config
 --- @return string|nil rules `nil` when there is nothing to say, so the caller omits the flag —
@@ -162,6 +177,7 @@ local function build_rules(opts, config)
         .. worktree_constants.DIR
         .. "<branch-name>/ at the repository root."
     )
+    vim.list_extend(lines, AskUserQuestionInstructions.lines())
   end
 
   if #lines == 0 then
@@ -177,69 +193,84 @@ function M._reset_path_cache()
   cached_configured_executable = nil
 end
 
+--- The binary, for the request spec: configurable and sniffed, so not the shared PATH lookup.
+---
+--- `name` is what the CLI is called on PATH and `configured` reads the option that overrides it;
+--- `resolve` is the two of them plus the existence check and the officialness sniff. A caller that
+--- only needs an argv[1] takes the first two, which is how codex's `BINARY.name` is used.
+--- @type { name: string, configured: fun(config: Vibing.Config|nil): string|nil, resolve: fun(config: Vibing.Config): string, reset: fun() }
+M.BINARY = {
+  name = "grok",
+  configured = configured_executable,
+  resolve = resolve_grok_path,
+  reset = M._reset_path_cache,
+}
+
+--- The duplex transport carries the same question-block instruction as oneshot.
+--- The chat buffer number is also carried for orchestration and chat recall.
+--- @param opts Vibing.AdapterOpts
+--- @param config Vibing.Config
+--- @param self_server string|nil registered bundled MCP server name
+--- @return string|nil
+function M.rules_text(opts, config, self_server)
+  opts = opts or {}
+  local lines = {}
+  local shared = build_rules(opts, config or {})
+  if shared then
+    table.insert(lines, shared)
+  end
+
+  if self_server then
+    vim.list_extend(lines, AskUserQuestionInstructions.chat_buffer_lines(opts.chat_bufnr))
+  end
+
+  if #lines == 0 then
+    return nil
+  end
+  return table.concat(lines, "\n")
+end
+
+--- `--rules`, or nothing when there is nothing to say.
+--- @param ctx Vibing.RequestContext
+--- @return string[]
+function M.rules_args(ctx)
+  local rules = build_rules(ctx.opts, ctx.config)
+  if rules then
+    return { "--rules", rules }
+  end
+  return {}
+end
+
+--- `--cwd`. For a lightweight call this is the scratch directory, which is how grok is kept from
+--- reading the project's AGENTS.md/CLAUDE.md and its `.grok/hooks/`: there is no flag for either,
+--- but `--cwd` decides which project it is looking at.
+--- @param ctx Vibing.RequestContext
+--- @return string[]
+function M.cwd_args(ctx)
+  local cwd = GrokLightweight.resolve_cwd(ctx.opts)
+  if cwd and cwd ~= "" then
+    return { "--cwd", cwd }
+  end
+  return {}
+end
+
+--- Build the `grok --single=<prompt>` command array from the request spec in `backends/grok.lua`.
+---
+--- `--single=<value>` (one argv token) rather than `-p <value>` so hyphen-leading prompts are not
+--- misparsed as flags by clap.
+--- @param prompt string User prompt
+--- @param opts Vibing.AdapterOpts Adapter options
+--- @param session_id string|nil Session ID for resumption
 --- @param config Vibing.Config Plugin config
 --- @return string[] Command array for vim.system()
 function M.build(prompt, opts, session_id, config)
-  opts = opts or {}
-  config = config or {}
-
-  local grok_path = resolve_grok_path(config)
-
-  local full_prompt = prompt
-  if not session_id then
-    full_prompt = CommonBuilder.context_prefix(opts) .. prompt
-  end
-
-  local cmd = { grok_path }
-
-  table.insert(cmd, "--single=" .. full_prompt)
-  table.insert(cmd, "--output-format")
-  table.insert(cmd, "streaming-json")
-
-  local model = NonClaudeModel.resolve(opts, config)
-  if model then
-    table.insert(cmd, "--model")
-    table.insert(cmd, model)
-  end
-
-  local effort = ReasoningEffort.resolve(opts, config)
-  if effort then
-    table.insert(cmd, "--effort")
-    table.insert(cmd, effort)
-  end
-
-  if session_id then
-    table.insert(cmd, "--resume")
-    table.insert(cmd, session_id)
-    if opts._is_fork then
-      table.insert(cmd, "--fork-session")
-    end
-  end
-
-  if opts.lightweight then
-    GrokLightweight.append_flags(cmd)
-  elseif opts.permission_mode then
-    local mode = GROK_PERMISSION_MODE_FALLBACK[opts.permission_mode] or opts.permission_mode
-    table.insert(cmd, "--permission-mode")
-    table.insert(cmd, mode)
-  end
-
-  -- For a lightweight call this is the scratch directory, which is how grok is kept from reading
-  -- the project's AGENTS.md/CLAUDE.md and its `.grok/hooks/`: there is no flag for either, but
-  -- `--cwd` decides which project it is looking at.
-  local cwd = GrokLightweight.resolve_cwd(opts)
-  if cwd and cwd ~= "" then
-    table.insert(cmd, "--cwd")
-    table.insert(cmd, cwd)
-  end
-
-  local rules = build_rules(opts, config)
-  if rules then
-    table.insert(cmd, "--rules")
-    table.insert(cmd, rules)
-  end
-
-  return cmd
+  return RequestBuilder.build(
+    require("vibing.infrastructure.adapter.backends.grok").request,
+    prompt,
+    opts or {},
+    session_id,
+    config or {}
+  )
 end
 
 return M

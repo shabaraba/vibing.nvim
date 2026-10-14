@@ -49,10 +49,16 @@ function M.extract_conversation(buf)
   return conversation
 end
 
----ユーザーメッセージを抽出（最後の## Userセクション）
+---最後のユーザーセクションの本文行を、**書かれたまま**返す
+---
+---前後の空行を落とさないのが `extract_user_message` との違いで、それが要る理由は1つ:
+---描いてあるプロンプトのブロックは末尾の空行まで含めて「書いたはずの並び」であり
+---（`renderer.choice_lines`）、突き合わせは完全一致でしか成立しない。空行を落としたものに
+---対して剥がそうとすると、**ユーザーが何も打たなかったときだけ**ブロックの末尾の空行が
+---消えて一致せず、ブロック全体が本文として残る — 剥がしたい唯一のケースで剥がれない
 ---@param buf number バッファ番号
----@return string?
-function M.extract_user_message(buf)
+---@return string[]? lines ユーザーセクションが1つも無ければ nil
+function M.user_message_lines(buf)
   local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
 
   local last_user_line = nil
@@ -75,6 +81,33 @@ function M.extract_user_message(buf)
       break
     end
     table.insert(message_lines, line)
+  end
+
+  return message_lines
+end
+
+---最後のユーザーセクションが、生成された質問への回答欄か。
+---バッファ内のヘッダーで識別するので、再読込や予約送信でも由来を失わない。
+---@param buf number
+---@return boolean
+function M.is_question_answer(buf)
+  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  for i = #lines, 1, -1 do
+    local header = Timestamp.parse_header(lines[i])
+    if header and Timestamp.extract_role(lines[i]) == "user" then
+      return header.question_answer == true
+    end
+  end
+  return false
+end
+
+---ユーザーメッセージを抽出（最後の## Userセクション）
+---@param buf number バッファ番号
+---@return string?
+function M.extract_user_message(buf)
+  local message_lines = M.user_message_lines(buf)
+  if not message_lines then
+    return nil
   end
 
   while #message_lines > 0 and message_lines[1] == "" do
@@ -117,8 +150,79 @@ function M.commit_user_message(buf)
     return
   end
 
-  local committed = Timestamp.create_header(last_unsent_header.kind, Timestamp.now(), last_unsent_header.from)
+  local committed = Timestamp.create_header(
+    last_unsent_header.kind,
+    Timestamp.now(),
+    last_unsent_header.from,
+    last_unsent_header.question_answer
+  )
   vim.api.nvim_buf_set_lines(buf, last_unsent_line - 1, last_unsent_line, false, { committed })
+end
+
+---末尾の未送信セクションを落とす（既定では中身が空のときだけ）
+---
+---ターンが終わるたび `add_user_section()` が空の `## User <!-- unsent -->` を置く。人間はそこに
+---打ち込むのでセクションは1つのままだが、配達はその下に**もう1つ**足していたので、配達された
+---ターンの上には毎回空の User セクションが取り残されていた（実際のオーケストレーションで
+---1ターンにつき1つ増えるのを確認）。
+---
+---落とすのは中身が空のときだけ。承認プロンプトや質問の選択肢は同じ未送信セクションに描かれる
+---ので、それらは「空でない」として残る。`replace_unsent` を渡した呼び出しだけが、その中身ごと
+---落とす — 代理承認（答える対象がプロンプトそのもの）と、承認プロンプトを描いたまま終わった
+---ターンの締めくくり（同じものを描き直すので、残すと二重になる）の2つ
+---@param buf number
+---@param replace_unsent boolean?
+---@return string[] dropped ヘッダーを除いた、実際に落とした本文行。落とさなかったときは空
+function M.drop_trailing_unsent_section(buf, replace_unsent)
+  if not vim.api.nvim_buf_is_valid(buf) then
+    return {}
+  end
+
+  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+
+  -- 末尾から空行を飛ばして最初に当たった行がヘッダーなら、それが最後のセクションで、かつ
+  -- 中身は空。ヘッダー行が空行であることはないので、この1走査が「最後のヘッダー」と
+  -- 「その下は空」の両方を同時に確かめている
+  local last = #lines
+  while last > 0 and vim.trim(lines[last]) == "" do
+    last = last - 1
+  end
+
+  if last == 0 then
+    return {}
+  end
+
+  if not Timestamp.is_unsent_header(lines[last]) then
+    if not replace_unsent then
+      return {}
+    end
+    -- 中身のある未送信セクションを落とす経路。末尾から**最初に当たったヘッダー**まで戻り、
+    -- それが未送信でなければ何もしない。「未送信ヘッダーを見つけるまで遡る」にすると、
+    -- 送信済みセクションを飛び越えて上のほうの未送信セクションを消しうる
+    repeat
+      last = last - 1
+    until last == 0 or Timestamp.is_header(lines[last])
+    if last == 0 or not Timestamp.is_unsent_header(lines[last]) then
+      return {}
+    end
+  end
+
+  -- 落とす本文を返す。呼び出し側の1つ（承認プロンプトを描き直す経路）は、この中からユーザーが
+  -- 打った行だけを拾って描き直しに持ち越す。ここで返さないと、落としたものを知る手段が
+  -- 「落とす前に自分でも同じ走査をする」しかなくなり、境界の決め方が2箇所になる
+  local dropped = {}
+  for index = last + 1, #lines do
+    table.insert(dropped, lines[index])
+  end
+
+  -- ヘッダーの手前の空行も一緒に落とす。残しても `addUserSection` が末尾の空行を畳むが、
+  -- 畳む対象を残したまま返すと「何を消したか」が2箇所に分かれる
+  local first = last
+  while first > 1 and vim.trim(lines[first - 1]) == "" do
+    first = first - 1
+  end
+  vim.api.nvim_buf_set_lines(buf, first - 1, #lines, false, {})
+  return dropped
 end
 
 return M

@@ -18,35 +18,64 @@ The tree is layered (`domain` / `application` / `infrastructure` / `presentation
 
 ## Adapter (`lua/vibing/infrastructure/adapter/`)
 
-- `base.lua` - Abstract adapter interface
-- `claude_cli.lua` / `codex_cli.lua` / `copilot_cli.lua` / `grok_cli.lua` - Backend adapters
-  (`new()` and `stream()`; everything else comes from `cli_runtime`)
+One adapter, driven by a descriptor per backend (ADR 009). Adding a backend is
+`handbook/ADAPTER_DEVELOPMENT.md`.
+
+- `cli_adapter.lua` - The one `stream()`: hook install, argv build, spawn, event context, registry
+  and permission-opts registration, resume timeout. Built per descriptor by `define()`.
+- `backends/<id>.lua` - The descriptor (`Vibing.BackendDescriptor`): `request` (argv parts),
+  `event_processor`, `hook` (transport × dialect), `vocabulary`, `features`, `stdin`, env edits,
+  and the project hooks (`on_project_open` / `on_setup` / `clear_caches`)
+- `<id>_cli.lua` - Two-line compatibility shims returning the class for that descriptor
+- `factory.lua` - Agent id → adapter class, through the descriptor
+- `base.lua` - The abstract interface the class inherits
+- `modules/request_builder.lua` - Applies a descriptor's `request.parts`: the shared value
+  resolution (model, effort, resume, prompt) and the `extra` escape hatch
+- `modules/<id>_command_builder.lua` - The argv pieces a flag table cannot express for that
+  backend, plus a `build()` over its request spec (what the builder specs pin)
+- `modules/command_builder_common.lua` - Language sentence, `@file:` context prefix, cached binary
+  lookup
+- `modules/stream_decoder.lua` - Wraps a decoder as the `processLine` `stream_handler` feeds
+- `decoders/<id>_<format>.lua` - One CLI's JSON lines → `Vibing.CanonicalEvent[]`; pure, stateful
+  only through the `state` it is handed
+- `modules/event_renderer.lua` - Canonical events → chat text, `on_tool_use`, subagent counting,
+  session storage, usage, cli info. The one place tool rendering is decided.
+- `modules/<id>_event_processor.lua` - Shims: `stream_decoder.processor(decoder, vocabulary)`
+- `modules/<id>_tool_vocabulary.lua` - Native tool name / payload key / path key → canonical
 - `modules/cli_runtime.lua` - `execute`/`cancel`/`supports` + session delegations, installed onto
-  each adapter class; plus `new_handle_id`, `kill_tree`, `spawn` (the guarded `vim.system` call —
-  a spawn that raises leaves no process, so the exit handler never cleans up), and
-  `report_build_failure`
-- `modules/command_builder_common.lua` - Language resolution, the response-language sentence, the
-  `@file:` context prefix, and cached binary lookup — the backend-agnostic half of argv building
-- `modules/cli_command_builder.lua` - Claude CLI argv construction (flags, system prompt)
-- `modules/cli_event_processor.lua` - stream-json → chunk/tool events
-- `modules/codex_command_builder.lua` / `modules/codex_event_processor.lua` - Codex equivalents
-- `modules/non_claude_model.lua` - Model resolution for codex/copilot/grok
-- `modules/<backend>_tool_vocabulary.lua` - Native tool name <-> canonical name, per backend
-- `modules/session_manager.lua`, `modules/active_stream_registry.lua` - Session/handle tracking
+  the class; plus `kill_tree`, `spawn` (the guarded `vim.system` call — a spawn that raises leaves
+  no process, so the exit handler never cleans up), and `report_build_failure`. The two ids it is
+  handed are minted by `core/utils/identity.lua`
+  (`handbook/architecture/processes-and-turns.md`)
+- `modules/non_claude_model.lua`, `modules/reasoning_effort.lua` - The shared value rules the
+  request builder applies
+- `models/catalog.lua` - What the `model:` completion and `/model` offer: each backend's own CLI
+  asked once for its model list (cached, 30s cooldown on failure, dropped by
+  `:VibingReloadCommands`), with `agents.lua`'s `models` as the fallback. `/model` **validates**
+  against it, so a stale list refuses a model the CLI accepts
+- `models/<id>.lua` - One backend's `command(config)` and `parse(stdout)`. Only codex
+  (`codex debug models`) and grok (`grok models`) have one: claude's `--model` takes an alias the
+  CLI resolves to the latest model itself, and the copilot CLI cannot list its models at all
+- `modules/ask_user_question_instructions.lua` - Shared Claude/Codex choice-list tool instruction
+  and stable chat-buffer identity line
+- `modules/session_manager.lua` - CLI sessions, keyed by the **process** that holds one open
+- `modules/process_registry.lua` - Live CLI processes, keyed by **process**. Holds what outlives a
+  turn: the session the process has open on `--resume`, the chat it serves, the adapter that can
+  kill it (`processes-and-turns.md`)
+- `modules/turn_registry.lua` - Open turns, keyed by **turn**, each holding a reference to its
+  process entry. Requires `process_registry` and is the only writer of `active_turn_id`; the
+  dependency never runs the other way
+- `modules/turn_outcome.lua` - The only place a `Vibing.Response` is built, and the only definition
+  of how long the CLI gets to produce its first byte. Shared by both transports; a spec scan fails
+  the build on a response literal written anywhere else under `adapter/`
+  (`handbook/architecture/duplex-transport.md` → "One answer to the first-byte question")
+- `../hooks/transports.lua` - The four hook transports a descriptor can name, over the four
+  settings generators beside it
 
-**What a new backend still has to write** is `new()` and `stream()`. `stream()` stayed
-per-adapter deliberately: its variation points — which settings generator runs before the build,
-how many arguments the command builder takes, whether a `chat_bufnr` or a tool vocabulary gets
-registered, whether stderr needs filtering — outnumber its shared lines, and the four adapters
-genuinely disagree on the child environment. `cli_runtime` covers the pieces inside it that do
-repeat.
-
-Two behaviours were unified rather than parameterised while extracting them, because the split
-was drift rather than intent. `cancel()` now kills the CLI's descendants before the parent on every
-backend; killing only the parent lets shells or MCP servers spawned by tools keep the stdout pipe
-open, and `vim.system()`'s exit handler waits for that pipe to close. And `execute()` now cancels
-a run that outlives its timeout instead of returning and leaving the process alive; only grok did
-that. `cli_runtime_spec.lua` runs both over every backend.
+`cancel()` kills the CLI's descendants before the parent on every backend; killing only the parent
+lets shells or MCP servers spawned by tools keep the stdout pipe open, and `vim.system()`'s exit
+handler waits for that pipe to close. `execute()` cancels a run that outlives its timeout instead
+of returning and leaving the process alive. `cli_runtime_spec.lua` runs both over every backend.
 
 The descendant walk is asynchronous (`vim.system`) rather than blocking (`vim.fn.system`), because
 `cancel()` can be reached from a `vim.schedule` callback and should not stall the main loop there.
@@ -72,7 +101,9 @@ not depend on the process exit callback ever arriving.
 - `infrastructure/rpc/handlers/permission.lua` - PreToolUse decisions, approval UI,
   `ask_user_question`
 - `infrastructure/rpc/handlers/rate_limit.lua` - StopFailure receiver
-- `infrastructure/hooks/settings_generator.lua` - Writes `.vibing/hook-settings.json`
+- `infrastructure/rpc/hook_scope.lua` - The single definition of "which process, and which turn,
+  is this inbound hook in", and of the one fallback (`processes-and-turns.md`)
+- `infrastructure/hooks/settings_generator.lua` - Writes `.vibing/hook-settings-<instance>.json`
 
 ## Context System
 
@@ -92,8 +123,10 @@ Quick reference for commonly edited files:
 Lua Plugin:
 - lua/vibing/init.lua                    - Plugin initialization and commands
 - lua/vibing/config.lua                  - Configuration schema and defaults
-- lua/vibing/infrastructure/adapter/claude_cli.lua                 - Claude CLI adapter
-- lua/vibing/infrastructure/adapter/modules/cli_command_builder.lua - CLI argv / system prompt
+- lua/vibing/infrastructure/adapter/cli_adapter.lua                - The one CLI adapter
+- lua/vibing/infrastructure/adapter/backends/claude.lua            - The reference descriptor
+- lua/vibing/infrastructure/adapter/modules/cli_command_builder.lua - Claude's system prompt / permission argv
+- lua/vibing/infrastructure/adapter/modules/duplex_*.lua            - The resident-process transport (opt-in, #777)
 - lua/vibing/presentation/chat/buffer.lua                          - Chat buffer implementation
 - lua/vibing/application/chat/send_message.lua                     - Request orchestration
 
@@ -112,8 +145,8 @@ Tests:
 
 ## Key Patterns
 
-**Adapter Pattern:** All AI backends implement the `Adapter` interface with `execute()`,
-`stream()`, `cancel()`, and feature detection via `supports()`.
+**Adapter Pattern:** One `cli_adapter` class per backend descriptor implements the `Adapter`
+interface — `execute()`, `stream()`, `cancel()`, `supports()` — from what the descriptor declares.
 
 **Context Format:** Files are referenced as `@file:relative/path.lua` or `@file:path:L10-L25` for
 selections.

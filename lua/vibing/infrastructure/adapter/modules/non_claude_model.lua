@@ -2,7 +2,7 @@
 ---
 --- codex, copilot and grok each carried a byte-identical copy of this. Only one of them was
 --- updated when #537 taught it about `lightweight`, which is how the same bug stayed live on the
---- other two: their utility calls kept using `default_model` and never `utility_model`. One copy
+--- other two: their utility calls kept using `ai.chat.model` and never `ai.helpers.model`. One copy
 --- means the next backend inherits the behaviour instead of a fourth transcription of it.
 ---
 --- @module vibing.infrastructure.adapter.modules.non_claude_model
@@ -15,19 +15,21 @@ local M = {}
 ---
 --- Claude's short names (sonnet/opus/haiku/fable) are filtered out rather than forwarded: these
 --- backends have their own model catalogues and would reject them. That is also what makes the
---- lightweight branch safe -- `utility_model` defaults to `sonnet`, so on these backends it
---- resolves to nil and the CLI's own default applies.
+--- lightweight branch safe -- `ai.helpers.model` defaults to a Claude short name (`haiku`), so on
+--- these backends it resolves to nil and the CLI's own default applies.
 ---
 --- @param opts Vibing.AdapterOpts
 --- @param config Vibing.Config
 --- @return string|nil
 function M.resolve(opts, config)
-  local agent = config.agent or {}
+  opts = opts or {}
+  local helpers = opts.lightweight or opts._ai_purpose == "helpers"
+  local selection = require("vibing.core.utils.ai_config").resolve(config, opts._agent_id, helpers)
   local model
-  if opts.lightweight then
-    model = agent.utility_model
+  if helpers then
+    model = selection.model
   else
-    model = opts.model or agent.default_model
+    model = opts.model or selection.model
   end
 
   if model and Modes.is_valid_model(model) then

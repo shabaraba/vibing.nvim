@@ -54,6 +54,47 @@ describe("rpc handlers annotations", function()
       assert.equals("┃ second", virt_lines[2][1][1])
     end)
 
+    it("wraps a note too wide for the window, since virt_lines clip instead of wrapping", function()
+      -- 水平分割では幅が親と同じままなので、幅を持てる垂直分割で測る
+      vim.cmd("vnew")
+      local winid = vim.api.nvim_get_current_win()
+      vim.api.nvim_win_set_buf(winid, bufnr)
+      vim.api.nvim_win_set_width(winid, 40)
+
+      annotations.annotate({
+        bufnr = bufnr,
+        line = 1,
+        text = "this handle is never released on the error path, so every failed retry leaks one",
+      })
+
+      local info = vim.fn.getwininfo(winid)[1]
+      local usable = info.width - info.textoff
+      assert.is_true(usable < 60) -- 折り返しが起きる幅であること自体を確かめる
+
+      local virt_lines = marks(bufnr)[1][4].virt_lines
+      assert.is_true(#virt_lines > 1)
+      for _, virt_line in ipairs(virt_lines) do
+        assert.is_true(vim.fn.strwidth(virt_line[1][1]) <= usable)
+      end
+
+      vim.api.nvim_win_close(winid, true)
+    end)
+
+    it("indents the continuation lines so one long note still reads as one note", function()
+      annotations.annotate({ bufnr = bufnr, line = 1, text = string.rep("word ", 40) })
+
+      local virt_lines = marks(bufnr)[1][4].virt_lines
+      assert.is_true(#virt_lines > 1)
+      assert.equals("┃ word", virt_lines[1][1][1]:sub(1, #"┃ word"))
+      assert.equals("┃   ", virt_lines[2][1][1]:sub(1, #"┃   "))
+    end)
+
+    it("keeps a note that fits on one line", function()
+      annotations.annotate({ bufnr = bufnr, line = 1, text = "short note" })
+
+      assert.equals(1, #marks(bufnr)[1][4].virt_lines)
+    end)
+
     it("colours the note by severity", function()
       annotations.annotate({ bufnr = bufnr, line = 1, text = "a", severity = "warn" })
       assert.equals("VibingAnnotationWarn", marks(bufnr)[1][4].virt_lines[1][1][2])

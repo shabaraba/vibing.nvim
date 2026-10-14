@@ -8,8 +8,15 @@
 local helper = require("tests.helpers.adapter_stream")
 local codex = require("vibing.infrastructure.adapter.codex_cli")
 local notice = require("vibing.infrastructure.adapter.modules.codex_provider_notice")
+local TurnRegistry = require("vibing.infrastructure.adapter.modules.turn_registry")
 
-local CONFIG = { agent = { default_model = "sonnet" } }
+local CONFIG = {
+  ai = {
+    chat = {
+      model = "sonnet",
+    },
+  },
+}
 
 --- Whether the argv carries the hook's `-c` pair.
 ---
@@ -18,8 +25,7 @@ local CONFIG = { agent = { default_model = "sonnet" } }
 --- codex ignores, the helper would have kept answering "hook registered" for a corrected argv --
 --- inverting every assertion below while the suite stayed green. What this spec is for is whether
 --- the adapter emits the hook at all, not how the generator spells it.
-local HOOK_EVENT_KEY =
-  require("vibing.infrastructure.hooks.codex_settings_generator")._HOOK_EVENT_KEY
+local HOOK_EVENT_KEY = require("vibing.infrastructure.hooks.codex_settings_generator")._HOOK_EVENT_KEY
 
 local function registers_hook(cmd)
   for index, arg in ipairs(cmd) do
@@ -47,6 +53,23 @@ describe("codex_cli hook registration", function()
   it("registers the PreToolUse hook for an ordinary call", function()
     helper.run_stream(adapter, { permission_mode = "default" })
     assert.is_true(registers_hook(system.cli_call().cmd))
+  end)
+  it("does not enable duplex hook retry policy for codex exec", function()
+    local run = helper.run_stream(adapter, { permission_mode = "default" })
+    local opts = require("vibing.infrastructure.rpc.handlers.permission")._get_active_opts(run.turn_id)
+    assert.same(
+      { false, true, true },
+      { opts._retry_hook_approval, opts._hook_approval_options == nil, opts._observe_hook_input == nil }
+    )
+  end)
+
+  it("registers chat_bufnr so a waiting approval can draw into the chat", function()
+    local run = helper.run_stream(adapter, { permission_mode = "default", chat_bufnr = 42 })
+    local entry = TurnRegistry.get(run.turn_id)
+
+    assert.is_not_nil(entry)
+    assert.equals(42, entry.process.chat_bufnr)
+    TurnRegistry.close(run.turn_id)
   end)
 
   it("skips it for a lightweight call, matching claude_cli", function()
@@ -103,7 +126,7 @@ describe("codex_cli hook registration", function()
     end)
 
     local usage = assert(run.done_responses[1])._token_usage
-    assert.equals("codex", usage.backend)
+    assert.equals("cumulative", usage.kind)
     assert.equals(120000, usage.totals.input)
     assert.equals(100000, usage.totals.cached)
     assert.equals(500, usage.totals.cache_write)
@@ -121,7 +144,15 @@ describe("codex_cli hook registration", function()
 
   it("does not probe when the notice is turned off", function()
     local off = codex:new(vim.tbl_deep_extend("force", CONFIG, {
-      agent = { codex_provider_notice = { enabled = false } },
+      ai = {
+        agents = {
+          codex = {
+            extensions = {
+              provider_notice = false,
+            },
+          },
+        },
+      },
     }))
     helper.run_stream(off, { permission_mode = "default", lightweight = true })
     assert.are.equal(1, #system.calls)

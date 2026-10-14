@@ -43,9 +43,11 @@ describe("ChatBuffer:_try_schedule_instead_of_send", function()
   local function stub_config(scheduled_opts, auto_resume_opts)
     Config.get = function()
       return {
-        agent = {
-          scheduled_requests = scheduled_opts or { enabled = true, max_retries = 3 },
-          auto_resume_on_limit = auto_resume_opts or { grace_sec = 10 },
+        automation = {
+          limits = {
+            queue = scheduled_opts or { enabled = true, max_retries = 3 },
+            resume = auto_resume_opts or { grace_sec = 10 },
+          },
         },
       }
     end
@@ -76,7 +78,7 @@ describe("ChatBuffer:_try_schedule_instead_of_send", function()
     -- store lookups below must agree on the exact path.
     local chat_path = vim.api.nvim_buf_get_name(bufnr)
     table.insert(created_chat_paths, chat_path)
-    local instance = setmetatable({ buf = bufnr, _pending_approval = nil }, ChatBuffer)
+    local instance = setmetatable({ buf = bufnr, _pending_approvals = {} }, ChatBuffer)
     return instance, chat_path
   end
 
@@ -114,7 +116,7 @@ describe("ChatBuffer:_try_schedule_instead_of_send", function()
 
     local chat_path = vim.api.nvim_buf_get_name(bufnr)
     table.insert(created_chat_paths, chat_path)
-    local instance = setmetatable({ buf = bufnr, _pending_approval = nil }, ChatBuffer)
+    local instance = setmetatable({ buf = bufnr, _pending_approvals = {} }, ChatBuffer)
     return instance, chat_path
   end
 
@@ -136,13 +138,47 @@ describe("ChatBuffer:_try_schedule_instead_of_send", function()
     it("does not park an approval response, even with an active limit", function()
       local response = "1. allow_once - Allow this execution only"
       local chat_buf, chat_path = make_buffer(response)
-      chat_buf._pending_approval = { tool = "Bash" }
+      chat_buf._pending_approvals = { { tool = "Bash", request_id = "req-1" } }
       LimitState.record({ resets_at = os.time() + 3600, limit_type = "five_hour" }, tmp_root)
 
       local scheduled = chat_buf:_try_schedule_instead_of_send(response)
 
       assert.is_false(scheduled)
       assert.is_nil(PendingResume.get(chat_path))
+    end)
+
+    it("does not park a retry the approval above already paid for", function()
+      -- **The case where the test above stops recognising itself.** The exclusion reads
+      -- `_pending_approvals`, and `approval_decision.consume` empties it the moment the answer is
+      -- spent. Answering the only pending approval, when its hook had already expired, leaves an
+      -- empty list and a retry message — so the send looks like any other and is parked.
+      --
+      -- What gets parked is the *buffer*, not the message: `_try_schedule_instead_of_send` saves
+      -- the chat and lets the unsent section be the body when the limit lifts. So the model would
+      -- eventually receive `1. allow_once - Allow this execution only` — a line that means nothing
+      -- outside the prompt it came from — instead of the retry the permission was granted for.
+      local response = "1. allow_once - Allow this execution only"
+      local chat_buf, chat_path = make_buffer(response)
+      chat_buf._pending_approvals = {}
+      LimitState.record({ resets_at = os.time() + 3600, limit_type = "five_hour" }, tmp_root)
+
+      local scheduled = chat_buf:_try_schedule_instead_of_send("Retry the Bash call; it is allowed now.", true)
+
+      assert.is_false(scheduled)
+      assert.is_nil(PendingResume.get(chat_path))
+    end)
+
+    it("still parks an ordinary message, which is what the flag above must not break", function()
+      -- The control. Without it "nothing was parked" is green whether the exclusion works or the
+      -- limit was never active in the first place.
+      local chat_buf, chat_path = make_buffer("keep going")
+      chat_buf._pending_approvals = {}
+      LimitState.record({ resets_at = os.time() + 3600, limit_type = "five_hour" }, tmp_root)
+
+      local scheduled = chat_buf:_try_schedule_instead_of_send("keep going")
+
+      assert.is_true(scheduled)
+      assert.is_not_nil(PendingResume.get(chat_path))
     end)
   end)
 
@@ -252,10 +288,7 @@ describe("ChatBuffer:_try_schedule_instead_of_send", function()
     AutoResume.schedule_request = original_schedule_request
 
     assert.is_false(scheduled)
-    assert.is_false(
-      schedule_request_called,
-      "AutoResume.schedule_request must not be called when the save failed"
-    )
+    assert.is_false(schedule_request_called, "AutoResume.schedule_request must not be called when the save failed")
     assert.is_nil(PendingResume.get(chat_path))
     -- The failed `:write` left the buffer's unsaved-changes flag set; a passing save would have
     -- cleared it. This is the same signal the helper itself checks before arming.

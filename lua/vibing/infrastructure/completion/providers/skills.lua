@@ -339,6 +339,17 @@ function M.get_all()
   return items
 end
 
+---The CLI's command list **only if it has already been fetched**, never starting a probe.
+---
+---`get_all()` cannot answer this: it re-checks staleness, and a cwd that moved since the probe
+---clears the cache and spawns a fresh `claude` on the spot. A caller that is only looking one
+---name up -- `gd` on a word that may not be a command at all -- must not pay for that.
+---@return Vibing.CompletionItem[]
+function M.peek_cli_commands()
+  invalidate_if_stale()
+  return _cli_cache or {}
+end
+
 ---Preload the CLI's command list in background (call at setup time to warm the cache)
 function M.preload()
   invalidate_if_stale()

@@ -3,7 +3,7 @@ import { listLiveInstances } from './instance-registry.js';
 import { READ_ONLY_METHODS } from './read-only-methods.js';
 
 const NVIM_RPC_TIMEOUT = parseInt(process.env.VIBING_RPC_TIMEOUT || '30000', 10); // Default 30 seconds
-const RPC_PORT_ENV = 'VIBING_NVIM_RPC_PORT';
+export const RPC_PORT_ENV = 'VIBING_NVIM_RPC_PORT';
 
 let requestId = 0;
 
@@ -182,7 +182,12 @@ async function resolveRpcPort(method: string, requestedPort?: number): Promise<n
  * @param port - Legacy RPC port override used only when the process is not already bound.
  * @returns The `result` value from the RPC response. The promise is rejected with the RPC `error` if the response contains one, and is also rejected if the socket closes or the request times out.
  */
-export async function callNeovim(method: string, params: any = {}, port?: number): Promise<any> {
+export async function callNeovim(
+  method: string,
+  params: any = {},
+  port?: number,
+  timeoutMs?: number
+): Promise<any> {
   const resolvedPort = await resolveRpcPort(method, port);
   const sock = await getSocket(resolvedPort);
   const id = ++requestId;
@@ -196,13 +201,18 @@ export async function callNeovim(method: string, params: any = {}, port?: number
     const request = JSON.stringify({ id, method, params }) + '\n';
     sock.write(request);
 
-    // Timeout after configured duration (default 30 seconds)
+    // Timeout after configured duration (default 30 seconds), or whatever this call asked for.
+    //
+    // No method overrides it today. `ask_user_question` did, to wait for a human (#788), until a
+    // question became a block the model writes at the end of its turn. It stays per call rather
+    // than a raised default because every method talks to Neovim and nothing else, so a long
+    // default would turn a hung editor into a hung tool call for all of them.
     setTimeout(() => {
       if (portPending.has(id)) {
         portPending.delete(id);
         reject(new Error('Request timeout'));
       }
-    }, NVIM_RPC_TIMEOUT);
+    }, timeoutMs ?? NVIM_RPC_TIMEOUT);
   });
 }
 

@@ -3,7 +3,7 @@ local Agents = require("vibing.core.constants.agents")
 
 describe("agents registry", function()
   it("lists the backends in a fixed order", function()
-    assert.same({ "claude", "codex", "copilot", "grok" }, Agents.ORDER)
+    assert.same({ "claude", "codex", "copilot", "grok", "pi" }, Agents.ORDER)
   end)
 
   it("has a definition for every id in ORDER, and no strays", function()
@@ -21,6 +21,20 @@ describe("agents registry", function()
       assert.is_string(def.adapter_module)
       assert.is_string(def.export_name)
       assert.is_true(pcall(require, def.adapter_module), def.adapter_module .. " does not load")
+    end
+  end)
+
+  it("gives every backend a descriptor whose id is its own", function()
+    -- The adapter is one class driven by the descriptor (ADR 009), so a descriptor registered
+    -- under the wrong id would name a different backend in `adapter.name`, limit-state scoping
+    -- and every log line.
+    for _, def in ipairs(Agents.list()) do
+      assert.is_string(def.descriptor_module)
+      local ok, descriptor = pcall(require, def.descriptor_module)
+      assert.is_true(ok, def.descriptor_module .. " does not load")
+      assert.equals(def.id, descriptor.id)
+      assert.is_function(descriptor.build)
+      assert.is_function(descriptor.event_processor.processLine)
     end
   end)
 
@@ -68,17 +82,32 @@ describe("agents registry", function()
       assert.same(Agents.ORDER, values)
     end)
 
-    it("is where the frontmatter provider gets its per-agent models from", function()
-      local provider = require("vibing.infrastructure.completion.providers.frontmatter")
-      for _, def in ipairs(Agents.list()) do
-        local values = vim.tbl_map(function(item)
-          return item.word
-        end, provider.get_model_values(def.id))
-        local expected = vim.tbl_map(function(m)
-          return m.value
-        end, def.models)
-        assert.same(expected, values, def.id .. " model candidates drifted")
-      end
+    describe("with no CLI installed to ask", function()
+      local restore_clis
+
+      before_each(function()
+        restore_clis = require("tests.helpers.model_catalog").without_clis()
+      end)
+
+      after_each(function()
+        restore_clis()
+      end)
+
+      it("is what the frontmatter provider falls back to", function()
+        local provider = require("vibing.infrastructure.completion.providers.frontmatter")
+        for _, def in ipairs(Agents.list()) do
+          local values = vim.tbl_map(function(item)
+            return item.word
+          end, provider.get_model_values(def.id))
+          local expected = vim.tbl_map(function(m)
+            return m.value
+          end, def.models)
+          if def.id == "codex" then
+            table.insert(expected, 1, "default")
+          end
+          assert.same(expected, values, def.id .. " model candidates drifted")
+        end
+      end)
     end)
 
     it("is where the factory resolves adapter modules from", function()

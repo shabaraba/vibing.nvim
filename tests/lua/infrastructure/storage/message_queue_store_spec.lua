@@ -1,3 +1,4 @@
+local Fs = require("vibing.core.utils.fs")
 describe("message_queue_store", function()
   local Store = require("vibing.infrastructure.storage.message_queue_store")
 
@@ -55,7 +56,7 @@ describe("message_queue_store", function()
 
   it("ignores a corrupt store instead of erroring", function()
     local path = Store.get_path(tmp_root)
-    vim.fn.mkdir(vim.fn.fnamemodify(path, ":h"), "p")
+    Fs.ensure_dir(vim.fn.fnamemodify(path, ":h"))
     vim.fn.writefile({ "{ this is not json" }, path)
 
     assert.same({}, Store.load(tmp_root))

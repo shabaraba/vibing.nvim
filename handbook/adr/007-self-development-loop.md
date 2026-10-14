@@ -27,7 +27,7 @@ vibing.nvim の開発において、Claude が自分自身（vibing.nvim プラ�
 
 ### アーキテクチャ
 
-```
+```text
 Main Neovim プロセス (port 9876)
   ├─ vibing chat (Claude が実行中)
   │   └─ MCP で nvim_reload_with_nested_test() 実行
@@ -257,6 +257,8 @@ sequenceDiagram
 2. `nested_test.lua` - Nested nvim 起動と結果読み取り
 3. `M.reload_with_nested_test()` - エントリーポイント
 
+<!-- markdownlint-disable MD029 -- numbering runs on across phases -->
+
 ### Phase 2: MCP Integration
 
 4. `mcp-server/src/tools/reload.ts` - MCP tool 実装
@@ -268,6 +270,8 @@ sequenceDiagram
 7. ユニットテスト
 8. E2E テスト（手動）
 9. ユーザードキュメント更新
+
+<!-- markdownlint-enable MD029 -->
 
 ### テストスクリプトの例
 

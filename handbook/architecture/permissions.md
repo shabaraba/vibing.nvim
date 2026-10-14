@@ -72,6 +72,17 @@ evaluating it first would let one approved `Bash` call whitelist every later one
 after the tool-level lists. Full field/matching table and the rest of the ordering:
 `handbook/configuration.md` → "Granular Permission Rules". `patterns` are **Lua patterns, not regex**.
 
+**A turn with no chat names its whole toolset.** `:VibingChatSearch` and `:VibingSessionSearch`
+run an agent turn with no chat buffer, so there is nowhere to show an approval. They pass
+`exclusive_tools`, and `can_use_tool` denies everything outside it right after the session deny
+list — ahead of the internal tools, `bypassPermissions` and the vibing-nvim MCP grant, all of which
+would otherwise let `Agent` or `nvim_execute` through. The CLI side runs in `dontAsk` with the same
+list as `--allowedTools`. A user's own deny list still applies inside the set.
+
+A `Bash(<prefix>:*)` entry matches its prefix word for word, so `Bash(gh pr view:*)` covers
+`gh pr view 876`; until this was fixed only the first word was compared and every multi-word prefix
+silently matched nothing. In `dontAsk`, a tool the allow list names counts as pre-approved.
+
 **Default deny rules:** `permissions.default_deny_rules` (default `true`) prepends bundled deny
 rules for destructive Bash commands, defined in
 `lua/vibing/core/constants/destructive_commands.lua`. The blocked list and its known gaps live in
@@ -112,38 +123,149 @@ in headless `claude -p` mode):
 Tool: Bash
 Command: npm install
 
-1. allow_once - Allow this execution only
-2. deny_once - Deny this execution only
-3. allow_for_session - Allow for this session
-4. deny_for_session - Deny for this session
+1. allow_once - Allow this execution only <!-- vibing:req=1789655115-51729-12345 -->
+2. deny_once - Deny this execution only <!-- vibing:req=1789655115-51729-12345 -->
+3. allow_for_session - Allow for this session <!-- vibing:req=1789655115-51729-12345 -->
+4. deny_for_session - Deny for this session <!-- vibing:req=1789655115-51729-12345 -->
 
-Please select and press <CR> to send.
+Delete every option line except the one you want, then press <CR>.
 ```
 
 The user deletes unwanted options with standard Vim commands (`dd`, etc.) and sends the remaining
 one with `<CR>`. `allow_once`/`deny_once` apply to this call only; `allow_for_session`/
 `deny_for_session` persist for the rest of the chat session.
 
+### More than one prompt at a time, and why the lines are marked
+
+A CLI runs its tool calls — and therefore their PreToolUse hooks — **in parallel**. Measured on
+claude 2.1.236, one turn's three `Read`s started three hooks 0.54s apart, all three blocking
+simultaneously (`tests/perf/hook_concurrency.sh`). So once an approval can be answered without
+killing the turn, a chat routinely holds several prompts at once, and every one of them draws the
+same `1. allow_once - …`.
+
+The `<!-- vibing:req=… -->` marker is what makes an answer attributable. Nothing resolves by
+position or by "the topmost one": people answer out of order, and the third prompt is as likely to
+be answered first as the first.
+
+`approval_parser.lua` is the only place that composes that line and the only place that reads it
+back — `approval_delegate.option_line` calls the same encoder, because a delegated answer is meant
+to be byte-identical to the line a human would have left behind.
+
+**An ambiguous answer is refused and consumes nothing.** Two lines left for one request, or an
+unmarked line while several prompts are open, stops the send with a message saying which request
+has how many lines. This does change one long-standing behaviour: pressing `<CR>` with the whole
+block still in place used to take the first match, which is always `allow_once` — a grant produced
+by doing nothing. The refusal is cheap precisely because the hook is still blocked: the user edits
+the lines and presses `<CR>` again, where under the old kill-based design a refusal cost a turn.
+
+An approval that reaches its wait limit is **marked expired in place, not deleted** — removing
+lines from a buffer the user may be editing moves everything under their cursor. The mark is what
+explains why an answer to it is refused.
+
+### Where the prompt is drawn, and why the stream stops while it is open
+
+Under the kill-based design nothing had to decide this. The process died, the turn ended, and
+`_handle_response` → `add_user_section` was the single place a prompt was ever drawn. A turn that
+keeps running never reaches that point, so two things moved:
+
+- **`on_approval_required` takes a fifth argument, `waiting`.** True on the waiting path, and the
+  chat draws the prompt itself (`ChatBuffer:show_pending_prompts`, shared with the question
+  channel since #788). Drawing unconditionally would
+  double-render on the kill path, where `_handle_response` still draws; not drawing at all is the
+  silent failure this argument exists to prevent — the prompt is stored, nothing appears, and the
+  hook waits out the whole limit against an empty screen.
+- **Drawing the prompt closes the assistant section it interrupts**, writing the end timestamp
+  `cache_expiry` reads. The turn ending used to be that moment.
+
+**While a hook is actually blocked the chunk buffer stops draining** (`ChatBuffer:append_chunk`).
+An append-only buffer cannot hold an input field and a stream of output at the same time: the
+prompt is an unsent `## User` section at the end and `flush_chunks` appends at the end too, so
+anything flushed under it is read back by `extract_user_message` as the user's next message.
+
+**How much accumulates is measured for exactly one turn, and the generalisation from it is not.**
+`.vibing/probe/concurrency-claude/claude-stream.jsonl` is that turn: three `tool_use` blocks, then
+a single `rate_limit_event`, then three `tool_result`s — and the turn's only assistant `text` block
+after all three. The hooks blocked 20s across that gap
+(`hook-concurrency-claude.log`: three `START`s 1.1s apart, three `END`s 20s later). So in that turn
+nothing but a rate-limit line arrived while hooks were blocked.
+
+"claude never emits prose while a hook blocks" is the **unverified** step: one turn of three
+`Read`s was measured, and a turn that interleaves prose with tool calls was not. What a wrong
+generalisation costs here is only how much piles up — the failure mode does not change.
+
+**The condition is `pending_approvals.list_for_chat`, not `#_pending_approvals`**, and the
+difference is not pedantry. The render list keeps its entries after the **kill** path's turn dies —
+they stay answerable as a new turn — so keying the hold on it would let one lingering prompt hold
+every later turn's output, rendering nothing at all. The registry empties the moment an answer
+lands, which is the same property `chat_status` relies on for not reading `_stop_reason`.
+
+Answering the **last** blocked prompt opens a `## Assistant` and flushes there; answering one of
+several redraws the rest into a new input section and keeps holding. Opening an input section in
+the first case would put the held output right back under the input. The same answer clears
+`_stop_reason`, which is otherwise only cleared where a new turn starts — and answering in place
+starts none, so the chat would call itself `waiting_approval` until its next send.
+
+**Why design "A" was rejected, and the reason that is not it.** An earlier brief rejected the
+variant that opens a `## Assistant` while prompts are still outstanding, on the grounds that the
+remaining prompts would become unanswerable. **That reasoning is wrong and should not be
+repeated**: `extract_user_message` scans back for the last _user-role_ header without checking
+whether it is unsent, so the remaining prompts _are_ found under a committed header exactly as
+under an unsent one (`.claude/rules/features.md` states this as an invariant). A is still rejected,
+for the different reason that answering from a committed section re-extracts and re-sends a section
+that already carries a send timestamp, with `commit_user_message` finding no unsent header to
+stamp.
+
+**A turn stopped rather than answered releases what it is holding first** (`ChatBuffer:cancel_request`
+→ `_release_blocked_prompts`, before `stop_turn`): `:VibingCancel` and closing the chat arrive here.
+**Typing a new message instead of answering used to be a third way in, and is not one any more**
+(#788) — it is the only one of them where the chat carries on afterwards, so `send_message` now
+refuses such a message out loud rather than releasing a prompt nobody answered. The drawn lines are
+left alone, since on the kill path they have always survived; only the cancelled turn's held tail is
+dropped, because the next send has the user's own text in the unsent section and nothing may be
+appended under it.
+
 ### Implementation notes
 
 - The PreToolUse hook (`bin/hooks/pre-tool-use.sh`) posts to the RPC server, which dispatches to
-  `infrastructure/rpc/handlers/permission.lua`. When the requested tool is in the `ask` list,
-  `cancel_and_deny()` immediately cancels the Claude process and sends a deny response to the
-  hook.
+  `infrastructure/rpc/handlers/permission.lua`. An `ask` verdict takes one of two shapes, and which
+  one is a property of the backend rather than of the call: `_can_wait_for_approval` travels per
+  turn next to `_tool_vocabulary`, so the handler still names no backend. True →
+  `_ask_without_killing` withholds the `.res`; false → `cancel_and_deny` kills the process and
+  denies, exactly as before.
+- **Waiting takes two descriptor fields, and `transports.can_wait_for_approval` requires both.**
+  `hook.measured_wait_floor_sec` against the currently configured wait says the CLI tolerates a
+  blocked hook; `register_chat_bufnr` says the turn carries the chat back. They read as unrelated —
+  one times the hook, the other is about routing back to a chat — but `_ask_without_killing`
+  names the chat that draws the prompt through `turn.process.chat_bufnr`, and `cli_adapter` fills
+  that in **only** for a backend with the flag. Enabled on the floor alone the waiting branch is
+  still taken, finds nil, and denies every `ask` with an internal-error reason: not a prompt in the
+  wrong place, **no prompt at all**. copilot shipped that pair (floor 1700,
+  `register_chat_bufnr = false`) with the suite green, which is why the gate takes the whole
+  descriptor and `conformance/descriptor_shape_spec.lua` recomputes the expected answer from both
+  raw fields for every registered backend.
+- **`_ask_without_killing` registers the withheld response before anything that can throw.** The
+  registry is what arms the wait limit, so a failure past that point still ends in a written `.res`
+  rather than a hook spinning to the script's own deadline. Drawing is additionally guarded, so a
+  failure there does not also cost the watchdog its notification.
+- **No chat to ask means deny.** A `.res` nobody can ever answer is a CLI hung inside its own hook.
+- **The watchdog is told explicitly** (`completion_notifier.on_approval_waiting`). `VibingResponseDone`
+  never fires for a turn that is still running, so an orchestrator would otherwise see `responding`
+  until the limit expired.
 - `on_approval_required` must be called from the vim main thread (inside `vim.schedule`) — the
   caller ensures this; do not add an inner `vim.schedule` wrapper inside the implementation.
-- `_pending_approval` is set before `add_user_section()` runs, so the approval UI renders at the
+- `_pending_approvals` is set before `add_user_section()` runs, so the approval UI renders at the
   correct position in the chat buffer.
-- After the user responds, the buffer parser detects the approval response and updates session
-  permissions; `hook_request_id` is cleared to prevent double-processing, and the user message is
-  replaced with a retry instruction so the new Claude session picks up the updated session-level
-  permissions and retries successfully.
+- On the **kill** path the user's answer still becomes a retry instruction sent as a new turn. On
+  the waiting path it becomes a verdict for the hook that is still blocked, and no message is sent
+  at all (`ChatBuffer:_answer_pending_approval`'s three outcomes).
 
 ## An Answer Belongs to the Chat That Was Asked (#667)
 
 The four decisions are recorded on that `ChatBuffer` (`update_session_permissions`), handed to the
 next request as `permissions_session_allow` / `permissions_session_deny`, and reach the hook
-through `set_active_opts`, which is keyed by handle_id. They used to be written to a second,
+through `set_active_opts`, which is keyed by turn id — per turn rather than per chat because every
+one of these values is re-read from frontmatter on each send, and the lists grow by one entry each
+time an approval is answered (`processes-and-turns.md`). They used to be written to a second,
 module-level table in `permission.lua` as well — keyed by nothing — so a `deny_once` answered in a
 worker chat was consumed by whichever chat called that tool next, and an `allow_for_session`
 granted in a throwaway worker applied to every chat in the editor, walking past each one's own
@@ -158,9 +280,9 @@ wrong chat — being per-chat is a correctness property here, not only an isolat
 ## Delegated Approval
 
 **Another chat can answer a worker's prompt only when the user opted in.** A worker chat that hits
-this prompt is `waiting_approval`: its turn was killed, so it can neither continue nor report that
-it is stuck, and in an orchestration run the user has to find each blocked worker by hand. With
-`agent.orchestration.delegated_approval = true` the orchestrator answers instead, via the MCP tool
+this prompt is `waiting_approval`: it can neither continue nor report that it is stuck, and in an
+orchestration run the user has to find each blocked worker by hand. With
+`permissions.delegated_approval = true` the orchestrator answers instead, via the MCP tool
 `nvim_chat_answer_approval` → `application/chat/approval_delegate.lua`. The default is off because
 what it buys is an agent clearing another agent's permission gate, not because of anything in the
 implementation.
@@ -179,3 +301,14 @@ worker's pending unsent section (replacing the prompt) and calls `ChatBuffer:sen
 once, in one place. A second implementation of "what an approval means" is the failure this shape
 exists to prevent. What differs is the section header — `## Request <!-- … from <orchestrator> -->`
 — which is how the worker's transcript records who granted it.
+
+**A worker holding a blocked hook is `is_responding()`**, because its turn never ended — so
+`ProgrammaticSender`'s generic "do not push into a responding chat" guard would refuse every
+delegated approval on the waiting path, which is the path the feature exists for. The one exemption
+is `opts.answers_blocked_approval`, a `request_id`, and it **asks the registry rather than the
+drawn lines**: a prompt left over from a killed turn is answered as a _new_ turn, so letting that
+through would take `send_message` to `cancel_request` and kill the turn running right now.
+
+That guard's absence was invisible in `approval_delegate_spec.lua` for a while, because the stub
+there answered `false` to `is_responding` and replaced the validator with a no-op — the
+kill-design world, which every case in that file had been written in.

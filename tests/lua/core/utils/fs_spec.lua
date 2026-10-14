@@ -96,24 +96,5 @@ describe("fs.ensure_dir", function()
   end)
 end)
 
-describe("mkdir call sites", function()
-  it("all go through fs.ensure_dir", function()
-    -- `vim.fn.mkdir` is not atomic, so a direct call anywhere in lua/ is a latent flake. Keeping
-    -- this as a test rather than a comment is what stops the next one being added silently.
-    local root = vim.fn.getcwd() .. "/lua"
-    local hits = vim.fn.systemlist({ "grep", "-rn", "vim.fn.mkdir(", root })
-
-    local offenders = {}
-    for _, line in ipairs(hits) do
-      -- fs.lua is the one place allowed to call it, in the implementation and its own comment.
-      if not line:match("core/utils/fs%.lua") then
-        table.insert(offenders, (line:gsub("^" .. vim.pesc(root), "lua")))
-      end
-    end
-
-    -- Positive control: fs.lua itself calls it, so an empty result means the grep looked at the
-    -- wrong tree rather than that the tree is clean.
-    assert.is_true(#hits > 0, "grep found nothing at all -- did it run against the right lua/?")
-    assert.equals(0, #offenders, "direct vim.fn.mkdir call(s):\n" .. table.concat(offenders, "\n"))
-  end)
-end)
+-- Who is allowed to call `vim.fn.mkdir` at all, in lua/ and in tests/, is the repository-wide
+-- scan in tests/lua/mkdir_call_sites_spec.lua.

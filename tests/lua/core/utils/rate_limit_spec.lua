@@ -100,10 +100,49 @@ describe("rate_limit", function()
       assert.is_not_nil(RateLimit.from_error_text("429 Too Many Requests"))
     end)
 
+    it("detects the snake_case spelling an API error type uses", function()
+      -- What codex puts in its `turn.failed` message: the raw provider envelope, not prose.
+      assert.is_not_nil(
+        RateLimit.from_error_text('{"status":429,"error":{"type":"usage_limit_exceeded"}}')
+      )
+      assert.is_not_nil(RateLimit.from_error_text('{"error":{"type":"rate_limit_exceeded"}}'))
+    end)
+
+    it("carries the reset time the message stated", function()
+      -- Codex's own wording, and the only channel it has. Without this the record in
+      -- limit-state.json is never written and sibling chats keep sending into a live limit.
+      local info = RateLimit.from_error_text(
+        "You've hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), "
+          .. "visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at 3:01 PM."
+      )
+
+      assert.is_true(info.rejected)
+      assert.is_not_nil(info.resets_at)
+      local when = os.date("*t", info.resets_at)
+      assert.equals(15, when.hour)
+      assert.equals(1, when.min)
+    end)
+
+    it("leaves the reset time nil when the message states none", function()
+      local info = RateLimit.from_error_text("You've hit your usage limit. Try again later.")
+
+      assert.is_true(info.rejected)
+      assert.is_nil(info.resets_at)
+    end)
+
     it("ignores unrelated errors", function()
       assert.is_nil(RateLimit.from_error_text("ENOENT: no such file"))
       assert.is_nil(RateLimit.from_error_text(""))
       assert.is_nil(RateLimit.from_error_text(nil))
+    end)
+
+    it("ignores exhaustion that never resets", function()
+      -- Credit exhaustion reads like a limit but has no reset time, so a scheduled resume would
+      -- be certain to fail. Grok's own wording.
+      assert.is_nil(RateLimit.from_error_text("You are out of credits or over your spending limit."))
+      assert.is_nil(RateLimit.from_error_text("usage balance exhausted"))
+      -- Also an OS error for a full disk, so it must not read as a provider limit.
+      assert.is_nil(RateLimit.from_error_text("quota exceeded"))
     end)
   end)
 

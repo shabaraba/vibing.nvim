@@ -115,6 +115,28 @@ describe("send_message prefix-rewrite reporting", function()
     assert.truthy(unwrapped():find("the model changed (claude-sonnet-5 to claude-opus-5)", 1, true))
   end)
 
+  it("names a tool list that changed between turns, taking the counts from the CLI's init", function()
+    -- An MCP server that dropped and reconnected rewrites the prefix with nothing on this side to
+    -- show for it (#808). The counts only exist in `init`, so both sides must be recorded.
+    TurnState.record(chat_path, {
+      at = os.time() - 60,
+      model = "claude-opus-5",
+      effort = "high",
+      version = "2.1.231",
+      tools = 434,
+      mcp_servers = 24,
+    })
+
+    SendMessage._report_token_usage(
+      rewriting_turn({ model = "claude-opus-5", version = "2.1.231", tools = 136, mcp_servers = 11 }),
+      callbacks,
+      {}
+    )
+
+    assert.truthy(unwrapped():find("434 to 136 tools, 24 to 11 MCP servers", 1, true))
+    assert.equals(136, TurnState.load(chat_path).tools)
+  end)
+
   it("names an edited rules file", function()
     local last_turn = os.time() - 60
     TurnState.record(chat_path, {

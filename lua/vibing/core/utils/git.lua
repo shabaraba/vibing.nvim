@@ -35,11 +35,17 @@ function M.get_root(cwd)
 end
 
 ---絶対パスからgitルートからの相対パスを取得
+---
+---`git_root` は `from_display_path` と同じ3値。`nil` は「渡されていない（引き直せ）」、
+---`false` は「gitリポジトリの外だと分かっている」。`false` を `nil` と同じに扱うと、
+---リポジトリ外ではキャッシュを渡しても意味がなくなり、パス1件ごとに `git rev-parse` が起動する
 ---@param abs_path string 絶対パス
+---@param git_root string|false|nil 解決済みのgitルート。`nil` なら `get_root()` を呼ぶ
 ---@return string|nil 相対パス（gitルートそのものの場合は"."、Git管理外の場合はnil）
----@param git_root string? 解決済みのgitルート。省略すると `get_root()` を呼ぶ（`git rev-parse` の起動1回）
 function M.get_relative_path(abs_path, git_root)
-  git_root = git_root or M.get_root()
+  if git_root == nil then
+    git_root = M.get_root()
+  end
   if not git_root then
     return nil
   end
@@ -244,8 +250,9 @@ end
 
 ---絶対パスをGit相対パスまたはチルダ短縮パスに変換
 ---@param abs_path string
+---@param git_root string|false|nil 解決済みのgitルート。1回の処理で複数のパスを表示形式にするときに渡す
+---（3値の意味は `get_relative_path` と同じ）
 ---@return string
----@param git_root string? 解決済みのgitルート。1回の処理で複数のパスを表示形式にするときに渡す
 function M.to_display_path(abs_path, git_root)
   local relative = M.get_relative_path(abs_path, git_root)
   if relative then

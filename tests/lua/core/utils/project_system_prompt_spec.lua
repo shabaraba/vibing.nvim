@@ -1,11 +1,12 @@
 local project_system_prompt = require("vibing.core.utils.project_system_prompt")
+local Fs = require("vibing.core.utils.fs")
 
 describe("project_system_prompt", function()
   local project_root
   local original_notify
 
   local function write_prompt(root, content)
-    vim.fn.mkdir(root .. "/.vibing", "p")
+    Fs.ensure_dir(root .. "/.vibing")
     vim.fn.writefile(vim.split(content, "\n", { plain = true }), root .. "/.vibing/system-prompt.md")
   end
 

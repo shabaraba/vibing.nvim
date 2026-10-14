@@ -30,20 +30,30 @@ predictable for later listing (see the `vibing-worktree-list` skill).
    If this fails (branch already checked out elsewhere, etc.), the error is self-explanatory —
    surface it verbatim rather than retrying blindly with a different name.
 
-3. Edit this chat's frontmatter through the live Neovim buffer, not the file on disk — a brand-new
-   chat (first exchange in a freshly opened buffer) has no file on disk yet, so `Read`/`Edit`
-   against a path will simply fail or find nothing. Use the `vibing-nvim` MCP tools instead,
-   which operate on buffer content regardless of save state:
-   1. Call `nvim_get_buffer({ bufnr })` with the buffer number from the system prompt's
-      `Current vibing.nvim chat buffer number:` line to read the current content. Don't reach for
-      `nvim_get_info` or `bufnr: 0` — those give whichever buffer has focus, which may be another
-      one entirely.
-   2. Set `working_dir: .vibing/worktrees/<branch>` (relative to the git root) in the frontmatter
-      block, then call `nvim_set_buffer({ bufnr, lines })` with the full updated content.
+3. **Give the worktree its own CodeGraph index, if the repository uses one.** CodeGraph keeps its
+   index at the repository root, so a tool running inside the worktree is answered from the
+   _main checkout_ — another branch's symbols, and none of the ones changed here. That is wrong
+   information, not merely stale information. Only when the git root has a `.codegraph/`
+   directory and `codegraph` is on `PATH`:
 
-   Don't open a new chat buffer — the current conversation continues, and its next turn already
-   runs in the new worktree.
+   ```bash
+   (cd .vibing/worktrees/<branch> && codegraph init -i)
+   ```
 
-4. If the `vibing-nvim` MCP connection isn't available at all, tell the user the worktree is
-   ready at `.vibing/worktrees/<branch>` and that they'll need to set `working_dir` in the chat's
-   frontmatter by hand (or open a new chat there) to actually start using it.
+   Skip it silently otherwise — a repository that does not use CodeGraph has nothing to index —
+   and surface a failure verbatim rather than retrying. The index lands under
+   `.vibing/worktrees/`, which the repository's `.vibing/` ignore rule already covers, so it adds
+   nothing to the chat's `### Modified Files`.
+
+4. **Do not edit the frontmatter.** vibing.nvim writes `working_dir` itself at the end of this
+   turn, by comparing `git worktree list` from before the command ran against after it. Setting
+   it by hand races that and can leave the field pointing at a worktree the command failed to
+   create. Just tell the user the worktree is ready.
+
+   Don't open a new chat buffer either — the current conversation continues, and its next turn
+   already runs in the new worktree.
+
+If the field is still empty on the next turn, the `git worktree add` did not actually create
+anything; read its error rather than writing `working_dir` to paper over it. A chat whose
+`working_dir` is empty reports **no changes at all** for work done inside a worktree, so an
+incorrect value is worse than none.

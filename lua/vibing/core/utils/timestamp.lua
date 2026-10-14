@@ -50,6 +50,7 @@ end
 ---@field kind string "User" | "Assistant" | "Request" | "Report" | "Notice"
 ---@field unsent boolean 送信前のマーカー（`<!-- unsent -->`）か
 ---@field timestamp string? 送信済みなら記録された時刻
+---@field question_answer? boolean 質問への回答欄（ローカルコマンドを実行しない）
 ---@field from string? 配達セクションの送信元チャットのパス
 
 ---ヘッダー行を分解する（ヘッダーでなければ nil）
@@ -67,9 +68,12 @@ function M.parse_header(line)
 
     local stamp, from = meta:match("^(.-) from (.+)$")
     stamp = stamp or meta
+    local question_answer = stamp:match(" question%-answer$") ~= nil
+    stamp = stamp:gsub(" question%-answer$", "")
     local unsent = stamp == "unsent"
     return {
       kind = kind,
+      question_answer = question_answer or nil,
       unsent = unsent,
       timestamp = (not unsent and stamp:match(TIMESTAMP_ANCHORED)) and stamp or nil,
       from = from,
@@ -115,13 +119,17 @@ end
 ---@param kind string "User" | "Assistant" | "Request" | "Report" | "Notice"
 ---@param stamp string? タイムスタンプ（省略時は `unsent`）
 ---@param from string? 送信元チャットの表示パス（合流した配達など、特定できないときは nil）
+---@param question_answer boolean? 質問回答欄の印を保存する
 ---@return string header
-function M.create_header(kind, stamp, from)
+function M.create_header(kind, stamp, from, question_answer)
   if kind ~= "User" and kind ~= "Assistant" and not DELIVERY_KINDS[kind] then
     error(string.format("Unknown section kind: %s", tostring(kind)))
   end
 
   local meta = stamp or "unsent"
+  if question_answer then
+    meta = meta .. " question-answer"
+  end
   if from and from ~= "" then
     meta = meta .. " from " .. from
   end

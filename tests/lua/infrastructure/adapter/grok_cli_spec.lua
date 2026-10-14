@@ -11,7 +11,13 @@ local helper = require("tests.helpers.adapter_stream")
 local GrokSettingsGenerator = require("vibing.infrastructure.hooks.grok_settings_generator")
 local grok = require("vibing.infrastructure.adapter.grok_cli")
 
-local CONFIG = { agent = { default_model = "sonnet" } }
+local CONFIG = {
+  ai = {
+    chat = {
+      model = "sonnet",
+    },
+  },
+}
 
 describe("grok_cli hook registration", function()
   local system, adapter, ensure_calls, original_ensure, original_executable
@@ -56,9 +62,14 @@ describe("grok_cli hook registration", function()
     assert.equals(0, ensure_calls)
   end)
 
-  it("skips it in bypassPermissions, as before", function()
+  it("still installs it in bypassPermissions, because the same round trip takes the diff baseline", function()
+    -- `keep_in_bypass = true`, matching codex. That mode bypasses the *decision* -- the permission
+    -- handler allows every call in it -- but the PreToolUse round trip is also where
+    -- `git_snapshot` takes the turn's baseline, so dropping the hook here would leave the mode
+    -- with no `### Modified Files` and no `gd` preview. Grok skipped it until the resident
+    -- transport made the hook the only gate there is.
     helper.run_stream(adapter, { permission_mode = "bypassPermissions" })
-    assert.equals(0, ensure_calls)
+    assert.equals(1, ensure_calls)
   end)
 
   it("still restricts the lightweight call even with the hook gone", function()

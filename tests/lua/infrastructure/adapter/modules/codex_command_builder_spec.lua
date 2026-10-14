@@ -28,6 +28,12 @@ describe("codex_command_builder", function()
     return nil
   end
 
+  it("passes the output schema file for a search request", function()
+    local cmd = codex_command_builder.build("search", { output_schema_path = "/tmp/schema.json" }, nil, {}, nil)
+    assert.are.equal("/tmp/schema.json", cmd[find_flag(cmd, "--output-schema") + 1])
+    assert.is_nil(find_flag(codex_command_builder.build("chat", {}, nil, {}, nil), "--output-schema"))
+  end)
+
   --- Every value passed with `-c`, so a test can assert on the set of config overrides.
   local function config_overrides(cmd)
     local overrides = {}
@@ -45,8 +51,15 @@ describe("codex_command_builder", function()
       assert.is_true(vim.tbl_contains(config_overrides(cmd), 'model_reasoning_effort="xhigh"'))
     end)
 
-    it("falls back to agent.default_effort", function()
-      local config = { agent = { default_effort = "high" } }
+    it("falls back to ai.chat.effort", function()
+      local config = {
+        ai = {
+          chat = {
+            agent = "codex",
+            effort = "high",
+          },
+        },
+      }
       local cmd = codex_command_builder.build("hi", {}, nil, config, nil)
       assert.is_true(vim.tbl_contains(config_overrides(cmd), 'model_reasoning_effort="high"'))
     end)
@@ -66,7 +79,17 @@ describe("codex_command_builder", function()
     end)
 
     it("uses utility_effort for lightweight calls instead of the chat effort", function()
-      local config = { agent = { default_effort = "high", utility_effort = "low" } }
+      local config = {
+        ai = {
+          chat = {
+            agent = "codex",
+            effort = "high",
+          },
+          helpers = {
+            effort = "low",
+          },
+        },
+      }
       local cmd = codex_command_builder.build("hi", { lightweight = true, effort = "max" }, nil, config, nil)
       assert.is_true(vim.tbl_contains(config_overrides(cmd), 'model_reasoning_effort="low"'))
       assert.is_false(vim.tbl_contains(config_overrides(cmd), 'model_reasoning_effort="max"'))
@@ -145,21 +168,51 @@ describe("codex_command_builder", function()
     end)
 
     it("uses utility_model rather than default_model", function()
-      local config = { agent = { default_model = "gpt-5-codex", utility_model = "gpt-5-mini" } }
+      local config = {
+        ai = {
+          chat = {
+            agent = "codex",
+            model = "gpt-5-codex",
+          },
+          helpers = {
+            model = "gpt-5-mini",
+          },
+        },
+      }
       local cmd = codex_command_builder.build("hi", { lightweight = true }, nil, config, nil)
       assert.equals("gpt-5-mini", cmd[find_flag(cmd, "-m") + 1])
     end)
 
     it("passes no model when utility_model is a Claude name codex does not have", function()
-      -- utility_model defaults to "sonnet"; the existing filter turns it into codex's own default
+      -- utility_model defaults to "haiku"; the existing filter turns it into codex's own default
       -- instead of a model the CLI would reject.
-      local config = { agent = { default_model = "gpt-5-codex", utility_model = "sonnet" } }
+      local config = {
+        ai = {
+          chat = {
+            agent = "codex",
+            model = "gpt-5-codex",
+          },
+          helpers = {
+            model = "haiku",
+          },
+        },
+      }
       local cmd = codex_command_builder.build("hi", { lightweight = true }, nil, config, nil)
       assert.is_nil(find_flag(cmd, "-m"))
     end)
 
     it("does not apply the chat's auto-compaction threshold", function()
-      local config = { agent = { token_usage = { auto_compact = { enabled = true, at = 300000 } } } }
+      local config = {
+        chat = {
+          agent = "codex",
+          context = {
+            compaction = {
+              enabled = true,
+              threshold_tokens = 300000,
+            },
+          },
+        },
+      }
       local cmd = codex_command_builder.build("hi", { lightweight = true }, nil, config, nil)
       assert.is_false(vim.tbl_contains(config_overrides(cmd), "model_auto_compact_token_limit=300000"))
     end)
@@ -195,37 +248,105 @@ describe("codex_command_builder", function()
     end)
 
     it("use default_model, not utility_model", function()
-      local config = { agent = { default_model = "gpt-5-codex", utility_model = "gpt-5-mini" } }
+      local config = {
+        ai = {
+          chat = {
+            agent = "codex",
+            model = "gpt-5-codex",
+          },
+          helpers = {
+            model = "gpt-5-mini",
+          },
+        },
+      }
       local cmd = codex_command_builder.build("hi", {}, nil, config, nil)
       assert.equals("gpt-5-codex", cmd[find_flag(cmd, "-m") + 1])
     end)
 
     it("prefer the frontmatter model passed through opts", function()
-      local config = { agent = { default_model = "gpt-5.5" } }
+      local config = {
+        ai = {
+          chat = {
+            agent = "codex",
+            model = "gpt-5.5",
+          },
+        },
+      }
       local cmd = codex_command_builder.build("hi", { model = "gpt-5.6-terra" }, nil, config, nil)
       assert.equals("gpt-5.6-terra", cmd[find_flag(cmd, "-m") + 1])
     end)
 
+    it("lets model: default bypass ai.chat.model", function()
+      local cmd = codex_command_builder.build("hi", { model = "default" }, nil, {
+        ai = {
+          chat = {
+            agent = "codex",
+            model = "gpt-6-sol",
+          },
+        },
+      }, nil)
+      assert.is_nil(find_flag(cmd, "-m"))
+    end)
+
     it("maps the shared auto_compact threshold to Codex's native setting", function()
-      local config = { agent = { token_usage = { auto_compact = { enabled = true, at = 300000 } } } }
+      local config = {
+        chat = {
+          agent = "codex",
+          context = {
+            compaction = {
+              enabled = true,
+              threshold_tokens = 300000,
+            },
+          },
+        },
+      }
       local cmd = codex_command_builder.build("hi", {}, nil, config, nil)
       assert.is_true(vim.tbl_contains(config_overrides(cmd), "model_auto_compact_token_limit=300000"))
     end)
 
     it("clamps a positive fractional auto_compact threshold below one to one token", function()
-      local config = { agent = { token_usage = { auto_compact = { enabled = true, at = 0.5 } } } }
+      local config = {
+        chat = {
+          agent = "codex",
+          context = {
+            compaction = {
+              enabled = true,
+              threshold_tokens = 0.5,
+            },
+          },
+        },
+      }
       local cmd = codex_command_builder.build("hi", {}, nil, config, nil)
       assert.is_true(vim.tbl_contains(config_overrides(cmd), "model_auto_compact_token_limit=1"))
     end)
 
     it("keeps the native threshold on resumed threads", function()
-      local config = { agent = { token_usage = { auto_compact = { enabled = true, at = 300000 } } } }
+      local config = {
+        chat = {
+          agent = "codex",
+          context = {
+            compaction = {
+              enabled = true,
+              threshold_tokens = 300000,
+            },
+          },
+        },
+      }
       local cmd = codex_command_builder.build("hi", {}, "thread-1", config, nil)
       assert.is_true(vim.tbl_contains(config_overrides(cmd), "model_auto_compact_token_limit=300000"))
     end)
 
     it("uses the shared default when auto_compact.at is omitted", function()
-      local config = { agent = { token_usage = { auto_compact = { enabled = true } } } }
+      local config = {
+        chat = {
+          agent = "codex",
+          context = {
+            compaction = {
+              enabled = true,
+            },
+          },
+        },
+      }
       local cmd = codex_command_builder.build("hi", {}, nil, config, nil)
       local expected = "model_auto_compact_token_limit="
         .. require("vibing.core.utils.token_usage").DEFAULT_AUTO_COMPACT_AT
@@ -234,11 +355,18 @@ describe("codex_command_builder", function()
 
     it("does not override Codex when auto_compact is disabled or its threshold is non-positive", function()
       for _, auto_compact in ipairs({
-        { enabled = false, at = 300000 },
-        { enabled = true, at = 0 },
-        { enabled = true, at = -1 },
+        { enabled = false, threshold_tokens = 300000 },
+        { enabled = true, threshold_tokens = 0 },
+        { enabled = true, threshold_tokens = -1 },
       }) do
-        local config = { agent = { token_usage = { auto_compact = auto_compact } } }
+        local config = {
+          chat = {
+            agent = "codex",
+            context = {
+              compaction = auto_compact,
+            },
+          },
+        }
         local cmd = codex_command_builder.build("hi", {}, nil, config, nil)
         for _, override in ipairs(config_overrides(cmd)) do
           assert.is_false(vim.startswith(override, "model_auto_compact_token_limit="))
@@ -262,8 +390,18 @@ describe("codex_command_builder", function()
         '".git" = "write"',
       }, root .. "/.vibing/codex-permissions.toml")
       config = {
-        permissions = { codex_profile_file = ".vibing/codex-permissions.toml" },
-        agent = { plugins = { self = false, project_dir = false } },
+        ai = {
+          agents = {
+            codex = {
+              extensions = {
+                profile_file = ".vibing/codex-permissions.toml",
+              },
+            },
+          },
+        },
+        integrations = {
+          plugins = { self = false, project_dir = false },
+        },
       }
     end)
 
@@ -276,10 +414,12 @@ describe("codex_command_builder", function()
       local overrides = config_overrides(cmd)
       assert.is_nil(find_flag(cmd, "-s"))
       assert.is_true(vim.tbl_contains(overrides, 'default_permissions="project-edit"'))
-      assert.is_true(vim.tbl_contains(
-        overrides,
-        'permissions={ project-edit = { extends = ":workspace", filesystem = { ":workspace_roots" = { ".git" = "write" } } } }'
-      ))
+      assert.is_true(
+        vim.tbl_contains(
+          overrides,
+          'permissions={ project-edit = { extends = ":workspace", filesystem = { ":workspace_roots" = { ".git" = "write" } } } }'
+        )
+      )
     end)
 
     it("is repeated unchanged when resuming because config is per process", function()
@@ -296,23 +436,12 @@ describe("codex_command_builder", function()
     end)
 
     it("does not weaken plan mode", function()
-      local fresh = codex_command_builder.build(
-        "hi",
-        { cwd = root, permission_mode = "plan" },
-        nil,
-        config,
-        nil
-      )
+      local fresh = codex_command_builder.build("hi", { cwd = root, permission_mode = "plan" }, nil, config, nil)
       assert.equals("read-only", fresh[find_flag(fresh, "-s") + 1])
       assert.is_false(vim.tbl_contains(config_overrides(fresh), 'default_permissions="project-edit"'))
 
-      local resumed = codex_command_builder.build(
-        "hi",
-        { cwd = root, permission_mode = "plan" },
-        "thread-1",
-        config,
-        nil
-      )
+      local resumed =
+        codex_command_builder.build("hi", { cwd = root, permission_mode = "plan" }, "thread-1", config, nil)
       assert.is_true(vim.tbl_contains(config_overrides(resumed), 'sandbox_mode="read-only"'))
       assert.is_false(vim.tbl_contains(config_overrides(resumed), 'default_permissions="project-edit"'))
     end)
@@ -337,7 +466,11 @@ describe("codex_command_builder", function()
   -- resumed or not, and never on a lightweight one.
   describe("plugins", function()
     local PluginDirs = require("vibing.infrastructure.plugins.plugin_dirs")
-    local no_project = { agent = { plugins = { project_dir = false } } }
+    local no_project = {
+      integrations = {
+        plugins = { project_dir = false },
+      },
+    }
 
     local function has_override(cmd, prefix)
       for _, item in ipairs(config_overrides(cmd)) do
@@ -364,9 +497,19 @@ describe("codex_command_builder", function()
     end)
 
     it("keeps them on a resumed session, since config is per process", function()
-      local cmd = codex_command_builder.build("hello", {}, "thread-1", no_project, nil)
+      local cmd = codex_command_builder.build("hello", { chat_bufnr = 12 }, "thread-1", no_project, nil)
       assert.is_true(has_override(cmd, "mcp_servers.vibing-nvim.command="))
       assert.is_true(has_override(cmd, "developer_instructions="))
+      assert.is_true(
+        table.concat(config_overrides(cmd), "\n"):find("Current vibing.nvim chat buffer number: 12", 1, true) ~= nil
+      )
+    end)
+
+    it("carries chat_bufnr in the developer instructions on a fresh session", function()
+      local cmd = codex_command_builder.build("hello", { chat_bufnr = 34 }, nil, no_project, nil)
+      assert.is_true(
+        table.concat(config_overrides(cmd), "\n"):find("Current vibing.nvim chat buffer number: 34", 1, true) ~= nil
+      )
     end)
 
     it("keeps the runtime rpc_port out of the developer message", function()
@@ -382,13 +525,18 @@ describe("codex_command_builder", function()
     -- A utility call owes "no tools, no user MCP servers" (core/types.lua); the bundled server
     -- and a skill list are both.
     it("loads none of it on a lightweight call", function()
-      local cmd = codex_command_builder.build("hello", { lightweight = true }, nil, no_project, nil)
+      local cmd = codex_command_builder.build("hello", { lightweight = true, chat_bufnr = 12 }, nil, no_project, nil)
       assert.is_false(has_override(cmd, "mcp_servers."))
       assert.is_false(has_override(cmd, "developer_instructions="))
+      assert.is_nil(table.concat(config_overrides(cmd), "\n"):find("Current vibing.nvim chat buffer number:", 1, true))
     end)
 
-    it("loads none of it when agent.plugins.self is off and no project plugin exists", function()
-      local cmd = codex_command_builder.build("hello", {}, nil, { agent = { plugins = { self = false, project_dir = false } } }, nil)
+    it("loads none of it when integrations.plugins.self is off and no project plugin exists", function()
+      local cmd = codex_command_builder.build("hello", {}, nil, {
+        integrations = {
+          plugins = { self = false, project_dir = false },
+        },
+      }, nil)
       assert.is_false(has_override(cmd, "mcp_servers."))
       assert.is_false(has_override(cmd, "developer_instructions="))
     end)
@@ -396,6 +544,97 @@ describe("codex_command_builder", function()
     it("keeps the prompt as the last argument", function()
       local cmd = codex_command_builder.build("hello", {}, nil, no_project, nil)
       assert.equals("hello", cmd[#cmd])
+    end)
+  end)
+
+  -- `ai.agents.codex.extensions.approval_policy` decides when codex asks the human before running something,
+  -- which is the switch that makes its own approval requests happen at all (#861). A separate dial
+  -- from `permission_mode`, with one rule about where the two meet.
+  describe("approval policy", function()
+    local function policy(value)
+      return {
+        ai = {
+          agents = {
+            codex = {
+              extensions = {
+                approval_policy = value,
+              },
+            },
+          },
+        },
+      }
+    end
+
+    it("falls back to never on duplex when it is unset, rather than to codex's own default", function()
+      -- Not tidiness. A request this transport cannot route to a human is declined, so under
+      -- codex's default policy an unconfigured chat turns a sandboxed action into a silent denial
+      -- instead of something vibing's own hook and permission rules get to decide (#860).
+      for _, config in ipairs({ {}, policy("") }) do
+        local cmd = codex_command_builder.build("hi", { _process_model = "duplex" }, nil, config, nil)
+        assert.is_true(vim.tbl_contains(config_overrides(cmd), 'approval_policy="never"'))
+      end
+    end)
+
+    it("emits nothing when it is unset on a oneshot call, which has no such channel to fail on", function()
+      for _, config in ipairs({ {}, policy("") }) do
+        local cmd = codex_command_builder.build("hi", {}, nil, config, nil)
+        for _, override in ipairs(config_overrides(cmd)) do
+          assert.is_nil(override:match("^approval_policy="), "an unset policy must add no override")
+        end
+      end
+    end)
+
+    it("reaches the resident process, where it decides whether Codex ever asks", function()
+      local cmd = codex_command_builder.build("hi", { _process_model = "duplex" }, nil, policy("on-request"), nil)
+      assert.is_true(vim.tbl_contains(config_overrides(cmd), 'approval_policy="on-request"'))
+    end)
+
+    it("reaches a oneshot call too", function()
+      local cmd = codex_command_builder.build("hi", {}, nil, policy("on-request"), nil)
+      assert.is_true(vim.tbl_contains(config_overrides(cmd), 'approval_policy="on-request"'))
+    end)
+
+    it("does not undo the two modes that already said what they want about asking", function()
+      -- `bypassPermissions` means "ask nothing" and `plan` means "write nothing"; a configured
+      -- policy that overrode either would turn an explicit choice about this chat into a surprise.
+      for _, mode in ipairs({ "bypassPermissions", "plan" }) do
+        for _, model in ipairs({ "duplex", "oneshot" }) do
+          local cmd = codex_command_builder.build(
+            "hi",
+            { _process_model = model, permission_mode = mode },
+            nil,
+            policy("on-request"),
+            nil
+          )
+          assert.is_false(
+            vim.tbl_contains(config_overrides(cmd), 'approval_policy="on-request"'),
+            mode .. " on " .. model .. " must not take the configured policy"
+          )
+        end
+      end
+
+      -- …and what each of those modes does say instead is unchanged by this feature.
+      local duplex_bypass = codex_command_builder.build(
+        "hi",
+        { _process_model = "duplex", permission_mode = "bypassPermissions" },
+        nil,
+        policy("on-request"),
+        nil
+      )
+      assert.is_true(vim.tbl_contains(config_overrides(duplex_bypass), 'approval_policy="never"'))
+
+      local oneshot_bypass =
+        codex_command_builder.build("hi", { permission_mode = "bypassPermissions" }, nil, policy("on-request"), nil)
+      assert.is_not_nil(find_flag(oneshot_bypass, "--dangerously-bypass-approvals-and-sandbox"))
+    end)
+
+    it("does not grow the argv across turns by appending to the memoised profile", function()
+      -- `CodexPermissionProfile.args` is cached per cwd. Extending what it returned would append to
+      -- the cache, so the second turn's argv would carry two copies and the third three.
+      local config = policy("on-request")
+      local first = codex_command_builder.build("hi", { _process_model = "duplex" }, nil, config, nil)
+      local second = codex_command_builder.build("hi", { _process_model = "duplex" }, nil, config, nil)
+      assert.same(first, second)
     end)
   end)
 

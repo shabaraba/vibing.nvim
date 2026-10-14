@@ -4,7 +4,8 @@ local M = {}
 
 local BufferReload = require("vibing.core.utils.buffer_reload")
 local GradientAnimation = require("vibing.ui.gradient_animation")
-local ActiveStreamRegistry = require("vibing.infrastructure.adapter.modules.active_stream_registry")
+local ProcessRegistry = require("vibing.infrastructure.adapter.modules.process_registry")
+local TurnRegistry = require("vibing.infrastructure.adapter.modules.turn_registry")
 local Fs = require("vibing.core.utils.fs")
 
 ---@class Vibing.ChatCallbacks
@@ -17,14 +18,18 @@ local Fs = require("vibing.core.utils.fs")
 ---@field update_session_id fun(session_id: string) セッションIDを更新
 ---@field add_user_section fun() ユーザーセクションを追加
 ---@field get_bufnr fun(): number バッファ番号を取得
----@field insert_choices fun(questions: table) AskUserQuestion選択肢を挿入
+---@field take_question_block fun(): boolean ターン本文の末尾の質問ブロックを選択肢に変える（`question_block.lua`）
+---@field insert_choices fun(questions: table) 質問の選択肢を挿入
 ---@field set_pending_user_text fun(text: string) 次のユーザーセクションに差し込む本文を保存
 ---@field insert_approval_request fun(tool: string, input: table, options: table) ツール承認要求UIを挿入
+---@field show_pending_prompts fun() 走っているターンの途中で溜まっている承認プロンプトを描く
 ---@field get_session_allow fun(): table セッションレベルの許可リストを取得
 ---@field get_session_deny fun(): table セッションレベルの拒否リストを取得
----@field clear_handle_id fun() handle_idをクリア
----@field set_handle_id fun(handle_id: string) handle_idを設定
----@field get_handle_id fun(): string|nil handle_idを取得
+---@field clear_turn_id fun() turn_id（と process_id）をクリア
+---@field set_turn_id fun(turn_id: string) 待っているターンのIDを設定
+---@field get_turn_id fun(): string|nil 待っているターンのIDを取得
+---@field get_abandoned_turn_id fun(): string|nil チャット側だけで畳んだ（`abandon_turn`）ターンのID
+---@field set_process_id fun(process_id: string)? kill対象のCLIプロセスのIDを設定
 ---@field clear_sending fun() 送信中フラグを解除
 ---@field mark_turn_error fun()? このターンがエラーで終わったことを記録（chat_statusのerror判定用）
 ---@field get_cwd fun(): string|nil worktreeのcwdを取得
@@ -92,8 +97,9 @@ function M.execute(adapter, callbacks, message, config)
   -- one session. Two `claude --resume <same id>` processes append to the same transcript file, so
   -- refuse rather than corrupt it. Bail before start_response(), leaving the user's unsent
   -- `## User` message untouched so they can just resend.
+  -- Asked of the process registry, not the turn one: a process holds its `--resume` between turns.
   local session_id = callbacks.get_session_id and callbacks.get_session_id() or nil
-  local conflict = ActiveStreamRegistry.find_other_active_for_session(session_id, bufnr)
+  local conflict = ProcessRegistry.find_other_holding_session(session_id, bufnr)
   if conflict then
     require("vibing.core.utils.notify").error(
       string.format(
@@ -128,7 +134,13 @@ function M.execute(adapter, callbacks, message, config)
   -- Start gradient animation
   local buf = callbacks.get_bufnr()
   if buf and vim.api.nvim_buf_is_valid(buf) then
-    GradientAnimation.start(buf)
+    -- 承認・質問はターンを開いたまま答えを待つので、その間は「こちらの番」の表示に切り替える
+    local PendingPrompts = require("vibing.infrastructure.rpc.pending_prompts")
+    GradientAnimation.start(buf, {
+      is_waiting = function()
+        return PendingPrompts.has_for_chat(buf)
+      end,
+    })
   end
 
   -- start_response() がバッファに書いた後の状態で読み直す
@@ -138,7 +150,7 @@ function M.execute(adapter, callbacks, message, config)
   local language_utils = require("vibing.core.utils.language")
   local lang_code = frontmatter.language
   if not lang_code then
-    lang_code = language_utils.get_language_code(config.language, "chat")
+    lang_code = language_utils.get_language_code(vim.tbl_get(config, "chat", "language"), "chat")
   end
 
   -- Get cwd from frontmatter working_dir
@@ -176,6 +188,9 @@ function M.execute(adapter, callbacks, message, config)
     mode = M._validate_frontmatter_mode(frontmatter.mode),
     model = frontmatter.model,
     effort = frontmatter.effort,
+    process = frontmatter.process,
+    -- Read per request, so editing it (or `/profile`) takes effect on the next send.
+    profile = frontmatter.profile,
     permissions_allow = frontmatter.permissions_allow,
     permissions_deny = frontmatter.permissions_deny,
     permissions_ask = frontmatter.permissions_ask,
@@ -185,55 +200,42 @@ function M.execute(adapter, callbacks, message, config)
     env = frontmatter.env,
     language = lang_code,
     cwd = session_cwd,
-    -- ツリースナップショット差分の帰属判定に使う。アダプタはこれをそのまま
-    -- ActiveStreamRegistry に載せるだけで、git を呼ばない（`stream()` は同期I/Oを
-    -- 増やさない）。
-    --
-    -- ここは `rev-parse --show-toplevel` 1回ぶんメインループを止める。
-    -- handbook/architecture/plugin-and-commands.md の「Startup Cost」が同期I/Oに神経質なのに
-    -- 対して意図的に許容している箇所で、根拠は
-    -- 呼ばれる回数のほう: git_snapshot 側でcwd単位にキャッシュされるので、1つのcwdにつき
-    -- 最初の送信の1回だけで、以降はゼロ。setup() と違ってNeovim起動時には走らない
     _worktree_root = require("vibing.core.utils.git_snapshot").worktree_root(session_cwd),
     on_tool_use = function(tool, file_path, _command)
       if (tool == "Write" or tool == "Edit" or tool == "MultiEdit" or tool == "NotebookEdit") and file_path then
         modified_file_paths[file_path] = true
-      elseif tool == "FileChange" and file_path then
-        -- Codex adapter reports comma-joined paths
-        for path in file_path:gmatch("[^,]+") do
-          modified_file_paths[vim.trim(path)] = true
-        end
       end
     end,
-    on_insert_choices = function(questions)
-      -- `on_approval_required` と同じ理由で vim.schedule を挟まない。呼び出し元
-      -- （permission.lua の `cancel_and_deny` / `M.ask_user_question`）はすでにメインスレッド上で、
-      -- **その直前に cancel を済ませている**。cancel は `wrapped_on_done` を同期で呼ぶので、
-      -- ここで一段スケジュールすると `_handle_response` が `vim.schedule` した
-      -- `add_user_section` の後ろに並ぶ。そうなると選択肢はそのターンのユーザーセクションに
-      -- 描画されず、`_stop_reason` も `VibingResponseDone` に間に合わない
-      callbacks.insert_choices(questions)
+    -- 常駐プロセス（duplex）が回収され、まだ報告していない background subagent を連れていった
+    -- ときの起床（#840）。`adapter/` から `application/` を require しないための経路 —
+    -- 「このチャットにターンが必要か」はアダプタの問いではない（`outstanding_subagents.lua`）。
+    -- ここだけ `on_approval_required` などと違ってターンをまたいで生き残る: プロセスはターンより
+    -- 長生きするので、これを呼ぶのは「これを渡したターン」ではなく、そのプロセスの最後のターン
+    on_subagents_orphaned = function(unreported, recovered, process_killed)
+      require("vibing.application.chat.outstanding_subagents").wake_orphaned(
+        bufnr,
+        unreported,
+        recovered,
+        process_killed
+      )
     end,
-    on_session_corrupted = function(old_session_id)
-      vim.schedule(function()
-        callbacks.update_session_id(nil)
-        -- Safely handle nil old_session_id
-        local session_display = old_session_id and tostring(old_session_id):sub(1, 8) or "unknown"
-        vim.notify(
-          string.format(
-            "[vibing.nvim] Previous session (%s) was corrupted. Starting fresh session.",
-            session_display
-          ),
-          vim.log.levels.INFO
-        )
-      end)
-    end,
-    on_approval_required = function(tool, input, options, hook_request_id)
+    on_approval_required = function(tool, input, options, hook_request_id, waiting, kind)
       -- permission.lua の vim.schedule 内から呼ばれるためすでにメインスレッド上
       -- 二重 vim.schedule を避けることで _pending_approval が add_user_section より確実に先に設定される
-      callbacks.insert_approval_request(tool, input, options, hook_request_id)
-      -- cancel は permission.lua 側で実行済み（hook-based / agent-wrapper 共通）
-      -- add_user_section は on_done 経由で呼ばれる
+      --
+      -- `kind` は「どのチャネルの承認か」（#861）。落とすと、プロンプトは描かれ、ユーザーは
+      -- 答えられ、**その答えだけが別レイヤの語彙検証に落ちて捨てられる** — どこにもエラーが
+      -- 出ないまま、CLI は待ち上限まで放置される
+      callbacks.insert_approval_request(tool, input, options, hook_request_id, waiting, kind)
+
+      -- `waiting` は「このプロンプトは走り続けているターンを止めている」（#778）。
+      -- kill する経路ではプロセスが死に、`_handle_response` → `add_user_section` が描画の
+      -- 合流点になるが、待たせる経路ではターンが終わらないのでその合流点が来ない。
+      -- ここで描かないとプロンプトは保存されるだけで画面に出ず、フックは上限まで待つ。
+      -- 逆に kill 経路でも描くと、`_handle_response` の描画と二重になる
+      if waiting then
+        callbacks.show_pending_prompts()
+      end
     end,
   }
 
@@ -253,18 +255,23 @@ function M.execute(adapter, callbacks, message, config)
   end
 
   if adapter:supports("streaming") then
-    local handle_id = adapter:stream(formatted_prompt, opts, function(chunk, chunk_handle_id)
+    local turn_id, process_id = adapter:stream(formatted_prompt, opts, function(chunk, chunk_turn_id)
       vim.schedule(function()
-        callbacks.append_chunk(chunk, chunk_handle_id)
+        callbacks.append_chunk(chunk, chunk_turn_id)
       end)
     end, function(response)
       vim.schedule(function()
         M._handle_response(response, callbacks, adapter, config, modified_file_paths, message)
       end)
     end)
-    -- handle_idをコールバックで設定（キャンセル用）
-    if handle_id and callbacks.set_handle_id then
-      callbacks.set_handle_id(handle_id)
+    -- 2つ別々に記録する。turn_id は「どのターンの結果を待っているか」（chunk と response の
+    -- staleness 判定）、process_id は「何を kill するか」。同じ値だった頃は片方で足りていたが、
+    -- 常駐プロセス（#774）では後者だけがプロセスを指し続ける
+    if turn_id and callbacks.set_turn_id then
+      callbacks.set_turn_id(turn_id)
+    end
+    if process_id and callbacks.set_process_id then
+      callbacks.set_process_id(process_id)
     end
   else
     local response = adapter:execute(formatted_prompt, opts)
@@ -288,17 +295,27 @@ end
 ---@param modified_file_paths table<string, boolean> ツールイベントで検知した変更ファイル
 ---@param message string|nil 送信したユーザーメッセージ（リミットで弾かれた場合の再予約に使う）
 function M._handle_response(response, callbacks, adapter, config, modified_file_paths, message)
-  -- キャンセル済みの古いリクエストが遅れて完了した場合、現在アクティブなハンドルIDと
-  -- 一致しないレスポンスは無視する（新しいリクエストの結果を上書きさせない）
-  local incoming_handle_id = response._handle_id
+  -- キャンセル済みの古いリクエストが遅れて完了した場合、現在アクティブなターンIDと
+  -- 一致しないレスポンスは無視する（新しいリクエストの結果を上書きさせない）。
+  --
+  -- `current_turn_id`がnilなのは「まだ何も送っていない」だけでなく、「常駐プロセス側は
+  -- 先に手放されたが、このレスポンスは`vim.schedule`越しにまだ届いていない」でもありうる
+  -- （`ChatBuffer:abandon_turn`）。後者を「まだ送っていない」と区別せず通すと、
+  -- 一度畳んだターンをここでもう一度完了させてしまうので、`current_turn_id`が空でも
+  -- 畳んだターンIDと一致するレスポンスは同じく古いものとして捨てる
+  local incoming_turn_id = response._turn_id
   local RequestDiff = require("vibing.core.utils.request_diff")
-  if incoming_handle_id and callbacks.get_handle_id then
-    local current_handle_id = callbacks.get_handle_id()
-    if current_handle_id and incoming_handle_id ~= current_handle_id then
+  if incoming_turn_id and callbacks.get_turn_id then
+    local current_turn_id = callbacks.get_turn_id()
+    local abandoned_turn_id = callbacks.get_abandoned_turn_id and callbacks.get_abandoned_turn_id()
+    local is_stale = (current_turn_id and incoming_turn_id ~= current_turn_id)
+      or (not current_turn_id and incoming_turn_id == abandoned_turn_id)
+    if is_stale then
       -- このリクエストは破棄されるので、両経路のベースラインも破棄する
       -- （どちらが使われるかはここまで来ないと決まらない）
-      RequestDiff.clear(incoming_handle_id)
-      require("vibing.core.utils.git_snapshot").clear(incoming_handle_id)
+      RequestDiff.clear(incoming_turn_id)
+      require("vibing.core.utils.git_snapshot").clear(incoming_turn_id)
+      require("vibing.application.chat.worktree_binding").clear(incoming_turn_id)
       return
     end
   end
@@ -321,10 +338,10 @@ function M._handle_response(response, callbacks, adapter, config, modified_file_
   if response._session_corrupted then
     -- このターンの差分は出さずに抜けるので、両経路のベースラインもここで捨てる
     -- （どちらも「レスポンス処理の最後に必ずclearする」契約になっている）
-    RequestDiff.clear(incoming_handle_id or (callbacks.get_handle_id and callbacks.get_handle_id()))
-    require("vibing.core.utils.git_snapshot").clear(
-      incoming_handle_id or (callbacks.get_handle_id and callbacks.get_handle_id())
-    )
+    local corrupted_turn_id = incoming_turn_id or (callbacks.get_turn_id and callbacks.get_turn_id())
+    RequestDiff.clear(corrupted_turn_id)
+    require("vibing.core.utils.git_snapshot").clear(corrupted_turn_id)
+    require("vibing.application.chat.worktree_binding").clear(corrupted_turn_id)
     if callbacks.mark_turn_error then
       callbacks.mark_turn_error()
     end
@@ -332,7 +349,7 @@ function M._handle_response(response, callbacks, adapter, config, modified_file_
     callbacks.append_chunk("\n\n**Session Timeout:** The previous session could not be resumed.")
     callbacks.append_chunk("\n*Session has been reset. Your next message will start a new session.*")
     callbacks.add_user_section()
-    -- NOTE: clear_handle_id() は呼ばない（次のsend_message()でkillする）
+    -- NOTE: clear_turn_id() は呼ばない（次のsend_message()でkillする）
     return
   end
 
@@ -371,6 +388,12 @@ function M._handle_response(response, callbacks, adapter, config, modified_file_
   elseif not response.error then
     pcall(AutoResume.on_success, chat_file_path)
     pcall(LimitState.clear, chat_dir, agent)
+    -- ターンが選択肢付きの質問で終わっていれば、ここで選択肢に変える。**`### Tokens` と
+    -- `### Modified Files` より前**でなければならない: どちらもアシスタント本文の末尾に追記され、
+    -- 質問ブロックは「ターンが最後に書いたもの」としてしか認めない（`question_block.lua`）
+    if callbacks.take_question_block then
+      pcall(callbacks.take_question_block)
+    end
   else
     -- リミット以外のエラーで終わったターンも、未送信Userセクションは消費済み。予約
     -- （scheduled）を残すと、その後そこに入った別のテキスト（書きかけの続きや承認UIの
@@ -384,9 +407,8 @@ function M._handle_response(response, callbacks, adapter, config, modified_file_
     -- 「壊れた」ではなく、`chat_status` がそう報告すると `completion_notifier` の分岐2が
     -- 例外扱いして親を起こし、オーケストレーターは動いているワーカーを失敗と読む:
     --
-    --   * `_cancelled` — 質問（`nvim_ask_user_question`）と `ask` の承認要求はどちらも
-    --     ターンをkillして戻る。理由はその時点で `insert_choices` /
-    --     `insert_approval_request` が書いている
+    --   * `_cancelled` — `ask` の承認要求はターンをkillして戻る（待てないバックエンド）。
+    --     理由はその時点で `insert_approval_request` が書いている
     --   * `_rate_limit_info` — リミットで弾かれたターン。上の分岐が予約や auto_resume に
     --     回しているので、これは自動で再開する「待ち」。`response.error` はリミットの本文が
     --     入ったまま残る（`RateLimit.merge` はそれを入力に使うだけでクリアしない）ので、
@@ -403,9 +425,11 @@ function M._handle_response(response, callbacks, adapter, config, modified_file_
     end
   end
 
+  -- セッションIDはプロセスが握っているものなので、プロセスで引く。ターンIDで引いていた頃は
+  -- 両者が同値だったから通っていただけで、常駐プロセス（#774）の2ターン目では nil になる
   local new_session_id = nil
-  if adapter:supports("session") and response._handle_id then
-    new_session_id = adapter:get_session_id(response._handle_id)
+  if adapter:supports("session") and response._process_id then
+    new_session_id = adapter:get_session_id(response._process_id)
     if new_session_id and new_session_id ~= callbacks.get_session_id() then
       callbacks.update_session_id(new_session_id)
     end
@@ -427,7 +451,7 @@ function M._handle_response(response, callbacks, adapter, config, modified_file_
 
   local GitSnapshot = require("vibing.core.utils.git_snapshot")
 
-  local handle_id_for_diff = incoming_handle_id or (callbacks.get_handle_id and callbacks.get_handle_id())
+  local turn_id_for_diff = incoming_turn_id or (callbacks.get_turn_id and callbacks.get_turn_id())
 
   -- 経路の選択:
   --   1. PreToolUseでツリースナップショットのベースラインが取れていて、
@@ -443,11 +467,11 @@ function M._handle_response(response, callbacks, adapter, config, modified_file_
   --     後に終わった側（相手の変更を実際に取り込んでしまう側）が素通りする
   --   - レジストリ照会は、ベースラインを取れなかった（スナップショット失敗など）ために
   --     git_snapshot からは見えないストリームを拾う保険
-  local snapshot_root = GitSnapshot.get_root(handle_id_for_diff)
+  local snapshot_root = GitSnapshot.get_root(turn_id_for_diff)
   local overlapping = snapshot_root
     and (
-      GitSnapshot.had_overlap(handle_id_for_diff)
-      or ActiveStreamRegistry.find_other_active_for_worktree(snapshot_root, handle_id_for_diff) ~= nil
+      GitSnapshot.had_overlap(turn_id_for_diff)
+      or TurnRegistry.find_other_writing_in(snapshot_root, turn_id_for_diff) ~= nil
     )
   local use_snapshot = snapshot_root ~= nil and not overlapping
 
@@ -462,21 +486,21 @@ function M._handle_response(response, callbacks, adapter, config, modified_file_
   -- それはこの置き換えが無くそうとしている失敗そのものなので、順序を逆にはできない。
   local handled = false
   if use_snapshot then
-    handled = M._finalize_snapshot_diff(callbacks, handle_id_for_diff, modified_file_paths)
+    handled = M._finalize_snapshot_diff(callbacks, turn_id_for_diff, modified_file_paths)
     if handled then
-      RequestDiff.clear(handle_id_for_diff)
+      RequestDiff.clear(turn_id_for_diff)
     end
   end
 
   if not handled then
     -- ここのclearは、スナップショット経路を通らなかった場合（git管理外・重なり検出）のための
     -- もの。上のfinalizeがfalseを返して落ちてきた場合は既にclear済みだが、clearは冪等
-    GitSnapshot.clear(handle_id_for_diff)
+    GitSnapshot.clear(turn_id_for_diff)
 
     if has_file_changes then
       -- フォールバック: PreToolUseフックで退避した変更前内容からpatchを生成。
       -- 外部プロセスを使わず、触ったファイル数分のvim.diff()だけで完結する。
-      M._finalize_request_diff(callbacks, handle_id_for_diff, modified_file_paths)
+      M._finalize_request_diff(callbacks, turn_id_for_diff, modified_file_paths)
     else
       -- スナップショットを試したのに取れず、しかもツールイベントも1つも無かった場合は、
       -- 退避先が両方とも空になる。Bashだけで完結したターンではこれが起こりうる。そのときは
@@ -489,12 +513,37 @@ function M._handle_response(response, callbacks, adapter, config, modified_file_
           vim.log.levels.WARN
         )
       end
-      RequestDiff.clear(handle_id_for_diff)
+      RequestDiff.clear(turn_id_for_diff)
       callbacks.add_user_section()
     end
   end
 
-  -- NOTE: clear_handle_id() は呼ばない
+  -- worktreeへ入ったターンなら `working_dir` を書く。**差分を出し終えたあと** でなければ
+  -- ならない: フォールバック経路の `base_dir` はfrontmatterを今読むので、先に書き換えると
+  -- このターンの退避（旧cwd基準）と基準ディレクトリ（新cwd）が食い違う
+  pcall(function()
+    require("vibing.application.chat.worktree_binding").resolve(turn_id_for_diff, bufnr)
+  end)
+
+  -- バックグラウンド subagent を残して閉じたターンの起床（#820）。**差分の確定より後**に置くのは、
+  -- これが `## Notice` として新しいターンを始める送信であり、このターンの成果を書き終える前に
+  -- 次を始めると両者が同じバッファ末尾を取り合うため。
+  --
+  -- **`vim.schedule` に包むのも同じ理由から。** スナップショット/リクエスト差分経路の
+  -- `add_user_section`（＝`_finish_turn`。`self._assistant_header_line` の終了時刻スタンプと、
+  -- このターン自身の未送信 `## User` セクションを書く）は `vim.schedule` 越しに走る
+  -- （`_emit_diff_output`）。ここを同期のまま呼ぶと、起床が同じtick内に新しいターンを送信し、
+  -- `send_message()` → `start_response()` が `_assistant_header_line` を新しいターンの行番号で
+  -- 上書きしてしまう — その後で走る現ターンの `_finish_turn` は自分の終了時刻を新しいターンの
+  -- ヘッダーに書き込み、しかも `_assistant_header_line` を nil に戻すので、新しいターン自身の
+  -- 完了時にはもう何も書けない。`vim.schedule` で後ろに並べれば、既にスケジュール済みの
+  -- `_finish_turn` が先に走ってから起床するので、この取り合いにならない
+  -- （変更なしの分岐は既に同期で閉じているので、ここを遅らせても害はない）
+  vim.schedule(function()
+    pcall(require("vibing.application.chat.outstanding_subagents").wake, response, bufnr)
+  end)
+
+  -- NOTE: clear_turn_id() は呼ばない
   -- 次のsend_message()時にkillすることで、ゾンビプロセス対策になる
 end
 
@@ -503,8 +552,8 @@ end
 ---通常は直前の返答にあるので小さいtailだけで見つかる。返答が長い場合だけ倍々に広げ、巨大な
 ---チャット全文を毎ターンLuaテーブルへコピーしない。`chat.lua`のcontext_size走査と同じ形。
 ---@param bufnr number|nil
----@return Vibing.CodexTokenTotals|nil
-local function read_last_codex_totals(bufnr)
+---@return Vibing.CumulativeTokenTotals|nil
+local function read_last_cumulative_totals(bufnr)
   if not bufnr or not vim.api.nvim_buf_is_valid(bufnr) then
     return nil
   end
@@ -514,7 +563,7 @@ local function read_last_codex_totals(bufnr)
   local chunk_size = 500
   while true do
     local from = math.max(0, total_lines - chunk_size)
-    local totals = TokenUsage.find_last_codex_totals(vim.api.nvim_buf_get_lines(bufnr, from, total_lines, false))
+    local totals = TokenUsage.find_last_cumulative_totals(vim.api.nvim_buf_get_lines(bufnr, from, total_lines, false))
     if totals or from == 0 then
       return totals
     end
@@ -530,33 +579,31 @@ end
 ---（実測で約93万）でしか動かないため、ここまで育つ過程は誰も止めない。
 ---
 ---使用量を報告しないバックエンドでは `_token_usage` が無く、`format` が nil を返して何も
----出ない。Codexはセッション累計だけを返すため、直前に書いた見出しの正確な累計との差を取り、
----通常はターン単位に戻してから表示する。呼び出し側はpcallしているので、ここでの失敗が
+---出ない。セッション累計しか返さないバックエンド（`TokenUsage.cumulative`）では、直前に書いた
+---見出しの正確な累計との差を取り、通常はターン単位に戻してから表示する。呼び出し側はpcallしているので、ここでの失敗が
 ---ターンを壊すことはない。
 ---@param response table
 ---@param callbacks table
 ---@param config Vibing.Config|nil
 ---@param started_fresh_session boolean|nil ターン開始時点で session_id が無かったか
 function M._report_token_usage(response, callbacks, config, started_fresh_session)
-  local settings = config and config.agent and config.agent.token_usage or nil
-  if settings and settings.enabled == false then
-    return
-  end
+  local settings = vim.tbl_get(config or {}, "chat", "context")
+  local show_usage = vim.tbl_get(config or {}, "ui", "usage", "enabled") ~= false
 
   local TokenUsage = require("vibing.core.utils.token_usage")
   -- Luaでは 0 が truthy なので、`warn_context = 0` はここで既定値に差し替えられずそのまま
   -- 通る。それが意図で、`TokenUsage.warning` 側の `warn_context <= 0` が「警告だけ止めて
   -- 内訳は出す」という指定として受ける。`or` が拾うのは未設定と数値でない値だけ
-  local warn_context = (settings and tonumber(settings.warn_context)) or TokenUsage.DEFAULT_WARN_CONTEXT
+  local warn_context = (settings and tonumber(settings.warn_tokens)) or TokenUsage.DEFAULT_WARN_CONTEXT
 
   local acc = response._token_usage
-  if type(acc) == "table" and acc.backend == "codex" then
+  if TokenUsage.is_cumulative(acc) then
     local bufnr = callbacks.get_bufnr and callbacks.get_bufnr()
-    local previous = read_last_codex_totals(bufnr)
-    acc = TokenUsage.codex_delta(acc, previous, started_fresh_session)
+    local previous = read_last_cumulative_totals(bufnr)
+    acc = TokenUsage.cumulative_delta(acc, previous, started_fresh_session)
 
     local section = TokenUsage.section(acc)
-    if section then
+    if section and show_usage then
       callbacks.append_chunk("\n\n" .. section)
     end
     return
@@ -578,7 +625,11 @@ function M._report_token_usage(response, callbacks, config, started_fresh_sessio
   -- 警告は章の中に含まれる。通知ではなくバッファに残すのは、`vim.notify` は次のターンを
   -- 読む頃には消えていて、読み手がコストを実際に見ている唯一の瞬間（この章）に何も
   -- 無いことになるため
-  local section = TokenUsage.section(acc, warn_context, extras)
+  local section = show_usage and TokenUsage.section(acc, warn_context, extras)
+    or TokenUsage.warning(acc.context, warn_context)
+  if not show_usage and section then
+    section = "### Tokens <!-- context=" .. tostring(acc.context or 0) .. " -->\n" .. section
+  end
   if section then
     callbacks.append_chunk("\n\n" .. section)
   end
@@ -633,6 +684,10 @@ function M._turn_diagnosis(acc, response, callbacks, started_fresh_session)
     effort = frontmatter.effort,
     version = cli_info.version,
     compacted = cli_info.compacted == true,
+    -- 前ターンと比べるために記録する。MCP サーバーの切断・再接続でツール数が動くと
+    -- プレフィックスが変わる（#808）。init を取りこぼしたターンは nil のまま主張しない
+    tools = type(cli_info.tools) == "number" and cli_info.tools or nil,
+    mcp_servers = type(cli_info.mcp_servers) == "number" and cli_info.mcp_servers or nil,
   }
 
   -- 新しいセッションの初回ターンは、そのチャットに履歴があっても（`/new-session` 直後など）
@@ -688,7 +743,7 @@ end
 ---@param progressed boolean|nil 弾かれたターンが途中まで進んでいたか（M._turn_progressed）
 ---@return boolean rescheduled 予約に切り替えられたか
 function M._reschedule_rejected_message(callbacks, chat_file_path, info, message, config, progressed)
-  local opts = (config.agent and config.agent.scheduled_requests) or {}
+  local opts = (config and vim.tbl_get(config, "automation", "limits", "queue")) or {}
   if not opts.enabled then
     return false
   end
@@ -722,8 +777,7 @@ function M._reschedule_rejected_message(callbacks, chat_file_path, info, message
   local retry_count = (existing and existing.retry_count or 0) + 1
 
   local AutoResume = require("vibing.application.chat.auto_resume")
-  local grace = (config.agent and config.agent.auto_resume_on_limit and config.agent.auto_resume_on_limit.grace_sec)
-    or 10
+  local grace = (config and vim.tbl_get(config, "automation", "limits", "grace_sec")) or 10
 
   local ok, reason = AutoResume.schedule_request(chat_file_path, info.resets_at + grace, {
     limit_type = info.limit_type,
@@ -732,11 +786,7 @@ function M._reschedule_rejected_message(callbacks, chat_file_path, info, message
   })
   if not ok then
     vim.notify(
-      string.format(
-        "[vibing] Not re-scheduling %s: %s",
-        vim.fn.fnamemodify(chat_file_path, ":t"),
-        tostring(reason)
-      ),
+      string.format("[vibing] Not re-scheduling %s: %s", vim.fn.fnamemodify(chat_file_path, ":t"), tostring(reason)),
       vim.log.levels.WARN
     )
     return false
@@ -753,14 +803,32 @@ end
 ---@param config table
 ---@return string
 function M._continuation_prompt(config)
-  local prompt = config
-    and config.agent
-    and config.agent.auto_resume_on_limit
-    and config.agent.auto_resume_on_limit.prompt
+  local prompt = config and config.automation and vim.tbl_get(config, "automation", "limits", "continue_prompt")
   if type(prompt) == "string" and vim.trim(prompt) ~= "" then
     return prompt
   end
   return "Continue from where you left off."
+end
+
+---変更ファイルを1行にまとめる
+---
+---全ファイルを並べていた頃の名残でこの節が縦に伸び、`patch_viewer` のファイル一覧と完全に
+---重複していた。差分を見る導線は `gd`（フロート）1本なので、チャットに残すのは「何件、
+---だいたい何を触ったか」だけでよい。
+---@param files string[] 表示用の相対パス一覧
+---@return string
+function M._summary_line(files)
+  local NAMED = 3
+  local shown = {}
+  for i = 1, math.min(#files, NAMED) do
+    table.insert(shown, files[i])
+  end
+
+  local line = string.format("%d %s changed: %s", #files, #files == 1 and "file" or "files", table.concat(shown, ", "))
+  if #files > NAMED then
+    line = line .. string.format(", +%d more", #files - NAMED)
+  end
+  return line
 end
 
 ---変更ファイル一覧とpatchをチャットに書き出す
@@ -772,33 +840,27 @@ end
 ---@param files string[] 表示用の相対パス一覧
 ---@param abs_files string[] バッファリロード用の絶対パス一覧
 ---@param patch_content string|nil patch本文
----@param handle_id string|nil patchファイル名に使うハンドルID
-function M._emit_diff_output(callbacks, base_dir, files, abs_files, patch_content, handle_id)
+---@param turn_id string|nil patchファイル名に使うターンID
+function M._emit_diff_output(callbacks, base_dir, files, abs_files, patch_content, turn_id)
   if #files > 0 then
     BufferReload.reload_files(abs_files)
-    local MAX_DISPLAY = 50
-    local file_lines = {}
-    for i = 1, math.min(#files, MAX_DISPLAY) do
-      table.insert(file_lines, files[i])
-    end
-    if #files > MAX_DISPLAY then
-      table.insert(file_lines, string.format("... (%d more)", #files - MAX_DISPLAY))
-    end
-    callbacks.append_chunk("\n\n### Modified Files\n\n" .. table.concat(file_lines, "\n") .. "\n")
+    callbacks.append_chunk("\n\n### Modified Files\n\n" .. M._summary_line(files) .. "\n")
   end
 
   if patch_content then
-    local patch_dir = base_dir .. "/.vibing/patches"
+    local patch_dir = base_dir .. "/.vibing/diffs"
     Fs.ensure_dir(patch_dir)
-    local suffix = tostring(handle_id or ""):gsub("%W", ""):sub(-6)
-    local patch_path = string.format("%s/%s_%s.patch", patch_dir, os.date("%Y%m%d_%H%M%S"), suffix)
+    local suffix = tostring(turn_id or ""):gsub("%W", ""):sub(-6)
+    local patch_path = string.format("%s/%s_%s.diff", patch_dir, os.date("%Y%m%d_%H%M%S"), suffix)
     local f = io.open(patch_path, "w")
     if f then
       f:write(patch_content)
       f:close()
-      callbacks.append_chunk("\n<!-- patch: " .. patch_path .. " -->\n")
+      -- HTMLコメントではなく素の行で出す。patchはこれから前面に出る扱いなので、
+      -- 読み手に見えている必要がある。旧形式の `<!-- patch: ... -->` も読めるままにしてある
+      callbacks.append_chunk("\nDiff: " .. patch_path .. "\n")
     else
-      vim.notify("[vibing] Failed to write patch file: " .. patch_path, vim.log.levels.WARN)
+      vim.notify("[vibing] Failed to write diff file: " .. patch_path, vim.log.levels.WARN)
     end
   end
 
@@ -813,25 +875,24 @@ end
 ---「リクエスト前のツリー」と「今のツリー」の2つのgitオブジェクトの比較なので、
 ---どのツールが変更したかを一切知らなくてよい。
 ---@param callbacks Vibing.ChatCallbacks
----@param handle_id string|nil リクエストのハンドルID
+---@param turn_id string|nil リクエストのターンID
 ---@param modified_file_paths table<string, boolean> ツールイベントで検知した変更ファイル
 ---@return boolean handled 差分を出力できたか。falseなら何も書いていないので、呼び出し側が
 ---  request_diff にフォールバックする（「変更が無かった」ではなく「取れなかった」の意味）
-function M._finalize_snapshot_diff(callbacks, handle_id, modified_file_paths)
+function M._finalize_snapshot_diff(callbacks, turn_id, modified_file_paths)
   local GitSnapshot = require("vibing.core.utils.git_snapshot")
 
-  local base_dir = GitSnapshot.get_root(handle_id) or vim.fn.getcwd()
-  local files, abs_files, patch_content, ok, extra_only =
-    GitSnapshot.generate(handle_id, modified_file_paths)
-  GitSnapshot.clear(handle_id)
+  local base_dir = GitSnapshot.get_root(turn_id) or vim.fn.getcwd()
+  local files, abs_files, patch_content, ok, extra_only = GitSnapshot.generate(turn_id, modified_file_paths)
+  GitSnapshot.clear(turn_id)
 
   if not ok then
     return false
   end
 
-  patch_content = M._supplement_ignored_files(handle_id, base_dir, patch_content, extra_only or {})
+  patch_content = M._supplement_ignored_files(turn_id, base_dir, patch_content, extra_only or {})
 
-  M._emit_diff_output(callbacks, base_dir, files, abs_files, patch_content, handle_id)
+  M._emit_diff_output(callbacks, base_dir, files, abs_files, patch_content, turn_id)
   return true
 end
 
@@ -845,18 +906,18 @@ end
 ---
 ---退避が無く合成できなかったファイル（Bash由来・codexのapply_patchなど）は、一覧に載るのに
 ---patchが無い＝「静かに消える」形になるので、黙らず通知する。
----@param handle_id string|nil リクエストのハンドルID
+---@param turn_id string|nil リクエストのターンID
 ---@param base_dir string patch内パスの基準ディレクトリ（絶対パス）
 ---@param patch_content string|nil スナップショット経路のpatch本文
 ---@param extra_only string[] ツリー差分に現れなかった変更ファイルの絶対パス
 ---@return string|nil patch_content 合成分を継ぎ足したpatch本文
-function M._supplement_ignored_files(handle_id, base_dir, patch_content, extra_only)
+function M._supplement_ignored_files(turn_id, base_dir, patch_content, extra_only)
   if #extra_only == 0 then
     return patch_content
   end
 
   local RequestDiff = require("vibing.core.utils.request_diff")
-  local sections, resolved = RequestDiff.sections_for(handle_id, base_dir, extra_only)
+  local sections, resolved = RequestDiff.sections_for(turn_id, base_dir, extra_only)
 
   if #sections > 0 then
     local body = table.concat(sections, "\n") .. "\n"
@@ -893,9 +954,9 @@ end
 ---リクエスト単位diff（フォールバック経路）のModified Files出力とpatch生成
 ---git管理外のworking_dirと、同じworktreeで並行実行中のターンで使う。
 ---@param callbacks Vibing.ChatCallbacks
----@param handle_id string|nil リクエストのハンドルID
+---@param turn_id string|nil リクエストのターンID
 ---@param modified_file_paths table<string, boolean> ツールイベントで検知した変更ファイル
-function M._finalize_request_diff(callbacks, handle_id, modified_file_paths)
+function M._finalize_request_diff(callbacks, turn_id, modified_file_paths)
   local RequestDiff = require("vibing.core.utils.request_diff")
   local Git = require("vibing.core.utils.git")
 
@@ -903,10 +964,10 @@ function M._finalize_request_diff(callbacks, handle_id, modified_file_paths)
   local base_dir = session_cwd or Git.get_root(nil) or vim.fn.getcwd()
   base_dir = vim.fn.fnamemodify(base_dir, ":p"):gsub("/$", "")
 
-  local files, abs_files, patch_content = RequestDiff.generate(handle_id, base_dir, modified_file_paths)
-  RequestDiff.clear(handle_id)
+  local files, abs_files, patch_content = RequestDiff.generate(turn_id, base_dir, modified_file_paths)
+  RequestDiff.clear(turn_id)
 
-  M._emit_diff_output(callbacks, base_dir, files, abs_files, patch_content, handle_id)
+  M._emit_diff_output(callbacks, base_dir, files, abs_files, patch_content, turn_id)
 end
 
 ---廃止されたfrontmatterキーを一度だけ警告する

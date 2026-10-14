@@ -10,10 +10,119 @@ and send a single continuation message once the limit resets. Opt-in via
 `agent.auto_resume_on_limit.enabled` (default `false` — it spends tokens unattended).
 
 Detection merges three signals in `lua/vibing/core/utils/rate_limit.lua`: the CLI's
-`rate_limit_event` stream line (the **only** source of `resetsAt`), the `StopFailure` hook filtered
-to `error_type = rate_limit` (confirms the turn died, no timestamp), and the error text as a
-fallback. None of these payload shapes is officially documented, so every field is optional and a
-schema change degrades the feature instead of breaking the stream.
+`rate_limit_event` stream line (the richest, and the primary source of `resetsAt`), the
+`StopFailure` hook filtered to `error_type = rate_limit` (confirms the turn died, never carries a
+timestamp), and the error text as a fallback — which supplies `resetsAt` too when the CLI printed
+one in prose, the only way a backend with no stream event has of reporting it. None of these
+payload shapes is officially documented, so every field is optional and a schema change degrades
+the feature instead of breaking the stream.
+
+### Which Channel Each Backend Has
+
+The merge itself lives in `adapter/modules/rate_limit_detector.lua`, called identically by all four
+adapters. It used to be written inline in `claude_cli.lua`, and that is the whole reason auto-resume
+was a claude-only feature for so long: nothing downstream was claude-specific — the project limit
+record, the scheduled re-send and the retry budget were already scoped per backend — but a codex or
+grok chat that hit its provider's limit produced no `_rate_limit_info`, so `send_message.lua` took
+the ordinary error branch and the chat simply stopped. Keeping detection in one shared module makes
+"does this backend auto-resume?" a question about which channels its CLI offers.
+
+That it stays that way is pinned in `tests/lua/infrastructure/adapter/stream_options_spec.lua`,
+which drives a non-zero exit with limit wording on stderr through every backend `agents.lua`
+registers and asserts `_rate_limit_info` came back. A new adapter joins that check by existing.
+
+| Backend | stream event | `StopFailure` hook | error text | `resets_at`?          |
+| ------- | ------------ | ------------------ | ---------- | --------------------- |
+| claude  | ✅ yes       | ✅ yes             | ✅ yes     | ✅ stream event       |
+| codex   | —            | —                  | ✅ yes     | ✅ stated in the text |
+| copilot | —            | —                  | ✅ yes     | —                     |
+| grok    | —            | —                  | ✅ yes     | —                     |
+
+Codex exec's `ThreadEvent` stream (`thread.started` / `turn.*` / `item.*` / `error`) carries no
+rate-limit event at all — codex 0.154 does have a `TokenCountEvent` with a `rate_limits` snapshot,
+but only on the `app-server` protocol, not on `exec --json`. Neither codex, copilot nor grok
+registers a `StopFailure` hook. So for those three the error text is the whole story, and it works
+because all three exit non-zero when a turn dies (verified against codex 0.154, copilot 1.0.78),
+which is what puts the CLI's own message in `response.error`.
+
+### Reading the Reset Time Out of the Message
+
+Codex prints when the limit lifts, so `core/utils/rate_limit_text.lua` reads it rather than
+treating that backend as timeless. Its formatter (`protocol/src/num_format.rs` in codex 0.154)
+appends `" or try again at "` plus `%-I:%M %p` when the reset is the same day, or
+`%b %-d, %Y %-I:%M %p` when it is not — and `" or try again later."` when it has nothing to print.
+
+This is a parse, never an inference. A phrasing the module does not recognise, and a dated form
+with no year, both yield nil and leave the caller with exactly the behaviour below. Three rules are
+worth keeping in mind when touching it:
+
+- **A stated minute resolves to its last second**, through the one `stated_minute` helper both
+  formats go through. `%-I:%M` truncates, so "3:13 AM" names the interval `[3:13:00, 3:13:59]` and
+  says only that the reset falls inside it. Reading it as 3:13:00 — which is what the first version
+  did — makes every derived moment up to 59 seconds early. Observed on codex 0.154: a chat parked
+  on "try again at Sep 15th, 2026 3:13 AM" resumed at 03:13:09 (the reset plus the 10-second
+  `grace_sec`), was rejected with the same "3:13 AM", and hit `max_retries = 1` nine seconds later.
+
+  Raising `grace_sec` would not have fixed this, and the reason is worth keeping: **`grace_sec`
+  cannot reach `LimitState.get_active`**, which compares `resets_at > os.time()` with no grace at
+  all. Under `sec = 0` a sibling chat asking "is the limit still live?" at 03:13:30 was told no and
+  sent straight into it. The parse is the only layer both consumers share. It is also the only one
+  that leaves claude alone — its stream event carries exact epoch seconds, so nothing there gets
+  delayed. Erring late costs under a minute; erring early cost the whole retry budget.
+
+- **A bare clock time is never rolled forward to tomorrow.** The CLI chooses that form precisely
+  because the reset is today, so a time reading as already past means the limit has just lifted —
+  and both readers already handle a past moment (`limit_state.get_active` reports the record
+  inactive, `compute_delay` resumes promptly). Adding a day would park the chat for 24 hours on
+  nothing but clock skew.
+- **A time more than 8 days out is dropped**, matching the sanity ceiling `auto_resume.lua` applies
+  to what it is handed, so an implausible parse degrades here instead of warning there.
+
+`compute_delay` then gives an already-elapsed reset one of two floors, and `recorded_at` is what
+picks between them. A reset that was still ahead when it was written down has merely gone stale —
+Neovim was closed across the window — and keeps the 3-second floor that lets startup settle. A
+reset at or before its own `recorded_at` is a different thing: the CLI rejected the turn and in the
+same breath named a moment already behind it. That claim contradicts itself, so it gets 60 seconds
+instead of being retried straight back into.
+
+This second floor is defence, not the fix for the incident above — after the parse change, the
+resume in that transcript lands at 03:14:09 and the branch never fires. It covers the residual
+case where a CLI restates a reset the clock has fully passed, which is otherwise a 3-second retry
+loop against a live limit. Two consequences are deliberate rather than overlooked: the floor is not
+scoped to a backend, so a claude entry whose exact `resets_at` reads as past through clock skew
+also waits a minute; and it is not scoped by `kind`, so `:VibingSchedule 2020-01-01T00:00` — the
+one `When.parse` form with no rollover — waits 60 seconds rather than 3. Both are degenerate inputs
+where the extra wait is slower, not wrong, and the `send_message` re-schedule path that most needs
+the backoff is itself a `scheduled` entry, so a `kind` guard would exclude exactly the wrong half.
+
+The same failure arrives twice on the codex stream — once as `error`, once as `turn.failed` — and
+`errorOutput` is concatenated with no separator, so `codex_event_processor.record_error` drops an
+immediately repeated message. Without it the chat rendered both copies as one run-on sentence.
+
+For copilot and grok, and for a codex message that printed no time, the two original consequences
+still hold, and both remain by design rather than gaps worth closing with a guess:
+
+- **Resume uses `fallback_delay_sec` (300s), not a real reset time.** `schedule()` says so in the
+  notification (`"no reset time reported; this is a fallback retry"`), and `max_retries` bounds how
+  often it can be wrong. For a five-hour window that retry will almost certainly be rejected again.
+- **`.vibing/limit-state.json` is not written.** `LimitState.record` ignores a payload with no
+  reset timestamp, since a record that cannot answer "is the limit still active?" would strand
+  every later request. So the "park the _next_ chat pre-emptively" half of the feature needs a
+  time: with one, a whole orchestrated fleet parks instead of each worker discovering the limit by
+  being rejected; without one, only the chat that actually hit it parks and resumes.
+
+Detection is gated on `response.error` rather than on the adapters' accumulated `error_output`.
+`error` is set only when the process exited non-zero (or declared a failure in its result event),
+whereas `error_output` also collects plain stderr — and every one of these CLIs writes harmless
+warnings there. Matching on that instead would park a chat that had just answered fine.
+
+`ERROR_TEXT_PATTERNS` carries both the prose spelling a CLI prints and the snake_case one an API
+error type uses, because codex surfaces the raw provider envelope
+(`{"error":{"type":"usage_limit_exceeded"}}`) as its `turn.failed` message. Every entry must name a
+**time-windowed** limit: credit exhaustion reads similarly (grok says "out of credits" and "usage
+balance exhausted") but never resets on its own, so matching it would schedule a resume guaranteed
+to fail. "quota exceeded" is held out for the same reason — it is also what a filesystem reports
+when a disk is full.
 
 Pending resumes persist to `.vibing/pending-resume.json` and are re-armed on `setup()`, since a
 five-hour reset usually outlives the Neovim session. Safeguards: `max_retries` (default 1) per
@@ -47,7 +156,9 @@ for a stale entry that outlives a restart) now call `auto_resume.announce_gave_u
 - Fails soft per orchestrator: an unreachable parent path warns rather than raising, so one bad
   entry does not stop the chat's own notice line from being written.
 
-**Implementation:** `application/chat/auto_resume.lua` (scheduler),
+**Implementation:** `adapter/modules/rate_limit_detector.lua` (the per-adapter seam),
+`core/utils/rate_limit.lua` (channel normalization) and `core/utils/rate_limit_text.lua` (the
+reset time a CLI stated in prose), `application/chat/auto_resume.lua` (scheduler),
 `infrastructure/storage/pending_resume.lua` (persistence),
 `infrastructure/rpc/handlers/rate_limit.lua` (StopFailure receiver), `bin/hooks/stop-failure.sh`.
 
@@ -110,10 +221,11 @@ user can edit while the turn is in flight. **Reading** it before a request exist
 `Modes.resolve_agent` (frontmatter `agent` > `config.adapter` > claude) — the same precedence
 `send_message._resolve_adapter` applies a moment later.
 
-A record with no `agent` field reads as claude's, since claude is the only backend that reports a
-rate limit (`claude_cli.lua`) and so the only one that could have written one.
-`:VibingCancelResume all` is the one unscoped clear left: it has no chat in hand, and "forget
-everything" is the user saying so by hand.
+A record with no `agent` field reads as claude's. Claude was the only backend detecting a limit
+back when the field did not exist, so it is the only one that can have written such a record.
+Codex now writes this file too, which is what makes the scoping above load-bearing rather than
+theoretical. `:VibingCancelResume all` is the one unscoped clear left: it has no chat in hand, and
+"forget everything" is the user saying so by hand.
 
 **Implementation:** `infrastructure/storage/limit_state.lua` (project limit record),
 `core/utils/when.lua` (time spec parser), plus the `kind` dispatch in

@@ -32,11 +32,11 @@ calls `nvim_get_buffer` on it, which it only does after being told something is 
 **When the task is done.** The ordinary case: finish the work, then send the report before ending
 your turn.
 
-**Before you act on something you expect will need approval.** A tool-approval prompt kills your
-turn on the spot — you cannot report _after_ hitting one, because there is no turn left to send
-from. If you can see one coming (a destructive command, an edit outside what the brief covers),
+**Before you act on something you expect will need approval.** A tool-approval prompt stops you
+inside the tool call — nothing of yours runs again until somebody answers it, so you cannot report
+_while_ one is open. If you can see one coming (a destructive command, an edit outside what the brief covers),
 send a heads-up first, in the same turn, before making that call. The orchestrator (or the user,
-depending on `agent.orchestration.delegated_approval`) is who clears it either way; a heads-up
+depending on `permissions.delegated_approval`) is who clears it either way; a heads-up
 just means they aren't finding out from a cold watchdog notice with no context.
 
 **The moment you find you cannot proceed.** Not "eventually, once you've tried everything" — as
@@ -45,6 +45,35 @@ constraint, a brief that turns out to be ambiguous), report that and ask, rather
 grinding on it silently. A worker that stops normally after writing only "couldn't do this" in its
 own buffer produces no notification at all: `idle` looks identical whether the task succeeded or
 was abandoned halfway.
+
+## When the brief does not match the code
+
+Your orchestrator wrote the brief from what it remembered reading; you are reading the code now.
+So a brief can be wrong in a way its author could not have seen, and the wrongness is concentrated
+in the parts that say **how**: over one 15-PR run, three briefs named a fix that did not address
+the actual cause, and a fourth named a symbol that existed only on another branch. The workers
+were right in all four.
+
+**Follow the brief's goal; treat its implementation steps as a guess, and say so when they
+diverge.**
+
+- **A symbol, file or line the brief names that is not here**: do not quietly substitute the
+  nearest match, and do not create it. Find the current name, use it, and say in your report that
+  the brief named something else — that is how the orchestrator learns its picture is stale before
+  it briefs the next worker from the same memory.
+- **An implementation the brief dictates that would not achieve the invariant the brief also
+  states**: the invariant wins. Do what satisfies it, and report both what was asked for and why
+  you did something else.
+- **A test assertion the brief dictates that cannot fail**: write one that can, and report the
+  substitution. An assertion handed down from outside gets written whether or not it tests
+  anything.
+- **A brief whose goal itself does not survive the code** — the bug is elsewhere, the constraint
+  is impossible, two requirements contradict: that is "cannot proceed as briefed". Report it now
+  (above) rather than redesigning the task alone.
+
+Deviating is safe only when it is visible. An unreported deviation leaves the orchestrator
+aggregating against a plan that no longer describes what you built, and it will brief the next
+worker from that same plan.
 
 ## When the user speaks to you directly
 
@@ -70,15 +99,25 @@ not what started the turn.
 
 ## Report shape
 
-Conclusion → what changed → what's unresolved → what you need next. Briefly — the orchestrator can
-read your transcript for detail it actually wants; a report that replays the working log is paid
-for twice (once when you write it, once when it's read) for content that already sits in your
-transcript for free.
+**A few lines, not a document.** The orchestrator reads your transcript when it wants detail; the
+report only has to tell it what to do next. Every line it does not need is paid for twice — once
+when you write it, once when it is read — and pushes the line it does need further down.
 
-- **Conclusion**: done, partially done, or blocked — one line.
-- **What changed**: the files or state you touched, not how you got there.
-- **What's unresolved**: anything left undone or uncertain.
-- **What's needed next**: a decision, a missing input, or nothing (task fully closed).
+```text
+Done. <one-line conclusion>
+Unresolved: <only if any>
+Need: <decision or input — only if any>
+```
+
+- **Conclusion**: done, partially done, or blocked — one line. Name a PR or branch if there is
+  one; do not list every file touched.
+- **Unresolved / Need**: write them only when they exist. An empty section is not written as
+  "none". A deviation from the brief (above) or a handoff item is one line each: what, and why in
+  a clause.
+- **A question is the question.** When you need a decision, state it with the options and your
+  recommendation — no background the orchestrator already gave you in the brief.
+- **Leave out**: how you got there, test counts and command output, what you checked and found
+  fine, restating the brief, and any closing summary of the summary.
 
 ## Do not
 

@@ -109,10 +109,24 @@ function M.revert_single_file(_, patch_filename, selected_file)
   end
 
   local BufferReload = require("vibing.core.utils.buffer_reload")
-  BufferReload.reload_files({ resolve_reload_path(ctx, selected_file) })
+  local skipped = BufferReload.reload_files({ resolve_reload_path(ctx, selected_file) })
+  M._warn_unreloaded(skipped)
 
   vim.notify(string.format("Reverted %s", selected_file), vim.log.levels.INFO)
   return true
+end
+
+---@param skipped string[] `BufferReload.reload_files`が未保存を理由にリロードしなかったパス
+function M._warn_unreloaded(skipped)
+  if #skipped == 0 then
+    return
+  end
+  vim.notify(
+    "[vibing] Reverted on disk, but this buffer has unsaved changes so it wasn't reloaded: "
+      .. table.concat(skipped, ", ")
+      .. ". Saving it now would overwrite the revert — discard its changes (e.g. `:e!`) instead.",
+    vim.log.levels.WARN
+  )
 end
 
 ---@param _ string
@@ -186,7 +200,7 @@ function M._reload_successful_files(files, failed_files, success_count, ctx)
   end
 
   local BufferReload = require("vibing.core.utils.buffer_reload")
-  BufferReload.reload_files(success_files)
+  M._warn_unreloaded(BufferReload.reload_files(success_files))
 end
 
 return M

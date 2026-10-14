@@ -4,6 +4,8 @@
 
 ## 📋 テストケース一覧
 
+<!-- markdownlint-disable MD029 -- numbering runs on across headings -->
+
 ### チャット機能
 
 1. **[01-chat-basic-flow.md](./01-chat-basic-flow.md)** - チャット基本フロー
@@ -56,6 +58,8 @@
    - /vibing-workspace-enter による既存workspaceへの参加
    - /vibing-workspace-list による一覧表示
    - /vibing-workspace-done によるworktree削除とdoneへの移動
+
+<!-- markdownlint-enable MD029 -->
 
 ## 🎯 テスト実施方法
 

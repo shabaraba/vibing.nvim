@@ -86,10 +86,10 @@ describe("grok_lightweight", function()
     end)
 
     it("writes into the environment it was handed rather than replacing it", function()
-      local env = { PATH = "/usr/bin", VIBING_HANDLE_ID = "h1" }
+      local env = { PATH = "/usr/bin", VIBING_PROCESS_ID = "h1" }
       grok_lightweight.apply_env(env)
       assert.equals("/usr/bin", env.PATH)
-      assert.equals("h1", env.VIBING_HANDLE_ID)
+      assert.equals("h1", env.VIBING_PROCESS_ID)
     end)
   end)
 

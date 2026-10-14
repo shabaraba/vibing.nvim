@@ -3,7 +3,7 @@
 --- Claude Code exposes several cost-related knobs only through the environment
 --- (`CLAUDE_AUTOCOMPACT_PCT_OVERRIDE`, `BASH_MAX_OUTPUT_LENGTH`, `CLAUDE_CODE_SUBAGENT_MODEL`, …).
 --- Exporting them from `init.lua` reaches the child too, but it also reaches every other `claude`
---- on the machine and cannot vary per chat. `agent.env` and the chat's `env:` frontmatter are the
+--- on the machine and cannot vary per chat. `ai.agents.<agent>.env` and the chat's `env:` frontmatter are the
 --- two scoped ways in; this module is the single place that decides what they may write.
 --- @module vibing.infrastructure.adapter.modules.agent_environment
 
@@ -26,7 +26,7 @@ end
 --- Variables vibing.nvim owns in the child environment.
 ---
 --- `CLAUDECODE` is unset so a nested invocation is possible at all, and the `VIBING_*` family
---- carries the RPC port and the handle ID that tie the child back to this Neovim and this chat
+--- carries the RPC port and the process id that tie the child back to this Neovim and this chat
 --- buffer. Letting a config value write either would break the hook round trip — the permission
 --- gate, the diff baseline and the approval UI all ride on it — so they are refused rather than
 --- merged.
@@ -50,7 +50,7 @@ local function normalize(key, value)
   end
   -- A boolean or a table has no single obvious spelling in an environment ("true"? "1"?), and
   -- guessing one would set a variable the user did not write.
-  warn_once(key, string.format("agent.env.%s: expected a string or a number, got %s. Ignored.", key, kind))
+  warn_once(key, string.format("ai.agents.<agent>.env.%s: expected a string or a number, got %s. Ignored.", key, kind))
   return nil
 end
 
@@ -81,7 +81,7 @@ function M.parse_entries(value)
   return out
 end
 
---- Merge `agent.env` and the chat's `env:` frontmatter into a child environment, in place.
+--- Merge `ai.agents.<agent>.env` and the chat's `env:` frontmatter into a child environment, in place.
 ---
 --- Applied before `RpcEnvironment.bind` and the `CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS` default so
 --- that a declared variable behaves exactly like one the user exported: vibing.nvim's own
@@ -90,23 +90,25 @@ end
 --- @param env table<string, string> the child environment, mutated
 --- @param config Vibing.Config?
 --- @param opts Vibing.AdapterOpts?
-function M.apply(env, config, opts)
+function M.apply(env, config, opts, agent_id)
   opts = opts or {}
-  -- A lightweight utility call runs with no tools and no resumed session, so every variable this
-  -- feature is for (autocompaction, Bash output length, the subagent model) has nothing to act on.
-  if opts.lightweight then
-    return
-  end
+  -- Agent environment reaches helpers too; chat frontmatter remains conversation-only.
 
   local declared = {}
-  local from_config = config and config.agent and config.agent.env
+  local from_config = vim.tbl_get(
+    config or {},
+    "ai",
+    "agents",
+    agent_id or require("vibing.core.utils.ai_config").resolve(config).agent,
+    "env"
+  )
   if type(from_config) == "table" then
     for key, value in pairs(from_config) do
       declared[key] = value
     end
   end
   -- The chat's own frontmatter is the narrower scope, so it wins over `setup()`.
-  for key, value in pairs(M.parse_entries(opts.env)) do
+  for key, value in pairs(M.parse_entries(not opts.lightweight and opts.env or nil)) do
     declared[key] = value
   end
 

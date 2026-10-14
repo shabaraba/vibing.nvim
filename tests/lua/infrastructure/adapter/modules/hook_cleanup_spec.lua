@@ -1,3 +1,4 @@
+local Fs = require("vibing.core.utils.fs")
 -- Tests for vibing.infrastructure.adapter.modules.hook_cleanup
 
 describe("hook_cleanup.cleanup_stale_dirs", function()
@@ -14,7 +15,7 @@ describe("hook_cleanup.cleanup_stale_dirs", function()
   ---@return string dir
   local function make_dir(name)
     local dir = root .. "/" .. name
-    vim.fn.mkdir(dir, "p")
+    Fs.ensure_dir(dir)
     vim.fn.writefile({ "{}" }, dir .. "/req-1.req")
     return dir
   end

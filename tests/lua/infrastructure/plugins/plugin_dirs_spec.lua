@@ -1,4 +1,5 @@
 local PluginDirs = require("vibing.infrastructure.plugins.plugin_dirs")
+local Fs = require("vibing.core.utils.fs")
 
 describe("plugin_dirs", function()
   local project_root
@@ -10,7 +11,7 @@ describe("plugin_dirs", function()
   ---@param dir string
   ---@param name string
   local function write_plugin(dir, name)
-    vim.fn.mkdir(dir .. "/.claude-plugin", "p")
+    Fs.ensure_dir(dir .. "/.claude-plugin")
     vim.fn.writefile({ vim.json.encode({ name = name }) }, dir .. "/.claude-plugin/plugin.json")
   end
 
@@ -53,14 +54,22 @@ describe("plugin_dirs", function()
       assert.equals("vibing-nvim", entries[1].name)
     end)
 
-    it("is omitted when agent.plugins.self is false", function()
-      local dirs = PluginDirs.resolve(nil, { agent = { plugins = { self = false } } })
+    it("is omitted when integrations.plugins.self is false", function()
+      local dirs = PluginDirs.resolve(nil, {
+        integrations = {
+          plugins = { self = false },
+        },
+      })
       assert.same({}, dirs)
     end)
   end)
 
   describe("project_dir", function()
-    local config = { agent = { plugins = { project_dir = ".vibing/plugins" } } }
+    local config = {
+      integrations = {
+        plugins = { project_dir = ".vibing/plugins" },
+      },
+    }
 
     it("picks up every directory under it that carries a manifest", function()
       write_plugin(project_root .. "/.vibing/plugins/alpha", "alpha")
@@ -80,13 +89,21 @@ describe("plugin_dirs", function()
 
     it("is skipped entirely when set to false", function()
       write_plugin(project_root .. "/.vibing/plugins/alpha", "alpha")
-      local dirs = PluginDirs.resolve(nil, { agent = { plugins = { project_dir = false } } })
+      local dirs = PluginDirs.resolve(nil, {
+        integrations = {
+          plugins = { project_dir = false },
+        },
+      })
       assert.same({ own_plugin_dir() }, dirs)
     end)
   end)
 
   describe("broken candidates", function()
-    local config = { agent = { plugins = { project_dir = ".vibing/plugins" } } }
+    local config = {
+      integrations = {
+        plugins = { project_dir = ".vibing/plugins" },
+      },
+    }
 
     -- `--plugin-dir` ignores these without a word (measured on claude 2.1.231: exit 0, no
     -- warning, turn completes), so "I dropped a plugin in and nothing happened" would otherwise
@@ -148,7 +165,11 @@ describe("plugin_dirs", function()
   end)
 
   describe("caching", function()
-    local config = { agent = { plugins = { project_dir = ".vibing/plugins" } } }
+    local config = {
+      integrations = {
+        plugins = { project_dir = ".vibing/plugins" },
+      },
+    }
 
     it("does not re-scan until the cache is cleared", function()
       assert.same({ own_plugin_dir() }, PluginDirs.resolve(nil, config))
@@ -173,7 +194,11 @@ describe("plugin_dirs", function()
   end)
 
   describe("worktree fallback", function()
-    local config = { agent = { plugins = { project_dir = ".vibing/plugins" } } }
+    local config = {
+      integrations = {
+        plugins = { project_dir = ".vibing/plugins" },
+      },
+    }
 
     -- `.vibing/` is git-ignored, so a worktree checkout starts with no `.vibing/plugins` of its
     -- own. Without the fallback, moving a chat into a worktree would silently drop every
@@ -220,7 +245,11 @@ describe("plugin_dirs", function()
       local elsewhere = vim.fn.tempname()
       write_plugin(elsewhere, "elsewhere")
 
-      local dirs = PluginDirs.resolve(nil, { agent = { plugins = { extra = { elsewhere } } } })
+      local dirs = PluginDirs.resolve(nil, {
+        integrations = {
+          plugins = { extra = { elsewhere } },
+        },
+      })
 
       assert.same({ own_plugin_dir(), elsewhere }, dirs)
       vim.fn.delete(elsewhere, "rf")
@@ -229,7 +258,11 @@ describe("plugin_dirs", function()
     it("resolves a relative path against the request's cwd", function()
       write_plugin(project_root .. "/tools/my-plugin", "my-plugin")
 
-      local dirs = PluginDirs.resolve(nil, { agent = { plugins = { extra = { "tools/my-plugin" } } } })
+      local dirs = PluginDirs.resolve(nil, {
+        integrations = {
+          plugins = { extra = { "tools/my-plugin" } },
+        },
+      })
 
       assert.same({ own_plugin_dir(), project_root .. "/tools/my-plugin" }, dirs)
     end)
@@ -245,7 +278,9 @@ describe("plugin_dirs", function()
       write_plugin(project_root .. "/.vibing/plugins/live", "live")
 
       local dirs = PluginDirs.resolve(nil, {
-        agent = { plugins = { self = false, project_dir = ".vibing/plugins" } },
+        integrations = {
+          plugins = { self = false, project_dir = ".vibing/plugins" },
+        },
       })
 
       assert.same({ project_root .. "/.vibing/plugins/live" }, dirs)
@@ -255,7 +290,9 @@ describe("plugin_dirs", function()
       vim.fn.mkdir(project_root .. "/.vibing/plugins/_broken", "p")
 
       PluginDirs.resolve(nil, {
-        agent = { plugins = { self = false, project_dir = ".vibing/plugins" } },
+        integrations = {
+          plugins = { self = false, project_dir = ".vibing/plugins" },
+        },
       })
 
       assert.same({}, notifications)
@@ -265,9 +302,13 @@ describe("plugin_dirs", function()
   describe("malformed config", function()
     -- `candidates()` indexes `plugins.self`, so a truthy non-table raised. The builder runs under
     -- pcall, which turned a config typo into an unexplained "failed to build command".
-    it("treats a non-table agent.plugins as unset instead of raising", function()
+    it("treats a non-table integrations.plugins as unset instead of raising", function()
       for _, bad in ipairs({ true, "yes", 42 }) do
-        local ok, dirs = pcall(PluginDirs.resolve, nil, { agent = { plugins = bad } })
+        local ok, dirs = pcall(PluginDirs.resolve, nil, {
+          integrations = {
+            plugins = bad,
+          },
+        })
         PluginDirs.clear_cache()
         assert.is_true(ok, vim.inspect(bad))
         assert.same({ own_plugin_dir() }, dirs)
@@ -279,7 +320,11 @@ describe("plugin_dirs", function()
     it("keeps the first and drops the rest", function()
       write_plugin(project_root .. "/.vibing/plugins/impostor", "vibing-nvim")
 
-      local dirs = PluginDirs.resolve(nil, { agent = { plugins = { project_dir = ".vibing/plugins" } } })
+      local dirs = PluginDirs.resolve(nil, {
+        integrations = {
+          plugins = { project_dir = ".vibing/plugins" },
+        },
+      })
 
       assert.same({ own_plugin_dir() }, dirs)
     end)

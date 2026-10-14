@@ -9,7 +9,8 @@ local M = {}
 --- and `permissions_*` are written in. A name missing from here reaches `can_use_tool` verbatim,
 --- where no `Grep`/`Task`/... rule can match it — so an absent entry silently disables a rule.
 ---
---- Every name below marked "seen" was read off a real preToolUse payload from copilot 1.0.78.
+--- Every name below marked "seen" was read off a real preToolUse payload from copilot 1.0.78;
+--- `bash`, `view` and `edit` were read again off 1.0.80 and had not changed.
 --- The two marked "unseen" come from GitHub's own hooks reference (the `toolName` enum) and could
 --- not be produced on macOS: `powershell` needs a `pwsh` this machine does not have, and this
 --- install resolves text search to `grep`, never `rg`. They are kept rather than dropped because
@@ -43,13 +44,16 @@ function M.to_canonical(native_tool_name)
   return NATIVE_TO_CANONICAL[native_tool_name]
 end
 
---- Copilot's preToolUse payload is camelCase, and its arguments arrive as a JSON *string* rather
---- than an object:
+--- Copilot's preToolUse payload is camelCase, and `toolArgs` has arrived in two shapes:
 ---
----   {"sessionId":"…","cwd":"…","toolName":"bash","toolArgs":"{\"command\":\"echo hi\"}"}
+---   1.0.80:  {"sessionId":"…","cwd":"…","toolName":"bash","toolArgs":{"command":"ls"}}
+---   1.0.78:  {"sessionId":"…","cwd":"…","toolName":"bash","toolArgs":"{\"command\":\"ls\"}"}
 ---
---- Captured from copilot 1.0.78, not inferred from its docs. Without this the permission handler
---- reads a nil tool name, so every rule misses and the turn stalls until the hook fails closed.
+--- Both captured off the real CLI, not inferred from its docs. The JSON string came first, and an
+--- install pinned to that version must not lose its permission gate because a later one was read
+--- here, so either is accepted -- which is what `superseded` in `conformance/hook_payload_spec.lua`
+--- holds to. Without this the permission handler reads a nil tool name, so every rule misses and
+--- the turn stalls until the hook fails closed.
 --- @param hook_input table Raw decoded preToolUse payload
 --- @return table payload with `tool_name`/`tool_input` present. Never mutates the original.
 function M.normalize_payload(hook_input)

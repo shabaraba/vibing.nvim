@@ -19,8 +19,8 @@ Neovim (Lua) ──vim.system()──> claude -p --output-format stream-json
 
 `cli_command_builder.lua` assembles the argv; `cli_event_processor.lua` turns stream-json lines
 into chunk/tool events. Everything that needs to call _back into_ Neovim mid-turn (permission
-decisions, approval UI, `AskUserQuestion`, rate-limit reporting) goes through the RPC server rather
-than the stream, registered by `.vibing/hook-settings.json`
+decisions, approval UI, rate-limit reporting) goes through the RPC server rather
+than the stream, registered by `.vibing/hook-settings-<instance>.json`
 (`hooks/settings_generator.lua`).
 
 The hook contract is `handbook/architecture/cli-integration.md`. Three invariants from it apply
@@ -31,23 +31,41 @@ whenever this path is touched:
 - **The `.res` file carries three decisions, not two** — `deny`, `allow` and `defer`. Exiting 0
   in silence is `defer` ("no opinion"), _not_ an approval.
 - **Only vibing-nvim's own MCP tools get `allow`; everything else permitted gets `defer`.**
-  An `allow` skips the CLI's own gate, and with it the user's `settings.json` deny rules, which
-  `--setting-sources user,project,local` still pulls in.
+  What an `allow` skips is the CLI's **allowlist**, not the user's deny rules — a granular deny
+  rule is evaluated after the hook and outranks an `allow` written there. The one path that does
+  write `allow` for an ordinary tool is an approval a human answered by eye (`permissions.md`).
+  The gate ordering, the version it was measured against, and the two limits it is measured under:
+  `handbook/architecture/approval-without-kill.md`.
 
 The comm directory path has exactly one definition, `infrastructure/rpc/comm_dir.lua`, shared by
 the handlers, the cleanup routine and `bin/hooks/*.sh`.
 
 ## Backends and Their Seams
 
-`claude_cli.lua` (default), `codex_cli.lua`, `copilot_cli.lua` and `grok_cli.lua` implement the
-adapter interface. Implementing it is not the same as feature parity — `AskUserQuestion` is
-Claude-only (`handbook/features/chat-ui.md`).
+There is one adapter, `cli_adapter.lua`, driven by a descriptor per backend
+(`adapter/backends/<id>.lua`, ADR 009). Implementing the descriptor is not the same as feature
+parity — waiting for an approval in place requires a measured transport
+(`hooks/transports.lua`, `hooks/wait_budget.lua`). Adding a backend is `handbook/ADAPTER_DEVELOPMENT.md`; the
+Claude backend's behaviour is the contract, pinned by `tests/lua/infrastructure/adapter/conformance/`
+over every registered descriptor.
 
-- **`core/constants/agents.lua` is the single definition of what a backend is** — module path,
-  export name, description, model candidates. `factory.lua`, `modes.lua`,
-  `completion/providers/frontmatter.lua` and `infrastructure/init.lua` all derive from it, so
-  adding a backend is a one-file change. It deliberately requires nothing, which keeps the
+- **`core/constants/agents.lua` is the single definition of what a backend is** — module paths,
+  export name, description, model candidates, and its `config_fields` (what `ai.agents.<id>.extensions.*`
+  accepts). `factory.lua`, `modes.lua`, `config.lua`, `completion/providers/frontmatter.lua` and
+  `infrastructure/init.lua` all derive from it. It deliberately requires nothing, which keeps the
   dependency one-way.
+- **A descriptor holds data; a decoder holds no rendering.** `request.parts` is the argv in order,
+  `hook` names a transport and a dialect from `hooks/transports.lua`, and the decoder
+  (`adapter/decoders/`) turns one JSON line into `Vibing.CanonicalEvent`s and stops.
+  `event_renderer.lua` is the one place a tool call's appearance, `on_tool_use` and subagent
+  counting are decided; a decoder that draws its own header reintroduces the per-backend drift
+  P1 removed.
+- **Tool names cross the seam in the CLI's own vocabulary and are canonicalised once.** The
+  renderer and `permission.normalize_hook_input` translate through the same
+  `<backend>_tool_vocabulary.lua`, so a tool is called the same thing in the chat and in a rule.
+- **Nothing outside `adapter/`, `hooks/` and `agents.lua` names a backend.** Usage reporting keys
+  on `TokenUsage.is_cumulative`, per-backend options live under `ai.agents.<id>`, and project
+  files come from the descriptor's `on_project_open` / `on_setup` / `clear_caches`.
 - **A backend name belongs in that backend's own module; shared code takes what it is handed.**
   `rpc/handlers/permission.lua` contains no backend name.
 - **`bin/hooks/pre-tool-use.sh` is the one deliberate exception**: the deny _signalling_
@@ -56,13 +74,23 @@ Claude-only (`handbook/features/chat-ui.md`).
 - **Each `<backend>_tool_vocabulary.lua`'s three normalizations are order-dependent.**
   `normalize_payload` (key names) must run before `to_canonical` (tool name) and `normalize_input`
   (where the path lives), or every rule misses and the turn stalls until the hook fails closed.
+  The order lives once, in `permission.normalize_hook_input`.
 - **Grok discovers project hooks only inside a git repository** (outside one the gate would
   silently allow everything, so `ensure()` warns), and **copilot's hook is injected as a throwaway
-  plugin** under `.vibing/copilot-plugin/` via `--plugin-dir`, with a schema that is not claude's.
+  plugin** under `.vibing/copilot-plugin-<instance>/` via `--plugin-dir`, with a schema that is not
+  claude's.
+- **Every generated file under `<cwd>/.vibing/` whose contents depend on configuration is keyed by
+  Neovim instance** (`rpc/instance_key.lua`, the same key `comm_dir` uses). The hook settings carry
+  a timeout derived from `permissions.approval_wait_sec`, while the script's own deadline reaches
+  the CLI child in its environment and is **fixed at spawn** — so one shared file lets a second
+  Neovim with a lower value put the CLI's deadline ahead of the script's, which is the ordering
+  every CLI measured **fails open** under. Whether a CLI re-reads its settings per turn is
+  unmeasured; the key makes the question not arise. codex is immune already, its hook travelling in
+  each run's argv.
 - **Codex's hook key is `hooks.PreToolUse` and it travels with
   `--dangerously-bypass-hook-trust`.** Both halves fail silently on their own: codex drops an
   unrecognised `hooks.*` key without a warning (the snake_case spelling meant no hook fired at all
-  — no permission gate, and no diff baseline, so no `.vibing/patches/*.patch` and no `gd` float),
+  — no permission gate, and no diff baseline, so no `.vibing/diffs/*.diff` and no `gd` float),
   and a registered-but-untrusted hook makes `codex exec` **hang** rather than skip. So
   `codex_settings_generator.get_hook_args()` returns the flag and the `-c` pair as one fragment;
   do not split them. Verify with `hooks/list` on `codex app-server`, never by eye.
@@ -71,10 +99,10 @@ Claude-only (`handbook/features/chat-ui.md`).
   reporting a spawn error. Keep staging synchronous and atomic; if it fails, omit the hook rather
   than registering a command that cannot run. Keep the hook in `bypassPermissions`: that mode
   bypasses the decision, not the git-snapshot baseline carried by the same PreToolUse round trip.
-- **`codex_tool_vocabulary.lua` has no `normalize_input`, deliberately.** A codex edit carries no
-  path in `tool_input` — the paths are inside the apply_patch envelope in `command`, and there may
-  be several. So granular `paths` rules do not match codex edits. Filling `file_path` from the
-  first path would let a deny rule be evaded by patch ordering; the fix belongs in `matchers.lua`.
+- **Codex patch targets travel as `_diff_paths`, separate from `file_path`.** The vocabulary
+  extracts all targets from the apply_patch envelope, including both sides of a move, for the
+  request-diff backup. Resolve relative paths against the chat cwd. Granular `paths` rules still
+  read a single `file_path`; never fill it from the first patch target.
 
 Why each seam exists and which CLI version each shape was captured from:
 `handbook/architecture/cli-integration.md` → "Backend Seams".
@@ -85,12 +113,12 @@ vibing.nvim's own Claude Code plugin is **not installed**: `cli_command_builder`
 `--plugin-dir <path>` once per directory resolved by `infrastructure/plugins/plugin_dirs.lua`.
 
 - **`plugin_dirs.lua` is the single definition of "which plugin directories apply here."** Order
-  is fixed at self → `.vibing/plugins/*/` → `agent.plugins.extra`, because the **earlier
+  is fixed at self → `.vibing/plugins/*/` → `integrations.plugins.extra`, because the **earlier
   `--plugin-dir` flag wins**.
 - **A directory the CLI declines is silently ignored**, so `plugin_dirs` reads each candidate's
   `.claude-plugin/plugin.json` itself and warns about the ones it drops.
 - **`.vibing/plugins/` is read by default, and that is a security decision**: a plugin may declare
-  `mcpServers`. `agent.plugins.project_dir = false` is the opt-out.
+  `mcpServers`. `integrations.plugins.project_dir = false` is the opt-out.
 - **`:VibingReloadCommands` clears `plugin_dirs` first**, before the provider caches — both
   re-resolve from it.
 - **Not passed on the lightweight path**, per `core/types.lua`.
@@ -140,7 +168,7 @@ The full field list is `doc/vibing.txt` → "CHAT FILE FORMAT".
 
 ## Per-Request Diffs
 
-Each turn's `### Modified Files` and its `.vibing/patches/*.patch` come from **two git tree
+Each turn's `### Modified Files` and its `.vibing/diffs/*.diff` come from **two git tree
 snapshots of the working tree** (`core/utils/git_snapshot.lua`), so a change made by `sed -i`, `mv`
 or a formatter run through Bash still shows up (#625).
 
@@ -155,22 +183,122 @@ or a formatter run through Bash still shows up (#625).
   applied when `extra_paths` is merged into either diff implementation, or tool events add the
   directory back after git excluded it. Test the path relative to the current worktree root — a
   worktree itself normally lives below an outer `.vibing/worktrees/`.
-- **The git calls block the main loop** (`vim.system():wait()`): 20ms per `git add -A` on a 9k-file
-  tree, 63ms on an 80k one.
+- **Saved `Patch:` lines, `.patch` files and `.vibing/patches/` are still read, never written** (#761).
+- **The git calls block the main loop** (`vim.system():wait()`), synchronously inside the hook.
 - **`request_diff.lua` stays as the fallback**, and a turn where both come up empty **warns**
   rather than rendering as a turn that changed nothing.
 
 `handbook/architecture/per-request-diffs.md`.
 
+## Processes and Turns
+
+A CLI process and one request/response exchange are **two things with two ids** (#775/#776), both
+minted by `core/utils/identity.lua`. `handle_id` meant both and is gone from `lua/`; it must not
+come back. `handbook/architecture/processes-and-turns.md`.
+
+- **Ask which id a consumer means before keying anything on it.** Process-keyed: the adapter's
+  `_processes` table and everything `kill_tree` reaches, the SessionManager (`--resume` names a
+  conversation the _process_ holds open), the child's `VIBING_PROCESS_ID`,
+  `ChatBuffer._current_process_id`. Turn-keyed: both diff baselines and
+  `refs/worktree/vibing/<turn_id>`, the `.vibing/diffs/*.diff` suffix, `response._turn_id` and
+  the chunk staleness filters, the parked rate-limit failure, `permission.lua`'s
+  `active_opts_by_turn`.
+- **Nothing parses an id to learn its kind** — both minters emit the same shape on purpose. Both
+  ids must survive `[^A-Za-z0-9_]` deletion unchanged: `bin/hooks/*.sh` interpolates the process id
+  after exactly that substitution, and the turn id names a git ref and a diff filename.
+  `identity_spec.lua` reads the character class back out of the shell scripts, because `test:lua`
+  never runs them.
+- **The hook can only ever name a process**, because `VIBING_PROCESS_ID` is fixed at spawn and an
+  environment variable cannot carry a per-turn value to a process that outlives the turn. The turn
+  is never on the wire: `rpc/hook_scope.lua` resolves it in-editor, and is the **one** place that
+  resolution happens. An id that is **present but unmatched** resolves to `nil`, never to the sole
+  registered entry; that fallback applied another chat's `allow` / `deny` / `:once` lists to a late
+  hook, the #667 failure through a door #667 did not close.
+- **Two registries, cut where the ids are cut.** `process_registry.lua` holds the `--resume`
+  session, the chat, the adapter and `active_turn_id`; `turn_registry.lua`'s entries hold a
+  _reference_ to their process entry rather than a copy, so `adapter` / `chat_bufnr` / `session_id`
+  have one home and cannot drift. `turn_registry` requires `process_registry`, never the reverse.
+- **"Who holds the session" is a process question; "who is writing in this worktree" is a turn
+  question.** `find_other_holding_session` asked of turns would let a second process attach to a
+  transcript the moment the first went idle (the #756 corruption), since a resident process keeps
+  its `--resume` between turns. `find_other_writing_in` asked of processes would make every chat in
+  one repository overlap every other one permanently, retiring the #625 snapshot for good.
+- **`turn_registry.get` has no nil fallback**; a caller with no id asks `sole_open()` and says so.
+  Inheriting the fallback reports every stale baseline as still open whenever one turn is running,
+  which stops `git_snapshot`'s TTL sweep and lets `refs/worktree/vibing/` grow without bound.
+- **A hook whose turn cannot be resolved takes no baseline at all.** One filed under the raw id is
+  never cleared, because `clear()` is only reached through a response.
+- **A turn's response and the first-byte budget are each built in one place**,
+  `adapter/modules/turn_outcome.lua`. Both transports ask the same question, and the budget is read
+  when each watchdog arms — a copy taken at module load made the value a transport actually used
+  unobservable, so no test could hold the two halves equal.
+- **The timeout response is handed back before anything is killed.** A kill completes the same turn
+  as a plain `Cancelled` and completion is idempotent, so killing first discarded the timeout: the
+  user got the warning, the session was never reset, and the chat showed an empty assistant section.
+  `first_response_watchdog_spec.lua` fails the build on a response literal written anywhere else in
+  `adapter/`.
+
+## The Duplex Transport
+
+One resident CLI process per chat, serving many turns over an open stdin. **Default on for Claude,
+opt-in for Codex and Grok** — `ai.agents.<id>.process = "duplex"` or a chat's own `process:` frontmatter, and only for a
+backend whose descriptor declares it (claude over stdin stream-json, codex over `app-server`
+JSON-RPC, grok over ACP stdio). `process_model.lua` is the one place the exclusions live: a lightweight call, a subagent
+chat and a backend whose descriptor does not declare `duplex` can never use it, whatever the
+configuration says. `handbook/architecture/duplex-transport.md`.
+
+- **`descriptor.process` is a ceiling, not a default.** A descriptor that does not declare `duplex`
+  cannot be configured into it. **That field is how a backend is admitted — never a backend name**:
+  `process_model.lua` contains none, which is what let codex join without the exclusion list
+  growing a second branch.
+- **The wire is the descriptor's; everything above it is not.** Every duplex descriptor declares
+  `descriptor.duplex` with `send_prompt` / `process_line` / `interrupt` (claude's stdin stream-json
+  in `claude_duplex_protocol.lua`, codex's `app-server` JSON-RPC, grok's ACP), and shared code calls
+  it unconditionally — there is no fallback for an absent one and no `record.protocol` copy. The
+  pool, the reuse key, the turn, the timers and the reclaim routes are shared and stay free of
+  every protocol.
+- **The reuse key is the argv, and it is built with no session id.** `permission_mode` comes from
+  frontmatter, changes between turns and changes the argv, and a live process cannot be re-flagged.
+  Including the session makes the key differ by construction on every chat's second turn, which
+  defeats reuse entirely. `handbook/architecture/duplex-transport.md`.
+- **A dying process is identified, never looked up.** stdout, stderr and exit reach a _process_,
+  and `jobstop` only asks: the dying process's callbacks land **after** its replacement is
+  registered under the same chat key. So each callback carries its own record and asks _am I still
+  the current process_, never _what is current_.
+- **A process that still has `_turn` set is not reusable**; `duplex_pool.acquire` replaces it.
+  `ChatBuffer:send_message` guards only `_is_sending` and relied on `cancel_request` closing the
+  previous turn synchronously, which is true of a kill and not of an interrupt.
+- **Every reclaim route announces itself.** `VimLeavePre`, the idle timer, an argv change and the
+  CLI dying are four routes and only the last arrives as `on_exit`, so `duplex_pool.forget` carries
+  the notification itself, once per process — or `cleanup_stale_sessions` reads a dead handle as
+  still running and keeps its session entry alive forever.
+- **A turn ends on the `result` event, not on process exit.** `result` always emits `turn_end`,
+  _after_ the `error` arm it may also emit, so a turn the CLI declared failed has reached
+  `resultErrors` first. The oneshot path sets no `onTurnEnd` and drops the event. The event context
+  is per turn; the decoder's parse state is per process.
+- **A `result` ends the turn whose prompt it names, and the CLI runs turns vibing never asked for.**
+  A background subagent finishing arrives as `system/task_notification`, which the CLI answers by
+  itself with a whole `system/init` … `result` pair. Consuming the first `result` seen therefore
+  ends the user's turn empty, routes the real answer to `_idle_context` where it is discarded, and
+  leaves every later turn off by one. The correlation is the input envelope's `uuid`, echoed back as
+  `result.user_message_uuid` and on the `command_lifecycle` lines the CLI emits **only** when one was
+  supplied — so the gate arms on that positive proof (`context._prompt_acked`) and a CLI that does
+  not echo keeps today's behaviour rather than hanging forever. `duplex_turn.ends_this_turn` is the
+  one place this is decided, asked by both `onTurnEnd` and `handlers.error`.
+  `handbook/architecture/duplex-transport.md` → "Whose `result` is this?".
+
 ## Concurrent Execution, Fork and Subagent Chat
 
-Each chat buffer maintains its own session ID; sessions are keyed by unique handle IDs
-(`hrtime + random`).
+Each chat buffer maintains its own session ID; processes and turns are keyed by the two ids above
+(`hrtime + random`, hex — see "Processes and Turns").
 
-- **Directory creation is a shared-state operation.** `vim.fn.mkdir(path, "p")` is not atomic and
-  raises `E739` when another process wins the race — 9 failures in 200 concurrent calls. Every
-  directory creation goes through `core/utils/fs.lua`'s `ensure_dir`, and `fs_spec.lua` **fails
-  the build if a direct `vim.fn.mkdir` reappears anywhere in `lua/`**.
+- **Creating a directory two processes could both create is a shared-state operation.**
+  `vim.fn.mkdir(path, "p")` is not atomic and raises `E739` when another process wins the race.
+  Every such creation goes through `core/utils/fs.lua`'s `ensure_dir`.
+  `tests/lua/mkdir_call_sites_spec.lua` **fails the build** on a direct `vim.fn.mkdir` anywhere in
+  `lua/`, and on one in `tests/` whose path is not provably rooted at `vim.fn.tempname()`. Anything
+  the analysis cannot prove is reported; `-- mkdir-ok: <reason>` waives the line that has no choice.
+  `handbook/architecture/chat-lineage.md`.
 - **A fork inherits the source's `session_id`** and marks itself with `forked_from`;
   `opts._is_fork` makes the command builder emit `--fork-session`.
 - **A subagent chat shares the parent's `session_id` permanently and must never fork** —
@@ -200,7 +328,7 @@ One chat can create and drive others: `nvim_chat_create` (MCP) → `rpc/handlers
   in flight", **not** "succeeded".
 - **Completion is pushed, not polled, and the send is the subscription.** The CLI process dies
   when its turn ends, so the only way to deliver anything to a chat is to start a new turn on it.
-- **Reporting is the worker's job; the notification is a watchdog.** `agent.chat_notifications`
+- **Reporting is the worker's job; the notification is a watchdog.** `automation.orchestration.notifications`
   gates only the watchdog — a stop the chat cannot leave on its own (`asked_question`,
   `waiting_approval`, `error`) is delivered whatever the setting is.
 - **The report protocol is injected, not left to the brief or to skill auto-trigger** (#706). A
@@ -208,9 +336,12 @@ One chat can create and drive others: `nvim_chat_create` (MCP) → `rpc/handlers
   to its system prompt on every turn (`cli_command_builder.lua`), pointing at the
   `claude-plugin/skills/vibing-worker/SKILL.md` skill for the rest. Skill discovery by description
   match is probabilistic, so this line — not the orchestrator's brief text — is the one place a
-  worker is guaranteed to be told where and how to report.
+  worker is guaranteed to be told where and how to report. **It is repeated at the end of every
+  delivered `## Request` body** (`delivery_message.reply_instructions`): claude replays the system
+  prompt recorded on a chat's first request, so an `orchestrated_by` added after that never reaches
+  the system line. Never on an answer to a blocked question — that body is the human's answer.
 - **A worker's tool-approval prompt is the user's to clear unless the user says otherwise**
-  (`agent.orchestration.delegated_approval`, default `false`).
+  (`permissions.delegated_approval`, default `false`).
 - **A message delivered from another chat gets its own section kind** — `## Request`, `## Report`
   or `## Notice`. `extract_role` still answers `user` for all three.
 

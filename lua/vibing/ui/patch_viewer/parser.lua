@@ -93,6 +93,74 @@ function M.extract_file_diff(patch_content, target_file)
   return table.concat(result, "\n")
 end
 
+---一覧に出す変更量。`git diff --stat` と同じ数え方（ヘッダ行は数えない）
+---@param patch_content string
+---@param display_file string
+---@return { status: "A"|"D"|"M", added: number, removed: number }
+function M.file_stats(patch_content, display_file)
+  local stats = { status = "M", added = 0, removed = 0 }
+
+  local file_diff = M.extract_file_diff(patch_content, display_file)
+  if not file_diff then
+    return stats
+  end
+
+  -- ヘッダかどうかは行の形ではなく **最初の `@@` より前か** で決める。`--- a/path` と
+  -- 同じ形の行は本文にも出る: `-- comment` の削除行が patch では `--- comment` になるので、
+  -- 形で弾くとLuaのコメント削除がまるごと数から漏れる（`+++ ` も同様）
+  local in_hunk = false
+  for _, line in ipairs(vim.split(file_diff, "\n", { plain = true })) do
+    if line:match("^@@") then
+      in_hunk = true
+    elseif not in_hunk then
+      if line:match("^new file mode") then
+        stats.status = "A"
+      elseif line:match("^deleted file mode") then
+        stats.status = "D"
+      end
+    elseif line:sub(1, 1) == "+" then
+      stats.added = stats.added + 1
+    elseif line:sub(1, 1) == "-" then
+      stats.removed = stats.removed + 1
+    end
+  end
+
+  return stats
+end
+
+---一覧は j/k のたびに描き直すので、数えるのは開く時の一度だけにする
+---@param patch_content string
+---@param files string[]
+---@return table[] `files` と同じ並び
+function M.all_stats(patch_content, files)
+  local stats = {}
+  for i, file in ipairs(files) do
+    stats[i] = M.file_stats(patch_content, file)
+  end
+  return stats
+end
+
+---表示名から、patchに現れる **生のパス** を引き直す
+---
+---`extract_files` はNeovimのcwd相対に正規化してしまうが、`git apply` に渡すツリー上の位置は
+---patch内の表記そのもの。base_dirはcwdと一致しないことがある（worktree、`working_dir` 指定）
+---ので、正規化済みの値からは復元できない。
+---@param patch_content string
+---@param display_file string `extract_files` が返した表示名
+---@return string|nil
+function M.raw_path(patch_content, display_file)
+  local cwd = vim.fn.getcwd()
+  local cwd_without_slash = cwd:sub(2)
+
+  for line in patch_content:gmatch("[^\r\n]+") do
+    local raw = line:match("^diff %-%-git a/(.+) b/") or line:match("^diff %-%-mote a/(.+) b/")
+    if raw and (raw == display_file or normalize_file_path(raw, cwd, cwd_without_slash) == display_file) then
+      return raw
+    end
+  end
+  return nil
+end
+
 ---vibing.nvimが生成したpatchの基準ディレクトリ（`git apply -p1` を回すcwd）を抽出
 ---@param patch_content string
 ---@return string?

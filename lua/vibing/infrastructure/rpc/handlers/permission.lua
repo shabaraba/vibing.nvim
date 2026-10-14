@@ -3,12 +3,14 @@
 
 local can_use_tool_mod = require("vibing.infrastructure.permissions.can_use_tool")
 local Config = require("vibing.config")
+local HookScope = require("vibing.infrastructure.rpc.hook_scope")
+local AskUserQuestionInstructions = require("vibing.infrastructure.adapter.modules.ask_user_question_instructions")
 
 local M = {}
 
---- Active chat frontmatter overrides, keyed by handle_id (set by stream start). A single shared
+--- Active chat frontmatter overrides, keyed by **turn id** (set by stream start). A single shared
 --- slot would let one chat buffer's opts silently apply to another's permission checks whenever
---- two chats stream concurrently (see ActiveStreamRegistry for the same class of bug).
+--- two chats stream concurrently (see turn_registry.lua for the same class of bug).
 ---
 --- The session-level allow/deny lists an approval answer produces live in here too, for exactly
 --- that reason (#667). They used to sit in a module-level table instead, so a `deny_once` answered
@@ -17,8 +19,36 @@ local M = {}
 --- — bypassing each one's own `permissions_ask`. The per-chat lists were already plumbed this far
 --- as `permissions_session_allow` / `permissions_session_deny` (`send_message.lua`); only
 --- `build_permission_config` was still reading the shared table.
+---
+--- **Per turn, not per process,** even though the values belong to the chat: every one of them is
+--- re-read from frontmatter on each send, and the lists grow by one entry each time an approval is
+--- answered. Keyed by the process, a resident process (#774) would run turn N+1 under turn N's
+--- `permission_mode` and ignore the very allow entry the user's approval had just produced — #667
+--- re-opened from the other end.
 --- @type table<string, table>
-local active_opts_by_handle = {}
+local active_opts_by_turn = {}
+
+--- Kill the CLI process serving an open turn.
+---
+--- Killing is done to a process, so it is named by one -- which is why the turn holds a reference to
+--- its process rather than a copy of the adapter. The turn stops as a consequence, which is the
+--- whole mechanism today and the thing #774 replaces with an interrupt. Both places that stop a turn
+--- to show UI in its place go through here, so there is one definition of what cancelling means.
+--- @param turn Vibing.TurnEntry
+--- @return boolean ok false when cancelling raised
+local function cancel_turn(turn)
+  local process = turn.process
+  if not (process and process.adapter and process.process_id) then
+    return true
+  end
+  local ok, err = pcall(function()
+    process.adapter:cancel(process.process_id)
+  end)
+  if not ok then
+    vim.notify("[vibing] Failed to cancel the turn's process: " .. tostring(err), vim.log.levels.WARN)
+  end
+  return ok
+end
 
 local APPROVAL_OPTIONS = {
   { value = "allow_once", label = "allow_once - Allow this execution only" },
@@ -28,34 +58,38 @@ local APPROVAL_OPTIONS = {
 }
 
 --- Set active permission opts from chat frontmatter
---- @param handle_id string
+--- @param turn_id string
 --- @param opts table
-function M.set_active_opts(handle_id, opts)
-  active_opts_by_handle[handle_id] = opts
+function M.set_active_opts(turn_id, opts)
+  active_opts_by_turn[turn_id] = opts
 end
 
 --- Clear active opts
---- @param handle_id string
-function M.clear_active_opts(handle_id)
-  active_opts_by_handle[handle_id] = nil
+--- @param turn_id string
+function M.clear_active_opts(turn_id)
+  active_opts_by_turn[turn_id] = nil
 end
 
---- Resolve the frontmatter opts for a given handle_id. Falls back to the sole registered entry
---- when handle_id is nil/unmatched and exactly one chat is active (back-compat for hook
---- processes that don't yet pass VIBING_HANDLE_ID); returns nil rather than guessing when
---- multiple chats are active. Mirrors ActiveStreamRegistry.get()'s fallback.
---- @param handle_id string|nil
+--- Resolve the frontmatter opts for one turn.
+---
+--- No fallback of its own: `rpc/hook_scope.lua` has already decided which turn this is, including
+--- whether guessing was allowed. This used to hold a second, *different* guess — it fell back to the
+--- sole entry even for an id that was present but unmatched, so a hook arriving from a turn that had
+--- already unregistered had another chat's decisions applied to it.
+--- @param turn_id string|nil
 --- @return table|nil
-local function get_active_opts(handle_id)
-  if handle_id and active_opts_by_handle[handle_id] then
-    return active_opts_by_handle[handle_id]
-  end
-  local only_handle_id, only_opts = next(active_opts_by_handle)
-  if only_handle_id ~= nil and next(active_opts_by_handle, only_handle_id) == nil then
-    return only_opts
-  end
-  return nil
+local function get_active_opts(turn_id)
+  return turn_id and active_opts_by_turn[turn_id] or nil
 end
+
+--- Test seam. "A turn's opts are set when it starts and gone when it ends" has no other observable
+--- effect, so a spec asserting it has nothing to read — and the one that tried asserted
+--- `perm_handler.get_active_opts_for_test == nil`, a name that never existed, so it passed whatever
+--- the code did. Under a resident process the invariant stops being incidental: turn N+1 inheriting
+--- turn N's entry means it runs under the wrong `permission_mode`.
+--- @param turn_id string|nil
+--- @return table|nil
+M._get_active_opts = get_active_opts
 
 --- Combine the bundled destructive-command deny rules with the user's own rules.
 --- The defaults go first so they read as the baseline, though order does not decide the outcome:
@@ -76,27 +110,32 @@ function M._resolve_permission_rules(perms)
 end
 
 --- Build permission config from frontmatter opts (priority) or global config
---- @param handle_id string|nil
+--- @param turn_id string|nil
 --- @return PermissionConfig
-local function build_permission_config(handle_id)
+local function build_permission_config(turn_id)
   local config = Config.get()
   local perms = config.permissions or {}
-  local o = get_active_opts(handle_id) or {}
+  local o = get_active_opts(turn_id) or {}
 
   return {
     allowed_tools = o.permissions_allow or perms.allow or {},
     denied_tools = o.permissions_deny or perms.deny or {},
     asked_tools = o.permissions_ask or perms.ask or {},
     -- 承認の答えはそのチャットのセッションに属する。`o` から読むことで、あるチャットで出した
-    -- 判断が別のチャットの判定に混ざらない（#667）。`o` が引けないとき（handle_id が不明で、かつ
-    -- 複数チャットが走っている）は空になるが、`for_session` の許可/拒否は frontmatter にも
-    -- 書かれていて `permissions_allow` / `permissions_deny` として上の行から入るので、
-    -- ここで落ちるのはメモリ上にしか無い `:once` だけになる
+    -- 判断が別のチャットの判定に混ざらない（#667）。`o` が引けないとき（hook_scope がターンを
+    -- 特定できなかった＝プロセスが未登録、または無名のフックが複数ストリーム中に来た）は空に
+    -- なるが、`for_session` の許可/拒否は frontmatter にも書かれていて `permissions_allow` /
+    -- `permissions_deny` として上の行から入るので、ここで落ちるのはメモリ上にしか無い
+    -- `:once` だけになる
     session_allowed_tools = o.permissions_session_allow or {},
     session_denied_tools = o.permissions_session_deny or {},
     permission_rules = M._resolve_permission_rules(perms),
     permission_mode = o.permission_mode or perms.mode or "default",
-    mcp_enabled = config.mcp and config.mcp.enabled or false,
+    mcp_enabled = vim.tbl_get(config, "integrations", "nvim")
+        and vim.tbl_get(config, "integrations", "nvim", "enabled")
+      or false,
+    is_always_allowed = o._tool_vocabulary and o._tool_vocabulary.is_always_allowed,
+    exclusive_tools = o.exclusive_tools,
   }
 end
 
@@ -106,66 +145,16 @@ local function get_comm_dir()
   return require("vibing.infrastructure.rpc.comm_dir").path()
 end
 
---- Write response file for hook script
+--- Write response file for hook script.
 ---
---- The file is a private protocol between this handler and `bin/hooks/pre-tool-use.sh`, so it
---- carries three decisions where the CLI's own hook schema has two:
----
----   "allow"  — an explicit grant. The hook prints this JSON verbatim on stdout, which makes the
----              CLI skip its own permission gate. Anything less is not a grant: a hook that just
----              exits 0 reads as "no opinion", and in headless `-p` mode the gate it falls
----              through to has no way to prompt, so the tool is refused (#564).
----   "deny"   — the hook exits 2 with the reason on stderr.
----   "defer"  — vibing.nvim permits the call but leaves the CLI's own gate (and with it the
----              user's own settings.json rules) in charge. The hook exits 0 silently.
----
+--- The three decisions this file can carry, and why the middle one is not a grant, are documented
+--- once in `rpc/hook_response.lua`. It moved there because an approval answered without killing
+--- the CLI (#778) writes the same file from a different place and at a different time.
 --- @param request_id string
 --- @param decision "allow"|"deny"|"defer"
---- @param reason? string Surfaced to the model as the tool_result when the underlying process
----   was NOT successfully cancelled (e.g. cancel_and_deny's fallback path). When cancellation
----   does succeed, the process is killed before this response can ever reach the model, so the
----   reason is moot in that case — it only matters for the failure path.
+--- @param reason? string
 local function write_hook_response(request_id, decision, reason)
-  local comm_dir = get_comm_dir()
-  local res_file = comm_dir .. "/" .. request_id .. ".res"
-  local tmp_file = res_file .. ".tmp"
-
-  local output = { hookEventName = "PreToolUse", permissionDecision = decision }
-  if reason then
-    output.permissionDecisionReason = reason
-  end
-  local json = vim.json.encode({
-    hookSpecificOutput = output,
-  })
-
-  local f, err = io.open(tmp_file, "w")
-  if f then
-    f:write(json)
-    f:close()
-    os.rename(tmp_file, res_file)
-  else
-    vim.schedule(function()
-      vim.notify(
-        string.format("[vibing:hook] Failed to write tmp file %s: %s", tmp_file, err or "unknown"),
-        vim.log.levels.ERROR
-      )
-    end)
-    local fallback_f, fallback_err = io.open(res_file, "w")
-    if fallback_f then
-      local deny_json = vim.json.encode({
-        hookSpecificOutput = { hookEventName = "PreToolUse", permissionDecision = "deny" },
-      })
-      fallback_f:write(deny_json)
-      fallback_f:close()
-    else
-      vim.schedule(function()
-        vim.notify(
-          string.format("[vibing:hook] Fallback write also failed %s: %s", res_file, fallback_err or "unknown"),
-          vim.log.levels.ERROR
-        )
-      end)
-    end
-  end
+  require("vibing.infrastructure.rpc.hook_response").write(request_id, decision, reason)
 end
 
 --- Take both diff mechanisms' baselines, just before the tool runs.
@@ -184,35 +173,256 @@ end
 --- diff at all — the silent omission this whole mechanism exists to remove.
 ---
 --- Neither failure may break the permission decision, which is why both are guarded at all.
---- @param effective_handle string|nil
+---
+--- All three mechanisms are keyed by the **turn**, which is what `_handle_response` looks them up
+--- by when it renders `### Modified Files`. A nil turn takes no baseline at all: that is the case
+--- where the hook named a process nothing has registered, and a baseline filed under an unknown key
+--- is never cleared, because `clear()` is only reached through a response.
+--- @param turn_id string|nil
 --- @param cwd string|nil
 --- @param tool_name string
 --- @param tool_input table
-function M._capture_baselines(effective_handle, cwd, tool_name, tool_input)
+function M._capture_baselines(turn_id, cwd, tool_name, tool_input)
+  if not turn_id then
+    return
+  end
   pcall(function()
     -- 経路の選択は _handle_response が行う。ここは無条件にベースラインを取っておき、
     -- 使われなければ clear() で捨てられるだけ
-    require("vibing.core.utils.git_snapshot").ensure_baseline(effective_handle, cwd, tool_name)
+    require("vibing.core.utils.git_snapshot").ensure_baseline(turn_id, cwd, tool_name)
   end)
   pcall(function()
-    require("vibing.core.utils.request_diff").capture(effective_handle, tool_name, tool_input)
+    require("vibing.core.utils.request_diff").capture(turn_id, tool_name, tool_input, cwd)
+  end)
+  pcall(function()
+    -- ここも「ツールが走る前」であることが要る。worktreeを作るコマンドの前後を比べるので、
+    -- 押さえるのは実行前の一覧でなければならない
+    require("vibing.application.chat.worktree_binding").observe(turn_id, cwd, tool_name, tool_input)
   end)
 end
 
 --- Handle check_tool_permission RPC request
---- @param params {request_id: string, handle_id: string?}
+--- @param params {request_id: string, process_id: string?}
 --- @return table RPC response
+--- The canonical tool name and input for a hook payload, through a backend's vocabulary.
+---
+--- Three steps, in an order that matters because each feeds the next (`cli-integration.md` →
+--- "Backend Seams"): the payload's own key names first (grok sends `toolName`/`toolInput`; read
+--- straight through, the two steps below get nothing to work on), then the tool's name
+--- (`apply_patch` → `Edit`), then where the path lives inside the input (granular `paths` rules
+--- read `file_path`, and a backend that names it `path`/`target_file` would slip past every one
+--- of them). A vocabulary may implement any subset; a backend that speaks the canonical
+--- vocabulary passes none.
+--- @param hook_input table the decoded hook payload
+--- @param vocabulary table|nil
+--- @return string tool_name canonical
+--- @return table tool_input with `file_path` where the backend had a path under another key
+function M.normalize_hook_input(hook_input, vocabulary)
+  if vocabulary and vocabulary.normalize_payload then
+    hook_input = vocabulary.normalize_payload(hook_input)
+  end
+
+  local tool_name = hook_input.tool_name or ""
+  local tool_input = hook_input.tool_input or {}
+
+  if vocabulary and vocabulary.to_canonical then
+    tool_name = vocabulary.to_canonical(tool_name) or tool_name
+  end
+  if vocabulary and vocabulary.normalize_input then
+    tool_input = vocabulary.normalize_input(tool_input, tool_name)
+  end
+  return tool_name, tool_input
+end
+
+--- Finish the blocked hook's request, for a tool the user has just approved in place.
+---
+--- **An approved call is released with `allow`** (#778). It is the only verdict that releases it:
+--- the tool being asked about is normally one this turn's `--allowedTools` does not cover — that
+--- is *why* `can_use_tool` returned `ask` — and the argv cannot change mid-turn, so a `defer` would
+--- hand the call to a CLI gate that has never heard of it and have it refuse exactly what the
+--- human just approved.
+---
+--- That is not the licence it reads as, and the difference is measured rather than reasoned.
+--- **A hook `allow` overrides the CLI's allowlist, not its denylist**:
+---
+---   control  deny: []            HOOK ALLOW Bash → is_error=false   (ran)
+---   test     deny: Bash(echo:*)  HOOK ALLOW Bash → is_error=true    (refused)
+---
+--- `Bash` is in neither cell's `--allowedTools`, so the first cell proves our `allow` is what ran
+--- it, and the second — one variable changed — that the same `allow` loses to a granular deny. A
+--- tool-name deny is further out of reach still: it removes the tool during toolset construction,
+--- before any hook runs. So the user's own deny rules keep their say over a call approved here;
+--- what is skipped is an allowlist that could not have named this tool.
+--- `handbook/architecture/approval-without-kill.md` has the cells and the two limits of the claim.
+---
+--- The ordinary path's `is_vibing_nvim_mcp_tool` split does not apply here. There it separates
+--- "ours, grant it" from "not ours, let the CLI decide", because nothing has looked at the call.
+--- Here a human has looked at this one call and said yes, and that is the whole answer.
+---
+--- Everything around it — spending the approval, refreshing the session lists, re-running
+--- `can_use_tool`, taking the diff baseline — happens in `release_answered_approval`.
+--- @param entry Vibing.PendingApproval the hook still waiting on its `.res`
+--- @param result CanUseToolResult the re-evaluation after the answer was recorded
+--- @return boolean released false only when the entry is already gone
+function M._answer_blocked_hook(entry, result)
+  local PendingApprovals = require("vibing.infrastructure.rpc.pending_approvals")
+
+  if result.behavior ~= "allow" then
+    -- The reason travels with a denial because it is the only way a deny rule's `message` reaches
+    -- the model.
+    return PendingApprovals.resolve(entry.request_id, "deny", result.message)
+  end
+
+  return PendingApprovals.resolve(entry.request_id, "allow")
+end
+
+--- Release a hook that was blocked on an approval the user has now answered.
+---
+--- The answer has already been *spent* by `approval_decision.consume` — the session lists are
+--- updated and the prompt is gone. What is left is to turn that into a verdict for the hook that
+--- is still sitting inside the CLI, and the only honest way to do that is **to ask the permission
+--- system again**: re-running `can_use_tool` with the updated lists is what consumes the `:once`
+--- grant the answer just created. Deriving the verdict straight from the action instead would
+--- leave that `:once` entry in the list, silently paying for the *next* call of the same tool.
+--- It also means any later change to how permissions are evaluated is followed here for free.
+---
+--- Two things have to be refreshed first, and both were free under the kill-based design because
+--- the next turn re-read them from frontmatter:
+---
+---   - the turn's `active_opts` still holds the session lists as they were when it was sent, so an
+---     `allow_for_session` answered now would not apply to the rest of *this* turn
+---   - the diff baseline has to be taken before the tool runs, and this is the last moment before
+---     the hook is released
+---
+--- @param entry Vibing.PendingApproval
+--- @param chat_buf Vibing.ChatBuffer the chat whose answer this is
+--- @return boolean released
+function M.release_answered_approval(entry, chat_buf)
+  local PendingApprovals = require("vibing.infrastructure.rpc.pending_approvals")
+  if not PendingApprovals.get(entry.request_id) then
+    return false
+  end
+
+  local opts = entry.turn_id and active_opts_by_turn[entry.turn_id]
+  if opts then
+    opts.permissions_session_allow = chat_buf:get_session_allow()
+    opts.permissions_session_deny = chat_buf:get_session_deny()
+    opts.permissions_allow = chat_buf:get_frontmatter_list("permissions_allow")
+    opts.permissions_deny = chat_buf:get_frontmatter_list("permissions_deny")
+    opts.permissions_ask = chat_buf:get_frontmatter_list("permissions_ask")
+  end
+
+  local tool_name = entry.tool or ""
+  local tool_input = entry.input or {}
+  local result = can_use_tool_mod.can_use_tool(tool_name, tool_input, build_permission_config(entry.turn_id))
+
+  -- Before the hook is released, because this is the last moment at which nothing has been
+  -- changed yet. Taken only for a call that is about to run: a denial changes no files, and a
+  -- baseline filed under a turn that never uses it is never cleared.
+  if result.behavior == "allow" then
+    M._capture_baselines(entry.turn_id, opts and opts.cwd or nil, tool_name, tool_input)
+  end
+
+  return M._answer_blocked_hook(entry, result)
+end
+
+--- Ask the human without killing the CLI: withhold the `.res` and leave the hook blocked (#778).
+---
+--- Nothing new is transported. `bin/hooks/pre-tool-use.sh` already polls for the response file, so
+--- **not writing it** is the whole mechanism; the CLI sits inside its own hook and the turn
+--- continues afterwards. What this function owes is the other half — that the withheld response is
+--- eventually written, whatever happens next (`rpc/pending_approvals.lua`'s four exits).
+---
+--- Order is deliberate:
+---
+---   1. **register first.** The registry is what arms the wait limit, so anything that throws after
+---      this point still ends in a written `.res` rather than a hook spinning to its own deadline.
+---   2. draw the prompt. The turn does not end, so there is no `_handle_response` to do it later —
+---      `on_approval_required`'s fifth argument says so, and the chat opens the input section
+---      itself (`ChatBuffer:show_pending_prompts`).
+---   3. tell the watchdog. `VibingResponseDone` never fires for a turn that is still running, so an
+---      orchestrator waiting on this worker would otherwise see `responding` until the limit
+---      expired.
+---
+--- Scheduled for the same reason `cancel_and_deny` is: it draws into a buffer, and the turn is
+--- re-resolved inside rather than reused from the synchronous decision, because it can have ended
+--- in between. With no turn there is no chat to ask, so it fails closed.
+--- @param params table the RPC params, for re-resolving the turn
+--- @param request_id string
+--- @param tool_name string canonical
+--- @param tool_input table
+function M._ask_without_killing(params, request_id, tool_name, tool_input)
+  vim.schedule(function()
+    local turn = HookScope.of(params).entry
+    local chat_bufnr = turn and turn.process and turn.process.chat_bufnr or nil
+    if not turn or not chat_bufnr then
+      vim.notify("[vibing] approval: no active stream to hold; denying", vim.log.levels.WARN)
+      write_hook_response(
+        request_id,
+        "deny",
+        "vibing.nvim could not find the chat buffer to show the approval prompt in (internal error). "
+          .. "Do not retry this tool immediately."
+      )
+      return
+    end
+
+    require("vibing.infrastructure.rpc.pending_approvals").open({
+      request_id = request_id,
+      chat_bufnr = chat_bufnr,
+      turn_id = turn.turn_id,
+      tool = tool_name,
+      input = tool_input,
+      on_timeout = M._on_approval_expired,
+    })
+
+    -- Guarded for the same reason `expire` guards `on_timeout` and `_shutdown` guards each of its
+    -- steps: this one draws into a buffer, and a failure there must not also cost the watchdog its
+    -- notification. The wait limit is already armed either way, so the worst case is a prompt the
+    -- user cannot see being denied when it expires — not a hook owed nothing.
+    if turn.on_approval_required then
+      local ok, err = pcall(turn.on_approval_required, tool_name, tool_input, APPROVAL_OPTIONS, request_id, true)
+      if not ok then
+        vim.notify(
+          string.format("[vibing] could not draw the approval prompt for %s: %s", tool_name, tostring(err)),
+          vim.log.levels.ERROR
+        )
+      end
+    end
+
+    require("vibing.application.chat.completion_notifier").on_approval_waiting(chat_bufnr, request_id)
+  end)
+end
+
+--- What the wait limit does besides denying: tell the chat that asked.
+---
+--- Passed to `pending_approvals.open` as `on_timeout`, so it runs *after* the `.res` deny has been
+--- written and the hook released. **It must not kill anything** — hooks run concurrently (measured:
+--- three overlapping in one turn), so the user is quite likely looking at a different prompt of the
+--- same turn when this one expires, and killing would take the turn they are in the middle of
+--- answering.
+---
+--- The chat is resolved here rather than captured when the approval opened, because the buffer can
+--- be gone by now — in which case `resolve_for_chat` has already answered this entry and the timer
+--- never fires. Returning whether a prompt was found is for the spec; nothing branches on it.
+--- @param entry Vibing.PendingApproval
+--- @return boolean marked
+function M._on_approval_expired(entry)
+  if not (entry and entry.chat_bufnr) then
+    return false
+  end
+  local chat_buf = require("vibing.presentation.chat.view").get_chat_buffer(entry.chat_bufnr)
+  if not chat_buf or type(chat_buf.expire_approval) ~= "function" then
+    return false
+  end
+  return chat_buf:expire_approval(entry)
+end
+
 function M.check_tool_permission(params)
   if not params or not params.request_id then
     return { error = "Missing request_id" }
   end
 
   local request_id = params.request_id
-  local handle_id = params.handle_id
-  if handle_id == "" then
-    handle_id = nil
-  end
-
   local comm_dir = get_comm_dir()
   local req_file = comm_dir .. "/" .. request_id .. ".req"
 
@@ -231,71 +441,56 @@ function M.check_tool_permission(params)
     return { status = "allowed", reason = "invalid request JSON" }
   end
 
-  local active_opts = get_active_opts(handle_id)
+  -- Resolved once for the whole synchronous decision, so the opts, the permission config and the
+  -- baseline key cannot disagree about which turn this is. Deriving it separately at each of those
+  -- three points is what let them drift onto two different policies (see rpc/hook_scope.lua).
+  local scope = HookScope.of(params)
+  local active_opts = get_active_opts(scope.turn_id)
 
   -- Backends name their tools differently (codex calls an edit "apply_patch"). The adapter
   -- supplies its own translation table as a generic `_tool_vocabulary`, so this handler stays
   -- ignorant of which backend it is serving -- adding a fourth needs no change here (#516).
-  local vocabulary = active_opts and active_opts._tool_vocabulary
-
-  -- Backends also disagree on the payload's own key names, not just the tool names inside it
-  -- (grok sends `toolName`/`toolInput`). Normalize before reading, or the two calls below are
-  -- handed nothing to translate.
-  if vocabulary and vocabulary.normalize_payload then
-    hook_input = vocabulary.normalize_payload(hook_input)
-  end
-
-  local tool_name = hook_input.tool_name or ""
-  local tool_input = hook_input.tool_input or {}
-
-  if vocabulary and vocabulary.to_canonical then
-    tool_name = vocabulary.to_canonical(tool_name) or tool_name
-  end
-  -- Same reasoning for the input: granular `paths` rules read `file_path`, and a backend that
-  -- names it `path`/`target_file` would slip past every one of them.
-  if vocabulary and vocabulary.normalize_input then
-    tool_input = vocabulary.normalize_input(tool_input)
+  local tool_name, tool_input = M.normalize_hook_input(hook_input, active_opts and active_opts._tool_vocabulary)
+  if active_opts and active_opts._observe_hook_input then
+    active_opts._observe_hook_input(scope, hook_input, tool_name, tool_input)
   end
 
   -- Kill process first, call UI callback, then write deny response. Used by both
   -- AskUserQuestion and "ask" permission paths. The deny response only reaches the model when
-  -- cancellation fails to find a stream (see fallback_reason below) — when the process is
+  -- cancellation fails to find a turn (see fallback_reason below) — when the process is
   -- successfully killed, it dies before it could ever process that response.
-  local function cancel_and_deny(on_stream_fn, fallback_reason)
+  local function cancel_and_deny(on_turn_fn, fallback_reason)
     vim.schedule(function()
-      local registry = require("vibing.infrastructure.adapter.modules.active_stream_registry")
-      local stream = registry.get(handle_id)
+      -- Re-resolved here rather than reused from `scope` above: the turn can finish between the
+      -- synchronous decision and this callback, and firing the approval UI at a turn that has
+      -- already closed would leave a prompt in the buffer with nothing left to answer it.
+      -- Same policy, because it is the same function -- what differs is only when it is asked.
+      local turn = HookScope.of(params).entry
       local reason = nil
-      if stream then
-        if stream.adapter and stream.handle_id then
-          stream.adapter:cancel(stream.handle_id)
-        end
-        on_stream_fn(stream)
+      if turn then
+        cancel_turn(turn)
+        on_turn_fn(turn)
       else
-        vim.notify("[vibing] cancel_and_deny: no active stream found", vim.log.levels.WARN)
+        vim.notify("[vibing] cancel_and_deny: no open turn found", vim.log.levels.WARN)
         reason = fallback_reason
       end
       write_hook_response(request_id, "deny", reason)
     end)
   end
 
-  local perm_config = build_permission_config(handle_id)
+  local perm_config = build_permission_config(scope.turn_id)
 
-  -- Native AskUserQuestion is unavailable in headless `claude -p` mode and is fully opaque to us
-  -- (the SDK executes it internally), so the only way to handle it is to intercept + deny it here
-  -- and render the choice UI ourselves. This branch is a harmless fallback kept in case the
-  -- native tool is ever offered. vibing.nvim's own mcp__vibing-nvim__nvim_ask_user_question tool
-  -- is the primary path and does NOT go through this hook: since we fully control its execution,
-  -- its handler calls M.ask_user_question() (below) directly instead of being denied here.
-  local is_ask_user_question_tool = tool_name == "AskUserQuestion"
-
-  if is_ask_user_question_tool then
-    cancel_and_deny(function(stream)
-      if stream.on_insert_choices and tool_input.questions then
-        stream.on_insert_choices(tool_input.questions)
-      end
-    end, "vibing.nvim could not find the chat buffer to show this question in (internal error). Ask the question as plain text instead of retrying this tool.")
-    return { status = "denied", reason = "AskUserQuestion intercepted" }
+  -- Native AskUserQuestion is unavailable in headless `claude -p` mode and opaque to us (the CLI
+  -- executes it internally). Should a CLI ever offer it, refuse it **without killing anything** and
+  -- point the model at the block it was told to write: a question is the last thing a turn writes
+  -- (`question_block.lua`), and ending the turn that way is a step the model can take itself, so
+  -- there is nothing to rescue by tearing the process down.
+  if tool_name == "AskUserQuestion" then
+    local reason = "AskUserQuestion is unavailable in vibing.nvim. To ask the user to choose, end "
+      .. "your reply with a ```" .. AskUserQuestionInstructions.FENCE .. " block as your system prompt "
+      .. "describes, and stop."
+    write_hook_response(request_id, "deny", reason)
+    return { status = "denied", reason = reason }
   end
 
   local result = can_use_tool_mod.can_use_tool(tool_name, tool_input, perm_config)
@@ -303,22 +498,19 @@ function M.check_tool_permission(params)
   if result.behavior == "allow" then
     -- ツールが実行される前（=レスポンスを書いてフックのブロックを解く前）にベースラインを取る。
     -- 詳細と、pcallを2つに分けている理由は M._capture_baselines を参照
-    local effective_handle = handle_id
-    if not effective_handle then
-      local ok_registry, registry =
-        pcall(require, "vibing.infrastructure.adapter.modules.active_stream_registry")
-      if ok_registry then
-        local stream = registry.get(nil)
-        effective_handle = stream and stream.handle_id
-      end
-    end
-    M._capture_baselines(effective_handle, active_opts and active_opts.cwd or nil, tool_name, tool_input)
+    M._capture_baselines(scope.turn_id, active_opts and active_opts.cwd or nil, tool_name, tool_input)
     -- Only vibing-nvim's own MCP tools are granted outright; everything else defers to the CLI's
-    -- gate, which is still where the user's own settings.json rules are enforced. The distinction
-    -- is not cosmetic: --allowedTools needs a literal prefix, and the plugin's is
-    -- mcp__plugin_<marketplace>_vibing-nvim__ — a name decided at install time that this process
-    -- cannot know. is_vibing_nvim_mcp_tool matches on the suffix instead, so granting here is the
-    -- only form of the answer that survives the marketplace being renamed (#564).
+    -- own gate. The distinction is not cosmetic: --allowedTools needs a literal prefix, and the
+    -- plugin's is mcp__plugin_<marketplace>_vibing-nvim__ — a name decided at install time that
+    -- this process cannot know. is_vibing_nvim_mcp_tool matches on the suffix instead, so granting
+    -- here is the only form of the answer that survives the marketplace being renamed (#564).
+    --
+    -- What `allow` overrides is the CLI's **allowlist** — not its deny rules, which outrank it at
+    -- every level (measured; `handbook/architecture/approval-without-kill.md`). So the reason to
+    -- withhold it here is not safety from a deny rule, it is that nothing has *looked* at this
+    -- call: vibing's own lists answered "permitted", which is not the same as "approved", and the
+    -- user's allowlist should still get its say. An approval a human gave by eye is the case where
+    -- overriding that allowlist is the whole point, and that path is `_answer_blocked_hook`.
     local decision = can_use_tool_mod.is_vibing_nvim_mcp_tool(tool_name) and "allow" or "defer"
     write_hook_response(request_id, decision)
     return { status = "allowed" }
@@ -329,55 +521,56 @@ function M.check_tool_permission(params)
     write_hook_response(request_id, "deny", result.message)
     return { status = "denied", reason = result.message }
   else
-    -- "ask" → kill process first, show approval UI, then write deny
-    -- User's approval choice updates session state; Claude retries on next message
-    cancel_and_deny(function(stream)
-      if stream.on_approval_required then
-        stream.on_approval_required(tool_name, tool_input, APPROVAL_OPTIONS, request_id)
-      end
-    end, "vibing.nvim could not find the chat buffer to show the approval prompt in (internal error). Do not retry this tool immediately.")
+    -- "ask" → ask the human. Two shapes, and which one is used is a property of the backend, not
+    -- of this call: `_can_wait_for_approval` is the descriptor's measured floor compared against
+    -- the currently configured wait (`hooks/transports.lua`), handed over with the vocabulary so
+    -- that this handler still names no backend.
+    if active_opts and active_opts._can_wait_for_approval then
+      M._ask_without_killing(params, request_id, tool_name, tool_input)
+      return { status = "pending" }
+    end
+
+    -- A resident protocol may need the refused tool call to reach a terminal state before its
+    -- thread can be resumed. The real hook payload, not notification feedback, owns this prompt.
+    -- Release the hook first; the existing completion callback draws the retry UI when the turn
+    -- ends. There is no withheld response and no change to the measured waiting path.
+    if active_opts and active_opts._retry_hook_approval then
+      local reason = string.format(
+        "Tool %s requires manual approval in the chat. This call was not executed; "
+          .. "do not retry it until the user answers the approval prompt.",
+        tool_name
+      )
+      write_hook_response(request_id, "deny", reason)
+      local options = active_opts._hook_approval_options or APPROVAL_OPTIONS
+      local turn_id = scope.turn_id
+      vim.schedule(function()
+        local turn = HookScope.of(params).entry
+        if turn and turn.turn_id == turn_id and turn.on_approval_required then
+          turn.on_approval_required(
+            tool_name,
+            tool_input,
+            options,
+            request_id,
+            nil,
+            require("vibing.application.chat.approval_decision").HOOK_RETRY_KIND
+          )
+        end
+      end)
+      return { status = "pending", reason = reason }
+    end
+
+    -- The fallback, and byte-for-byte what every backend did before #778: kill the process first,
+    -- show the approval UI, then write the deny. The user's answer arrives as a new turn.
+    cancel_and_deny(
+      function(turn)
+        if turn.on_approval_required then
+          turn.on_approval_required(tool_name, tool_input, APPROVAL_OPTIONS, request_id)
+        end
+      end,
+      "vibing.nvim could not find the chat buffer to show the approval prompt in (internal error). Do not retry this tool immediately."
+    )
     return { status = "pending" }
   end
-end
-
---- Handle `ask_user_question` RPC request from the vibing-nvim MCP server's
---- `nvim_ask_user_question` tool handler. Unlike native AskUserQuestion (intercepted via
---- PreToolUse hook above, since the SDK executes it as a black box), this is vibing.nvim's own
---- MCP tool: its handler calls this directly instead of returning a real tool_result, so there is
---- no hook/deny plumbing here — just cancel the in-flight turn and show the same choice-list UI.
---- The killed turn means this RPC's return value is never seen by the model; the user's next
---- chat message (a fresh `--resume`d turn) delivers their answer instead.
---- @param params {chat_bufnr: number?, questions: table[]}
---- @return table RPC response
-function M.ask_user_question(params)
-  if not params or not params.questions then
-    return { status = "error", reason = "Missing questions" }
-  end
-
-  local chat_bufnr = tonumber(params.chat_bufnr)
-
-  local registry = require("vibing.infrastructure.adapter.modules.active_stream_registry")
-  local stream = registry.get_by_chat_bufnr(chat_bufnr)
-  if not stream then
-    return {
-      status = "error",
-      reason = "vibing.nvim could not find the chat buffer to show this question in (internal error).",
-    }
-  end
-
-  if stream.adapter and stream.handle_id then
-    local cancel_ok, cancel_err = pcall(function()
-      stream.adapter:cancel(stream.handle_id)
-    end)
-    if not cancel_ok then
-      vim.notify("[vibing] Failed to cancel stream for ask_user_question: " .. tostring(cancel_err), vim.log.levels.WARN)
-    end
-  end
-  if stream.on_insert_choices then
-    stream.on_insert_choices(params.questions)
-  end
-
-  return { status = "ok" }
 end
 
 return M

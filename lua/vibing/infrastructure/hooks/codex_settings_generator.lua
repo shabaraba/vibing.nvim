@@ -11,10 +11,17 @@ local M = {}
 
 --- Codex's hook timeout, in seconds.
 ---
---- pre-tool-use.sh gives up and denies after ~120s, so this stays above that number for the same
---- reason copilot's does: whichever side gives up first decides, and the script's deny is the only
---- one that carries a reason.
-local HOOK_TIMEOUT_SEC = 300
+--- Stays above the deadline pre-tool-use.sh gives itself for the same reason copilot's does:
+--- whichever side gives up first decides, and the script's deny is the only one that carries a
+--- reason. Both are derived from `permissions.approval_wait_sec` (`wait_budget.lua`), which is what
+--- makes that ordering a property rather than a coincidence.
+---
+--- What this transport registers as its PreToolUse timeout. See
+--- `settings_generator.hook_timeout_sec` for why every transport answers this.
+--- @return number|nil seconds
+function M.hook_timeout_sec()
+  return require("vibing.infrastructure.hooks.wait_budget").cli_timeout_sec()
+end
 
 --- The `-c` config key. **PascalCase, and that is load-bearing.**
 ---
@@ -22,7 +29,7 @@ local HOOK_TIMEOUT_SEC = 300
 --- error, no entry in `hooks/list`. vibing.nvim shipped `hooks.pre_tool_use` (snake_case) with a
 --- flat handler list, which parsed as TOML and was then dropped on the floor, so **no PreToolUse
 --- hook fired on codex at all**: no permission gate, and no git-snapshot baseline, which took the
---- per-request diff and every `.vibing/patches/*.patch` with it.
+--- per-request diff and every `.vibing/diffs/*.diff` with it.
 ---
 --- Verified against codex 0.153.4 by asking the app-server for the hooks it actually resolved
 --- (`handbook/architecture/cli-integration.md` has the runnable form). `hooks/list` is the cheap
@@ -59,6 +66,25 @@ function M.script_path(cwd)
   return vim.fn.resolve(cwd) .. "/.vibing/codex-pre-tool-use.sh"
 end
 
+--- Only reuse an actual copy with the exact permissions staging installs.
+--- @param path string
+--- @param contents string
+--- @return boolean
+local function staged_matches(path, contents)
+  local stat = vim.loop.fs_lstat(path)
+  -- lstat excludes links outside the writable roots. The low twelve bits include special bits.
+  if not stat or stat.type ~= "file" or stat.mode % 4096 ~= tonumber("755", 8) then
+    return false
+  end
+  local staged = io.open(path, "rb")
+  if not staged then
+    return false
+  end
+  local staged_contents = staged:read("*a")
+  staged:close()
+  return staged_contents == contents
+end
+
 --- Stage the hook script inside the working directory and return its path.
 ---
 --- **Codex will not execute a hook script that lives outside the sandbox's writable roots**
@@ -80,13 +106,12 @@ end
 --- copilot's throwaway plugin goes for the same reason. A symlink is not used: it would point back
 --- out of the writable roots, which is the case that fails.
 ---
---- Copied rather than cached: the source path moves when the plugin is updated or reinstalled, and
---- a stale copy is a hook that silently answers with old logic. The write goes through a temp file
---- and a rename because every chat open on this cwd rewrites this path just before spawning its own
---- codex, and a reader catching a truncated script would get a hook that fails in a way none of the
---- three decisions covers. `rename(2)` is atomic within a directory. One shared path is safe only
---- because the contents are identical for every chat -- per-request identity (`VIBING_HANDLE_ID`,
---- the RPC port) travels in codex's environment, not in this file.
+--- The source is read on every call so updates and reinstalls cannot leave stale hook logic.
+--- An identical copy with permissions 0755 is reused; otherwise the write goes through a temp file
+--- and a rename because chats share this path. A reader catching a truncated script would get a
+--- hook that fails in a way none of the three decisions covers. `rename(2)` is atomic within a
+--- directory. One shared path is safe because the contents are identical for every chat:
+--- per-process identity (`VIBING_PROCESS_ID`, the RPC port) travels in codex's environment.
 --- @param cwd? string Working directory (defaults to vim.fn.getcwd())
 --- @return string path Absolute path to the staged script
 function M.ensure(cwd)
@@ -100,6 +125,10 @@ function M.ensure(cwd)
   end
   local contents = src:read("*a")
   src:close()
+
+  if staged_matches(path, contents) then
+    return path
+  end
 
   local tmp_path = string.format("%s.%d.tmp", path, vim.loop.getpid())
   local out, out_err = io.open(tmp_path, "wb")
@@ -133,9 +162,10 @@ end
 --- registering the hook without a script codex can run is the one outcome to avoid, since that is
 --- the shape that hangs rather than the one that merely skips the gate.
 --- @param cwd? string Working directory the codex process will run in
+--- @param dialect? string how the script should phrase its decision (`hooks/transports.lua`)
 --- @return string[] argv fragment: {"--dangerously-bypass-hook-trust", "-c", "hooks.PreToolUse=[...]"}
-function M.get_hook_args(cwd)
-  local script = M.ensure(cwd)
+function M.get_hook_args(cwd, dialect)
+  local script = SettingsGenerator.hook_command(M.ensure(cwd), dialect)
   local escaped = script:gsub("\\", "\\\\"):gsub('"', '\\"')
   return {
     TRUST_FLAG,
@@ -147,12 +177,18 @@ function M.get_hook_args(cwd)
       '%s=[{hooks=[{type="command",command="%s",timeout=%d}]}]',
       HOOK_EVENT_KEY,
       escaped,
-      HOOK_TIMEOUT_SEC
+      M.hook_timeout_sec()
     ),
   }
 end
 
 M._HOOK_EVENT_KEY = HOOK_EVENT_KEY
-M._HOOK_TIMEOUT_SEC = HOOK_TIMEOUT_SEC
+
+--- Exported for the one caller that has to take the flag back **out**: `app-server` accepts the
+--- hook override but not exec's trust bypass, so the resident transport filters it from the argv
+--- it was handed (`codex_command_builder.resident_hook_args`). A second spelling of the literal
+--- there would go stale in silence -- the flag would simply stop being filtered, and a rename
+--- here would leave app-server being passed a flag that makes it refuse to start.
+M.TRUST_FLAG = TRUST_FLAG
 
 return M

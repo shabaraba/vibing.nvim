@@ -80,7 +80,7 @@ local function run_attempt(adapter, task, base_opts)
 
   local done = false
   -- response.content はストリームしたチャンクの総和なので、本文はそちらだけ見れば足りる
-  local handle_id = adapter:stream(task.prompt, opts, function() end, function(response)
+  local _, process_id = adapter:stream(task.prompt, opts, function() end, function(response)
     record.text = response.content or ""
     record.error = response.error
     done = true
@@ -92,9 +92,9 @@ local function run_attempt(adapter, task, base_opts)
     record.error = string.format("timed out after %dms", TIMEOUT_MS)
     -- 待つのをやめてもCLIは走り続ける。放置すると次のタスクと並行してトークンを使い、
     -- Bashを許したタスクなら手を離れたところでコマンドまで走る
-    if handle_id then
+    if process_id then
       pcall(function()
-        adapter:cancel(handle_id)
+        adapter:cancel(process_id)
       end)
     end
   end
@@ -168,7 +168,7 @@ end
 ---MCPサーバーの登録形態でツール名の前置が変わる（プレーン登録とプラグイン登録）ので、
 ---接尾辞で照合する。can_use_tool.is_vibing_nvim_mcp_tool と同じ考え方
 ---@param record Vibing.Eval.Record
----@param suffix string 例: "nvim_ask_user_question"
+---@param suffix string 例: "nvim_win_open_file"
 ---@return table? input
 function M.find_mcp_call(record, suffix)
   for _, call in ipairs(record.tool_calls) do

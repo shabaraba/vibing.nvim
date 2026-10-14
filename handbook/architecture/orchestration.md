@@ -17,7 +17,7 @@ One chat can create and drive other chats: `nvim_chat_create` (MCP) →
 `claude-plugin/skills/vibing-orchestrate/SKILL.md`; there is no command and no scheduler.
 
 Nothing new was needed to keep the workers apart. Each chat buffer already owns its own session
-id and handle id (see `handbook/architecture/chat-lineage.md`), so parallel workers are the
+id, CLI process and turn (see `handbook/architecture/chat-lineage.md`), so parallel workers are the
 existing concurrency guarantee being used rather than extended.
 
 The use case is the fork/subagent shape: it returns a `ChatSession` and touches no presentation
@@ -40,6 +40,155 @@ Four things it does differently from `:VibingChat`, each for a reason:
   `vibing-worktree-create`, which only rewrites an existing chat's frontmatter. (The pre-existing
   and never-called `use_case.create_new_in_directory` does the opposite; `create_new` takes an
   optional `working_dir` instead.)
+
+## Worker cost: reuse vs. new chat, and brief completeness (#810, #811)
+
+Two decisions that look independent — reuse a worker chat across tasks or start a new one,
+and how much verified fact to put in a brief — are linked by the same failure mode: an
+incomplete brief costs a re-investigation round-trip whichever one you picked. What is
+actually measured below is the brief-completeness axis, isolated by holding "reused" fixed:
+
+| Chat | PRs produced | requests | read tokens | notes                                                                                 |
+| ---- | ------------ | -------- | ----------- | ------------------------------------------------------------------------------------- |
+| 882  | 4            | 209+     | 34.2M+      | reused across tasks; 3 mid-task design round-trips, each re-reading code already read |
+| 954  | 5            | 107      | 12.1M       | reused across tasks; brief carried verified facts, no re-reads                        |
+
+Read:new token ratios of 16:1 to 85:1 were measured separately (#807), so **the bill is
+dominated by re-reading context, not by generation.**
+
+The difference between 882 and 954 was not "reused vs. not" — both reused the same worker
+chat across tasks. It was **whether the worker had to re-investigate**. 882's brief left
+facts unverified, so three design round-trips each triggered a fresh read of code already
+read earlier in the same chat. 954's brief stated facts as already checked, and the chat
+never re-read anything.
+
+A third chat, 884, ran a single task in a fresh chat with a complete brief and no
+round-trip (1 PR, 120 requests, 13.2M read) and is deliberately left out of the table above.
+Dividing its total by "PRs produced" would compare it to 882 and 954 as if all three chats
+were doing the same size of unit work, but 884's one task is not known to be the same
+granularity as one of 882's or 954's four-to-five tasks — nothing in the source measurement
+(#810, #811) breaks its 120 requests down further, so a per-PR ratio built from it would be
+read as evidence about reuse-vs-new cost that this data does not actually support.
+
+### Generalization
+
+- **Reusing a worker saves exactly one brief.** Everything accumulated in that chat's
+  context is billed again on every later request, so what a chat saves once, it spends back
+  every turn it stays open.
+- **A new chat's added cost is the floor (currently ~51k–61k tokens, the number #807
+  narrows) plus the brief.** Continuing an existing chat instead costs
+  `accumulated context × remaining requests`. Once the remaining work exceeds a few
+  requests, that arithmetic favors a new chat — but only if the brief is complete. This is
+  the cost model, not a chat-for-chat measurement: 882 and 954 are both reused chats, so
+  nothing in the table above is a matched pair of "same work, reused vs. fresh."
+- **An incomplete brief buys a round-trip, and a round-trip costs a re-read** — the same
+  failure mode whether it happens inside a reused chat (882) or a freshly created one. A
+  thicker, fact-checked brief is not only more correct
+  (`vibing-orchestrate/SKILL.md` → "Say what must hold, not how to do it", #803); the same
+  facts that make it correct are what keep the worker from re-reading, which is where the
+  cost actually sits.
+- **Compaction is not a saving, it is deferred billing.** A chat that needed compaction was
+  already carrying more context than the task needed, and the detail it loses forces
+  exactly the re-reads a complete brief exists to avoid.
+
+These are not two independent policies: a complete brief is what makes "start a new chat by
+default" cheap, and reuse is only worth it when a task's remaining requests are too few for
+the floor to matter — one without the other does not hold.
+`claude-plugin/skills/vibing-orchestrate/SKILL.md` → "Reuse a worker chat or start a new
+one?" carries the operating rule; this section is the reasoning and the measurement behind it.
+
+## What the floor is made of, and profiles
+
+The floor is re-read on **every request** of a worker, not paid once, so it is the multiplier the
+"new chat by default" rule above leaves on the table. `tests/perf/system_prompt_floor.lua` breaks
+it down by changing one flag at a time against the argv vibing.nvim actually builds. Measured on
+claude 2.1.295, haiku, in this repository, with the vibing-nvim MCP server connected and
+`CLAUDE_CODE_REMOTE` unset (as on a local machine):
+
+| Variant                                           | Floor (tokens) | Delta   | Tools |
+| ------------------------------------------------- | -------------- | ------- | ----- |
+| vibing chat, as sent                              | 66,974         | —       | 80    |
+| without the two editor-watching lines             | 66,654         | −320    | 80    |
+| no `--append-system-prompt` at all                | 66,192         | −782    | 80    |
+| no `--plugin-dir` (vibing skills, MCP)            | 63,555         | −3,419  | 31    |
+| `--setting-sources ""` (CLAUDE.md, rules, skills) | 36,895         | −30,079 | 80    |
+| `--strict-mcp-config`, no servers                 | 65,274         | −1,700  | 31    |
+| `--tools` six built-ins, no ToolSearch            | 50,914         | −16,060 | 55    |
+| `--tools` six built-ins + Skill                   | 60,657         | −6,317  | 56    |
+| `--tools` six built-ins + Agent                   | 53,636         | −13,338 | 56    |
+| `--tools` six built-ins + ToolSearch              | 36,898         | −30,076 | 56    |
+| **six + ToolSearch, no editor lines, user,local** | **11,266**     | −55,708 | 56    |
+| bare `claude -p`, no vibing flags                 | 61,207         | −5,767  | 29    |
+
+And the first request of a **subagent**, launched from a bare `claude -p` (61k):
+
+| Subagent                                         | First request |
+| ------------------------------------------------ | ------------- |
+| `general-purpose`                                | 50,343        |
+| custom, `tools: [Read, Edit, Bash]` (`--agents`) | 29,392        |
+| `Explore`                                        | 13,024        |
+
+What the numbers say:
+
+- **vibing.nvim's own additions are small** — 782 tokens of instructions, ~1.7k for 49 deferred MCP
+  tools. Trimming them cannot be the lever: the two editor-watching lines (−320) were what an
+  earlier built-in `worker` profile dropped, and that profile was removed for saving nothing. A
+  profile narrows the tools and the setting sources instead; the instruction block is always sent.
+- **The two large parts are the built-in tool set and the project's own settings, ~30k each.**
+  The tool part is mostly not the six tools an implementer uses: the Skill tool's description
+  carries every skill (+9.7k on top of the six) and the other ~20 built-ins the rest. The settings
+  part is CLAUDE.md, `.claude/rules/` and the project's skills.
+- **`ToolSearch` must stay in a narrowed tool list.** Without it the CLI has nowhere to defer MCP
+  tools to and loads every schema (50.9k vs 36.9k, the same six tools). `--tools` narrows built-ins
+  only: `nvim_chat_send_message` stays reachable either way, so a narrowed worker can still report.
+- **A subagent is not free either.** `general-purpose` is ~50k, close to a chat; it is `Explore`
+  (read-only) that is cheap. A narrowed chat (11k) is cheaper than a `general-purpose` subagent and
+  can run on another CLI — which is what profiles are for.
+- **Dropping the project settings is a correctness trade.** Those files are the invariants a worker
+  would otherwise break, and a worker that has to rediscover one pays for it in re-reads (chat 882
+  above). `context_files` exists so a profile can carry the few that apply to its kind of work.
+
+What the built-in profiles come to, read off the table (the rows were measured before the
+profiles existed, with the flags each one now sends):
+
+| Profile    | Floor (tokens)                                                                |
+| ---------- | ----------------------------------------------------------------------------- |
+| `default`  | 66,974 measured ("as sent")                                                   |
+| `focused`  | 36,898 measured ("six + ToolSearch", the same `--tools` list)                 |
+| `reviewer` | ~36k **estimated**: four of the same tools, Edit and Write not measured apart |
+
+The 11,266 row is the `implementer` example in `handbook/configuration.md` (`focused`'s tools,
+`user,local`), measured without the two editor lines; with them it is ~11.6k **estimated**.
+`tests/perf/system_prompt_floor.lua` now has `profile: focused` / `profile: reviewer` rows and a
+`focused`-based lean row, not yet re-run.
+
+Two caveats bound the table: rows where the model made more than one request report a sum, not a
+floor (the script prints `turns`; the `--strict-mcp-config` row needed three attempts), and a
+plugin MCP server that is still connecting when a one-request run ends contributes nothing.
+
+### What a switch reaches: the system prompt is recorded
+
+`claude -p` records the system prompt on a conversation's **first** request and replays it on
+every resume (`--system-prompt-snapshot`, default `on`). Measured: a session started with
+`--append-system-prompt "codename ALPHA"` and resumed with `"codename BETA"` still answered ALPHA;
+a resume with `--system-prompt-snapshot off` saw the new text, and the next default resume went
+back to ALPHA — the record is not replaced. So for a profile switch:
+
+- `context_files` (inside `--append-system-prompt`) stay as the chat started.
+- `tools` and `setting_sources` are re-read per launch: a resume with the full tool set rose from
+  31.6k to 61.2k, and a CLAUDE.md fact unknown under `--setting-sources ""` was answered correctly
+  after a resume with `project`. Narrowing again did **not** shrink it (61.6k): what a request
+  loaded stays in the conversation's history.
+
+That is why `/profile default` on a narrowed chat is the direction that works, and why a profile is
+chosen at creation rather than toggled to save tokens on a running chat.
+
+The same recording broke two older assumptions. An `orchestrated_by` entry added **after** a chat's
+first message — a chat later messaged by a second orchestrator — never reached its report line;
+every delivered `## Request` now ends with where and how to report
+(`delivery_message.reply_instructions`), since the per-turn body is the one thing the recording
+does not freeze. `.vibing/system-prompt.md` is still not read "on every request" as far as the
+model is concerned: an edit reaches new chats only, and that is left for a fix of its own.
 
 ## Task assignment (`orchestrated`'s `task`, #696)
 
@@ -127,20 +276,31 @@ reference and `config.window` stays the same table.
 
 **Completion detection is a status field, not a text heuristic.** `nvim_get_buffer` passes
 `include_chat_status` to `buf_get_lines`, which attaches `presentation/chat/modules/chat_status`'s
-verdict: `"responding"` when `ChatBuffer:is_responding()`, one of `"waiting_approval"` /
-`"asked_question"` / `"error"` when the last turn stopped for a reason worth naming, `"idle"`
-otherwise, and nothing at all for a buffer that is not a chat. Reading the transcript's shape
-instead would call a turn that died on an error, or one part-way through silent tool calls,
-complete.
+verdict: `"waiting_approval"` when a hook of this chat is actually blocked, then `"responding"`
+when `ChatBuffer:is_responding()`, then one of `"waiting_approval"` / `"asked_question"` /
+`"error"` when the last turn stopped for a reason worth naming, `"idle"` otherwise, and nothing at
+all for a buffer that is not a chat. Reading the transcript's shape instead would call a turn that
+died on an error, or one part-way through silent tool calls, complete.
 
-`is_responding()` needs two signals, and the second one is **not** `_current_handle_id`'s
-existence. `_is_sending` covers `<CR>` until the adapter spawns the CLI; after that the handle id
+**The approval check comes first, and from the registry rather than from `_stop_reason`** (#778).
+Once an approval can be answered without killing the CLI, a chat waiting on one has a turn that is
+still open — `is_responding()` stays true — so asking that first would report `responding` for up
+to `permissions.approval_wait_sec`, and an orchestrator would read it as healthy progress. The
+source has to be `pending_approvals.list_for_chat` and not `_stop_reason` for the opposite reason:
+`_stop_reason` keeps the previous turn's value until the next send, so reading it first would
+report a genuinely running turn as waiting. The registry empties the moment an answer lands, so it
+is the only one of the two that is never stale in either direction.
+
+`is_responding()` needs two signals, and the second one is **not** `_current_turn_id`'s
+existence. `_is_sending` covers `<CR>` until the adapter spawns the CLI; after that the turn id
 is what marks the run — but `send_message.lua` deliberately never clears it on completion, so the
-next `send_message()` can kill a process that outlived its own `result` event. Read as a boolean
+next `send_message()` can kill a process that outlived its own `result` event. (That is also why
+`ChatBuffer` keeps `_current_process_id` next to it: the reaping cancel happens after the turn has
+ended, when the registry can no longer resolve the turn back to a process.) Read as a boolean
 that field therefore reports every chat as `responding` forever after its first turn, which is the
 one answer an orchestrator's polling loop can never recover from. So the second signal is
-`ActiveStreamRegistry.get(handle_id)`: all four adapters `register` when the stream starts and
-`unregister` in `wrapped_on_done`, which makes the registry the only place that knows a run is
+`TurnRegistry.get(turn_id)`: all four adapters `open` a turn when the stream starts and
+`close` it in `wrapped_on_done`, which makes the registry the only place that knows a run is
 over without also being the place that has to remember how to kill it.
 
 One window stays uncovered: `_handle_response` clears `_is_sending` before the `vim.schedule` that
@@ -248,7 +408,7 @@ works from whichever side did get written. Fork and subagent chats do **not** in
 — `inherited_frontmatter.from_source` is an explicit whitelist, and a fork claiming its parent's
 relationships would be claiming work it was never given.
 
-**Completion is pushed, not polled** — `agent.chat_notifications.enabled`, default `false` because
+**Completion is pushed, not polled** — `automation.orchestration.notifications.enabled`, default `false` because
 it spends tokens unattended. The whole mechanism is that **the send is the subscription**: when
 `nvim_chat_create` / `nvim_chat_send_message` receive `from_bufnr`, `completion_notifier.subscribe`
 records an A←B edge, and when B's turn ends A is given a new turn saying "B stopped, go read it".
@@ -298,7 +458,7 @@ every word of that placement is load-bearing:
 - **Not next to `clear_sending()`**, which under `diff.tool = "mote"` runs before `finalize()`
   writes `### Modified Files`. A reader woken there would see an unfinished transcript, the same
   window `chat_status` documents.
-- **After the handle_id mismatch guard**, so a cancelled turn completing late fires nothing.
+- **After the turn id mismatch guard**, so a cancelled turn completing late fires nothing.
 
 It goes out as a `User VibingResponseDone` autocmd rather than a direct call so a user's own config
 can hook it too — before this there was no `nvim_exec_autocmds` anywhere in `lua/`.
@@ -391,6 +551,45 @@ already sitting in `to`'s queue. "B stopped, go and read it" is the same errand 
 and A does not need waking twice for it. The reversed indices are the reason it is one function:
 written out at a call site, `subscribe(a, b)` next to a suppression of `edges[a][b]` reads like a
 typo.
+
+**Only the dispatch half of that is conditional: an edge never points up the tree.** The notice's
+own wording — "the chats you sent a message to have stopped without reporting back … do not treat
+its task as done" — is a statement about the tree going _down_. An orchestrator stopping is the
+tree's terminal state, not a failure a worker has to go and read. And the cost of getting it wrong
+is not an inapt sentence: a wake is a whole CLI turn, which is why `wakes` is budgeted at all. So
+`subscribe` takes the send's direction and **refuses a `Report` outright**. The suppression mark
+and `drop_notification` stay unconditional: not subscribing upward and not reporting your own stop
+twice are separate obligations.
+
+**The refusal lives in `subscribe`, not in `on_sent`, because `subscribe` is the only function
+that writes `edges`.** `rpc/handlers/chat.lua`'s direct call is then covered by the same guarantee
+rather than by the accident that a chat created one line earlier cannot have a reverse link yet.
+
+**The direction is passed in, never re-derived.** `orchestration_link.direction` costs a blocking
+`git rev-parse` plus a frontmatter parse, and both callers already hold the answer when they call:
+`delivery_message.deliver` returns the `kind` its heading was chosen from, and `approval_delegate`
+has it as `section.kind`. Threading it is not only cheaper — it is what makes "what renders as
+`## Report` is exactly what does not subscribe" true by construction instead of by two independent
+evaluations agreeing across an intervening `link_or_warn`. The one site with nothing to pass is
+`queue_for_later`, which deliberately defers the link write, so it asks once.
+
+The symptom without any of this is not the fan-out case, where the worker's edge is masked by
+`is_waiting_on_others`'s "exclude my own subscribers" clause. It is the case where the
+orchestrator's subscription has already been spent: a user types into a worker directly, the
+worker reports up, and from then on **every** turn the orchestrator finishes wakes that worker
+with a watchdog notice about its own parent. Edges are one-shot, so `edges[worker][orchestrator]`
+is gone by then and the exclusion does not fire.
+
+**That exclusion clause stays, and is now the backstop for this guard's own failure mode.** A send
+whose direction cannot be determined — no recorded link, or a buffer with no file name, which is
+the window an unsaved `:VibingChat` orchestrator sits in — still subscribes, so an upward edge can
+still be created. The clause is what keeps that from becoming a mutual wait in which neither chat
+ever reports, and a permanent hang is worse than the spurious wake fixed here.
+
+The price is one wake-up: a worker that asks its orchestrator a question through
+`nvim_chat_send_message` no longer hears about an orchestrator that stops without answering. The
+question itself still arrives — delivery is `message_queue`'s job and never went through this
+edge — so what is lost is a notice about silence, not the channel.
 
 **It is a mark and not a deletion, and that distinction is the whole of #638 again.** Nothing at
 send time can tell a final report from a progress note — and in a tree the middle node's first
@@ -580,7 +779,7 @@ The removed `max_hops` is not silently ignored: `config.lua` drops it and warns 
 flag. A limit that reads as configured while doing nothing is worse than one that was never set.
 
 **The notification says "stopped", never "succeeded".** `idle` is also what a failed turn, a
-pending tool approval, and an `nvim_ask_user_question` look like, so judging outcomes from the
+pending tool approval, and a question the worker asked look like, so judging outcomes from the
 event would repeat `chat_status`'s mistake. The message names each finished chat by path (with its
 current bufnr in parentheses) and instructs A to read the transcript's tail — not the worker's
 text, which would pull B's context into A for no reason.
@@ -629,9 +828,9 @@ subscription table stays in memory only. The delivery queue no longer does (#697
 split is the point: a queued message is a promise made to a sender that must outlive the wait, while
 an `edges` entry is a one-shot subscription to a _stop event_ — and the turn whose stop it was
 waiting for died with the process, so restoring it would arm a wake-up that can never fire.
-Backends other than claude can be _notified_ (the
-event is backend-agnostic) but cannot _subscribe_: `nvim_chat_send_message` is an MCP tool, and
-codex/grok reach no MCP server, the same constraint `features.md` records for AskUserQuestion.
+Backends other than claude can be _notified_ because the event is backend-agnostic. Codex can also
+_subscribe_ through the bundled MCP server; Grok cannot, because it reaches no MCP server — the
+same constraint `features.md` records for AskUserQuestion.
 
 ## Branch conflict warning (`nvim_chat_conflicts`, #699)
 
@@ -683,7 +882,7 @@ methods do not each re-implement the git-root lookup and the `orchestrated_entry
 ## Tree operations
 
 `:VibingOrchestrationTree [path]` draws the tree a chat belongs to with each node's status,
-`:VibingCancelTree [path]` stops a subtree, and `agent.orchestration.max_concurrent` (default
+`:VibingCancelTree [path]` stops a subtree, and `automation.orchestration.max_concurrent` (default
 `0` = unlimited) caps how many chats may be responding at once (#645). Three decisions carry
 the design:
 
@@ -709,7 +908,7 @@ the design:
   always goes through). The count includes every responding chat, the user's own manual turns
   included, so one long hand-driven turn occupies a slot. It also includes every chat's in-flight
   subagents (Task/Agent tool calls with no `tool_result` yet, tallied on
-  `active_stream_registry.lua`'s per-stream entry as `cli_event_processor.lua` sees the tool_use
+  `turn_registry.lua`'s per-turn entry as `cli_event_processor.lua` sees the tool_use
   and its result go by) — otherwise five chats safely under `max_concurrent` can still fan out to
   twenty real CLI-equivalent processes, which is exactly the shape that hit a session limit in
   #692. `max_concurrent_subagents` is a second, independent cap on that subagent count alone, for
@@ -729,6 +928,61 @@ the design:
   surface. `process_done` therefore reads `stop_reason_of` ahead of the hold, and a held chat
   with a reason notifies its subscribers like any other blocked one. Reachable only with
   `max_concurrent` set, since the default `0` never holds anything.
+
+### A delivery refused because of a draft (#831)
+
+`flush` refuses for two reasons that leave the queue intact, and they are not symmetrical.
+
+**The recipient is responding.** Transient, and its own turn end calls `flush` again through
+`process_done`. Nothing has to remember it.
+
+**The recipient has an unsent draft.** There is no event for "the draft went away". So the next
+`flush` came only from the next turn ending, and the thing that ends a turn is normally the user
+sending — which is the same act that clears the draft. A delivery therefore waited on the very
+wake it was supposed to produce. Measured on a real worker chat: a background job finished at
+00:43:13 and its `notify: always` notice reached the chat at 00:48:00, when the user happened to
+ask an unrelated question. Nothing was lost — the item stayed in `pending` and `has_pending` stayed
+true — but the chat reported `idle`, the agent believed no notice had arrived, and had the user
+written half a message and walked away it would never have arrived at all.
+
+`application/chat/draft_hold.lua` closes it by watching for the one signal that does exist: the
+buffer changing. Four things about its shape:
+
+- **It watches only the draft refusal.** Arming it on the responding refusal too would give that
+  case a second, redundant trigger, and every redundant trigger is one more way to deliver twice.
+- **`TextChanged` and `InsertLeave`, not `TextChangedI`.** The gate reads
+  `extract_user_message`, which scans the whole buffer back to the last user header; per keystroke
+  that is an O(buffer) walk on the editor's hot path. The same cost is why the callback asks
+  `is_responding()` **before** it reads the draft — a streaming turn rewrites the buffer
+  continuously, so the cheap check has to come first or the scan runs on every rendered chunk.
+- **The retry goes through `completion_notifier.retry_delivery`, never straight to `flush`.**
+  `wakes` and `round_trips` — the loop budgets that stop A⇄B from waking each other forever — are
+  advanced by `drain` alone. A retry that bypassed it would let a delivery woken through a draft
+  spend no budget, which is the one hole the budgets cannot be audited for from the outside.
+  `retry_held` was folded onto the same function: the two refusals clear on different signals, but
+  what to do when one clears is identical.
+- **The user is told once, at INFO.** Same level as `auto_resume`'s "an unsent message is waiting
+  in the chat", and once per episode rather than once per refused `flush` — a notice on every
+  refusal is how the notices that matter get trained away. It is the honest half of the fix: the
+  retry alone cannot deliver past a draft that never clears, so something has to say _why_ nothing
+  is arriving. Deferring the notice by a few seconds (so a draft the user is about to send never
+  earns one) was rejected for reintroducing a timer, which is what the event-driven design exists
+  to avoid.
+
+  **The notice names the state and prescribes no single action**, because what is in the way is
+  "a non-empty unsent section", not necessarily prose a human typed. A killed turn leaves its
+  rendered approval or question block there (the same state branch 2's exception above is about),
+  and that one is answered rather than deleted; a send that failed after
+  `ProgrammaticSender.send` already wrote the body leaves vibing's own delivery text there. "Clear
+  the unsent message" would be wrong advice in both.
+
+Watching stops when the wait ends, whichever way it ends — `message_queue.lua`'s `clear_queue` is
+the one place a queue goes away, so delivery and both warn-and-drop paths release the watch
+together. Splitting them left `is_watching` reporting a watch over a queue that no longer existed,
+and on the vanished-buffer path nothing could ever self-heal it, since the buffer-local autocmd
+Neovim already deleted can no longer fire. `MessageQueue.forget` releases it too, **before** its own
+empty-queue early return: `BufDelete` leaves the buffer alive, so its autocmds survive and would
+otherwise fire a delivery into a buffer nobody reads.
 
 ## Delivered sections
 
@@ -759,6 +1013,19 @@ text through — so the same worker's report looked different depending on wheth
 happened to be mid-turn when it arrived. `section_for` names the sender in the section header only
 when the delivery is exactly one body from one chat; a coalesced delivery keeps the per-item
 `### From` headings and leaves the header unnamed.
+
+**A delivery is measured for `auto_compact` at that same seam, and a compaction is not a
+delivery.** `deliver` asks `auto_compact.before_delivery` first; over the threshold it sends a
+plain `## User` turn of `/compact` and returns `compacting = true` **without** the message. The
+callers keep the message where a busy target would have kept it — `flush` leaves the queue in
+place, the immediate path enqueues — and the compaction turn's own `VibingResponseDone` brings
+`flush` round again, where the cooldown lets it through. The rejected alternative was to park the
+built text inside `auto_compact` and re-send it from its own `VibingResponseDone` handler, the way
+the `<CR>` path parks the user's message: two subscribers to the same event, one of them `flush`
+delivering whatever queued up during the compaction, and whichever ran second found the chat
+responding and dropped its message with nothing saying so. `flush` returns `restarted` but no
+`delivered` for the compaction — the chat is running, so its stop must not reach subscribers, but
+the round-trip and wake budgets count the turn that actually carries the message.
 
 **The body names the sender even when the section header already does.** `build` used to drop the
 `### From` heading that would repeat the header two lines later, and that dedup is exactly what
@@ -849,13 +1116,15 @@ equivalent: it errors outright when it can find no target.
 ## Answering a worker's tool approval
 
 A worker that reaches a tool in its `ask` list is the one stop in this machine that nothing in it
-can clear. `cancel_and_deny` kills the turn before drawing the prompt (`rpc/handlers/permission.lua`),
-so the worker cannot continue and cannot report; the watchdog delivers `status: waiting_approval`
+can clear, on either shape an `ask` takes (`rpc/handlers/permission.lua`): the turn is killed before
+the prompt is drawn (`cancel_and_deny`), or — on a backend with a `measured_wait_floor_sec` — the
+worker sits blocked inside its own PreToolUse hook waiting for the `.res` (#778). Either way it
+cannot continue and cannot report; the watchdog delivers `status: waiting_approval`
 to whoever messaged it, and — by default — the only thing that orchestrator can do with that is
 name the worker and the tool and hand it to the user. With a fan of five workers all hitting the
 same `Bash` prompt, that is five buffers the user has to find by hand.
 
-`agent.orchestration.delegated_approval` (default `false`) lets the orchestrator answer instead,
+`permissions.delegated_approval` (default `false`) lets the orchestrator answer instead,
 through the MCP tool `nvim_chat_answer_approval` →`rpc/handlers/chat.lua:answer_approval` →
 `application/chat/approval_delegate.lua`. Set to `true` it delegates unconditionally; set to
 `"scoped"` (#703) it delegates only `allow_once`/`allow_for_session` answers whose tool and input
@@ -876,6 +1145,13 @@ not remove it: nothing can auto-approve anything unless a human first sets
 `delegated_approval` to `true` or `"scoped"`. The refusal is worded for the model that will read
 it: it says what to do instead (name the blocked chat and the tool) and names the setting, so a
 chat running without it does not spend a turn probing.
+
+Codex native actions travel unchanged through MCP; the prompt in Lua owns the accepted values.
+Command prompts provide `input.scope_tool = "Bash"` so scoped delegation uses the same command
+matcher as hooks. File prompts retain their descriptive tool name and require a bare scope entry.
+The adapter marks execpolicy amendments `delegation_requires_unscoped`: they can remember a
+broader pattern than the command being judged, so matching the current call is insufficient.
+Only full delegation (`true`) may select them; the human option and reply path stay the same.
 
 Four things about the implementation:
 

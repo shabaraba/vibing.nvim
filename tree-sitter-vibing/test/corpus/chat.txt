@@ -47,12 +47,131 @@ after `code`
     (markdown_line)
     (markdown_line))
   (tool_block
-    (tool_header_open)
-    (tool_argument_line)
-    (tool_argument_end)
+    (tool_header_multiline)
     (tool_result)
     (tool_result_continuation))
   (markdown_chunk
+    (markdown_line)))
+
+==================
+A script's own parentheses do not end the call
+==================
+
+intro
+💻 Bash(cd /tmp && nvim --headless -c "
+call setline(1, ['a'])
+echo foldclosedend(1)
+qa!
+" 2>&1)
+  ⎿  done
+after
+
+---
+
+(document
+  (markdown_chunk
+    (markdown_line)
+    (markdown_line))
+  (tool_block
+    (tool_header_multiline)
+    (tool_result))
+  (markdown_chunk
+    (markdown_line)))
+
+==================
+A heredoc body is data, not the command
+==================
+
+intro
+💻 Bash(python3 - <<'PY'
+text = """
+close ) paren
+"""
+PY
+echo done)
+after
+
+---
+
+(document
+  (markdown_chunk
+    (markdown_line)
+    (markdown_line))
+  (tool_block
+    (tool_header_multiline))
+  (markdown_chunk
+    (markdown_line)))
+
+==================
+An argument the parentheses cannot follow falls back to the first closing line
+==================
+
+intro
+💻 Bash(echo "(((
+still inside)
+  ⎿  done
+after
+
+---
+
+(document
+  (markdown_chunk
+    (markdown_line)
+    (markdown_line))
+  (tool_block
+    (tool_header_multiline)
+    (tool_result))
+  (markdown_chunk
+    (markdown_line)))
+
+==================
+A Markdown heading in the argument is not a chat boundary
+==================
+
+intro
+💻 Bash(gh api -X POST /markdown -f mode=gfm -f text='## Configuration
+
+## Requirements
+
+- Neovim 0.10
+')
+after
+
+---
+
+(document
+  (markdown_chunk
+    (markdown_line)
+    (markdown_line))
+  (tool_block
+    (tool_header_multiline))
+  (markdown_chunk
+    (markdown_line)))
+
+==================
+A chat boundary stops the scanner looking for a closing parenthesis
+==================
+
+intro
+💻 Bash(echo "(((
+
+## Assistant
+
+done)))
+after
+
+---
+
+(document
+  (markdown_chunk
+    (markdown_line)
+    (markdown_line)
+    (markdown_line)
+    (markdown_line))
+  (message_header)
+  (markdown_chunk
+    (markdown_line)
+    (markdown_line)
     (markdown_line)))
 
 ==================
@@ -88,5 +207,45 @@ after
   (markdown_chunk
     (markdown_line))
   (fenced_markdown_block)
+  (markdown_chunk
+    (markdown_line)))
+
+==================
+Marked reasoning is one block that ends where the answer starts
+==================
+
+## Assistant
+💭 first
+💭
+💭 second
+answer
+
+---
+
+(document
+  (markdown_chunk
+    (markdown_line))
+  (message_header)
+  (thinking_block
+    (thinking_line)
+    (thinking_line)
+    (thinking_line))
+  (markdown_chunk
+    (markdown_line)))
+
+==================
+A marked line is reasoning even when it is tool-shaped
+==================
+
+💭 Foo(bar)
+after
+
+---
+
+(document
+  (markdown_chunk
+    (markdown_line))
+  (thinking_block
+    (thinking_line))
   (markdown_chunk
     (markdown_line)))

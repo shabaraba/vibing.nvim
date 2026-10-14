@@ -15,6 +15,7 @@ local rate_limit = require("vibing.infrastructure.rpc.handlers.rate_limit")
 local qflist = require("vibing.infrastructure.rpc.handlers.qflist")
 local dap = require("vibing.infrastructure.rpc.handlers.dap")
 local notify = require("vibing.infrastructure.rpc.handlers.notify")
+local job = require("vibing.infrastructure.rpc.handlers.job")
 
 -- Export all handlers
 M.buf_get_lines = buffer.buf_get_lines
@@ -60,9 +61,9 @@ M.create_chat = chat.create_chat
 M.answer_approval = chat.answer_approval
 M.list_chats = chat.list_chats
 M.chat_conflicts = chat.chat_conflicts
+M.list_profiles = chat.list_profiles
 
 M.check_tool_permission = permission.check_tool_permission
-M.ask_user_question = permission.ask_user_question
 
 M.stop_failure = rate_limit.stop_failure
 
@@ -75,5 +76,11 @@ M.dap_set_breakpoint = dap.dap_set_breakpoint
 M.dap_evaluate = dap.dap_evaluate
 
 M.notify = notify.notify
+
+M.job_start = job.job_start
+M.job_status = job.job_status
+M.job_list = job.job_list
+M.job_stop = job.job_stop
+M.job_wait = job.job_wait
 
 return M

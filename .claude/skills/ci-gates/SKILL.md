@@ -1,6 +1,6 @@
 ---
 name: ci-gates
-description: The CI gates of vibing.nvim (test:lua exit code, E2E timeout budget, check:doc, check) and the ways each one has silently stopped failing. Use when editing package.json scripts, .github/workflows/ci.yml, scripts/check-help.lua, doc/*.txt, or any tests/*.test.mjs that guards a gate — and whenever a gate passes but you are not sure it actually ran anything.
+description: The CI gates of vibing.nvim (test:lua exit code, E2E timeout budget, check:doc, check) and the ways each one has silently stopped failing. Use when editing package.json scripts, .github/workflows/ci.yml, scripts/check-help.lua, doc/*.txt, or any tests/*.test.mjs that guards a gate; when writing a new guard, meta-test, repository-wide scan or positive control; and whenever a gate passes but you are not sure it actually ran anything.
 ---
 
 # CI Gates for vibing.nvim
@@ -36,6 +36,25 @@ project no longer runs) and sums every wait each spec file can perform. The sum 
 over-estimate; over-counting only ever asks for a larger budget, and an exact model is what would
 let the silent case back in. The bound is **per file**, not per test, because the timeout is on
 the job.
+
+### Diagnosing `exit 1` with no failing spec
+
+Locally, the same shape arrives from the environment rather than from a budget, and it is not a
+bug in the tree you are working on. Stray headless Neovims from an earlier run — often another
+worktree's — hold the RPC port range open; a spec that needs a port hangs, plenary's join timeout
+kills the child, and only the exit code moves. Work in this order:
+
+1. Compare `Testing:` lines with `Success: ` lines. `test:lua` prints one of each per spec file.
+2. A file that was `Scheduling:`d and never reached `Testing:` is the one that hung. It is the
+   only name you get; the child printed nothing else.
+3. Search the log for `Failed to start RPC server: all ports (…) are in use`.
+4. `ps -eo pid,etime,command | grep 'nvim --headless'`. Read the **paths** in the command lines:
+   the strays are often from a different worktree, and those are not yours to kill — say so and
+   let whoever owns them clear them.
+
+**A summary count below the file count is normal**, not a symptom: `tests/e2e/*` self-skips
+through `should_run()` and a skipped file prints no summary. The current difference is 14. Only a
+file that never started `Testing:` is evidence of the hang above.
 
 ## Vim Help Verification
 
@@ -79,11 +98,12 @@ cases and both fail-closed cases. The CI step gates the document; that file gate
 
 ## The Lua Syntax Gate Had the Same Hole
 
-`npm run check` could not fail. `find lua -name '*.lua' -exec luac -p {} \;` reports `find`'s exit
-status, not `luac`'s, so a file that would not compile printed its error and CI went green. It is
-`-exec ... +` now, which propagates, and `tests/lua-syntax-gate.test.mjs` holds it there — reading
-the command out of `package.json` rather than restating it, so the test cannot pass against a
-command the project no longer runs.
+`npm run check` once could not fail. `find lua -name '*.lua' -exec luac -p {} \;` reports
+`find`'s exit status, not `luac`'s, so a file that would not compile printed its error and CI went
+green. `scripts/check-lua.lua` now compiles every file with Neovim's parser without executing
+it. It fails on syntax errors and empty trees, and roots the default scan at its own repository.
+`tests/lua-syntax-gate.test.mjs` reads the command from `package.json` and runs the checker over
+valid, invalid, nested and empty fixtures. A separate `luac` installation is not required.
 
 ## E2E Specs Are Not Part of the Normal Suite
 
@@ -91,3 +111,46 @@ command the project no longer runs.
 `VIBING_E2E=1` — which only `test:e2e` sets (`helper.should_run()`). Do not remove that guard to
 "make E2E part of the normal suite": those specs drive full turns against the CLI, so that is a
 per-run API bill on `npm test`. Writing or debugging them is the `self-testing` skill.
+
+## A Guard You Have Not Watched Fail Is Not a Guard
+
+Every section above was written after a gate failed to fail. A new guard — a meta-test, a
+repository-wide scan, a positive control — starts life in exactly that state, and nothing in the
+suite tells you, because it prints `Success` either way. One 15-PR run turned up four of these
+independently, and three had been passing all along.
+
+**Break what it guards and watch it fail.** A guard is not written until you have deleted or
+corrupted the thing it protects, run it, and read a red line naming that thing — then put it back.
+That is the only evidence there is. A guard passing against a clean tree is evidence of nothing: a
+guard that recognises nothing passes against a clean tree too.
+
+**A positive control has to reject a different tree, not an empty one.** The `fs` guard proved its
+grep had looked at something with `assert.is_true(#hits > 0)`, and **every checkout of this
+repository satisfies that** — including the wrong one. Its own comment asked "did it run against
+the right `lua/`?" and then never checked `right`. The test to apply: name a tree that is
+plausible and wrong, and ask whether this control fails for it. "Found something" versus "found
+nothing" is not that.
+
+**A repository-wide scan roots at its own file, never at `vim.fn.getcwd()`.**
+
+```lua
+local root = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h:h")
+```
+
+`test:lua` invokes Neovim with a relative `-u tests/minimal_init.lua`, so the cwd the command was
+typed in decides which checkout gets scanned — and a cwd-rooted scan then reports, green, on code
+you did not write. Assert in a `before_each` that the resolved root contains one known file, so a
+spec that moves fails by name instead of quietly scanning a parent directory.
+
+**A stub can delete the question the test was asking.** Six specs around the answer-extraction
+path stubbed `extract_user_message` — the function that decides _what the answer is read from_,
+which was the invariant under test. All six passed for as long as the defect lasted. Stub the
+boundary (the CLI, the clock, the filesystem, the network); never the subject. If the stub's return
+value is the thing the invariant is about, the spec is testing the stub.
+
+`tests/lua/mkdir_call_sites_spec.lua` is the worked example: rooted at its own path with the reason
+in a comment, asserting that root resolved, and — the part worth copying — carrying a
+`describe("the analysis behind the guard")` block that feeds the analysis known-good and known-bad
+sources. Its comment says why: scans of the form "no file does X" are satisfied for free by an
+analysis that recognises nothing, so something has to state what it does recognise. Read that file
+before writing a new guard.

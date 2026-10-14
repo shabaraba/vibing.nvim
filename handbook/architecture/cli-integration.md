@@ -10,9 +10,11 @@ taken against the real CLIs and the alternatives that were rejected.
 The PreToolUse hook is synchronous and blocks the tool call: it writes the hook payload to
 `/tmp/vibing-hook-<port>/<request_id>.req`, sends a one-line JSON-RPC notification to the RPC port
 with `nc`, then polls for `<request_id>.res` (up to 120s). It **fails closed** — if `nc` cannot
-connect, or the response never arrives, the hook exits 2 and the tool is denied. `VIBING_HANDLE_ID`
-is passed through so concurrent chats don't cross-wire each other's approval UI (see
-`active_stream_registry.lua`). The comm directory path comes from
+connect, or the response never arrives, the hook exits 2 and the tool is denied. `VIBING_PROCESS_ID`
+is passed through so concurrent chats don't cross-wire each other's approval UI; it names the CLI
+**process**, since an environment variable is fixed at spawn, and `rpc/hook_scope.lua` resolves
+which turn that process has open (`handbook/architecture/processes-and-turns.md`). The comm
+directory path comes from
 `infrastructure/rpc/comm_dir.lua` (the single source of truth shared by the handlers, the cleanup
 routine and `bin/hooks/*.sh`). It is machine-wide shared state keyed by port, so it has two
 escape hatches: `$VIBING_HOOK_COMM_DIR` overrides it outright (tests use this), and without a
@@ -63,7 +65,7 @@ thing in the prefix, so a value that moves invalidates the cache for it _and_ th
 conversation behind it — floor plus history, re-written at cache-creation price, which is 12.5× the
 read price. A long-lived process pays that once per session; here it is once per change.
 
-`agent.git_instructions` is the case that was found (#681). The CLI embeds a block like
+`ai.agents.claude.extensions.git_instructions` is the case that was found (#681). The CLI embeds a block like
 
 ```text
 This is the git status at the start of the conversation. ...
@@ -103,7 +105,7 @@ that shape:
   changes under them. The environment is the one channel every call goes through.
 - **Both settings write the variable**, because the CLI reads it as a tri-state: `"1"` suppresses,
   `"0"` forces on, unset defers to `includeGitInstructions` — which
-  `--setting-sources user,project,local` still loads. So `agent.git_instructions = true` writes
+  `--setting-sources user,project,local` still loads. So `ai.agents.claude.extensions.git_instructions = true` writes
   `"0"` rather than nothing; writing nothing would leave the opt-in unable to deliver what it
   promises to a user who has that key set to `false`. Verified against the CLI: `0` and `false`
   both put the block back, `1` removes it.
@@ -118,7 +120,9 @@ that shape:
   prefix rather than re-derived.
 
 The invariant generalises past this one block: **a per-turn process makes every startup-time
-computation a prefix variable.** The CLI version string, the date and the cache-breaker phrase are
+computation a prefix variable.** That is also the argument for #774 — a resident process pays each
+of them once per session, and this whole section stops applying to it. The CLI version string, the
+date and the cache-breaker phrase are
 the other candidates; none has been measured moving, and #674's re-write detection is what is meant
 to catch the next one rather than a hand-maintained list here. vibing.nvim's own
 `--append-system-prompt` was byte-stabilised for the same reason in #469.
@@ -127,7 +131,44 @@ to catch the next one rather than a hand-maintained list here. vibing.nvim's own
 
 These are the seams that stop backend identity leaking into shared code. The rule they encode:
 **a backend name belongs in that backend's own module, and shared code takes what it is handed.**
-`bin/hooks/pre-tool-use.sh` is the one deliberate exception, and the last bullet says why.
+`bin/hooks/pre-tool-use.sh` is the one deliberate exception, and the last bullet says why. Since
+ADR 009 each backend is a descriptor (`adapter/backends/<id>.lua`) that names its hook transport
+and dialect from `hooks/transports.lua`; the five generators described below are those transports.
+
+- **Pi has no external-process hook, and no gate of its own.** The original PR author reported on Pi 0.87.1: its only
+  interception point is an in-process TypeScript `tool_call` handler, and its own documentation
+  states it "does not ask for approval before every tool call" while print/JSON/RPC modes cannot
+  show even the trust prompt. Both halves matter separately. The first is why the `extension_file`
+  transport resolves a shipped bundle (`pi-extension/`) instead of writing a settings file, passed
+  with `--extension`; the bundle spawns `bin/hooks/pre-tool-use.sh` and reads its exit code, so the
+  dialect is `claude` and there is still exactly one implementation of what a decision means. The
+  second is why a failed installation cannot be the usual warn-and-continue:
+  `pi_command_builder.permission_args` drops the run to `--no-mcp --tools read,grep,find,ls` instead, except
+  under `bypassPermissions` where no configured rule is being skipped. The original author reported:
+  `deny` reaches the model as the tool result verbatim, `allow` runs the tool, and an
+  unreachable RPC server blocks every call.
+- **Pi's extension enforces its own deadline, and fails closed doing it.** Every other transport
+  reports a timeout its CLI was configured with, and the ordering
+  `approval_wait_sec < script wait < CLI timeout` exists because past its own timeout every CLI
+  measured **fails open**. Pi applies no timeout to a handler at all, so the number
+  `pi_settings_generator.hook_timeout_sec` reports is the one the extension itself applies, handed
+  over in `VIBING_PI_HOOK_TIMEOUT_SEC`. Both come from `wait_budget`, so they cannot drift — and
+  because expiry here denies rather than proceeds, this is the one backend where the last
+  inequality is a convenience rather than the thing keeping a gate applied.
+- **Pi's stream ends on `agent_settled`, not on its own `turn_end`.** A request that calls a tool
+  emits `turn_start`/`turn_end` twice, once per model turn (captured in
+  `tests/fixtures/streams/pi/tool_turn.jsonl`). Usage is likewise per assistant message and rides
+  on every `message_update` as a growing figure, so only the `message_end` of an assistant message
+  carries something recordable; reading the update would multiply the turn's tokens by its delta
+  count.
+- **Process model.** `descriptor.process` names the most capable way a backend can be run, not the
+  way it will be: `oneshot` (a process per turn) or `duplex` (one resident process per chat,
+  serving many turns over open stdin, selected through `ai.agents.<id>.process` or a chat's `process:`
+  frontmatter). The field is `process` and not `transport` because `Vibing.HookSpec.transport`
+  already owns that word in the same descriptor. `duplex-transport.md` is the whole story;
+  what matters here is that the hook protocol below is unchanged by it — `VIBING_PROCESS_ID` is
+  still fixed at spawn, and `rpc/hook_scope.lua` still resolves the turn in-editor, which is
+  precisely why a process outliving its turn needed no change to the wire format.
 
 - **Tool vocabulary.** Backends name their tools differently (codex calls an edit `apply_patch`,
   copilot uses `bash`/`view`/`create`/`edit`/`web_search`, grok `search_replace`/
@@ -150,9 +191,10 @@ These are the seams that stop backend identity leaking into shared code. The rul
 
 - **No MCP on every backend.** Grok registers no `chat_bufnr` and reaches no vibing-nvim MCP
   server, so `grok_command_builder` deliberately keeps `--rules` to the backend-agnostic
-  conventions. Naming `nvim_ask_user_question` there would hand the model a tool it cannot call —
-  see `features.md` → AskUserQuestion Support. Codex reaches the server since
-  `codex_plugin_config` (`plugin-and-commands.md` → "Codex") but still registers no `chat_bufnr`.
+  conventions — which include asking a multiple-choice question, since that is a `vibing-question`
+  block in the reply rather than a tool (`features/chat-ui.md` → AskUserQuestion Support). Codex
+  reaches the server through `codex_plugin_config` (`plugin-and-commands.md` → "Codex") and
+  registers `chat_bufnr` for the waiting approval route.
 
 - **Grok's hooks need a git repository.** `grok_settings_generator.lua` writes
   `<cwd>/.grok/hooks/` and marks the cwd trusted in `<$GROK_HOME|~/.grok>/trusted_folders.toml`,
@@ -166,7 +208,7 @@ These are the seams that stop backend identity leaking into shared code. The rul
   it reads hooks from are both off limits: `~/.copilot/` is the user's own config and
   `.github/hooks/` is their repository. But `copilot --plugin-dir <dir>` loads a plugin for that
   run only, and a plugin may contribute hooks — so `copilot_settings_generator.lua` writes a
-  throwaway plugin to `<cwd>/.vibing/copilot-plugin/` and points `--plugin-dir` at it. The hooks
+  throwaway plugin to `<cwd>/.vibing/copilot-plugin-<instance>/` and points `--plugin-dir` at it. The hooks
   are inlined in `plugin.json` (one file, no sibling `hooks.json`), which works only as a bare
   event map: the `{"version": 1, "hooks": …}` envelope a standalone hooks file requires is
   silently ignored when inlined — both forms were run against the CLI.
@@ -188,11 +230,14 @@ These are the seams that stop backend identity leaking into shared code. The rul
      `timeoutSec` is ignored and the tool proceeds. The generated `timeoutSec` therefore stays
      well above the ~120s that `pre-tool-use.sh` waits before denying.
 
-  The payload differs too — `toolName` with `toolArgs` as a JSON _string_ — which
-  `copilot_tool_vocabulary.normalize_payload` handles, the same seam grok uses. Every name in that
-  table except `powershell` and `rg` was read off a real payload; those two come from GitHub's
-  hooks reference and are kept because a missing alias lets a deny rule fall open, while a
-  never-sent one is inert.
+  The payload differs too — `toolName` with `toolArgs` — which
+  `copilot_tool_vocabulary.normalize_payload` handles, the same seam grok uses. **`toolArgs` has
+  changed shape between releases**: 1.0.78 sent a JSON _string_, 1.0.80 sends an object. Both were
+  read off the CLI, and `normalize_payload` takes either, because dropping the older form would
+  silently disable the gate on a pinned install rather than fail loudly. Every name in that table
+  except `powershell` and `rg` was read off a real payload; those two come from GitHub's hooks
+  reference and are kept because a missing alias lets a deny rule fall open, while a never-sent one
+  is inert.
 
   A subagent's own tool calls reach this hook as well, under their own names (`task` fires, then
   the `bash` the subagent runs) — so the gate covers delegated work, not just the top-level turn.
@@ -217,7 +262,6 @@ These are the seams that stop backend identity leaking into shared code. The rul
 - **Codex's hook needs a PascalCase key and an explicit trust bypass.** Codex has no per-run hook
   file, so `codex_settings_generator.lua` passes the hook as a `-c` override. Two things about
   that, both captured from codex 0.153.4, and both of which fail **silently**:
-
   1. **The key is `hooks.PreToolUse`, not `hooks.pre_tool_use`**, and the handler must sit inside a
      matcher group: `[{hooks=[{type="command",command=…,timeout=…}]}]`. A flat
      `[{command=…}]` parses as a group with no handlers. Anything codex does not recognise here is
@@ -228,7 +272,7 @@ These are the seams that stop backend identity leaking into shared code. The rul
      codex at all**. That took two things with it, neither of which looks like a hook problem from
      the outside: the permission gate (every tool ran ungated, `deny` rules included), and the
      git-snapshot diff baseline — which is taken in the hook, so `### Modified Files` fell back to
-     tool-event paths, `.vibing/patches/*.patch` stopped being written, and `gd` stopped opening
+     tool-event paths, `.vibing/diffs/*.diff` stopped being written, and `gd` stopped opening
      the patch float because `patch_finder` had no `<!-- patch: … -->` to find.
 
      `hooks/list` on the app-server is the cheap oracle for this, and the one to reach for before
@@ -280,12 +324,72 @@ These are the seams that stop backend identity leaking into shared code. The rul
      keeps its hook settings in bypass mode.
 
   The payload codex sends is Claude-compatible (`tool_name`/`tool_input`, deny by exit 2 +
-  stderr), so `pre-tool-use.sh` needs no codex argument. Its shell tool already arrives as
-  `Bash`; a file edit arrives as `apply_patch` with **no path in `tool_input` at all** — the paths
-  are inside the `command` string as an apply_patch envelope, which is why
-  `codex_tool_vocabulary.lua` has no `normalize_input` and says so at length. Consequence, stated
-  there and repeated here because it is a permission gap rather than a cosmetic one: granular
-  `paths` rules never match a codex edit, and `request_diff.capture` backs nothing up for one.
-  Filling `file_path` with the first path a multi-file patch names would read as working while
-  letting a deny rule be evaded by patch ordering, so fixing it properly means teaching
-  `matchers.lua` about a set of paths.
+  stderr), so `pre-tool-use.sh` needs no codex argument.
+
+  **Codex converges on Claude's vocabulary only where it matters.** Read off
+  `codex-rs/core/src/tools/hook_names.rs` at codex 0.154.0: `HookToolName::bash()` is what every
+  shell-like handler reports (`unified_exec` included), `apply_patch()` serializes as
+  `apply_patch` while accepting `Write`/`Edit` as matcher aliases, and `spawn_agent()` accepts
+  `Agent`. Its remaining built-ins are `ToolName::plain` and arrive under their own names. That
+  asymmetry is load-bearing for us in both directions: nothing that writes or executes was ever
+  unmapped, so an incomplete table was never a deny-side hole — but `view_image` and `web_search`
+  are unreachable by a `Read`/`WebSearch` rule without entries, which they now have.
+
+  `view_image` declares one required `path` (`view_image_spec.rs`), so `normalize_input` lifts it
+  to `file_path`. Without that, mapping it onto `Read` would read as covered by a `Read(...)` rule
+  while never matching — and `Read` is in `ALWAYS_ALLOWED_TOOLS`, so a path-scoped deny is the only
+  thing that can stop it.
+
+  A file edit still arrives as `apply_patch` with **no path in `tool_input` at all** — the paths
+  are inside the `command` string as an apply_patch envelope. Consequence, stated in
+  `codex_tool_vocabulary.lua` and repeated here because it is a permission gap rather than a
+  cosmetic one: granular `paths` rules never match a codex edit, and `request_diff.capture` backs
+  nothing up for one. Filling `file_path` with the first path a multi-file patch names would read
+  as working while letting a deny rule be evaded by patch ordering, so fixing it properly means
+  teaching `matchers.lua` about a set of paths.
+
+  **MCP server labels are the other spelling difference.** Codex normalizes `-` to `_` before
+  composing an MCP tool name, so `chrome-devtools` reaches the hook as `mcp__chrome_devtools__*`
+  where claude sends it verbatim. `matchers.lua` folds both sides onto the `_` spelling when both
+  start with `mcp__`, so one allow entry covers every backend. The fold direction is the safe one:
+  nothing in `mcp__a_b__x` says which underscore used to be a hyphen, which is why
+  `codex_tool_vocabulary.lua` can only restore the one prefix it anchors on — and must keep doing
+  so, because `can_use_tool.is_vibing_nvim_mcp_tool` matches the hyphenated spelling directly
+  rather than going through `matchers.lua`.
+
+## Asking a CLI Which Models It Has
+
+`agents.lua`'s per-backend `models` lists were hand-written, so they went stale on every CLI
+release — the pair that triggered this were two codex models that no longer existed alongside a
+missing `gpt-6-sol`, and a grok model that was gone. Two of the four CLIs can simply be asked, and
+`infrastructure/adapter/models/` does, keeping the constants as the fallback.
+
+**What each CLI costs to ask, measured.**
+
+| Backend | Command              | Measured                                                                                                                                                                                                          |
+| ------- | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| codex   | `codex debug models` | codex-cli 0.157.1: 9 entries, 515,228 bytes of JSON, **20ms**. Read from the binary's own catalogue — no network round trip, no API call, and it answers logged out. `vim.json.decode` on that payload is 1.12ms. |
+| grok    | `grok models`        | grok 1.0.34: **660ms**, exit 0, all of it on **stdout** with stderr empty. Answers while logged out: "You are not authenticated." is printed above the list rather than instead of it.                            |
+| claude  | —                    | Nothing to ask. `--model` takes an alias (`opus` / `sonnet` / `fable` / `haiku`) that the CLI itself resolves to the latest model of that family, so the aliases are the whole answer and do not age.             |
+| copilot | —                    | No equivalent exists; the model list is reachable only from `/model` inside the TUI.                                                                                                                              |
+
+Neither command spends a token: no inference request is made, which is what makes asking on the
+completion path acceptable at all.
+
+**Two things that are easy to get wrong here.**
+
+- **`grok models 2>&1 >/dev/null` reads the opposite way round.** That redirects stderr to the
+  terminal and stdout to `/dev/null`, so the list appears to be on stderr. Redirect the two streams
+  to separate files before concluding anything about which one a CLI answers on; the wrong reading
+  makes discovery fail in complete silence, since an empty parse is indistinguishable from a CLI
+  that has nothing to say.
+- **codex resolves no short name.** `-m luna` is treated as an unknown model (`warning: Model
+metadata for 'luna' not found`, then HTTP 400 `The 'luna' model is not supported`), so the
+  candidates are full slugs — the opposite of claude's aliases, and the reason the two backends are
+  handled differently rather than uniformly.
+
+**A discovery module must not reuse its backend's request binary resolver.** `grok_command_builder`'s
+`BINARY.resolve` raises when the CLI is absent and sniffs the binary for officialness with two
+blocking `vim.fn.system` calls; paying that per keystroke is what the module's own comments warn
+about. `BINARY.configured` + `BINARY.name` is the non-raising half, and is the one interpretation of
+the omitted `ai.agents.grok.path` (PATH lookup).

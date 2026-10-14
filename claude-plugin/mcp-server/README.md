@@ -6,7 +6,7 @@ Model Context Protocol (MCP) server for Neovim integration via vibing.nvim.
 
 This MCP server enables Claude Code to interact with a running Neovim instance through a non-blocking RPC architecture:
 
-```
+```text
 ┌─────────────────────────────────────────────────────────┐
 │ Neovim Process                                           │
 │  ├─ RPC Server (lua/vibing/rpc_server.lua)              │
@@ -152,6 +152,18 @@ require("vibing").setup({
 
 The MCP server exposes the following tools to Claude:
 
+### External CLI Sessions (Claude and Codex)
+
+- **nvim_session_search** — Search actual JSONL transcripts, including conversations started
+  outside vibing.nvim. Optional `query` (literal, case-insensitive), `backend`, `session_id`
+  (substring), `working_dir` (exact absolute cwd), and `limit` (default 20, maximum 100).
+- **nvim_session_read** — Read a found session with required `backend` and `session_id`.
+  Optional `offset`, `limit`, and `max_chars`; follow `next_offset` for further pages.
+
+Both tools read local CLI logs directly and work without Neovim RPC. They honor
+`CLAUDE_CONFIG_DIR` and `CODEX_HOME`, defaulting to `~/.claude/projects` and
+`~/.codex/{sessions,archived_sessions}`. See [the session handoff workflow](../../handbook/mcp-tools.md#external-cli-sessions).
+
 ### Buffer Operations
 
 - **nvim_get_buffer** - Get current buffer content
@@ -192,7 +204,8 @@ The MCP server exposes the following tools to Claude:
 ### Window Operations
 
 - **nvim_list_windows** - List all windows with their properties
-  - Returns: Array of window info (winnr, bufnr, buffer_name, filetype, width, height, position, is_current, is_floating)
+  - Returns: Array of window info (winnr, bufnr, buffer_name, filetype, width, height, position,
+    is_current, is_floating)
 
 - **nvim_get_window_info** - Get detailed information for a specific window
   - `winnr` (optional): Window number (0 for current)
@@ -226,6 +239,33 @@ The MCP server exposes the following tools to Claude:
 
 - **nvim_execute** - Execute Neovim command
   - `command` (required): Neovim command string (e.g., "write", "edit foo.txt")
+
+### Background Jobs
+
+- **nvim_job_start** - Start an argv command as a Neovim-owned process that survives the current
+  Claude/Codex CLI turn. Use this for development servers, watchers, and long scripts instead of
+  shell `&`, `nohup`, or `setsid`
+  - `command` (required): Executable followed by arguments, e.g. `["npm", "run", "dev"]`
+  - `from_bufnr` (required): Calling chat buffer to notify when the job exits
+  - `name` / `cwd` / `env` (optional): Display name, working directory inside the calling Git
+    root, and string environment overrides
+  - `ready_pattern` / `ready_timeout_ms` (optional): Plain output substring that changes readiness
+    from `pending` to `ready`, and its timeout; process existence alone is never readiness
+  - `notify` (optional): `always` (default), `on_failure`, `passive` (append without an LLM turn),
+    or `never`
+- **nvim_job_status** - Read one job and a bounded output tail
+- **nvim_job_list** - List jobs owned by this Neovim instance
+- **nvim_job_stop** - Request graceful termination of a job
+- **nvim_job_wait** - Wait up to 25 seconds for exit or readiness without stopping on timeout
+
+Full logs and metadata are kept under `<git-root>/.vibing/jobs/`. With notifications enabled, a
+completed job is delivered to the originating chat as a new `## Notice` turn once that chat is
+idle.
+
+Claude and Codex receive a per-session instruction requiring `nvim_job_start` for work that must
+outlive a turn. As a deterministic fallback, vibing.nvim's PreToolUse hook rejects Bash native
+background mode and shell detachment (`&`, `nohup`, `setsid`, or `disown`) while MCP integration
+is enabled, and directs the agent back to `nvim_job_start`.
 
 ### Highlighting
 
@@ -263,7 +303,7 @@ The MCP server exposes the following tools to Claude:
 
 - **nvim_chat_answer_approval** - Answer another chat's pending tool-approval prompt, the stop
   that leaves it at status `waiting_approval` unable to continue or report. **Refused unless the
-  user set `agent.orchestration.delegated_approval`** — by default only the user can clear that
+  user set `permissions.delegated_approval`** — by default only the user can clear that
   prompt, and the error says so
   - `file_path` / `bufnr` (exactly one): The blocked chat, addressed as above
   - `action` (required): `allow_once` / `deny_once` / `allow_for_session` / `deny_for_session` —
@@ -273,11 +313,6 @@ The MCP server exposes the following tools to Claude:
     number. The answer is recorded in the blocked chat as coming from it, so a call that cannot
     say whose decision it was is refused
 
-- **nvim_ask_user_question** - Render a multiple-choice question in the chat buffer. This cancels
-  the in-flight turn; the user's answer arrives as the next turn's message
-  - `chat_bufnr` (required): Chat buffer number
-  - `questions` (required): Array of `{ question, options, multiSelect? }`
-
 ### Instances
 
 - **nvim_list_instances** - List running Neovim instances with a vibing.nvim RPC server
@@ -285,49 +320,19 @@ The MCP server exposes the following tools to Claude:
 
 ### LSP Operations
 
-- **nvim_lsp_definition** - Get definition location(s) of symbol
+- **nvim_lsp** - Query the live LSP of the running Neovim
+  - `method` (required): one of
+    - `definition` - definition location(s) of the symbol → `{ locations: [{ uri, range }] }`
+    - `references` - all references to the symbol → `{ references: [{ uri, range }] }`
+    - `hover` - type and documentation → the hover text
+    - `type_definition` - type definition location(s) → `{ locations: [{ uri, range }] }`
+    - `call_hierarchy_incoming` - callers → `{ calls: [{ from, fromRanges }] }`
+    - `call_hierarchy_outgoing` - callees → `{ calls: [{ to, fromRanges }] }`
+    - `document_symbols` - all symbols in the buffer → `{ symbols: [...] }`
+    - `diagnostics` - errors and warnings → `{ diagnostics: [{ lnum, col, severity, message, source }] }`
   - `bufnr` (optional): Buffer number (0 for current)
-  - `line` (required): Line number (1-indexed)
-  - `col` (required): Column number (0-indexed)
-  - Returns: `{ locations: [{ uri, range }] }`
-
-- **nvim_lsp_references** - Get all references to symbol
-  - `bufnr` (optional): Buffer number (0 for current)
-  - `line` (required): Line number (1-indexed)
-  - `col` (required): Column number (0-indexed)
-  - Returns: `{ references: [{ uri, range }] }`
-
-- **nvim_lsp_hover** - Get hover information (type, documentation)
-  - `bufnr` (optional): Buffer number (0 for current)
-  - `line` (required): Line number (1-indexed)
-  - `col` (required): Column number (0-indexed)
-  - Returns: `{ contents: "..." }`
-
-- **nvim_diagnostics** - Get diagnostics (errors, warnings) for buffer
-  - `bufnr` (optional): Buffer number (0 for current)
-  - Returns: `{ diagnostics: [{ lnum, col, severity, message, source }] }`
-
-- **nvim_lsp_document_symbols** - Get all symbols in the document
-  - `bufnr` (optional): Buffer number (0 for current)
-  - Returns: `{ symbols: [...] }` (LSP DocumentSymbol array)
-
-- **nvim_lsp_type_definition** - Get type definition location(s)
-  - `bufnr` (optional): Buffer number (0 for current)
-  - `line` (required): Line number (1-indexed)
-  - `col` (required): Column number (0-indexed)
-  - Returns: `{ locations: [{ uri, range }] }`
-
-- **nvim_lsp_call_hierarchy_incoming** - Get incoming calls (callers)
-  - `bufnr` (optional): Buffer number (0 for current)
-  - `line` (required): Line number (1-indexed)
-  - `col` (required): Column number (0-indexed)
-  - Returns: `{ calls: [{ from, fromRanges }] }`
-
-- **nvim_lsp_call_hierarchy_outgoing** - Get outgoing calls (callees)
-  - `bufnr` (optional): Buffer number (0 for current)
-  - `line` (required): Line number (1-indexed)
-  - `col` (required): Column number (0-indexed)
-  - Returns: `{ calls: [{ to, fromRanges }] }`
+  - `line` / `col`: 1-indexed line, 0-indexed column; required for every method except
+    `document_symbols` and `diagnostics`
 
 ### Quickfix
 
@@ -406,46 +411,21 @@ const { bufnr } = await use_mcp_tool('vibing-nvim', 'nvim_load_buffer', {
 // Now use bufnr for LSP operations without disrupting user's view
 
 // Get definition of symbol at line 10, column 5
-const definition = await use_mcp_tool('vibing-nvim', 'nvim_lsp_definition', {
+const definition = await use_mcp_tool('vibing-nvim', 'nvim_lsp', {
+  method: 'definition',
   line: 10,
   col: 5,
 });
 
-// Get all references to symbol
-const references = await use_mcp_tool('vibing-nvim', 'nvim_lsp_references', {
+// Who calls this function?
+const incomingCalls = await use_mcp_tool('vibing-nvim', 'nvim_lsp', {
+  method: 'call_hierarchy_incoming',
   line: 10,
   col: 5,
 });
 
-// Get hover information (type, documentation)
-const hover = await use_mcp_tool('vibing-nvim', 'nvim_lsp_hover', {
-  line: 10,
-  col: 5,
-});
-
-// Get diagnostics for current buffer
-const diagnostics = await use_mcp_tool('vibing-nvim', 'nvim_diagnostics', {});
-
-// Get all symbols in the document
-const symbols = await use_mcp_tool('vibing-nvim', 'nvim_lsp_document_symbols', {});
-
-// Get type definition
-const typeDef = await use_mcp_tool('vibing-nvim', 'nvim_lsp_type_definition', {
-  line: 10,
-  col: 5,
-});
-
-// Get incoming calls (who calls this function?)
-const incomingCalls = await use_mcp_tool('vibing-nvim', 'nvim_lsp_call_hierarchy_incoming', {
-  line: 10,
-  col: 5,
-});
-
-// Get outgoing calls (what does this function call?)
-const outgoingCalls = await use_mcp_tool('vibing-nvim', 'nvim_lsp_call_hierarchy_outgoing', {
-  line: 10,
-  col: 5,
-});
+// Diagnostics for the current buffer (no position needed)
+const diagnostics = await use_mcp_tool('vibing-nvim', 'nvim_lsp', { method: 'diagnostics' });
 ```
 
 ## Development
@@ -496,12 +476,14 @@ The server uses a simple JSON-RPC protocol over TCP:
 
 - Default timeout is 30 seconds (configurable via `VIBING_RPC_TIMEOUT` env var)
 - For heavy LSP operations (e.g., call hierarchy in large projects), consider increasing timeout:
+
   ```json
   "env": {
     "VIBING_NVIM_RPC_PORT": "9876",
     "VIBING_RPC_TIMEOUT": "60000"
   }
   ```
+
 - Check Neovim logs for errors in RPC server
 - Ensure `vim.schedule()` is not blocked
 

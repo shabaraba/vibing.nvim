@@ -1,5 +1,5 @@
 -- Counting in-flight subagents (#701): a Task/Agent tool_use in the parent's own transcript
--- increments the owning stream's count in active_stream_registry.lua, and its tool_result
+-- increments the owning turn's count in turn_registry.lua, and its tool_result
 -- decrements it back -- so application/chat/concurrency.lua's at_capacity() can see the real
 -- fan-out, not just the number of responding chats.
 
@@ -9,17 +9,17 @@ describe("cli_event_processor subagent counting", function()
   ---Reload the registry for each test so counts from one test don't leak into the next.
   ---@return table
   local function fresh_registry()
-    package.loaded["vibing.infrastructure.adapter.modules.active_stream_registry"] = nil
+    package.loaded["vibing.infrastructure.adapter.modules.turn_registry"] = nil
     package.loaded["vibing.infrastructure.adapter.modules.cli_event_processor"] = nil
     processor = require("vibing.infrastructure.adapter.modules.cli_event_processor")
-    return require("vibing.infrastructure.adapter.modules.active_stream_registry")
+    return require("vibing.infrastructure.adapter.modules.turn_registry")
   end
 
-  ---@param handle_id string
+  ---@param turn_id string
   ---@return table context
-  local function new_context(handle_id)
+  local function new_context(turn_id)
     return {
-      handleId = handle_id,
+      turnId = turn_id,
       output = {},
       errorOutput = {},
       onChunk = function() end,
@@ -51,10 +51,10 @@ describe("cli_event_processor subagent counting", function()
     }
   end
 
-  it("increments the owning stream's count when a Task tool_use starts", function()
+  it("increments the owning turn's count when a Task tool_use starts", function()
     local registry = fresh_registry()
-    registry.register({ handle_id = "h1", adapter = {} })
-    local context = new_context("h1")
+    registry.open({ turn_id = "turn-1" })
+    local context = new_context("turn-1")
 
     feed(context, tool_use("toolu_1", "Task"))
 
@@ -63,8 +63,8 @@ describe("cli_event_processor subagent counting", function()
 
   it("decrements it back once the tool_result lands", function()
     local registry = fresh_registry()
-    registry.register({ handle_id = "h1", adapter = {} })
-    local context = new_context("h1")
+    registry.open({ turn_id = "turn-1" })
+    local context = new_context("turn-1")
 
     feed(context, tool_use("toolu_1", "Agent"))
     feed(context, tool_result("toolu_1", "done"))
@@ -74,8 +74,8 @@ describe("cli_event_processor subagent counting", function()
 
   it("counts several concurrent subagents from the same chat", function()
     local registry = fresh_registry()
-    registry.register({ handle_id = "h1", adapter = {} })
-    local context = new_context("h1")
+    registry.open({ turn_id = "turn-1" })
+    local context = new_context("turn-1")
 
     feed(context, tool_use("toolu_1", "Task"))
     feed(context, tool_use("toolu_2", "Task"))
@@ -87,8 +87,8 @@ describe("cli_event_processor subagent counting", function()
 
   it("does not double-count a tool_use repeated across events (input streamed incrementally)", function()
     local registry = fresh_registry()
-    registry.register({ handle_id = "h1", adapter = {} })
-    local context = new_context("h1")
+    registry.open({ turn_id = "turn-1" })
+    local context = new_context("turn-1")
 
     feed(context, tool_use("toolu_1", "Task"))
     feed(context, tool_use("toolu_1", "Task"))
@@ -98,8 +98,8 @@ describe("cli_event_processor subagent counting", function()
 
   it("ignores ordinary tools", function()
     local registry = fresh_registry()
-    registry.register({ handle_id = "h1", adapter = {} })
-    local context = new_context("h1")
+    registry.open({ turn_id = "turn-1" })
+    local context = new_context("turn-1")
 
     feed(context, tool_use("toolu_1", "Bash"))
     feed(context, tool_result("toolu_1", "done"))
@@ -109,22 +109,22 @@ describe("cli_event_processor subagent counting", function()
 
   it("keeps two chats' subagent counts apart", function()
     local registry = fresh_registry()
-    registry.register({ handle_id = "h1", adapter = {} })
-    registry.register({ handle_id = "h2", adapter = {} })
+    registry.open({ turn_id = "turn-1" })
+    registry.open({ turn_id = "turn-2" })
 
-    feed(new_context("h1"), tool_use("toolu_1", "Task"))
-    feed(new_context("h2"), tool_use("toolu_2", "Task"))
-    feed(new_context("h2"), tool_use("toolu_3", "Task"))
+    feed(new_context("turn-1"), tool_use("toolu_1", "Task"))
+    feed(new_context("turn-2"), tool_use("toolu_2", "Task"))
+    feed(new_context("turn-2"), tool_use("toolu_3", "Task"))
 
     assert.equals(3, registry.total_subagent_count())
   end)
 
-  it("never attributes a nested subagent's own tool calls to the parent stream", function()
+  it("never attributes a nested subagent's own tool calls to the parent turn", function()
     -- A subagent's own assistant/user events carry parent_tool_use_id and bail out before the
     -- tool_use loop that counts subagent starts -- see cli_event_processor_subagent_spec.lua.
     local registry = fresh_registry()
-    registry.register({ handle_id = "h1", adapter = {} })
-    local context = new_context("h1")
+    registry.open({ turn_id = "turn-1" })
+    local context = new_context("turn-1")
 
     feed(context, tool_use("toolu_1", "Task"))
     feed(context, {

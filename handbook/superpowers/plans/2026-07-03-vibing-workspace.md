@@ -1,22 +1,40 @@
 # vibing-workspace Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or
+> superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace `:VibingChatWorktree` with a `.vibing/workspace/`-based workspace system (create/enter/done/list) managed entirely through chat slash commands, so worktree-backed work has trackable lifecycle state and each chat buffer binds to exactly one workspace.
+**Goal:** Replace `:VibingChatWorktree` with a `.vibing/workspace/`-based workspace system (create/enter/done/list)
+managed entirely through chat slash commands, so worktree-backed work has trackable lifecycle state and each chat buffer
+binds to exactly one workspace.
 
-**Architecture:** New `lua/vibing/infrastructure/workspace/` modules (`counter.lua`, `meta.lua`, `manager.lua`) own workspace directory/lifecycle logic, reusing `git worktree` mechanics ported from the old `infrastructure/worktree/manager.lua` (which is deleted). Four new slash-command handlers (`workspace_create`, `workspace_enter`, `workspace_done`, `workspace_list`) under `lua/vibing/application/chat/handlers/` are registered as `/vibing-workspace-*` commands. A `workspace_generator.lua` util (mirrors `title_generator.lua`) asks the AI to produce a localized description and an English kebab-case branch name from the chat conversation. A `WorkspaceChatScanner` (mirrors `ForkedChatScanner`) keeps `meta.yaml`'s `chat_files` list in sync when `:VibingSetFileTitle` renames a bound chat file.
+**Architecture:** New `lua/vibing/infrastructure/workspace/` modules (`counter.lua`, `meta.lua`, `manager.lua`) own
+workspace directory/lifecycle logic, reusing `git worktree` mechanics ported from the old
+`infrastructure/worktree/manager.lua` (which is deleted). Four new slash-command handlers (`workspace_create`,
+`workspace_enter`, `workspace_done`, `workspace_list`) under `lua/vibing/application/chat/handlers/` are registered as
+`/vibing-workspace-*` commands. A `workspace_generator.lua` util (mirrors `title_generator.lua`) asks the AI to produce
+a localized description and an English kebab-case branch name from the chat conversation. A `WorkspaceChatScanner`
+(mirrors `ForkedChatScanner`) keeps `meta.yaml`'s `chat_files` list in sync when `:VibingSetFileTitle` renames a bound
+chat file.
 
-**Tech Stack:** Lua (Neovim plugin), plenary.nvim (`busted`-style unit tests), existing `git worktree` CLI, existing `Frontmatter` YAML-subset parser reused for `meta.yaml`.
+**Tech Stack:** Lua (Neovim plugin), plenary.nvim (`busted`-style unit tests), existing `git worktree` CLI, existing
+`Frontmatter` YAML-subset parser reused for `meta.yaml`.
 
 ## Global Constraints
 
-- Workspace directories live under `.vibing/workspace/{active,done}/<counter>-<branch>/`; the git worktree itself lives at `.../worktree/` inside that directory.
-- The counter (`.vibing/workspace/.counter`) is global and monotonically increasing; numbers are never reused, even after a workspace moves to `done`.
+- Workspace directories live under `.vibing/workspace/{active,done}/<counter>-<branch>/`; the git worktree itself lives
+  at `.../worktree/` inside that directory.
+- The counter (`.vibing/workspace/.counter`) is global and monotonically increasing; numbers are never reused, even
+  after a workspace moves to `done`.
 - `workspace_id` format is `%04d-%s` (4-digit zero-padded counter + branch slug), e.g. `0001-fix-auth-session-bug`.
-- One chat buffer may bind to at most one workspace, ever. `workspace_id` is written to the chat file's frontmatter once and `/vibing-workspace-create` / `/vibing-workspace-enter` both refuse to run again on an already-bound buffer.
-- New slash commands are prefixed `vibing-workspace-` to avoid collisions with user-defined `.claude/commands/` custom commands: `/vibing-workspace-create`, `/vibing-workspace-enter`, `/vibing-workspace-done`, `/vibing-workspace-list`.
-- `/vibing-workspace-done` never passes `--force` to `git worktree remove`; if git refuses due to uncommitted changes, that error is surfaced verbatim. Unmerged branches and incomplete `plan.md` TODOs (`- [ ]`) produce a confirmation prompt but do not hard-block.
-- `:VibingChatWorktree`, `lua/vibing/infrastructure/worktree/manager.lua`, and the `.vibing/worktrees/<branch>/` chat-storage convention are removed (breaking change) — no automatic migration of pre-existing `.worktrees/` content.
+- One chat buffer may bind to at most one workspace, ever. `workspace_id` is written to the chat file's frontmatter once
+  and `/vibing-workspace-create` / `/vibing-workspace-enter` both refuse to run again on an already-bound buffer.
+- New slash commands are prefixed `vibing-workspace-` to avoid collisions with user-defined `.claude/commands/` custom
+  commands: `/vibing-workspace-create`, `/vibing-workspace-enter`, `/vibing-workspace-done`, `/vibing-workspace-list`.
+- `/vibing-workspace-done` never passes `--force` to `git worktree remove`; if git refuses due to uncommitted changes,
+  that error is surfaced verbatim. Unmerged branches and incomplete `plan.md` TODOs (`- [ ]`) produce a confirmation
+  prompt but do not hard-block.
+- `:VibingChatWorktree`, `lua/vibing/infrastructure/worktree/manager.lua`, and the `.vibing/worktrees/<branch>/`
+  chat-storage convention are removed (breaking change) — no automatic migration of pre-existing `.worktrees/` content.
 
 ---
 
@@ -30,7 +48,9 @@
 **Interfaces:**
 
 - Consumes: `vibing.core.utils.git` — `Git.get_root(): string?`
-- Produces: `Counter.next(): number?, string?` — returns the next 1-based global counter value (writes it back to `.vibing/workspace/.counter`) or `nil, error_message`. `Counter.get_counter_path(): string?` — absolute path to the counter file (used by tests to seed state).
+- Produces: `Counter.next(): number?, string?` — returns the next 1-based global counter value (writes it back to
+  `.vibing/workspace/.counter`) or `nil, error_message`. `Counter.get_counter_path(): string?` — absolute path to the
+  counter file (used by tests to seed state).
 
 - [ ] **Step 1: Write the failing test**
 
@@ -176,7 +196,8 @@ git commit -m "feat: add workspace counter for global workspace numbering"
 
 **Interfaces:**
 
-- Consumes: `vibing.infrastructure.storage.frontmatter` — `Frontmatter.parse(content): table?, string?`, `Frontmatter.serialize(data, body): string`
+- Consumes: `vibing.infrastructure.storage.frontmatter` — `Frontmatter.parse(content): table?, string?`,
+  `Frontmatter.serialize(data, body): string`
 - Produces:
   - `Meta.write(meta_path: string, data: table): boolean`
   - `Meta.read(meta_path: string): table?`
@@ -377,9 +398,11 @@ git commit -m "feat: add workspace meta.yaml reader/writer"
   - `Vibing.Infrastructure.Workspace.Meta.write/read` (Task 2)
   - `vibing.core.utils.git` — `Git.get_root()`, `Git.get_relative_path(abs_path)`
 - Produces:
-  - `Manager.create(branch: string, description: string): table?, string?` — returns `{ id, dir, worktree_path, meta_path, plan_path }`
+  - `Manager.create(branch: string, description: string): table?, string?` — returns `{ id, dir, worktree_path,
+meta_path, plan_path }`
   - `Manager.list(status: "active"|"done"): table[]` — each entry `{ id, branch, description, dir }`
-  - `Manager.get(workspace_id: string): table?` — `{ id, dir, status, meta_path, plan_path, worktree_path? }` (worktree_path only set when `status == "active"`)
+  - `Manager.get(workspace_id: string): table?` — `{ id, dir, status, meta_path, plan_path, worktree_path? }`
+    (worktree_path only set when `status == "active"`)
   - `Manager.remove_worktree(workspace_id: string): boolean, string?` — runs `git worktree remove` (no `--force`)
   - `Manager.move_to_done(workspace_id: string): boolean, string?`
   - `Manager.is_branch_merged(branch: string): boolean`
@@ -874,7 +897,8 @@ git commit -m "feat: add workspace manager for create/list/get/done lifecycle"
 rm -f lua/vibing/infrastructure/worktree/manager.lua
 ```
 
-(No `tests/` file referenced this module directly — confirmed by `grep -rl "infrastructure.worktree" tests/` returning nothing besides `lua/vibing/infrastructure/worktree/manager.lua` itself.)
+(No `tests/` file referenced this module directly — confirmed by `grep -rl "infrastructure.worktree" tests/` returning
+nothing besides `lua/vibing/infrastructure/worktree/manager.lua` itself.)
 
 - [ ] **Step 2: Remove `VibingChatWorktree` command registration**
 
@@ -919,20 +943,24 @@ Leave the surrounding `VibingChatFork` and `VibingSlashCommands` registrations u
 
 - [ ] **Step 3: Remove `handle_open_worktree` from the chat controller**
 
-In `lua/vibing/presentation/chat/controller.lua`, delete the `M.handle_open_worktree` function (originally lines 123-167), leaving `return M` as the final line.
+In `lua/vibing/presentation/chat/controller.lua`, delete the `M.handle_open_worktree` function (originally lines
+123-167), leaving `return M` as the final line.
 
 - [ ] **Step 4: Remove `create_new_for_worktree` from the chat use case**
 
-In `lua/vibing/application/chat/use_case.lua`, delete the `M.create_new_for_worktree` function (originally lines 93-126, the block between the `create_new_in_directory` function and the `open_file` function's doc comment).
+In `lua/vibing/application/chat/use_case.lua`, delete the `M.create_new_for_worktree` function (originally lines 93-126,
+the block between the `create_new_in_directory` function and the `open_file` function's doc comment).
 
 - [ ] **Step 5: Run the Lua syntax check and full test suite**
 
 Run: `npm run check && npm run test:lua`
-Expected: syntax check passes; no test references the deleted symbols (there were none — `create_new_for_worktree` and `handle_open_worktree` had no dedicated spec files), full suite green.
+Expected: syntax check passes; no test references the deleted symbols (there were none — `create_new_for_worktree` and
+`handle_open_worktree` had no dedicated spec files), full suite green.
 
 - [ ] **Step 6: Update `.claude/rules/commands-reference.md`**
 
-Remove the `:VibingChatWorktree` row from the "User Commands" table and its "Command Semantics" paragraph (the `**\`:VibingChatWorktree\`\*\*` bullet block). These will be replaced by workspace slash-command docs in Task 10.
+Remove the `:VibingChatWorktree` row from the "User Commands" table and its "Command Semantics" paragraph (the
+`**\`:VibingChatWorktree\`\*\*` bullet block). These will be replaced by workspace slash-command docs in Task 10.
 
 - [ ] **Step 7: Update `.claude/rules/architecture.md`**
 
@@ -970,9 +998,11 @@ BREAKING CHANGE: :VibingChatWorktree, the .worktrees/ convention, and
 
 **Interfaces:**
 
-- Consumes: `vibing.core.utils.language` — `get_language_code(language, action_type)`, `language_names[code]`; adapter contract `adapter:stream(prompt, opts, on_chunk, on_done)` (same shape used by `title_generator.lua`)
+- Consumes: `vibing.core.utils.language` — `get_language_code(language, action_type)`, `language_names[code]`; adapter
+  contract `adapter:stream(prompt, opts, on_chunk, on_done)` (same shape used by `title_generator.lua`)
 - Produces:
-  - `WorkspaceGenerator.generate(raw_text: string, callback: fun(result: {description: string, branch: string}?, error: string?))`
+  - `WorkspaceGenerator.generate(raw_text: string, callback: fun(result: {description: string, branch: string}?, error:
+string?))`
   - `WorkspaceGenerator.sanitize_branch(text: string): string` (exported for reuse/testing)
 
 - [ ] **Step 1: Write the failing test**
@@ -1163,8 +1193,12 @@ git commit -m "feat: add AI-driven workspace description/branch generator"
 
 **Interfaces:**
 
-- Consumes: `Vibing.Infrastructure.Link.Scanner` base class (`lua/vibing/infrastructure/link/scanner.lua`); `Vibing.Infrastructure.Workspace.Meta` (Task 2); `vibing.core.utils.git` — `Git.get_relative_path`
-- Produces: `WorkspaceChatScanner.new(): Vibing.Infrastructure.Link.WorkspaceChatScanner` implementing `find_target_files(base_dir)`, `contains_link(file_path, target_path)`, `update_link(file_path, old_path, new_path)` — used via `SyncManager.sync_links(old_path, new_path, { WorkspaceChatScanner.new() }, workspace_base_dir)` exactly like `ForkedChatScanner` is used today.
+- Consumes: `Vibing.Infrastructure.Link.Scanner` base class (`lua/vibing/infrastructure/link/scanner.lua`);
+  `Vibing.Infrastructure.Workspace.Meta` (Task 2); `vibing.core.utils.git` — `Git.get_relative_path`
+- Produces: `WorkspaceChatScanner.new(): Vibing.Infrastructure.Link.WorkspaceChatScanner` implementing
+  `find_target_files(base_dir)`, `contains_link(file_path, target_path)`, `update_link(file_path, old_path, new_path)` —
+  used via `SyncManager.sync_links(old_path, new_path, { WorkspaceChatScanner.new() }, workspace_base_dir)` exactly like
+  `ForkedChatScanner` is used today.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1321,17 +1355,23 @@ git commit -m "feat: sync workspace meta.yaml chat_files on chat file rename"
 
 - [ ] **Step 1: Write the failing test**
 
-Add to `tests/chat_init_spec.lua` is not appropriate (that file tests command registration, not rename behavior) — instead extend the existing manual/e2e coverage in Task 11. This task has no isolated unit test of its own because `set_file_title.lua`'s rename flow is already covered end-to-end by `tests/e2e/vibing_workspace_spec.lua` (Task 11, "renamed chat file updates meta.yaml"). Skip straight to implementation; Task 11's e2e test is the regression check for this wiring.
+Add to `tests/chat_init_spec.lua` is not appropriate (that file tests command registration, not rename behavior) —
+instead extend the existing manual/e2e coverage in Task 11. This task has no isolated unit test of its own because
+`set_file_title.lua`'s rename flow is already covered end-to-end by `tests/e2e/vibing_workspace_spec.lua` (Task 11,
+"renamed chat file updates meta.yaml"). Skip straight to implementation; Task 11's e2e test is the regression check for
+this wiring.
 
 - [ ] **Step 2: Add the workspace sync call**
 
-In `lua/vibing/application/chat/handlers/set_file_title.lua`, add the require near the other scanner require (top of file, after `local ForkedChatScanner = require(...)`):
+In `lua/vibing/application/chat/handlers/set_file_title.lua`, add the require near the other scanner require (top of
+file, after `local ForkedChatScanner = require(...)`):
 
 ```lua
 local WorkspaceChatScanner = require("vibing.infrastructure.link.workspace_chat_scanner")
 ```
 
-Then, inside the `if is_existing_file then ... end` block (originally lines 166-194), after the existing `fork_result` sync call and before computing `total_updated`, add:
+Then, inside the `if is_existing_file then ... end` block (originally lines 166-194), after the existing `fork_result`
+sync call and before computing `total_updated`, add:
 
 ```lua
       -- workspace meta.yaml内のchat_filesリンクを更新（.vibing/workspace/を検索）
@@ -1378,9 +1418,12 @@ git commit -m "feat: sync workspace meta.yaml links on :VibingSetFileTitle renam
   - `Vibing.Infrastructure.Workspace.Manager.create(branch, description)` (Task 3)
   - `Vibing.Utils.WorkspaceGenerator.generate(raw_text, callback)` (Task 5)
   - `Vibing.Infrastructure.Workspace.Meta.add_chat_file(meta_path, chat_file)` (Task 2)
-  - `ChatBuffer:extract_conversation()`, `ChatBuffer:update_frontmatter(key, value, update_timestamp)`, `ChatBuffer:parse_frontmatter()` (existing)
+  - `ChatBuffer:extract_conversation()`, `ChatBuffer:update_frontmatter(key, value, update_timestamp)`,
+    `ChatBuffer:parse_frontmatter()` (existing)
   - `vibing.core.utils.git` — `Git.get_relative_path`, `Git.to_display_path`
-- Produces: registers slash command `vibing-workspace-create`. On success, binds the invoking `chat_buffer` to the new workspace (`workspace_id` frontmatter field + `working_dir` frontmatter field + `meta.yaml.chat_files` append) and appends a confirmation block to the chat buffer.
+- Produces: registers slash command `vibing-workspace-create`. On success, binds the invoking `chat_buffer` to the new
+  workspace (`workspace_id` frontmatter field + `working_dir` frontmatter field + `meta.yaml.chat_files` append) and
+  appends a confirmation block to the chat buffer.
 
 - [ ] **Step 1: Write the handler**
 
@@ -1520,7 +1563,9 @@ In `lua/vibing/application/chat/init.lua`, add after the `new-session` registrat
 
 - [ ] **Step 3: Extend `tests/chat_init_spec.lua` to assert registration**
 
-Read `tests/chat_init_spec.lua` first to match its existing assertion style, then add a case asserting `commands.commands["vibing-workspace-create"]` is registered (mirror the existing assertions for `"new-session"` in that same file).
+Read `tests/chat_init_spec.lua` first to match its existing assertion style, then add a case asserting
+`commands.commands["vibing-workspace-create"]` is registered (mirror the existing assertions for `"new-session"` in that
+same file).
 
 - [ ] **Step 4: Run tests**
 
@@ -1545,7 +1590,8 @@ git commit -m "feat: add /vibing-workspace-create slash command"
 
 **Interfaces:**
 
-- Consumes: `Manager.list("active")`, `Manager.get(workspace_id)` (Task 3); `Meta.add_chat_file` (Task 2); `ChatBuffer:update_frontmatter`, `ChatBuffer:parse_frontmatter`
+- Consumes: `Manager.list("active")`, `Manager.get(workspace_id)` (Task 3); `Meta.add_chat_file` (Task 2);
+  `ChatBuffer:update_frontmatter`, `ChatBuffer:parse_frontmatter`
 - Produces: registers slash command `vibing-workspace-enter`
 
 - [ ] **Step 1: Write the handler**
@@ -1673,7 +1719,8 @@ git commit -m "feat: add /vibing-workspace-enter slash command"
 
 **Interfaces:**
 
-- Consumes: `Manager.get`, `Manager.plan_has_incomplete_todos`, `Manager.is_branch_merged`, `Manager.remove_worktree`, `Manager.move_to_done` (Task 3); `ChatBuffer:parse_frontmatter`
+- Consumes: `Manager.get`, `Manager.plan_has_incomplete_todos`, `Manager.is_branch_merged`, `Manager.remove_worktree`,
+  `Manager.move_to_done` (Task 3); `ChatBuffer:parse_frontmatter`
 - Produces: registers slash command `vibing-workspace-done`
 
 - [ ] **Step 1: Write the handler**
@@ -1816,7 +1863,8 @@ git commit -m "feat: add /vibing-workspace-done slash command"
 **Interfaces:**
 
 - Consumes: `Manager.list(status)` (Task 3)
-- Produces: registers slash command `vibing-workspace-list`; appends a Markdown list to the chat buffer (same pattern as `handlers/help.lua`)
+- Produces: registers slash command `vibing-workspace-list`; appends a Markdown list to the chat buffer (same pattern as
+  `handlers/help.lua`)
 
 - [ ] **Step 1: Write the handler**
 
@@ -1938,7 +1986,13 @@ git commit -m "feat: add /vibing-workspace-list slash command and workspace e2e 
 
 ## Self-Review Notes
 
-- **Spec coverage:** Directory layout (Task 3), counter (Task 1), meta.yaml schema (Task 2), create/enter/done/list flows (Tasks 8-11), breaking-change removal of `:VibingChatWorktree` (Task 4), AI description/branch generation (Task 5), chat-file rename sync (Tasks 6-7), and docs updates (Tasks 4, 11) are each covered by a task.
-- **1 buffer = 1 workspace binding:** enforced identically in both `workspace_create.lua` and `workspace_enter.lua` via `already_bound_workspace_id`, checked against the `workspace_id` frontmatter field before any mutation.
-- **No `--force`:** `Manager.remove_worktree` (Task 3) never appends `--force`; a dirty worktree surfaces git's own error text unchanged, verified by the "fails to remove worktree when there are uncommitted changes" test.
-- **Type consistency check:** `Manager.create/list/get` all return workspace tables keyed by `id`/`dir`/`branch`/`description`/`meta_path`/`plan_path`/`worktree_path`, and every handler (Tasks 8-11) uses exactly those field names — no renamed fields between tasks.
+- **Spec coverage:** Directory layout (Task 3), counter (Task 1), meta.yaml schema (Task 2), create/enter/done/list
+  flows (Tasks 8-11), breaking-change removal of `:VibingChatWorktree` (Task 4), AI description/branch generation (Task
+  5), chat-file rename sync (Tasks 6-7), and docs updates (Tasks 4, 11) are each covered by a task.
+- **1 buffer = 1 workspace binding:** enforced identically in both `workspace_create.lua` and `workspace_enter.lua` via
+  `already_bound_workspace_id`, checked against the `workspace_id` frontmatter field before any mutation.
+- **No `--force`:** `Manager.remove_worktree` (Task 3) never appends `--force`; a dirty worktree surfaces git's own
+  error text unchanged, verified by the "fails to remove worktree when there are uncommitted changes" test.
+- **Type consistency check:** `Manager.create/list/get` all return workspace tables keyed by
+  `id`/`dir`/`branch`/`description`/`meta_path`/`plan_path`/`worktree_path`, and every handler (Tasks 8-11) uses exactly
+  those field names — no renamed fields between tasks.

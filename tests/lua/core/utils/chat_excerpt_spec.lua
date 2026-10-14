@@ -1,6 +1,30 @@
 local chat_excerpt = require("vibing.core.utils.chat_excerpt")
 
 describe("chat_excerpt.clean", function()
+  it("drops Diff: /tmp/My Project/.vibing/diffs/x.diff from excerpts", function()
+    assert.equals("前文\n後文", chat_excerpt.clean("前文\nDiff: /tmp/My Project/.vibing/diffs/x.diff\n後文"))
+  end)
+
+  it("drops Patch: /tmp/My Project/.vibing/patches/x.patch from excerpts", function()
+    assert.equals("前文\n後文", chat_excerpt.clean("前文\nPatch: /tmp/My Project/.vibing/patches/x.patch\n後文"))
+  end)
+
+  it("drops Diff: /tmp/My Project/x.patch from excerpts", function()
+    assert.equals("前文\n後文", chat_excerpt.clean("前文\nDiff: /tmp/My Project/x.patch\n後文"))
+  end)
+
+  it("drops Patch: /tmp/My Project/x.diff from excerpts", function()
+    assert.equals("前文\n後文", chat_excerpt.clean("前文\nPatch: /tmp/My Project/x.diff\n後文"))
+  end)
+
+  it("drops <!-- patch: /tmp/My Project/x.patch --> from excerpts", function()
+    assert.equals("前文\n\n後文", chat_excerpt.clean("前文\n<!-- patch: /tmp/My Project/x.patch -->\n後文"))
+  end)
+
+  it("drops <!-- patch: /tmp/My Project/x.diff --> from excerpts", function()
+    assert.equals("前文\n\n後文", chat_excerpt.clean("前文\n<!-- patch: /tmp/My Project/x.diff -->\n後文"))
+  end)
+
   it("drops tool call headers including multi-line arguments", function()
     local text = table.concat({
       "原因が特定できました。",
@@ -27,7 +51,7 @@ describe("chat_excerpt.clean", function()
   end)
 
   it("drops tool headers whose marker was customised in config", function()
-    -- config.ui.tool_markers is user-configurable, so glyph matching alone is not enough:
+    -- config.ui.tools.markers is user-configurable, so glyph matching alone is not enough:
     -- the "<symbol> Name(" shape has to be recognised structurally.
     assert.equals("done", chat_excerpt.clean("✿ SomeTool(arg)\ndone"))
   end)
@@ -79,7 +103,8 @@ describe("chat_excerpt.clean", function()
   end)
 
   it("drops rate-limit notices so they cannot become the topic", function()
-    local text = "**Error:** You've hit your session limit · resets 3:40am\n\n*Session has been reset. Your next message will start a new session.*"
+    local text =
+      "**Error:** You've hit your session limit · resets 3:40am\n\n*Session has been reset. Your next message will start a new session.*"
 
     assert.equals("", chat_excerpt.clean(text))
   end)
@@ -121,7 +146,10 @@ describe("chat_excerpt.clean_user", function()
     local text = "認証まわりのバグ修正\n→ ログイン失敗時のエラーメッセージを直して"
 
     assert.equals(text, chat_excerpt.clean_user(text))
-    assert.equals("💻 環境構築で詰まってるので直して", chat_excerpt.clean_user("💻 環境構築で詰まってるので直して"))
+    assert.equals(
+      "💻 環境構築で詰まってるので直して",
+      chat_excerpt.clean_user("💻 環境構築で詰まってるので直して")
+    )
   end)
 
   it("still drops structured tool renders and results", function()
@@ -231,7 +259,8 @@ describe("chat_excerpt.build", function()
     local conversation = {}
     for i = 1, 40 do
       conversation[#conversation + 1] = { role = "user", content = "request " .. i .. " " .. string.rep("あ", 2000) }
-      conversation[#conversation + 1] = { role = "assistant", content = "reply " .. i .. " " .. string.rep("い", 2000) }
+      conversation[#conversation + 1] =
+        { role = "assistant", content = "reply " .. i .. " " .. string.rep("い", 2000) }
     end
 
     local excerpt = chat_excerpt.build(conversation)
@@ -284,7 +313,7 @@ describe("chat_excerpt.clean heredoc bodies in tool headers", function()
   it("treats a herestring as an ordinary argument, not a heredoc", function()
     -- `<<<` は heredoc ではない。デリミタとして拾うと終端が永遠に来ず、
     -- 続く地の文まで落としてしまう。
-    local text = "💻 Bash(grep x <<< \"$y\")\n見つかりました。"
+    local text = '💻 Bash(grep x <<< "$y")\n見つかりました。'
 
     assert.equals("見つかりました。", chat_excerpt.clean(text))
   end)

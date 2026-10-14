@@ -1,5 +1,5 @@
 --- The `--strict-mcp-config` / `--mcp-config` fragment that keeps an ordinary claude turn down to
---- the MCP servers vibing.nvim brought itself (`agent.mcp.user_servers = false`).
+--- the MCP servers vibing.nvim brought itself (`ai.agents.claude.mcp.inherit_cli_servers = false`).
 ---
 --- `--setting-sources user,project,local` is what makes the user's own `.claude/commands/`,
 --- skills and subagents work inside a chat, and it drags every MCP server in `~/.claude.json`
@@ -48,16 +48,16 @@ end
 --- @param config Vibing.Config
 --- @return boolean
 local function user_servers_enabled(config)
-  local mcp = config.agent and config.agent.mcp
+  local mcp = vim.tbl_get(config, "ai", "agents", "claude", "mcp")
   if type(mcp) ~= "table" then
     return true
   end
-  return mcp.user_servers ~= false
+  return mcp.inherit_cli_servers ~= false
 end
 
 --- The argv fragment for one non-lightweight claude invocation.
 ---
---- Empty while `agent.mcp.user_servers` is left at its default, so the flag pair only ever
+--- Empty while `ai.agents.claude.mcp.inherit_cli_servers` is left at its default, so the flag pair only ever
 --- appears for a user who asked for it.
 ---
 --- Server names are deduplicated first-plugin-wins, matching the precedence `--plugin-dir`

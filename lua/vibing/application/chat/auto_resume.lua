@@ -5,7 +5,7 @@
 --- and sends a single continuation message so the conversation picks up where it stopped.
 ---
 --- Deliberately conservative, because every path here spends tokens without a human present:
----   * opt-in (`agent.auto_resume_on_limit.enabled`, default false)
+---   * opt-in (`automation.limits.resume.enabled`, default false)
 ---   * a retry budget per limit hit (`max_retries`, default 1)
 ---   * never overwrites text the user has already typed into the pending `## User` section
 ---   * an entry is marked in_flight before sending, so a restart can't replay it for free
@@ -23,6 +23,12 @@ local M = {}
 --- misread (wrong unit, wrong field), and a timer armed for months is worse than no feature.
 local MAX_DELAY_SEC = 8 * 24 * 60 * 60
 
+--- Floors for a reset that has already elapsed by the time the delay is computed. Which one
+--- applies is decided by whether the reset was still ahead when it was written down:
+--- `handbook/features/usage-limits.md` → "Reading the Reset Time Out of the Message".
+local STALE_RESET_FLOOR_SEC = 3
+local UNTRUSTED_RESET_FLOOR_SEC = 60
+
 --- Active timers keyed by chat file path, so re-parking a chat replaces its timer instead of
 --- stacking a second one that would double-send.
 --- @type table<string, userdata>
@@ -31,8 +37,12 @@ local timers = {}
 --- @return table
 local function get_options()
   local config = require("vibing.config").get()
-  local agent = config.agent or {}
-  return agent.auto_resume_on_limit or {}
+  local limits = vim.tbl_get(config, "automation", "limits") or {}
+  return vim.tbl_extend("force", {}, limits.resume or {}, {
+    prompt = limits.continue_prompt,
+    fallback_delay_sec = limits.fallback_delay_sec,
+    grace_sec = limits.grace_sec,
+  })
 end
 
 --- @param path string
@@ -49,7 +59,7 @@ end
 
 --- Seconds to wait before resuming a parked chat.
 --- Exposed as M._compute_delay for tests: it is the pure core of the safety limits (8-day sanity
---- ceiling, fallback delay, past-reset clamp) and would otherwise only be reachable through a
+--- ceiling, fallback delay, elapsed-reset floors) and would otherwise only be reachable through a
 --- libuv timer.
 --- @param entry Vibing.PendingResume
 --- @param opts table
@@ -58,9 +68,11 @@ local function compute_delay(entry, opts)
   local now = os.time()
 
   if not entry.resets_at then
-    -- No reset timestamp anywhere in the payload. Rather than give up (which would make the
-    -- whole feature dead weight if the undocumented event shape changes), fall back to a fixed
-    -- delay — bounded in practice by max_retries.
+    -- No reset timestamp anywhere in the payload. This is a real path, not a drift guard: claude
+    -- reports one on its stream event and codex states one in its message, but copilot and grok
+    -- announce nothing, and codex itself falls back to "try again later" when it has no time to
+    -- print. Those get a fixed delay bounded by max_retries — which for a multi-hour window will
+    -- usually be rejected again. `schedule()` says so in the notification.
     return opts.fallback_delay_sec or 300
   end
 
@@ -75,9 +87,13 @@ local function compute_delay(entry, opts)
     end
     return nil, string.format("reset time is %d days away; ignoring as implausible", days)
   end
-  -- Already past (e.g. Neovim was closed across the whole window): resume promptly, not instantly,
-  -- so startup has settled before a request goes out.
-  return math.max(delay, 3)
+
+  -- An elapsed reset means one of two things. It merely went stale while Neovim was closed across
+  -- the window, in which case resume promptly but not instantly, so startup has settled first. Or
+  -- it was already behind the rejection that reported it, which is a statement contradicting
+  -- itself and worth waiting out rather than retrying straight back into.
+  local untrusted = entry.recorded_at ~= nil and entry.resets_at <= entry.recorded_at
+  return math.max(delay, untrusted and UNTRUSTED_RESET_FLOOR_SEC or STALE_RESET_FLOOR_SEC)
 end
 
 --- Locate the ChatBuffer for a chat file, loading the file into a buffer if needed.
@@ -189,10 +205,8 @@ local function announce_gave_up(chat_file_path, max_retries)
     return
   end
 
-  local message = string.format(
-    "> auto-resume: retry budget exhausted (max_retries=%d). Not resuming automatically.",
-    max_retries
-  )
+  local message =
+    string.format("> auto-resume: retry budget exhausted (max_retries=%d). Not resuming automatically.", max_retries)
 
   local bufnr = chat_buf:get_buffer()
   append_gave_up_notice(bufnr, message)
@@ -415,8 +429,7 @@ local function schedule(entry, opts)
 
   -- A scheduled entry is a request the user typed a time for, so a refusal must not be reported
   -- as an auto-resume that did not happen.
-  local label = (entry.kind or "auto_resume") == "scheduled" and "Request not scheduled"
-    or "Auto-resume not scheduled"
+  local label = (entry.kind or "auto_resume") == "scheduled" and "Request not scheduled" or "Auto-resume not scheduled"
 
   local delay_sec, reason = compute_delay(entry, opts)
   if not delay_sec then
@@ -550,10 +563,7 @@ function M.on_rate_limited(chat_file_path, info)
   end
 
   if not opts.enabled then
-    vim.notify(
-      "[vibing] Usage limit reached (" .. RateLimit.describe(info) .. ")",
-      vim.log.levels.WARN
-    )
+    vim.notify("[vibing] Usage limit reached (" .. RateLimit.describe(info) .. ")", vim.log.levels.WARN)
     return
   end
 

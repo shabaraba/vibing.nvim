@@ -9,6 +9,8 @@ import { highlightTools } from './highlight.js';
 import { annotationTools } from './annotations.js';
 import { qflistTools } from './qflist.js';
 import { dapTools } from './dap.js';
+import { jobTools } from './jobs.js';
+import { sessionTools } from './sessions.js';
 
 export const allTools = [
   ...bufferTools,
@@ -22,4 +24,6 @@ export const allTools = [
   ...annotationTools,
   ...qflistTools,
   ...dapTools,
+  ...jobTools,
+  ...sessionTools,
 ];

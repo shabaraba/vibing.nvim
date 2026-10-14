@@ -1,4 +1,5 @@
 local SendMessage = require("vibing.application.chat.send_message")
+local Fs = require("vibing.core.utils.fs")
 
 describe("send_message", function()
   describe("execute", function()
@@ -51,15 +52,14 @@ describe("send_message", function()
       vim.api.nvim_buf_delete(buf, { force = true })
     end)
 
-    -- The choice list is only staged here; add_user_section() at the end of _handle_response is
-    -- what renders it, and cancel() queues that completion. Deferring the staging by one tick put
-    -- it after that completion, so the questions were consumed as nil and the turn ended with the
-    -- reply cut short and nothing to answer (#649).
-    it("stages AskUserQuestion choices synchronously rather than a tick later", function()
+    -- `/profile default` is how a narrowed chat is taken back into ordinary use, and it only works
+    -- if the profile is read from the frontmatter on every send rather than fixed at creation.
+    it("passes the frontmatter profile through on every send, so switching it takes effect", function()
       local buf = vim.api.nvim_create_buf(false, true)
       vim.api.nvim_buf_set_name(buf, vim.fn.tempname() .. ".md")
+      local frontmatter = { profile = "focused" }
+      local captured = {}
 
-      local staged
       local callbacks = {
         get_bufnr = function()
           return buf
@@ -68,7 +68,7 @@ describe("send_message", function()
           return "test-session"
         end,
         parse_frontmatter = function()
-          return {}
+          return frontmatter
         end,
         extract_conversation = function()
           return {}
@@ -82,29 +82,22 @@ describe("send_message", function()
           return {}
         end,
         add_user_section = function() end,
-        insert_choices = function(questions)
-          staged = questions
-        end,
       }
-
-      local captured = {}
       local adapter = {
-        supports = function(_, _feature)
+        supports = function()
           return false
         end,
-        execute = function(_, _prompt, opts)
-          captured.opts = opts
+        execute = function(_, _, opts)
+          table.insert(captured, opts.profile)
           return { content = "ok" }
         end,
       }
 
-      SendMessage.execute(adapter, callbacks, "hello", {})
+      SendMessage.execute(adapter, callbacks, "first", {})
+      frontmatter.profile = "default"
+      SendMessage.execute(adapter, callbacks, "second", {})
 
-      local questions = { { question = "Which one?", options = { { label = "a" } } } }
-      captured.opts.on_insert_choices(questions)
-      -- Asserted without running the event loop: a vim.schedule here would leave this nil.
-      assert.same(questions, staged)
-
+      assert.same({ "focused", "default" }, captured)
       vim.api.nvim_buf_delete(buf, { force = true })
     end)
   end)
@@ -151,6 +144,9 @@ describe("send_message", function()
       local callbacks = {
         mark_turn_error = function()
           marked_error = true
+        end,
+        take_question_block = function()
+          table.insert(appended, "<question block taken>")
         end,
         clear_sending = function() end,
         get_bufnr = function()
@@ -205,6 +201,33 @@ describe("send_message", function()
         local _, _, marked_error = handle_turn({ error = "Cancelled", _cancelled = true })
 
         assert.is_false(marked_error)
+      end)
+    end)
+
+    describe("a question the turn ended on", function()
+      -- The model asks by ending its reply with a ```vibing-question block
+      -- (`question_block.lua`), and the block is recognised only as the last thing the turn wrote.
+
+      it("is looked for on a turn that succeeded", function()
+        local _, appended = handle_turn({ content = "ok" })
+
+        assert.same({ "<question block taken>" }, vim.tbl_filter(function(chunk)
+          return chunk == "<question block taken>"
+        end, appended))
+      end)
+
+      it("is looked for before anything is appended after the reply", function()
+        -- `### Tokens` and `### Modified Files` go under the assistant's text; looked for after
+        -- them, the block is no longer the last thing written and is never found.
+        local _, appended = handle_turn({ content = "ok" })
+
+        assert.equals("<question block taken>", appended[1], vim.inspect(appended))
+      end)
+
+      it("is not looked for on a turn that failed", function()
+        local _, appended = handle_turn({ error = "boom" })
+
+        assert.is_false(vim.tbl_contains(appended, "<question block taken>"))
       end)
     end)
 
@@ -294,9 +317,67 @@ describe("send_message", function()
     end)
 
     it("does not render an explicit cancellation as a chat error", function()
-      local _, appended = handle_turn({ error = "Cancelled", _cancelled = true, _handle_id = "h-cancel" })
+      local _, appended = handle_turn({ error = "Cancelled", _cancelled = true, _turn_id = "h-cancel" })
 
       assert.is_nil(table.concat(appended, ""):find("**Error:** Cancelled", 1, true))
+    end)
+
+    describe("staleness against a turn abandoned by this chat alone", function()
+      -- `ChatBuffer:abandon_turn` folds a turn locally when nothing could actually be stopped
+      -- (the resident process was merely idle between turns). It clears `_current_turn_id` back
+      -- to nil, but the real completion for that same turn is still queued behind the transport's
+      -- own `vim.schedule` and arrives later. `get_turn_id() == nil` at that point must not read
+      -- the same as "no turn has ever been sent" -- that reading let the late completion redraw
+      -- the already-folded turn a second time.
+      local function handle_with_turn_state(response, current_turn_id, abandoned_turn_id)
+        local buf = vim.api.nvim_create_buf(false, true)
+        vim.api.nvim_buf_set_name(buf, tmp_root .. "/staleness-" .. tostring(math.random(1e9)) .. ".md")
+
+        local add_user_section_calls = 0
+        local callbacks = {
+          mark_turn_error = function() end,
+          clear_sending = function() end,
+          get_bufnr = function()
+            return buf
+          end,
+          get_session_id = function()
+            return nil
+          end,
+          update_session_id = function(_) end,
+          append_chunk = function(_) end,
+          add_user_section = function()
+            add_user_section_calls = add_user_section_calls + 1
+          end,
+          get_turn_id = function()
+            return current_turn_id
+          end,
+          get_abandoned_turn_id = function()
+            return abandoned_turn_id
+          end,
+        }
+        local adapter = {
+          supports = function(_, _feature)
+            return false
+          end,
+        }
+
+        SendMessage._handle_response(response, callbacks, adapter, {}, {}, "hi")
+
+        vim.api.nvim_buf_delete(buf, { force = true })
+        return add_user_section_calls
+      end
+
+      it("discards a late completion for the turn this chat already abandoned", function()
+        local calls = handle_with_turn_state({ content = "late", _turn_id = "abandoned-turn" }, nil, "abandoned-turn")
+
+        assert.equals(0, calls)
+      end)
+
+      it("still processes a response with no current turn id when it is not the abandoned one", function()
+        local calls = handle_with_turn_state({ content = "ok", _turn_id = "turn-1" }, nil, "some-other-turn")
+
+        assert.equals(1, calls)
+      end)
     end)
   end)
 
@@ -404,8 +485,16 @@ describe("send_message", function()
 
       assert.is_true(handled)
       local out = table.concat(appended, "")
-      local patch_path = out:match("<!%-%- patch: ([^%s]+) %-%->")
-      assert.is_truthy(patch_path, "no patch annotation written: " .. out)
+      -- patch行の形は `patch_finder` が唯一の読み手。ここで別に書くと両者が黙ってずれる
+      local PatchFinder = require("vibing.presentation.chat.modules.patch_finder")
+      local patch_path
+      for _, line in ipairs(vim.split(out, "\n", { plain = true })) do
+        patch_path = patch_path or PatchFinder.parse_patch_line(line)
+      end
+      assert.is_truthy(out:match("\nDiff: "), out)
+      assert.is_truthy(patch_path:find(root .. "/.vibing/diffs/", 1, true), patch_path)
+      assert.is_truthy(patch_path:match("%.diff$"), patch_path)
+      assert.equals(0, vim.fn.isdirectory(root .. "/.vibing/patches"))
       local pf = assert(io.open(patch_path, "r"))
       local content = pf:read("*a")
       pf:close()
@@ -424,7 +513,7 @@ describe("send_message", function()
     local original_notify
 
     local function write(path, content)
-      vim.fn.mkdir(vim.fn.fnamemodify(path, ":h"), "p")
+      Fs.ensure_dir(vim.fn.fnamemodify(path, ":h"))
       local f = assert(io.open(path, "w"))
       f:write(content)
       f:close()
@@ -593,10 +682,10 @@ describe("send_message", function()
 
   describe("choosing between the snapshot and the fallback", function()
     -- 経路選択は2つの重なり信号の **OR** で、どちらの信号も単体では
-    -- git_snapshot_spec / active_stream_registry_spec 側で手厚くテストされている。
+    -- git_snapshot_spec / turn_registry_spec 側で手厚くテストされている。
     -- テストが無かったのは、その2つを結ぶ send_message 側の条件式そのもの。
     -- ここを `and` に書き違えても条件を反転させても、他のspecは全部通ってしまう。
-    local ASR = require("vibing.infrastructure.adapter.modules.active_stream_registry")
+    local TurnRegistry = require("vibing.infrastructure.adapter.modules.turn_registry")
 
     local saved = {}
     local original_find
@@ -636,11 +725,11 @@ describe("send_message", function()
         capture = function() end,
       }
 
-      -- ActiveStreamRegistry は send_message のトップレベルでrequireされている（upvalue）ので、
+      -- TurnRegistry は send_message のトップレベルでrequireされている（upvalue）ので、
       -- package.loaded を差し替えても届かない。実物のテーブルの関数だけ差し替える
-      original_find = ASR.find_other_active_for_worktree
-      ASR.find_other_active_for_worktree = function()
-        return opts.other_stream and { handle_id = "other" } or nil
+      original_find = TurnRegistry.find_other_writing_in
+      TurnRegistry.find_other_writing_in = function()
+        return opts.other_stream and { turn_id = "other" } or nil
       end
 
       local buf = vim.api.nvim_create_buf(false, true)
@@ -687,7 +776,7 @@ describe("send_message", function()
 
     after_each(function()
       if original_find then
-        ASR.find_other_active_for_worktree = original_find
+        TurnRegistry.find_other_writing_in = original_find
         original_find = nil
       end
       for name, module in pairs(saved) do
@@ -765,6 +854,171 @@ describe("send_message", function()
       SendMessage._warn_removed_frontmatter(nil)
 
       assert.equals(0, #messages)
+    end)
+  end)
+
+  -- A turn and the CLI process serving it are two identities (#774). Under the oneshot transport
+  -- they always exist in pairs, so every assertion here passes two **different** values: with one
+  -- value the wiring below works by coincidence, and the coincidence is exactly what stops holding.
+  describe("process and turn identity", function()
+    local function chat_buffer()
+      local buf = vim.api.nvim_create_buf(false, true)
+      vim.api.nvim_buf_set_name(buf, vim.fn.tempname() .. ".md")
+      return buf
+    end
+
+    --- The minimum `SendMessage.execute` needs, so an example states only what it is about.
+    ---
+    --- Hand-rolled per example, this table is where a new required callback breaks three tests at once
+    --- and each of them reads as a failure of the feature under test rather than of its fixture.
+    --- @param buf number
+    --- @param overrides table? the one or two callbacks this example actually cares about
+    local function execute_callbacks(buf, overrides)
+      return vim.tbl_extend("force", {
+        get_bufnr = function()
+          return buf
+        end,
+        get_session_id = function()
+          return nil
+        end,
+        parse_frontmatter = function()
+          return {}
+        end,
+        extract_conversation = function()
+          return {}
+        end,
+        update_filename_from_message = function(_) end,
+        start_response = function() end,
+        get_session_allow = function()
+          return {}
+        end,
+        get_session_deny = function()
+          return {}
+        end,
+        add_user_section = function() end,
+        set_turn_id = function(_) end,
+        set_process_id = function(_) end,
+      }, overrides or {})
+    end
+
+    it("records the turn for staleness and the process for cancelling, from one stream() call", function()
+      -- `stream()` returns `(turn_id, process_id)`. Dropping the second value leaves
+      -- `_current_process_id` nil, and `ChatBuffer:cancel_request()` then returns false without
+      -- killing anything — a zombie CLI that no test would notice, because the guard is silent.
+      local buf = chat_buffer()
+      local recorded = {}
+      local callbacks = execute_callbacks(buf, {
+        get_session_id = function()
+          return "sess"
+        end,
+        set_turn_id = function(id)
+          recorded.turn_id = id
+        end,
+        set_process_id = function(id)
+          recorded.process_id = id
+        end,
+      })
+      local adapter = {
+        supports = function(_, feature)
+          return feature == "streaming"
+        end,
+        stream = function()
+          return "turn-1", "process-1"
+        end,
+      }
+
+      SendMessage.execute(adapter, callbacks, "hello", {})
+
+      assert.equals("turn-1", recorded.turn_id)
+      assert.equals("process-1", recorded.process_id)
+
+      vim.api.nvim_buf_delete(buf, { force = true })
+    end)
+
+    it("hands the adapter a way to wake this chat after its resident process is gone", function()
+      -- #840's wire, and the one join between two halves that each pass on their own: the transport
+      -- reports orphaned background subagents through this callback, and `outstanding_subagents`
+      -- knows what to do with them, but with nothing installed here the feature is inert and both
+      -- sides still go green. It is also the only callback on the opts that outlives its turn -- the
+      -- process does -- so it has to name the chat by closure rather than by anything per turn.
+      local buf = chat_buffer()
+      local Outstanding = require("vibing.application.chat.outstanding_subagents")
+      local original = Outstanding.wake_orphaned
+      local woken = {}
+      Outstanding.wake_orphaned = function(bufnr, unreported, recovered, process_killed)
+        table.insert(woken, { bufnr = bufnr, unreported = unreported, recovered = recovered, killed = process_killed })
+      end
+
+      local callbacks = execute_callbacks(buf)
+      local captured
+      local adapter = {
+        supports = function(_, feature)
+          return feature == "streaming"
+        end,
+        stream = function(_, _prompt, opts)
+          captured = opts
+          return "turn-1", "process-1"
+        end,
+      }
+
+      SendMessage.execute(adapter, callbacks, "hello", {})
+
+      assert.is_function(captured.on_subagents_orphaned, "the adapter was given no way to report them")
+      -- The fourth argument travels too: it is what decides whether the chat is told its subagents are
+      -- explicitly killed or exited; saved answers remain useful on either route.
+      captured.on_subagents_orphaned({ { task_id = "a1" } }, {}, true)
+
+      Outstanding.wake_orphaned = original
+      assert.same({ { bufnr = buf, unreported = { { task_id = "a1" } }, recovered = {}, killed = true } }, woken)
+
+      vim.api.nvim_buf_delete(buf, { force = true })
+    end)
+
+    it("reads the session back off the process that ran, not off the turn", function()
+      -- A CLI session is something the process holds open; the next turn `--resume`s it. Asking the
+      -- SessionManager for the *turn* answers nil on a resident process's second turn, and the chat
+      -- silently starts a new conversation instead of continuing one.
+      local buf = chat_buffer()
+      local asked_for, stored
+      local callbacks = {
+        get_bufnr = function()
+          return buf
+        end,
+        get_session_id = function()
+          return "old-session"
+        end,
+        get_cwd = function()
+          return nil
+        end,
+        update_session_id = function(id)
+          stored = id
+        end,
+        append_chunk = function(_) end,
+        add_user_section = function() end,
+      }
+      local adapter = {
+        supports = function(_, feature)
+          return feature == "session"
+        end,
+        get_session_id = function(_, id)
+          asked_for = id
+          return id == "process-1" and "new-session" or nil
+        end,
+      }
+
+      SendMessage._handle_response(
+        { content = "done", _turn_id = "turn-1", _process_id = "process-1" },
+        callbacks,
+        adapter,
+        {},
+        {},
+        "msg"
+      )
+
+      assert.equals("process-1", asked_for)
+      assert.equals("new-session", stored)
+
+      vim.api.nvim_buf_delete(buf, { force = true })
     end)
   end)
 end)

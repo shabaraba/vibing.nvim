@@ -57,7 +57,7 @@ local held_by_limit = {}
 ---@return {enabled: boolean, max_round_trips: number?, max_wakes: number?}
 local function settings()
   local config = require("vibing.config").get()
-  return (config.agent and config.agent.chat_notifications) or { enabled = false }
+  return (config and vim.tbl_get(config, "automation", "orchestration", "notifications")) or { enabled = false }
 end
 
 ---無向ペアを lo < hi に正規化する
@@ -135,6 +135,26 @@ local function drain(bufnr)
   return restarted, false
 end
 
+---見送られた配達を1件ぶん配り直す
+---
+---見送りの理由は2つあり、解ける合図もそれぞれ違う（並列度上限ならターンの終了、下書きなら
+---`draft_hold` が見張るバッファの変更）が、**配り直しそのものは同じ**なので1つにまとめてある。
+---
+---`draft_hold` が生の `MessageQueue.flush` を呼ばずここを通るのは暴走抑止のカウンタのため。
+---`wakes` と `round_trips` を進めるのは `drain` だけなので、素通りさせると下書き越しに起こされた
+---配達だけがペアの往復予算を使わずに済むことになる
+---@param bufnr number
+---@return boolean restarted
+function M.retry_delivery(bufnr)
+  -- 配達できた相手は再稼働したので、直前に自分から送ったものは最終報告ではなかった。
+  -- `on_response_done` の分岐1と同じ後始末
+  local restarted = drain(bufnr)
+  if restarted then
+    reported[bufnr] = nil
+  end
+  return restarted
+end
+
 ---並列度上限で見送られたキューを配り直す
 ---
 ---上限を解くのはターンの終了だけなので、完了イベントがそのまま「枠が空いた」の合図になる。
@@ -146,11 +166,7 @@ end
 local function retry_held(except_bufnr)
   for to_bufnr in pairs(held_by_limit) do
     if to_bufnr ~= except_bufnr then
-      -- 配達できた相手は再稼働したので、直前に自分から送ったものは最終報告ではなかった。
-      -- `on_response_done` の分岐1と同じ後始末
-      if drain(to_bufnr) then
-        reported[to_bufnr] = nil
-      end
+      M.retry_delivery(to_bufnr)
     end
   end
 end
@@ -160,11 +176,14 @@ end
 ---`edges[*][bufnr]` は「bufnr が送信した相手が、まだ完了を返していない」を意味する。
 ---残っているあいだ bufnr は待ち合わせ中で、そのターン終了は完了ではなく中間停止。
 ---
----**自分の購読者を除くのが要点。** `on_sent` は送信のたびに送信者を受信者の購読者にするので、
----B が親 A に報告しただけでも `edges[a][b]` ができ、素直に数えると B は「A 待ち」になる。
----A は B の完了を待っているのだから、そこで B の完了を保留すると互いに待ち合って永久に
----止まる。機構は送信が報告か依頼かを区別できない（#651）が、「相手が自分の完了を待っている」
----なら少なくとも自分の停止を伝えるべき相手ではある、という向きだけは分かる。
+---**自分の購読者を除くのが要点。** `on_sent` は送信者を受信者の購読者にするので、素直に数えると
+---「自分が送った相手」が全部「待っている相手」になる。相手が自分の完了を待っているなら、そこで
+---自分の完了を保留すると互いに待ち合って永久に止まる（#651）。
+---
+---**`subscribe` が報告のエッジを張らなくなってもこれは消さない。** 向きが判らない送信
+---（frontmatter にリンクが無い、バッファに名前が無い）は今も `Request` として張られるので、
+---その報告が作る逆向きエッジを受け止めるのはここだけ。取りこぼしの代償は相互待ち＝永久停止で、
+---この除外が防いでいる不具合のほうが重い
 ---
 ---逆引きの索引は持たずに走査する。エッジ数はチャット数と同じオーダーで、`forget()` も
 ---同じ走査をしている。二重管理を増やすほうが、ここでは高くつく
@@ -221,13 +240,24 @@ end
 ---vibing.nvim が自発的に通知を出すか」だけ。自力では抜けられない止まり方（質問・承認待ち・
 ---エラー）の通知は `queue_if_busy` の本文と同じく設定に依らず配られるので、無効な環境でも
 ---エッジは張っておく必要がある。配るかどうかの判断は `process_done` が持つ
+---
+---**エッジは木を下る向きにしか張らない。** 報告（`## Report`）で張ると、オーケストレーターが
+---ターンを終えるたびにワーカーが「送った相手が報告せずに止まった」で起こされる。判定を
+---`on_sent` ではなくここに置くのは、`edges` を書くのがこの関数だけだから — 直接の呼び出し元
+---（`rpc/handlers/chat.lua`）も同じ保証の下に入る。理由と代償は
+---handbook/architecture/orchestration.md
 ---@param from_bufnr number 送信元（通知を受け取る側）
 ---@param to_bufnr number 送信先（完了を監視される側）
+---@param kind "Request"|"Report"|nil この送信の向き（`orchestration_link.direction` の値）。
+---  渡さなければ向き不明として張る = 従来どおり
 ---@return boolean subscribed ペアの往復上限・全体予算などで張らなかった場合 false
-function M.subscribe(from_bufnr, to_bufnr)
+function M.subscribe(from_bufnr, to_bufnr, kind)
   local cfg = settings()
 
   if type(from_bufnr) ~= "number" or type(to_bufnr) ~= "number" or from_bufnr == to_bufnr then
+    return false
+  end
+  if kind == "Report" then
     return false
   end
   if not (vim.api.nvim_buf_is_valid(from_bufnr) and vim.api.nvim_buf_is_valid(to_bufnr)) then
@@ -301,14 +331,24 @@ end
 ---  あればそこで張り直される
 ---
 ---向きが逆なことに注意: 張るのは `edges[to][from]`、抑止するのは `edges[from][to]`
+---
+---**抑止マークは向きに依らない（報告でも途中経過でも「自分から口を開いた」は同じ）が、購読は
+---向きに依る。** 報告で張らないのは `subscribe` の役目で、判定に使う向きは呼び出し元が
+---既に持っていれば渡す — `direction` は `git rev-parse` と frontmatter パースを伴うので、
+---同じ送信について2度3度聞かない。渡されなければここで1度だけ聞く
 ---@param from_bufnr number
 ---@param to_bufnr number
-function M.on_sent(from_bufnr, to_bufnr)
+---@param kind "Request"|"Report"|nil `orchestration_link.direction` の値（判っていれば）
+function M.on_sent(from_bufnr, to_bufnr, kind)
   if type(from_bufnr) ~= "number" or type(to_bufnr) ~= "number" then
     return
   end
 
-  M.subscribe(from_bufnr, to_bufnr)
+  M.subscribe(
+    from_bufnr,
+    to_bufnr,
+    kind or require("vibing.application.chat.orchestration_link").direction(from_bufnr, to_bufnr)
+  )
 
   -- **エッジそのものは消さない。** 消すと、from が「作業中の途中経過」を送っただけの場合にも
   -- 購読が永久に失われる。ツリー状のチャット網ではそれが常態で、中間ノードは子を待つ間に
@@ -401,6 +441,130 @@ local function process_done(bufnr)
   end
 end
 
+---承認待ちの通知をまとめる窓、ミリ秒。
+---
+---実測: claude は1ターンで3本の PreToolUse フックを**0.54秒差で並列に**立ち上げる
+---（`tests/perf/hook_concurrency.sh`）。1件ごとに配ると、オーケストレーターは同じ事実で
+---3回起こされ、3ターンぶんのトークンを使う。窓はその束を1回の起床に畳むためだけにある。
+---
+---最初の1件が来た時点から固定で測る（到着ごとに延長しない）。延長式にすると、承認が切れ目なく
+---続くあいだ通知が永遠に遅れる — まさに知らせたい状態で黙ることになる
+local APPROVAL_NOTICE_WINDOW_MS = 1500
+
+---承認待ち通知の合流状態。`[bufnr] = { seen = {request_id=true}, announced = n, timer = id }`
+---@type table<number, {seen: table<string, boolean>, announced: number, timer: number?}>
+local approval_notices = {}
+
+---@param notice table
+---@return number
+local function seen_count(notice)
+  return vim.tbl_count(notice.seen)
+end
+
+---購読者に「このチャットは承認待ちで止まっている」を配る。**それ以外は何もしない**
+---
+---`process_done` の兄弟であって一部ではない。あちらの3分岐はどれも「ターンが終わった」に
+---属していて、承認待ちは**ターンが終わっていない**:
+---
+---- **自分宛キューの drain をしない。** 排出は `send_message()` を呼び、その冒頭は
+---  `cancel_request()` — つまり待たせている当のターンを殺す
+---- **並列度の枠を空けない。** プロセスは生きていて枠を占有し続けている
+---- **エッジを消費しない。** ここで使い切ると、そのあとターンが本当に終わったときに配達先が
+---  残らず、オーケストレーターは「承認が要る」だけ受け取って**完了報告を永久に受け取らない**。
+---  これは中間通知であって停止の報告ではない
+---
+---`chat_notifications.enabled` は見ない。承認待ちも質問待ちも「自力では抜けられない止まり方」で、
+---そちらは設定に依らず配るのがこのモジュールの規約
+---@param bufnr number 答えを待って止まっているチャット
+---@param status "waiting_approval"|"asked_question" `chat_status` と同じ語彙
+local function deliver_stop_notice(bufnr, status)
+  local subscribers = edges[bufnr]
+  if not subscribers then
+    return
+  end
+
+  for from_bufnr in pairs(subscribers) do
+    if vim.api.nvim_buf_is_valid(from_bufnr) then
+      -- 語彙は `chat_status` と同じ文字列そのもの。`delivery_message` は
+      -- `waiting_approval` を突き合わせて「代理で答えられるか」の案内を出し分けるので、
+      -- 件数を接尾辞に付けるような変形はそこを黙って外す
+      MessageQueue.enqueue_notification(from_bufnr, bufnr, status)
+    end
+  end
+  for from_bufnr in pairs(subscribers) do
+    drain(from_bufnr)
+  end
+end
+
+---このチャットのフックが1本、承認待ちでブロックに入った
+---
+---ターン終了イベント（`VibingResponseDone`）は飛ばない — 承認を kill せずに答えられるように
+---なった以上、プロンプトが出てもターンは続いているからで、それが通知経路をそのまま塞いでいた。
+---`chat_status` を直しても届くのはポーリングにだけで、push は別に口が要る。
+---
+---`request_id` で冪等。同じフックについて二度呼んでも配達は増えない。**期限切れのあとに次の
+---承認が開いたら別のイベント**なので、そちらは新しい id として改めて配る
+---@param bufnr number
+---@param request_id string
+function M.on_approval_waiting(bufnr, request_id)
+  if type(bufnr) ~= "number" or type(request_id) ~= "string" or request_id == "" then
+    return
+  end
+
+  local notice = approval_notices[bufnr] or { seen = {}, announced = 0 }
+  approval_notices[bufnr] = notice
+  if notice.seen[request_id] then
+    return
+  end
+  notice.seen[request_id] = true
+
+  -- 窓が開いていれば合流させるだけ。閉じるときに「前回知らせた数より増えているか」で
+  -- 送るかどうかを決めるので、2件目以降のためにタイマーを張り直す必要がない
+  if notice.timer then
+    return
+  end
+
+  notice.timer = vim.fn.timer_start(APPROVAL_NOTICE_WINDOW_MS, function()
+    M._flush_approval_notice(bufnr)
+  end)
+end
+
+---合流窓を閉じる。テストが時間を待たずに呼べるよう、タイマーの中身を関数にしてある
+---@param bufnr number
+---@return boolean delivered
+function M._flush_approval_notice(bufnr)
+  local notice = approval_notices[bufnr]
+  if not notice then
+    return false
+  end
+  notice.timer = nil
+
+  local count = seen_count(notice)
+  if count <= notice.announced then
+    return false
+  end
+  notice.announced = count
+
+  deliver_stop_notice(bufnr, "waiting_approval")
+  return true
+end
+
+---このチャットについての合流状態を捨てる
+---
+---承認が全部片付いた時点で呼ぶ。捨てないと、次に同じチャットが承認待ちになったとき
+---`announced` が残っていて「増えていない」と判定され、**通知が飛ばない**
+---@param bufnr number
+function M.forget_approval_notices(bufnr)
+  local notice = approval_notices[bufnr]
+  if not notice then
+    return
+  end
+  if notice.timer then
+    pcall(vim.fn.timer_stop, notice.timer)
+  end
+  approval_notices[bufnr] = nil
+end
+
 ---応答完了。自分宛キューの drain と、購読者への配達を行う
 ---
 ---発火判定は3分岐（#639 / #640）:
@@ -443,6 +607,10 @@ end
 function M.forget(bufnr)
   MessageQueue.forget(bufnr)
 
+  -- 早期returnより前。合流窓には**タイマーが張ってある**ことがあり、そこだけは空振りではない:
+  -- 消えたバッファについて後から発火すると、誰も読まないバッファへの配達を起こす
+  M.forget_approval_notices(bufnr)
+
   -- autocmdはパターン無しで登録しているので、エディタ内のどのバッファを閉じても走る。
   -- 既定（無効）では状態が空のまま、全テーブルの走査だけが通常の編集操作ごとに起きる。
   -- キューは自分の空振りを自分で弾くので、ここで見るのは自分の状態だけ
@@ -479,16 +647,7 @@ end
 function M.setup()
   local group = vim.api.nvim_create_augroup(AUGROUP, { clear = true })
 
-  vim.api.nvim_create_autocmd("User", {
-    group = group,
-    pattern = "VibingResponseDone",
-    callback = function(event)
-      local bufnr = event.data and event.data.bufnr
-      if type(bufnr) == "number" then
-        M.on_response_done(bufnr)
-      end
-    end,
-  })
+  require("vibing.core.events").on_response_done(group, "completion notifier", M.on_response_done)
 
   vim.api.nvim_create_autocmd({ "BufDelete", "BufWipeout" }, {
     group = group,

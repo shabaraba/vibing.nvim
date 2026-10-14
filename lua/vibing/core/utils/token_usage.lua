@@ -132,16 +132,16 @@ M.humanize = humanize
 --- @deprecated Use `M.humanize`; kept so existing callers keep working.
 M._humanize = humanize
 
----@class Vibing.CodexTokenTotals
----@field input number cumulative input tokens reported by the Codex thread
----@field cached number cumulative cached-input tokens reported by the Codex thread
----@field cache_write number cumulative cache-write tokens reported by the Codex thread
----@field output number cumulative output tokens reported by the Codex thread
----@field reasoning number cumulative reasoning-output tokens reported by the Codex thread
+---@class Vibing.CumulativeTokenTotals
+---@field input number cumulative input tokens reported by the CLI for the whole session
+---@field cached number cumulative cached-input tokens
+---@field cache_write number cumulative cache-write tokens
+---@field output number cumulative output tokens
+---@field reasoning number cumulative reasoning-output tokens
 
----@class Vibing.CodexTokenUsage
----@field backend "codex"
----@field totals Vibing.CodexTokenTotals exact cumulative counters carried by `turn.completed`
+---@class Vibing.CumulativeTokenUsage
+---@field kind "cumulative" a backend that reports one running total per turn, not per request
+---@field totals Vibing.CumulativeTokenTotals exact cumulative counters carried by the CLI's terminal event
 ---@field input number counters to display (normally the delta from the preceding section)
 ---@field cached number
 ---@field cache_write number
@@ -149,12 +149,14 @@ M._humanize = humanize
 ---@field reasoning number
 ---@field scope "turn"|"session" whether the displayed counters are a delta or a cumulative total
 
+local CUMULATIVE_FIELDS = { "input", "cached", "cache_write", "output", "reasoning" }
+
 --- Coerce one counter from an external payload without letting a malformed usage event break the
---- turn footer. Codex's Rust side emits non-negative integers, but custom providers and older CLI
---- versions still cross this boundary, so accept numeric strings and make every other shape zero.
+--- turn footer. CLIs emit non-negative integers, but custom providers and older versions still
+--- cross this boundary, so accept numeric strings and make every other shape zero.
 ---@param value any
 ---@return number
-local function counter(value)
+function M.count(value)
   local number = tonumber(value)
   if not number or number < 0 or number ~= number or number == math.huge then
     return 0
@@ -162,78 +164,74 @@ local function counter(value)
   return math.floor(number)
 end
 
---- Turn Codex's terminal `turn.completed.usage` payload into the common reporter's tagged value.
+--- Wrap a backend's whole-session counters as the reporter's tagged value.
 ---
---- Unlike Claude's stream, Codex exposes one aggregate after the turn, and on a resumed thread the
---- aggregate is cumulative for the session. `M.codex_delta` resolves that cumulative value just
---- before it is written, after the previous footer can be read from the chat buffer.
----@param usage table|nil
----@return Vibing.CodexTokenUsage|nil
-function M.from_codex(usage)
-  if type(usage) ~= "table" then
-    return nil
+--- For a CLI that exposes one aggregate after the turn (codex's `turn.completed`, cumulative for
+--- the thread on a resumed session), as opposed to claude's per-request usage that `record`
+--- accumulates. `M.cumulative_delta` resolves the aggregate to this turn's share just before it is
+--- written, after the previous footer can be read from the chat buffer. The decoder that knows the
+--- CLI's field names builds `totals`; this only tags it.
+---@param totals table partial totals; missing counters read as zero
+---@return Vibing.CumulativeTokenUsage
+function M.cumulative(totals)
+  local clean = {}
+  for _, field in ipairs(CUMULATIVE_FIELDS) do
+    clean[field] = M.count(type(totals) == "table" and totals[field] or nil)
   end
-
-  local totals = {
-    input = counter(usage.input_tokens),
-    cached = counter(usage.cached_input_tokens),
-    cache_write = counter(usage.cache_write_input_tokens),
-    output = counter(usage.output_tokens),
-    reasoning = counter(usage.reasoning_output_tokens),
-  }
-  return {
-    backend = "codex",
-    totals = totals,
-    input = totals.input,
-    cached = totals.cached,
-    cache_write = totals.cache_write,
-    output = totals.output,
-    reasoning = totals.reasoning,
-    scope = "session",
-  }
+  local usage = { kind = "cumulative", totals = clean, scope = "session" }
+  for _, field in ipairs(CUMULATIVE_FIELDS) do
+    usage[field] = clean[field]
+  end
+  return usage
 end
 
---- Read the exact cumulative Codex counters out of a footer heading written by `M.section`.
+--- Whether an accumulator is the cumulative kind.
+---@param acc any
+---@return boolean
+function M.is_cumulative(acc)
+  return type(acc) == "table" and acc.kind == "cumulative" and type(acc.totals) == "table"
+end
+
+--- Read the exact cumulative counters out of a footer heading written by `M.section`.
 --- All fields are required even when zero: accepting a partial marker would make a CLI/schema
 --- change look like a valid delta while silently under-counting one token class.
+---
+--- Two spellings are read: `total-*`, which is what is written now, and the `codex-*` keys the
+--- footer used while this was a codex-only feature -- chats written then still resume.
 ---@param line string
----@return Vibing.CodexTokenTotals|nil
-function M.parse_codex_totals(line)
+---@return Vibing.CumulativeTokenTotals|nil
+function M.parse_cumulative_totals(line)
   if type(line) ~= "string" or not line:match("^###%s+Tokens%s+<!%-%-") then
     return nil
   end
 
-  local input = line:match("codex%-input=(%d+)")
-  local cached = line:match("codex%-cached=(%d+)")
-  local cache_write = line:match("codex%-cache%-write=(%d+)")
-  local output = line:match("codex%-output=(%d+)")
-  local reasoning = line:match("codex%-reasoning=(%d+)")
-  if not input or not cached or not cache_write or not output or not reasoning then
-    return nil
+  local totals = {}
+  for _, field in ipairs(CUMULATIVE_FIELDS) do
+    -- `cache_write` is spelled `cache-write` in the marker; the escaped hyphen keeps it a literal
+    -- in the pattern below.
+    local key = field:gsub("_", "%%-")
+    local value = line:match("total%-" .. key .. "=(%d+)") or line:match("codex%-" .. key .. "=(%d+)")
+    if not value then
+      return nil
+    end
+    totals[field] = tonumber(value)
   end
-
-  return {
-    input = tonumber(input),
-    cached = tonumber(cached),
-    cache_write = tonumber(cache_write),
-    output = tonumber(output),
-    reasoning = tonumber(reasoning),
-  }
+  return totals
 end
 
---- Find the most recently displayed Codex cumulative counters in a chat.
+--- Find the most recently displayed cumulative counters in a chat.
 ---
 --- This deliberately means "last displayed", not "previous assistant turn". If token display was
 --- temporarily disabled, the next difference spans that hidden interval and is still truthful;
 --- calling it the current turn would not be. In the ordinary default-on path the two are the same.
 ---@param lines string[]|nil
----@return Vibing.CodexTokenTotals|nil
-function M.find_last_codex_totals(lines)
+---@return Vibing.CumulativeTokenTotals|nil
+function M.find_last_cumulative_totals(lines)
   if type(lines) ~= "table" then
     return nil
   end
   for index = #lines, 1, -1 do
-    local totals = M.parse_codex_totals(lines[index])
+    local totals = M.parse_cumulative_totals(lines[index])
     if totals then
       return totals
     end
@@ -241,19 +239,19 @@ function M.find_last_codex_totals(lines)
   return nil
 end
 
---- Resolve cumulative Codex counters to what this footer should display.
+--- Resolve cumulative counters to what this footer should display.
 ---
---- A fresh thread starts at zero, so its first aggregate is already this turn's usage. A resumed
---- thread needs the preceding exact marker. Without one (the first reply after upgrading, for
+--- A fresh session starts at zero, so its first aggregate is already this turn's usage. A resumed
+--- session needs the preceding exact marker. Without one (the first reply after upgrading, for
 --- example), the cumulative values remain useful but are explicitly labelled as a session total.
---- Any counter moving backwards means the baseline belongs to a different/reset thread, and takes
---- the same safe cumulative fallback.
----@param usage Vibing.CodexTokenUsage
----@param previous Vibing.CodexTokenTotals|nil
+--- Any counter moving backwards means the baseline belongs to a different/reset session, and
+--- takes the same safe cumulative fallback.
+---@param usage Vibing.CumulativeTokenUsage
+---@param previous Vibing.CumulativeTokenTotals|nil
 ---@param started_fresh_session boolean|nil
----@return Vibing.CodexTokenUsage
-function M.codex_delta(usage, previous, started_fresh_session)
-  if type(usage) ~= "table" or usage.backend ~= "codex" or type(usage.totals) ~= "table" then
+---@return Vibing.CumulativeTokenUsage
+function M.cumulative_delta(usage, previous, started_fresh_session)
+  if not M.is_cumulative(usage) then
     return usage
   end
 
@@ -266,9 +264,8 @@ function M.codex_delta(usage, previous, started_fresh_session)
     reasoning = 0,
   } or previous
 
-  local fields = { "input", "cached", "cache_write", "output", "reasoning" }
   if type(baseline) == "table" then
-    for _, field in ipairs(fields) do
+    for _, field in ipairs(CUMULATIVE_FIELDS) do
       if type(baseline[field]) ~= "number" or totals[field] < baseline[field] then
         baseline = nil
         break
@@ -277,11 +274,11 @@ function M.codex_delta(usage, previous, started_fresh_session)
   end
 
   local resolved = {
-    backend = "codex",
+    kind = "cumulative",
     totals = totals,
     scope = baseline and "turn" or "session",
   }
-  for _, field in ipairs(fields) do
+  for _, field in ipairs(CUMULATIVE_FIELDS) do
     resolved[field] = totals[field] - (baseline and baseline[field] or 0)
   end
   return resolved
@@ -329,10 +326,7 @@ end
 --- @param acc Vibing.TokenUsage|nil
 --- @return string|nil
 function M.format(acc)
-  if type(acc) == "table" and acc.backend == "codex" then
-    if type(acc.totals) ~= "table" then
-      return nil
-    end
+  if M.is_cumulative(acc) then
     local prefix = acc.scope == "session" and "session " or ""
     local parts = {
       prefix .. "input " .. humanize(acc.input) .. " (cached " .. humanize(acc.cached) .. ")",
@@ -439,13 +433,13 @@ end
 --- Claude's heading carries the exact context size in a marker comment. The visible line is
 --- rounded for reading, and the pre-send cache gate (`application/chat/cache_expiry`) and the
 --- auto-compact gate (`application/chat/auto_compact`) both need to compare the real figure against
---- a threshold after a restart, when nothing but this text is left. Codex instead carries exact
---- cumulative counters so the next turn can derive a delta. Renaming or reordering either visible
+--- a threshold after a restart, when nothing but this text is left. A cumulative backend instead
+--- carries exact running counters so the next turn can derive a delta. Renaming or reordering either visible
 --- line is safe; dropping its marker is not, and neither is putting anything ahead of the heading.
 ---
 --- The rewrite note comes before the context warning: it says what this turn actually did, while
 --- the warning is standing advice that repeats on every large turn.
---- @param acc Vibing.TokenUsage|Vibing.CodexTokenUsage|nil
+--- @param acc Vibing.TokenUsage|Vibing.CumulativeTokenUsage|nil
 --- @param warn_context number|nil
 --- @param extras { floor: string|nil, rewrite: string|nil }|nil
 --- @return string|nil
@@ -455,10 +449,10 @@ function M.section(acc, warn_context, extras)
     return nil
   end
 
-  if acc.backend == "codex" then
+  if M.is_cumulative(acc) then
     local totals = acc.totals
     local section = string.format(
-      "### Tokens <!-- codex-input=%d codex-cached=%d codex-cache-write=%d codex-output=%d codex-reasoning=%d -->\n\n%s\n",
+      "### Tokens <!-- total-input=%d total-cached=%d total-cache-write=%d total-output=%d total-reasoning=%d -->\n\n%s\n",
       totals.input,
       totals.cached,
       totals.cache_write,
@@ -468,7 +462,7 @@ function M.section(acc, warn_context, extras)
     )
     if acc.scope == "session" then
       section = section
-        .. "\n> ℹ️ **Session total.** Per-turn deltas start with the next Codex reply.\n"
+        .. "\n> ℹ️ **Session total.** Per-turn deltas start with the next reply.\n"
     end
     return section
   end

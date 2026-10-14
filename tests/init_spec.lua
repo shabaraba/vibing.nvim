@@ -51,13 +51,19 @@ describe("vibing.init", function()
       setup = function() end,
       get = function()
         return {
-          mcp = { enabled = false },
+          integrations = {
+            nvim = {
+              enabled = false,
+            },
+          },
         }
       end,
       defaults = {
-        agent = {
-          default_mode = "code",
-          default_model = "sonnet",
+        ai = {
+          chat = {
+            agent = "claude",
+            model = "sonnet",
+          },
         },
       },
     }
@@ -466,10 +472,7 @@ describe("vibing.init", function()
         local ok, err = pcall(callback, { args = "30m" })
 
         assert.is_true(ok, err)
-        assert.is_false(
-          schedule_request_called,
-          "AutoResume.schedule_request must not be called when the save failed"
-        )
+        assert.is_false(schedule_request_called, "AutoResume.schedule_request must not be called when the save failed")
         assert.is_not_nil(warn_message)
         assert.matches("[Cc]ould not save", warn_message)
         -- The failed `:write` left the buffer's own unsaved-changes flag set; a passing save
@@ -509,7 +512,7 @@ describe("vibing.init", function()
         callback({ args = "" })
 
         -- mock_config.get() (outer before_each) returns no `agent` field at all, exercising the
-        -- `agent.auto_resume_on_limit and ... or 10` fallback down to the default grace of 10.
+        -- `automation.limits.resume and ... or 10` fallback down to the default grace of 10.
         assert.equals(resets_at + 10, captured_fire_at)
       end)
 
@@ -520,8 +523,16 @@ describe("vibing.init", function()
         local resets_at = os.time() + 1200
         mock_config.get = function()
           return {
-            mcp = { enabled = false },
-            agent = { auto_resume_on_limit = { grace_sec = 45 } },
+            integrations = {
+              nvim = {
+                enabled = false,
+              },
+            },
+            automation = {
+              limits = {
+                grace_sec = 45,
+              },
+            },
           }
         end
 
@@ -640,17 +651,18 @@ describe("vibing.init", function()
     it("should return current config", function()
       mock_config.get = function()
         return {
-          agent = {
-            default_mode = "plan",
+          integrations = {
+            nvim = {
+              enabled = false,
+            },
           },
-          mcp = { enabled = false },
         }
       end
 
       Vibing.setup()
       local config = Vibing.get_config()
 
-      assert.equals("plan", config.agent.default_mode)
+      assert.is_false(config.integrations.nvim.enabled)
     end)
 
     it("should return defaults when no config", function()
@@ -658,7 +670,7 @@ describe("vibing.init", function()
 
       local config = Vibing.get_config()
 
-      assert.equals("code", config.agent.default_mode)
+      assert.equals("claude", config.ai.chat.agent)
     end)
   end)
 

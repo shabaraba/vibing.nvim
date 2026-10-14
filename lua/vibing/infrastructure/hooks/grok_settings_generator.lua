@@ -10,6 +10,14 @@ local M = {}
 
 local HOOK_FILENAME = "vibing-nvim-pre-tool-use.json"
 
+--- Grok reads claude's hook schema, so `ensure()` writes whatever `SettingsGenerator.generate()`
+--- produces — the timeout included. Answering by delegation rather than by a literal of its own is
+--- what keeps this true: a second number here would be the one the file does *not* contain.
+--- @return number|nil seconds
+function M.hook_timeout_sec()
+  return SettingsGenerator.hook_timeout_sec()
+end
+
 --- cwds already confirmed trusted this session — folder trust is idempotent, so once a cwd is
 --- known-trusted there's no need to re-read/re-scan ~/.grok/trusted_folders.toml on every message.
 --- @type table<string, boolean>
@@ -123,8 +131,9 @@ end
 
 --- Ensure project PreToolUse hook file exists for the given cwd
 --- @param cwd? string Working directory (defaults to vim.fn.getcwd())
+--- @param dialect? string how the script should phrase its decision (`hooks/transports.lua`)
 --- @return string path Absolute path to the hook JSON file
-function M.ensure(cwd)
+function M.ensure(cwd, dialect)
   cwd = cwd or vim.fn.getcwd()
   local real_cwd = vim.fn.resolve(cwd)
   warn_if_not_git(real_cwd)
@@ -137,7 +146,7 @@ function M.ensure(cwd)
   -- (.grok/hooks/), not the project root — so a relative plugin path would miss
   -- bin/hooks/pre-tool-use.sh. Always write an absolute path.
   local hook_script = vim.fn.fnamemodify(SettingsGenerator.get_hook_script_path(), ":p")
-  local settings = SettingsGenerator.generate(hook_script)
+  local settings = SettingsGenerator.generate(hook_script, dialect)
 
   local json = vim.json.encode(settings)
   local f, err = io.open(hook_path, "w")

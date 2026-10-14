@@ -2,19 +2,21 @@
 --- Main permission evaluation logic for control_request handling
 ---
 --- Permission evaluation order (highest to lowest priority):
---- 1. Session-level deny list (immediate block)
---- 2. Internal tools (always allowed, e.g. ToolSearch, Agent)
---- 3. bypassPermissions mode (bypasses deny list too)
---- 4. Deny list (deny takes precedence over allow)
---- 4.5. Deny rules (path/command/pattern/domain based) — before any mode shortcut or session
+--- 1. Neovim-owned background-job policy (when MCP is enabled)
+--- 2. Session-level deny list (immediate block)
+--- 2.5. Exclusive tool set (a background agent's whole toolset; everything else is denied)
+--- 3. Internal tools (always allowed, e.g. ToolSearch, Agent)
+--- 4. bypassPermissions mode (bypasses the configurable deny list too)
+--- 5. Deny list (deny takes precedence over allow)
+--- 5.5. Deny rules (path/command/pattern/domain based) — before any mode shortcut or session
 ---      grant, so the bundled destructive-command rules hold under `auto` mode, for
 ---      always-allowed tools, and after an "allow_for_session" approval
---- 5. Session-level allow list (auto-approve)
---- 6. Always-allowed tools (bypass allow list; deny/ask still respected)
---- 7. Permission modes (auto, acceptEdits, default; dontAsk changes ask→deny below)
---- 8. Allow list (with pattern matching support)
---- 9. Ask list (granular patterns override broader allow list permissions)
---- 10. Granular allow rules (path/command/pattern/domain based)
+--- 6. Session-level allow list (auto-approve)
+--- 7. Always-allowed tools (bypass allow list; deny/ask still respected)
+--- 8. Permission modes (auto, acceptEdits, default; dontAsk changes ask→deny below)
+--- 9. Allow list (with pattern matching support)
+--- 10. Ask list (granular patterns override broader allow list permissions)
+--- 11. Granular allow rules (path/command/pattern/domain based)
 ---
 --- @module vibing.infrastructure.permissions.can_use_tool
 
@@ -25,6 +27,10 @@ local tools_constants = require("vibing.core.constants.tools")
 local M = {}
 
 local ONCE_SUFFIX = ":once"
+
+local BACKGROUND_JOB_MESSAGE = "Shell backgrounding is disabled in vibing.nvim because the process "
+  .. "can be killed when this CLI turn exits. Use nvim_job_start instead, then manage it with "
+  .. "nvim_job_status, nvim_job_wait, or nvim_job_stop."
 
 --- @class CanUseToolResult
 --- @field behavior "allow"|"deny"|"ask"
@@ -40,23 +46,31 @@ local ONCE_SUFFIX = ":once"
 --- @field permission_rules? PermissionRule[] Granular rules
 --- @field permission_mode "default"|"acceptEdits"|"bypassPermissions"|"plan"|"dontAsk"|"auto"
 --- @field mcp_enabled boolean
+--- @field is_always_allowed? fun(tool_name: string): boolean Backend-specific always-allowed tools
+--- @field exclusive_tools? string[] When set, the only tools the turn may use at all
 
 --- Check whether a tool name is a vibing-nvim MCP tool, regardless of how the MCP server was
---- registered (plain user-level server vs. Claude Code plugin — see the call site for details).
+--- registered — see the call site for details. One server, three spellings, all measured:
+---   * `mcp__vibing-nvim__<tool>` — claude with a plain user-level entry, and codex
+---   * `mcp__plugin_<plugin>_vibing-nvim__<tool>` — claude inside the bundled plugin (the normal case)
+---   * `vibing-nvim__<tool>` — grok 1.0.50, which qualifies a tool as `server__tool` with no
+---     `mcp__` prefix and so puts the server name at the very start of the tool name
 ---
---- The leading `_` is the whole reason this is not a bare suffix match. Both registration styles
---- put a separator directly before the server name — `mcp__vibing-nvim__` and
---- `mcp__plugin_<plugin>_vibing-nvim__` — so requiring one rejects a server whose name merely
---- *ends* with it (`mcp__my-vibing-nvim__nvim_get_buffer`). What it cannot reject is a third-party
---- server actually named `vibing-nvim` exposing `nvim_*` tools: nothing in the tool name says who
---- registered it. That call is granted, which matters because this decision bypasses the CLI's own
---- gate — see the call site in `rpc/handlers/permission.lua`.
+--- So the server name is *anchored*, not suffix-matched: either it starts the tool name, or a `_`
+--- separator comes directly before it. That is what still rejects a third-party server whose name
+--- merely *ends* with ours, in both of its spellings (`mcp__my-vibing-nvim__nvim_get_buffer`,
+--- `my-vibing-nvim__nvim_get_buffer`) — grok's form made a leading separator optional, so
+--- requiring one is no longer available as the rejection and the start-of-string anchor carries it.
+--- What anchoring cannot reject is a third-party server actually named `vibing-nvim` exposing
+--- `nvim_*` tools: nothing in the tool name says who registered it. That call is granted, which
+--- matters because this decision bypasses the CLI's own gate — see the call site in
+--- `rpc/handlers/permission.lua`.
 --- @param tool_name string
---- @param specific_tool? string Match only this vibing-nvim tool (e.g. "nvim_ask_user_question"); omit to match any vibing-nvim MCP tool
+--- @param specific_tool? string Match only this vibing-nvim tool (e.g. "nvim_set_buffer"); omit to match any vibing-nvim MCP tool
 --- @return boolean
 function M.is_vibing_nvim_mcp_tool(tool_name, specific_tool)
-  local pattern = specific_tool and ("_vibing%-nvim__" .. specific_tool .. "$") or "_vibing%-nvim__nvim_[%w_]+$"
-  return tool_name:match(pattern) ~= nil
+  local suffix = "vibing%-nvim__" .. (specific_tool or "nvim_[%w_]+") .. "$"
+  return tool_name:match("_" .. suffix) ~= nil or tool_name:match("^" .. suffix) ~= nil
 end
 
 --- Create allow result
@@ -77,6 +91,100 @@ end
 --- @return CanUseToolResult
 local function ask()
   return { behavior = "ask" }
+end
+
+--- Replace quoted/escaped bytes with spaces, leaving shell control operators visible. This is not
+--- a shell parser; it deliberately recognizes only the unambiguous forms the policy blocks and
+--- leaves ordinary foreground commands alone.
+--- @param command string
+--- @return string
+local function unquoted_shell(command)
+  local out = {}
+  local quote = nil
+  local i = 1
+  while i <= #command do
+    local char = command:sub(i, i)
+    if quote then
+      if char == quote then
+        quote = nil
+      elseif char == "\\" and quote == '"' then
+        i = i + 1
+      end
+      table.insert(out, " ")
+    elseif char == "'" or char == '"' then
+      quote = char
+      table.insert(out, " ")
+    elseif char == "\\" then
+      table.insert(out, " ")
+      i = i + 1
+      table.insert(out, " ")
+    else
+      table.insert(out, char)
+    end
+    i = i + 1
+  end
+  return table.concat(out)
+end
+
+--- Whether a canonical Bash call is trying to detach work from the current turn.
+--- @param input table<string, any>
+--- @return boolean
+function M.uses_shell_backgrounding(input)
+  if input.run_in_background == true then
+    return true
+  end
+  if type(input.command) ~= "string" then
+    return false
+  end
+
+  local command = unquoted_shell(input.command)
+  for i = 1, #command do
+    if command:sub(i, i) == "&" then
+      local previous = i > 1 and command:sub(i - 1, i - 1) or ""
+      local following = i < #command and command:sub(i + 1, i + 1) or ""
+      -- Exclude && and file-descriptor redirections such as 2>&1 and &>file.
+      if
+        previous ~= "&"
+        and following ~= "&"
+        and previous ~= ">"
+        and previous ~= "<"
+        and following ~= ">"
+      then
+        return true
+      end
+    end
+  end
+
+  -- nohup/setsid/disown can detach even without a trailing ampersand. Inspect only command
+  -- positions (start or immediately after a shell control operator) to avoid blocking prose such
+  -- as `printf 'use nohup carefully'`.
+  for segment in command:gmatch("[^;|&\n]+") do
+    local rest = vim.trim(segment):gsub("^%(*%s*", "")
+    local saw_wrapper = false
+    while rest ~= "" do
+      local word = rest:match("^(%S+)")
+      local basename = word and word:match("([^/]+)$") or nil
+      if basename == "nohup" or basename == "setsid" or basename == "disown" then
+        return true
+      end
+      local is_wrapper = basename == "sudo"
+        or basename == "command"
+        or basename == "env"
+        or (word and word:match("^[%a_][%w_]*="))
+      if is_wrapper then
+        saw_wrapper = true
+        rest = rest:match("^%S+%s+(.+)$") or ""
+      elseif saw_wrapper then
+        -- Once a wrapper (sudo/env/command/VAR=) has been seen, keep scanning past its own
+        -- flags and arguments (e.g. `sudo -u user`) rather than stopping at the first one, or
+        -- setsid/nohup/disown placed after them would never be reached.
+        rest = rest:match("^%S+%s+(.+)$") or ""
+      else
+        break
+      end
+    end
+  end
+  return false
 end
 
 --- Check session permission list and handle one-time permissions
@@ -175,25 +283,44 @@ end
 --- @return CanUseToolResult
 function M.can_use_tool(tool_name, input, config)
   local ok, result = pcall(function()
-    -- 1. Session-level deny list (highest priority)
+    -- 1. This is a lifecycle invariant, not a configurable permission preference. Keep it ahead
+    -- of bypassPermissions so even unattended turns cannot accidentally create a process Neovim
+    -- does not own. It applies only when the replacement MCP tool is actually enabled.
+    if tool_name == "Bash" and config.mcp_enabled and M.uses_shell_backgrounding(input) then
+      return deny(BACKGROUND_JOB_MESSAGE)
+    end
+
+    -- 2. Session-level deny list (highest configurable priority)
     local session_deny_result = check_session_list(tool_name, input, config.session_denied_tools, "deny")
     if session_deny_result then
       return session_deny_result
     end
 
-    -- 2. Always allow Claude Code internal tools
+    -- 2.5. A turn that names its whole tool set may use nothing else — not an internal tool, not a
+    -- vibing-nvim MCP tool, whatever the mode. Only a background agent with no chat to ask in sets
+    -- this, so there is no approval to fall back to.
+    if config.exclusive_tools then
+      local listed = vim.iter(config.exclusive_tools):any(function(pattern)
+        return matchers.matches_permission(tool_name, input, pattern)
+      end)
+      if not listed then
+        return deny(string.format("Tool %s is not available to this task", tool_name))
+      end
+    end
+
+    -- 3. Always allow Claude Code internal tools
     if tools_constants.INTERNAL_TOOLS_MAP[tool_name] then
       return allow(input)
     end
 
     local mode = config.permission_mode
 
-    -- 3. bypassPermissions: truly bypass all operations including deny list
+    -- 4. bypassPermissions: bypass configurable permissions, but not lifecycle invariants above
     if mode == "bypassPermissions" then
       return allow(input)
     end
 
-    -- 4. Check deny list (deny takes precedence over allow)
+    -- 5. Check deny list (deny takes precedence over allow)
     if config.denied_tools and #config.denied_tools > 0 then
       for _, pattern in ipairs(config.denied_tools) do
         if matchers.matches_permission(tool_name, input, pattern) then
@@ -202,7 +329,7 @@ function M.can_use_tool(tool_name, input, config)
       end
     end
 
-    -- 4.5. Deny rules, before any mode shortcut or session grant can allow the call. The rules'
+    -- 5.5. Deny rules, before any mode shortcut or session grant can allow the call. The rules'
     -- documented semantics are "deny is checked first", and the bundled destructive-command rules
     -- are only a real boundary if `auto` mode, always-allowed tools and a session grant cannot
     -- walk past them. bypassPermissions (handled above) remains the one deliberate way out.
@@ -214,7 +341,7 @@ function M.can_use_tool(tool_name, input, config)
       end
     end
 
-    -- 5. Session-level allow list. Deliberately after the deny checks: "allow_for_session" on a
+    -- 6. Session-level allow list. Deliberately after the deny checks: "allow_for_session" on a
     -- Bash approval records the bare tool name, so it matches every later Bash call regardless of
     -- its command. Approving `npm install` for the session must not thereby approve
     -- `sudo rm -rf /`.
@@ -223,8 +350,21 @@ function M.can_use_tool(tool_name, input, config)
       return session_allow_result
     end
 
-    -- 6. Always-allowed tools: bypass allow list, but respect deny (checked above) and ask
-    if tools_constants.ALWAYS_ALLOWED_TOOLS_MAP[tool_name] then
+    -- 7. Always-allowed tools: bypass allow list, but respect deny (checked above) and ask
+    local is_always_allowed = tools_constants.ALWAYS_ALLOWED_TOOLS_MAP[tool_name] == true
+    if not is_always_allowed and config.is_always_allowed then
+      is_always_allowed = config.is_always_allowed(tool_name)
+    end
+    if not is_always_allowed then
+      for _, pattern in ipairs(tools_constants.ALWAYS_ALLOWED_TOOLS) do
+        local prefix = pattern:match("^(.*)%*$")
+        if prefix and vim.startswith(tool_name, prefix) then
+          is_always_allowed = true
+          break
+        end
+      end
+    end
+    if is_always_allowed then
       for _, pattern in ipairs(config.asked_tools) do
         if matchers.matches_permission(tool_name, input, pattern) then
           if mode == "dontAsk" then
@@ -236,7 +376,7 @@ function M.can_use_tool(tool_name, input, config)
       return allow(input)
     end
 
-    -- 7. Permission modes
+    -- 8. Permission modes
     if mode == "auto" then
       return allow(input)
     end
@@ -245,11 +385,12 @@ function M.can_use_tool(tool_name, input, config)
       return allow(input)
     end
 
-    -- Handle vibing-nvim MCP tools. The vibing-nvim MCP server may reach the CLI either as a
-    -- plain user-level MCP server (mcp__vibing-nvim__<tool>) or inside a Claude Code plugin
+    -- Handle vibing-nvim MCP tools. The vibing-nvim MCP server reaches the CLI as a plain
+    -- user-level MCP server (mcp__vibing-nvim__<tool>), inside a Claude Code plugin
     -- (mcp__plugin_<plugin>_<server>__<tool>, i.e. mcp__plugin_vibing-nvim_vibing-nvim__<tool>) --
-    -- which is the normal case, since vibing.nvim self-hosts that plugin with --plugin-dir.
-    -- Match on suffix so both are recognized identically, whatever the plugin is called.
+    -- which is the normal case, since vibing.nvim self-hosts that plugin with --plugin-dir -- or
+    -- unprefixed as grok's `server__tool`. is_vibing_nvim_mcp_tool anchors on the server name so
+    -- all three are recognized identically, whatever the plugin is called.
     if M.is_vibing_nvim_mcp_tool(tool_name) then
       if config.mcp_enabled then
         return allow(input)
@@ -257,9 +398,9 @@ function M.can_use_tool(tool_name, input, config)
       return deny("vibing.nvim MCP integration is disabled. Enable it in config: mcp.enabled = true")
     end
 
-    -- 8. Check allow list (with pattern support)
+    -- 9. Check allow list (with pattern support)
+    local is_allowed = false
     if #config.allowed_tools > 0 then
-      local is_allowed = false
       for _, pattern in ipairs(config.allowed_tools) do
         if matchers.matches_permission(tool_name, input, pattern) then
           is_allowed = true
@@ -274,7 +415,7 @@ function M.can_use_tool(tool_name, input, config)
       end
     end
 
-    -- 9. Check ask list (AFTER allow list - granular patterns override broader permissions)
+    -- 10. Check ask list (AFTER allow list - granular patterns override broader permissions)
     for _, pattern in ipairs(config.asked_tools) do
       if matchers.matches_permission(tool_name, input, pattern) then
         if mode == "dontAsk" then
@@ -284,7 +425,7 @@ function M.can_use_tool(tool_name, input, config)
       end
     end
 
-    -- 10. Check granular allow rules (deny rules already ran at step 4.5)
+    -- 11. Check granular allow rules (deny rules already ran at step 5.5)
     if config.permission_rules and #config.permission_rules > 0 then
       for _, rule in ipairs(config.permission_rules) do
         if rule.action ~= "deny" and rule_checker.check_rule(rule, tool_name, input) == "allow" then
@@ -293,7 +434,9 @@ function M.can_use_tool(tool_name, input, config)
       end
     end
 
-    if mode == "dontAsk" then
+    -- A tool the allow list named *is* pre-approved; only the ask list and the rules above may
+    -- still take it back.
+    if mode == "dontAsk" and not is_allowed then
       return deny(string.format("Tool %s is not pre-approved (dontAsk mode)", tool_name))
     end
     return allow(input)

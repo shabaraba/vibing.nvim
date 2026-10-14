@@ -26,7 +26,8 @@ This configuration should:
 - Allow most Bash commands to execute freely
 - Require user approval specifically for `rm` commands
 
-However, we discovered that `permissions_ask` patterns were being completely ignored, causing security vulnerabilities where dangerous commands like `rm ~/.pm/secret_key_backup.txt` executed without user approval.
+However, we discovered that `permissions_ask` patterns were being completely ignored, causing security vulnerabilities
+where dangerous commands like `rm ~/.pm/secret_key_backup.txt` executed without user approval.
 
 ## Problem
 

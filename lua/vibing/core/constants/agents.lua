@@ -9,24 +9,66 @@ local M = {}
 ---@field value string モデル識別子
 ---@field description string 補完UIに出す説明
 
+---@class Vibing.AgentConfigField
+---`setup().ai.agents.<id>.extensions.<field>` の1項目。`config.lua` が既定値の組み立てと検証をここから導く
+---ので、バックエンド固有の設定キーが共有コードに名前で現れない（ADR 009）
+---@field kind "string"|"number"|"boolean"|"path_or_false"|"string_list" 検証の種類
+---@field values string[]? `kind = "string"` のとき、許される値の全体。設定されていれば
+---  `config.lua` が enum として検証し、範囲外は設定エラー
+---@field min number? `kind = "number"` のとき許される最小値。下回れば設定エラー
+---@field default any 既定値。`default_module` があればそちらが優先
+---@field default_module string? 既定値を持つモジュールの require パス（このファイルは何も
+---  require しないので、文字列の既定値を別モジュールから借りるときはこう書く）
+---@field default_field string? `default_module` 内のフィールド名
+
 ---@class Vibing.AgentDefinition
 ---@field id string エージェント識別子（frontmatter の `agent` フィールドの値）
----@field adapter_module string アダプターの require パス
+---@field adapter_module string アダプターの require パス（`cli_adapter.define` を通す互換シム）
+---@field descriptor_module string バックエンド記述子（`Vibing.BackendDescriptor`）の require パス。
+---  アダプターの実体は `infrastructure/adapter/cli_adapter.lua` 一つで、バックエンドごとの差は
+---  この記述子が持つ（ADR 009）
 ---@field command_builder_module string argv を組み立てるモジュールの require パス。テストが
 ---  バックエンドを一覧するときに使う（列挙を手で並べると新しいバックエンドで更新漏れが起きる）
 ---@field export_name string `infrastructure/init.lua` でのエクスポート名
 ---@field description string frontmatter 補完の agent enum に出す説明
 ---@field models Vibing.AgentModelCandidate[] 補完候補。妥当性検証ではない（自由入力を許す
----  バックエンドもある）ので、ここに無いモデルを弾く用途には使わないこと
+---  バックエンドもある）ので、ここに無いモデルを弾く用途には使わないこと。
+---  `discovery_module` があるバックエンドでは、CLIに訊けなかったときのフォールバック
+---@field discovery_module string? モデル候補をCLI自身に問い合わせる `Vibing.ModelDiscovery` の
+---  require パス。無いバックエンドは `models` をそのまま使う（どのバックエンドに有るかと、
+---  その理由は `infrastructure/adapter/models/catalog.lua`）
+---@field process_default? "oneshot"|"duplex" Default process mode for chats
+---@field chat_model string? Default model for chats
+---@field helper_model string? Default model for helpers
+---@field config_support table? Supported common configuration controls
+---@field config_fields table<string, Vibing.AgentConfigField>? `setup().ai.agents.<id>.extensions` の項目
 
 ---@type table<string, Vibing.AgentDefinition>
 M.AGENTS = {
   claude = {
     id = "claude",
+    process_default = "duplex",
+    chat_model = "sonnet",
+    helper_model = "haiku",
+    config_support = { settings_sources = true, inherit_cli_servers = true },
     adapter_module = "vibing.infrastructure.adapter.claude_cli",
+    descriptor_module = "vibing.infrastructure.adapter.backends.claude",
     command_builder_module = "vibing.infrastructure.adapter.modules.cli_command_builder",
     export_name = "ClaudeCLIAdapter",
     description = "Claude CLI (Anthropic)",
+    config_fields = {
+      git_instructions = { kind = "boolean", default = false },
+      -- `claude -p` はバックグラウンド subagent が終わるまでプロセスを開いたまま待つが、
+      -- 「連続アイドル」がこの秒数を超えると**まだ動いているものを止め、部分結果を捨てる**。
+      -- CLI の既定は600秒で、それは CI 向けの一発起動に合わせた値。対話チャットでログを精読
+      -- させるような subagent は普通に超えるので、既定を1時間に広げる。0 は無制限。
+      -- 渡し先は `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS`（記述子の `apply_env`）
+      background_wait_sec = {
+        kind = "number",
+        min = 0,
+        default = 3600,
+      },
+    },
     models = {
       { value = "haiku", description = "Claude Haiku (fastest)" },
       { value = "sonnet", description = "Claude Sonnet (balanced)" },
@@ -37,22 +79,100 @@ M.AGENTS = {
   codex = {
     id = "codex",
     adapter_module = "vibing.infrastructure.adapter.codex_cli",
+    descriptor_module = "vibing.infrastructure.adapter.backends.codex",
     command_builder_module = "vibing.infrastructure.adapter.modules.codex_command_builder",
     export_name = "CodexCLIAdapter",
     description = "Codex CLI (OpenAI)",
+    config_fields = {
+      -- When codex asks the human before running something, as a `-c approval_policy` override.
+      --
+      -- A **separate dial from `permission_mode`**, and deliberately so (#861): `permission_mode`
+      -- decides what vibing's own gate does, this decides when codex's sandbox asks to be escaped.
+      -- The two explicit modes still win over it, because choosing them is an explicit statement
+      -- about this chat — `bypassPermissions` means "ask nothing", `plan` means "write nothing".
+      --
+      -- `""` is the default and means **unset**: no override is emitted and codex's own config.toml
+      -- decides, which is byte-for-byte today's argv. `"untrusted"` is **not** offered: codex 0.160
+      -- removed it and now refuses to start at all when it is set, so accepting the word here would
+      -- turn a typo into a chat that cannot be opened.
+      approval_policy = {
+        kind = "string",
+        values = { "", "on-request", "on-failure", "never" },
+        default = "",
+      },
+      -- Answer codex's own sandbox-escape requests with `accept` instead of drawing a prompt.
+      --
+      -- The two gates ask different questions, but by the time one of these arrives the first has
+      -- already said yes: the PreToolUse hook runs first and codex sends no approval request at all
+      -- when it denies (`codex_native_approval.lua`). So what this turns off is the **second** ask
+      -- about a call `permissions` already allowed — `permissions.ask` / `deny` still prompt and
+      -- still refuse, one layer up, which is where the dangerous-command rules live.
+      --
+      -- Default `false`, because the two questions are not the same one: a user may want `Bash`
+      -- allowed inside the sandbox and gated on the way out of it. Turning this on says they do not.
+      auto_approve = {
+        kind = "boolean",
+        default = false,
+      },
+      -- The exceptions to `auto_approve`, as ordinary permission patterns (`Bash(git push:*)`).
+      -- A request matching one of these is drawn for a human even while `auto_approve` is on.
+      --
+      -- A **separate list from `permissions.ask`**, because the two answer different questions.
+      -- `permissions.ask` decides whether the tool may run at all and has already said yes by the
+      -- time this list is consulted; this one decides whether running it *outside codex's sandbox*
+      -- is something to look at. A command can be fine inside the workspace and worth a glance on
+      -- the way out of it, which is the whole reason the second gate exists.
+      --
+      -- Ignored entirely when `auto_approve` is off, where every request is drawn anyway.
+      auto_approve_ask = {
+        kind = "string_list",
+        default = {},
+      },
+      -- Project-local OS sandbox profile; `false` disables loading it.
+      profile_file = {
+        kind = "path_or_false",
+        default = ".vibing/codex-permissions.toml",
+      },
+      -- Initial TOML, consulted only when the profile file is first created.
+      profile_content = {
+        kind = "string",
+        default_module = "vibing.core.utils.project_codex_permissions",
+        default_field = "DEFAULT_CONTENT",
+      },
+      -- A Git-tracked profile is refused until the user says they reviewed it.
+      allow_tracked_profile = {
+        kind = "boolean",
+        default = false,
+      },
+      -- codex の軽量呼び出しは --ignore-user-config で走るので、ユーザーの model_provider が落ちて
+      -- 既定の OpenAI エンドポイントに向く。それを 1 セッション 1 回だけ警告する。
+      --
+      -- auto_resume_on_limit や dap と違って既定で有効なのは、これがトークンを使う機能ではなく、
+      -- 黙って宛先が変わることを防ぐ通知だから。既定で無効なら、気づけないという当の問題が残る。
+      -- 代償は `codex doctor --json` の起動が 1 回入ることで、doctor には単一チェックだけ走らせる
+      -- フラグが無いためプロバイダへの到達性通信も付いてくる。それを避けたい場合は false にする。
+      provider_notice = {
+        kind = "boolean",
+        default = true,
+      },
+    },
+    discovery_module = "vibing.infrastructure.adapter.models.codex",
+    -- `codex debug models` に訊けなかったとき（CLI未インストール等）だけ使う。codex は短縮名を
+    -- 解決しないので、値は必ずカタログどおりのスラッグで書く
     models = {
       { value = "gpt-6-astra", description = "GPT-6 Astra (strongest Codex work)" },
-      { value = "gpt-5.6-sol", description = "GPT-5.6 Sol (deep reasoning)" },
-      { value = "gpt-5.6-terra", description = "GPT-5.6 Terra (everyday Codex work)" },
-      { value = "gpt-5.6-luna", description = "GPT-5.6 Luna (fast, narrow tasks)" },
+      { value = "gpt-6-sol", description = "GPT-6 Sol (deep reasoning)" },
+      { value = "gpt-6-luna", description = "GPT-6 Luna (fast, narrow tasks)" },
+      { value = "gpt-5.6-sol", description = "GPT-5.6 Sol (previous generation, deep reasoning)" },
+      { value = "gpt-5.6-terra", description = "GPT-5.6 Terra (previous generation, everyday work)" },
+      { value = "gpt-5.6-luna", description = "GPT-5.6 Luna (previous generation, fast)" },
       { value = "gpt-5.5", description = "GPT-5.5 (previous generation)" },
-      { value = "gpt-5-codex", description = "GPT-5 Codex (API-key auth / Responses API)" },
-      { value = "gpt-5.3-codex-spark", description = "GPT-5.3 Codex Spark (preview, when available)" },
     },
   },
   copilot = {
     id = "copilot",
     adapter_module = "vibing.infrastructure.adapter.copilot_cli",
+    descriptor_module = "vibing.infrastructure.adapter.backends.copilot",
     command_builder_module = "vibing.infrastructure.adapter.modules.copilot_command_builder",
     export_name = "CopilotCLIAdapter",
     description = "GitHub Copilot CLI",
@@ -73,19 +193,62 @@ M.AGENTS = {
   grok = {
     id = "grok",
     adapter_module = "vibing.infrastructure.adapter.grok_cli",
+    descriptor_module = "vibing.infrastructure.adapter.backends.grok",
     command_builder_module = "vibing.infrastructure.adapter.modules.grok_command_builder",
     export_name = "GrokCLIAdapter",
     description = "Grok Build CLI (xAI)",
+    config_fields = {},
+    discovery_module = "vibing.infrastructure.adapter.models.grok",
+    -- `grok models` に訊けなかったときだけ使う
     models = {
+      { value = "grok-4.6", description = "Grok 4.6 (default)" },
       { value = "grok-4.5", description = "Grok 4.5" },
-      { value = "grok-composer-2.5-fast", description = "Grok Composer 2.5 Fast" },
+    },
+  },
+  pi = {
+    id = "pi",
+    process_default = "duplex",
+    adapter_module = "vibing.infrastructure.adapter.pi_cli",
+    descriptor_module = "vibing.infrastructure.adapter.backends.pi",
+    command_builder_module = "vibing.infrastructure.adapter.modules.pi_command_builder",
+    export_name = "PiCLIAdapter",
+    description = "Pi coding agent (local / any OpenAI-compatible provider)",
+    config_fields = {
+      -- `--provider <name>`, naming a provider in the user's `models.json`.
+      --
+      -- Empty means Pi chooses, and for a local endpoint that is usually wrong: `--model` is a
+      -- fuzzy pattern matched over Pi's whole built-in cloud catalogue as well, so `model: qwen`
+      -- with no provider resolves to a cloudflare-ai-gateway model and the turn fails with "No
+      -- API key found" (measured, Pi 0.87.1). With the provider named, matching is confined to it
+      -- and an unmatched id is passed through verbatim as a custom model id -- which is what lets
+      -- any model the endpoint can serve be selected from `model:` alone.
+      provider = {
+        kind = "string",
+        default = "",
+      },
+      -- Which backend `web_search` uses. Pi has no web tool at all, so vibing.nvim registers one
+      -- through `pi-extension/`, and unlike claude and codex — whose search happens server-side
+      -- inside the inference API — it has to call a real search API itself. `auto` takes whichever
+      -- credential is present (BRAVE_SEARCH_API_KEY, TAVILY_API_KEY, SEARXNG_URL, in that order)
+      -- and leaves the tool unregistered when there is none. The key never passes through here.
+      web_search = {
+        kind = "string",
+        default = "auto",
+        values = { "auto", "off", "brave", "tavily", "searxng" },
+      },
+    },
+    -- Local model suggestions. Pi also has a built-in provider catalogue; these candidates
+    -- are not validation, and model ids configured in the user's models.json are accepted.
+    models = {
+      { value = "mlx-community/Qwen3.6-27B-4bit", description = "Qwen3.6 27B 4bit (local, via mlx_lm.server)" },
+      { value = "mlx-community/gpt-oss-20b-MXFP4-Q8", description = "gpt-oss 20B (local, via mlx_lm.server)" },
     },
   },
 }
 
 ---列挙順。`pairs()` の順序は不定なので、ユーザーに見える一覧はすべてこれを経由する。
 ---@type string[]
-M.ORDER = { "claude", "codex", "copilot", "grok" }
+M.ORDER = { "claude", "codex", "copilot", "grok", "pi" }
 
 ---未知・未指定のエージェントのフォールバック先
 ---@type string
@@ -118,19 +281,10 @@ function M.models_for(id)
   return M.get(id).models
 end
 
----@return string[] all known model candidate values, keeping backend order and removing duplicates
-function M.all_model_values()
-  local values = {}
-  local seen = {}
-  for _, def in ipairs(M.list()) do
-    for _, model in ipairs(def.models) do
-      if not seen[model.value] then
-        seen[model.value] = true
-        table.insert(values, model.value)
-      end
-    end
-  end
-  return values
+---@param id string
+---@return table<string, Vibing.AgentConfigField>
+function M.config_fields(id)
+  return (M.AGENTS[id] and M.AGENTS[id].config_fields) or {}
 end
 
 return M

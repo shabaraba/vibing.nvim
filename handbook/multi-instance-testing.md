@@ -413,4 +413,5 @@ await use_mcp_tool('vibing-nvim', 'nvim_list_instances', {});
 
 ## Summary
 
-The multi-instance feature is complete and ready for testing. All existing functionality remains backward-compatible, while new capabilities enable Claude Code to work with multiple Neovim instances simultaneously.
+The multi-instance feature is complete and ready for testing. All existing functionality remains backward-compatible,
+while new capabilities enable Claude Code to work with multiple Neovim instances simultaneously.

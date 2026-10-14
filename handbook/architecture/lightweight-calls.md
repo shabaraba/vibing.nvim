@@ -1,11 +1,25 @@
 # Lightweight Calls
 
 Detail behind `.claude/rules/architecture.md` → "Session Persistence". Title generation,
-`/summarize`, `:VibingSummarize` and the daily summary run as `lightweight` calls.
-`core/types.lua` states the obligation each adapter owes — no tools, no project config, no hooks,
-`utility_model` — rather than the mechanism any one of them uses, because the four CLIs differ in
-kind rather than in degree. This file is each backend's mechanism, and what happens when the CLI
-silently stops honouring it.
+`/summarize`, `:VibingSummarize`, `:VibingChatHandoff` and the daily summary run as `lightweight`
+calls. `core/types.lua` states the obligation each adapter owes — no tools, no project config, no
+hooks, `ai.helpers.model` — rather than the mechanism any one of them uses, because the four CLIs
+differ in kind rather than in degree. This file is each backend's mechanism, and what happens when
+the CLI silently stops honouring it.
+
+## Adapter resolution
+
+Auxiliary call sites use `vibing.get_helper_adapter()`. `ai.helpers.agent` inherits
+`ai.chat.agent` when omitted; helper model and effort use `ai.helpers`, independently of
+chat frontmatter. The shared resolver is `core/utils/ai_config.lua`.
+
+Title generation, summaries and daily summaries retain their tool-free `lightweight` execution.
+Background chat search uses the same helper selection with its restricted search tools and
+`_ai_purpose = "helpers"`; it is not a tool-free call.
+
+The `/summarize` handler reuses a session only when the source chat and helper use the same
+agent. Different agents cannot resume one another's session IDs, so it sends the conversation
+text instead. Agent environment applies to helpers; frontmatter environment stays chat-only.
 
 **Lightweight calls are restricted differently per backend, because the CLIs differ in kind.**
 Claude removes the tools outright with `--tools ""`. Codex cannot: probing its config schema with
@@ -58,7 +72,7 @@ Three details there are not interchangeable. The restrictions are `-c` overrides
 `-s` flag because `/summarize` passes a session id and `codex exec resume` does not accept `-s`. The
 restriction ignores `permission_mode` entirely, `bypassPermissions` included: the user put the
 _chat_ in that mode, and a title generated behind their back is not the call they made. And
-`utility_model` still goes through the Claude-name filter, so its `sonnet` default becomes no
+`ai.helpers.model` still goes through the Claude-name filter, so its `haiku` default becomes no
 `-m` at all rather than a model codex would reject.
 
 **Copilot can remove the tools outright, and does it in one flag.** `--available-tools` is the
@@ -94,7 +108,7 @@ happens after a chat. **What closes it is `--cwd`** (below): the run happens som
 `.grok/hooks/` to discover.
 
 **Copilot does not have grok's problem**, despite also writing its hook into the project tree. The
-generated plugin under `<cwd>/.vibing/copilot-plugin/` is reachable only through `--plugin-dir`,
+generated plugin under `<cwd>/.vibing/copilot-plugin-<instance>/` is reachable only through `--plugin-dir`,
 which the lightweight branch never emits — copilot auto-discovers hooks from `~/.copilot/hooks/`,
 `.github/hooks/`, its policy dirs and `settings.json`, and vibing.nvim writes none of those. So a
 leftover plugin from an earlier chat is inert, and skipping generation really does leave the run
@@ -188,7 +202,7 @@ teaching one copy about `lightweight` would have left the same bug live on the o
 nothing marking them stale. The restriction half stays per-backend on purpose: claude _removes_
 tools with `--tools ""`, codex can only fence them, and no shared vocabulary spans that.
 `core/types.lua` states the obligation each adapter owes for `lightweight` — no tools, no project
-config, no hooks, `utility_model` — rather than the mechanism any one of them uses.
+config, no hooks, `ai.helpers.model` — rather than the mechanism any one of them uses.
 
 **The `model_provider` that `--ignore-user-config` drops is announced rather than left to be
 discovered** (#587). `codex_provider_notice.lua` warns once per Neovim session when the configured
@@ -222,7 +236,7 @@ load-bearing:
 
 It runs on the first lightweight call rather than at `setup()` because `doctor` makes one
 reachability request to the active provider's endpoint; it is asynchronous and nothing waits for
-it. `agent.codex_provider_notice.enabled` turns the whole thing off, probe included, and is the
+it. `ai.agents.codex.extensions.provider_notice` turns the whole thing off, probe included, and is the
 one toggle of this shape that **defaults to `true`** — `subagent`, `auto_resume_on_limit` and
 `dap` all default to `false` because they spend tokens or run unattended, and this spends none. A
 warning about a change the user cannot otherwise see fails at its only job if it is off until

@@ -3,7 +3,7 @@
  * Self-building launcher for the vibing-nvim MCP server.
  *
  * Claude Code plugin installation does not run an install/build step, so this wrapper builds
- * mcp-server/dist before exec'ing the compiled server. Used as the `command` for the plugin's
+ * mcp-server/dist before loading the compiled server in-process. Used as the `command` for the plugin's
  * bundled MCP server in .claude-plugin/plugin.json.
  *
  * For "directory"-source plugin installs, CLAUDE_PLUGIN_ROOT points at the live checkout rather
@@ -35,7 +35,7 @@
  * mcp-server/README.md).
  */
 import { spawn } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join } from 'node:path';
 import { computeFingerprint } from './build-fingerprint.mjs';
 import { builtFingerprint, hasCompleteBuild, rebuild } from './rebuild.mjs';
@@ -106,23 +106,8 @@ if (!hasCompleteBuild(mcpDir)) {
   rebuildInBackground();
 }
 
-const child = spawn(process.execPath, [distEntry], { stdio: 'inherit', env: process.env });
-
-// Forward termination signals so Claude Code stopping this wrapper also stops
-// the actual server process instead of orphaning it.
-const forwardSignal = (signal) => child.kill(signal);
-const forwardedSignals = ['SIGTERM', 'SIGINT'];
-for (const signal of forwardedSignals) {
-  process.on(signal, forwardSignal);
-}
-
-child.on('exit', (code, signal) => {
-  if (signal) {
-    for (const s of forwardedSignals) {
-      process.removeListener(s, forwardSignal);
-    }
-    process.kill(process.pid, signal);
-  } else {
-    process.exit(code ?? 0);
-  }
-});
+// Run the server in this process rather than as a child. A child kept two node processes resident
+// for the life of every claude process -- this launcher idling at ~57MB RSS beside the server's
+// ~75MB, measured on node 22 -- which duplex multiplies by every open chat. The server installs its
+// own SIGTERM/SIGINT handlers, so nothing is left to forward.
+await import(pathToFileURL(distEntry).href);

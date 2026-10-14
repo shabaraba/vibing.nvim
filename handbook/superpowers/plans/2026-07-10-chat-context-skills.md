@@ -123,7 +123,8 @@ end)
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `nvim --headless -u tests/minimal_init.lua -c "PlenaryBustedFile tests/lua/application/chat/send_message_spec.lua { minimal_init = 'tests/minimal_init.lua' }"`
+Run: `nvim --headless -u tests/minimal_init.lua -c "PlenaryBustedFile tests/lua/application/chat/send_message_spec.lua {
+minimal_init = 'tests/minimal_init.lua' }"`
 
 Expected: FAIL — `captured.opts.chat_file_path` is `nil`, not the buffer's file path
 (`assert.equals` fails because the field doesn't exist yet).
@@ -175,7 +176,8 @@ Change it to add `chat_file_path` right after `cwd`:
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `nvim --headless -u tests/minimal_init.lua -c "PlenaryBustedFile tests/lua/application/chat/send_message_spec.lua { minimal_init = 'tests/minimal_init.lua' }"`
+Run: `nvim --headless -u tests/minimal_init.lua -c "PlenaryBustedFile tests/lua/application/chat/send_message_spec.lua {
+minimal_init = 'tests/minimal_init.lua' }"`
 
 Expected: PASS
 
@@ -229,7 +231,8 @@ its closing `end)`), add:
 
 - [ ] **Step 2: Run tests to verify the new one fails**
 
-Run: `nvim --headless -u tests/minimal_init.lua -c "PlenaryBustedFile tests/lua/infrastructure/adapter/modules/cli_command_builder_spec.lua { minimal_init = 'tests/minimal_init.lua' }"`
+Run: `nvim --headless -u tests/minimal_init.lua -c "PlenaryBustedFile
+tests/lua/infrastructure/adapter/modules/cli_command_builder_spec.lua { minimal_init = 'tests/minimal_init.lua' }"`
 
 Expected: 3 pass (the two pre-existing tests, plus "omits..." which already holds), 1 FAIL
 ("appends the current chat buffer file path when provided" — the line isn't added yet).
@@ -269,7 +272,8 @@ Change it to insert the chat file path line right after the worktree line:
 
 - [ ] **Step 4: Run tests to verify they all pass**
 
-Run: `nvim --headless -u tests/minimal_init.lua -c "PlenaryBustedFile tests/lua/infrastructure/adapter/modules/cli_command_builder_spec.lua { minimal_init = 'tests/minimal_init.lua' }"`
+Run: `nvim --headless -u tests/minimal_init.lua -c "PlenaryBustedFile
+tests/lua/infrastructure/adapter/modules/cli_command_builder_spec.lua { minimal_init = 'tests/minimal_init.lua' }"`
 
 Expected: PASS (4/4)
 
@@ -357,8 +361,7 @@ Read through the recovered conversation to rebuild context internally. Reply wit
 one-line acknowledgment only (e.g. "会話履歴を読み直しました。" / "Context restored.") — do not
 summarize the conversation or propose next steps unless the user asks for that separately.
 
-````
-
+````markdown
 - [ ] **Step 2: Lint the new file**
 
 Run: `npx markdownlint skills/vibing-chat-recall/SKILL.md`
@@ -372,6 +375,7 @@ line under 120 characters — frontmatter lines are exempt (matches the existing
 ```bash
 git add skills/vibing-chat-recall/SKILL.md
 git commit -m "feat: add vibing-chat-recall skill"
+```
 ````
 
 ---
@@ -472,8 +476,7 @@ one, and don't summarize beyond the 1-2 lines per file — opening the file is l
 
 If nothing survives Step 4, say plainly that nothing was found rather than forcing a weak match.
 
-````
-
+````markdown
 - [ ] **Step 2: Lint the new file**
 
 Run: `npx markdownlint skills/vibing-chat-search/SKILL.md`
@@ -486,6 +489,7 @@ characters.
 ```bash
 git add skills/vibing-chat-search/SKILL.md
 git commit -m "feat: add vibing-chat-search skill"
+```
 ````
 
 ---

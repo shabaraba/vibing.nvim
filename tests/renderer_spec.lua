@@ -42,7 +42,7 @@ describe("vibing.presentation.chat.modules.renderer", function()
         }
 
         -- Execute
-        Renderer.addUserSection(mock_buf, mock_win, pendingChoices)
+        Renderer.addUserSection(mock_buf, mock_win, { { questions = pendingChoices } })
 
         -- Verify
         local lines = vim.api.nvim_buf_get_lines(mock_buf, 0, -1, false)
@@ -88,7 +88,7 @@ describe("vibing.presentation.chat.modules.renderer", function()
         }
 
         -- Execute
-        Renderer.addUserSection(mock_buf, mock_win, pendingChoices)
+        Renderer.addUserSection(mock_buf, mock_win, { { questions = pendingChoices } })
 
         -- Verify
         local lines = vim.api.nvim_buf_get_lines(mock_buf, 0, -1, false)
@@ -132,7 +132,7 @@ describe("vibing.presentation.chat.modules.renderer", function()
         }
 
         -- Execute
-        Renderer.addUserSection(mock_buf, mock_win, pendingChoices)
+        Renderer.addUserSection(mock_buf, mock_win, { { questions = pendingChoices } })
 
         -- Verify
         local lines = vim.api.nvim_buf_get_lines(mock_buf, 0, -1, false)
@@ -171,7 +171,7 @@ describe("vibing.presentation.chat.modules.renderer", function()
         }
 
         -- Execute
-        Renderer.addUserSection(mock_buf, mock_win, pendingChoices)
+        Renderer.addUserSection(mock_buf, mock_win, { { questions = pendingChoices } })
 
         -- Verify
         local lines = vim.api.nvim_buf_get_lines(mock_buf, 0, -1, false)
@@ -205,7 +205,7 @@ describe("vibing.presentation.chat.modules.renderer", function()
         }
 
         -- Execute
-        Renderer.addUserSection(mock_buf, mock_win, pendingChoices)
+        Renderer.addUserSection(mock_buf, mock_win, { { questions = pendingChoices } })
 
         -- Verify: should default to numbered list (not q.multiSelect = true)
         local lines = vim.api.nvim_buf_get_lines(mock_buf, 0, -1, false)
@@ -221,7 +221,7 @@ describe("vibing.presentation.chat.modules.renderer", function()
       end)
     end)
 
-    describe("with pendingApproval", function()
+    describe("with pendingApprovals", function()
       it("should split a multi-line command into separate lines", function()
         local pendingApproval = {
           tool = "Bash",
@@ -229,7 +229,7 @@ describe("vibing.presentation.chat.modules.renderer", function()
           options = { { label = "allow_once" }, { label = "deny_once" } },
         }
 
-        Renderer.addUserSection(mock_buf, mock_win, nil, pendingApproval)
+        Renderer.addUserSection(mock_buf, mock_win, nil, { pendingApproval })
 
         local lines = vim.api.nvim_buf_get_lines(mock_buf, 0, -1, false)
         local joined = table.concat(lines, "\n")

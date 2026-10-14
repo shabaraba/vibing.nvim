@@ -4,8 +4,10 @@
 
 vibing.nvim is a Neovim plugin that provides a Claude chat inside Neovim by spawning the `claude`
 CLI directly (`claude -p --output-format stream-json`) and parsing its stream. There is no Node.js
-agent wrapper process; the Node side is only the MCP server and two hook scripts. Codex, Copilot
-and Grok CLI backends are also supported. See `.claude/rules/architecture.md`.
+agent wrapper process; the Node side is the MCP server, two hook scripts and the Pi permission
+bridge. Codex, Copilot, Grok and Pi backends are also supported — Pi (`pi --mode rpc`) is a
+harness rather than a vendor CLI and is how local models are run. See
+`.claude/rules/architecture.md`.
 
 ## Commands
 
@@ -16,8 +18,8 @@ npm run check               # Lua syntax; see also check:doc for doc/*.txt
 npm run lint                # eslint only; lint:md, format and format:check are separate
 ```
 
-`test:e2e` and `test:eval` spend real tokens and are deliberately outside `npm test`. Every script
-is in `package.json`; for manual testing, load the plugin and run `:VibingChat`.
+`test:e2e`, `test:eval` and `test:perf` spend real tokens and are deliberately outside `npm test`.
+Every script is in `package.json`; for manual testing, load the plugin and run `:VibingChat`.
 
 ## Where Documentation Lives
 
@@ -26,40 +28,46 @@ invariants you would otherwise break, and this map. Reasons, measurements and re
 alternatives belong in `handbook/`; procedures belong in a skill. Both are read on demand.
 If you add a paragraph to `.claude/rules/` explaining _why_, it is in the wrong file.
 
-| `.claude/rules/`      | Invariants for                                                      |
-| --------------------- | ------------------------------------------------------------------- |
-| `architecture.md`     | CLI/hook protocol, backend seams, plugin dirs, diffs, orchestration |
-| `permissions.md`      | Evaluation order, per-chat approval state, delegated approval       |
-| `mcp-integration.md`  | Tool prefixes, `rpc_port`, window/chat addressing                   |
-| `features.md`         | Usage limits, subagent output, AskUserQuestion, timestamps, dap     |
-| `configuration.md`    | Pointer to the option reference                                     |
-| `self-development.md` | Three mistakes made repeatedly when developing this repo            |
-| `self-testing.md`     | What only `test:e2e` may run; the 3-try rule                        |
-| `web-workflow.md`     | Branch naming and push retry on Claude Code for the web             |
+| `.claude/rules/`      | Invariants for                                                     |
+| --------------------- | ------------------------------------------------------------------ |
+| `architecture.md`     | CLI/hook protocol, seams, plugin dirs, process/turn, duplex, diffs |
+| `permissions.md`      | Evaluation order, approval state, waiting approvals, delegation    |
+| `mcp-integration.md`  | Tool prefixes, `rpc_port`, window/chat addressing                  |
+| `features.md`         | Usage limits, subagent output, AskUserQuestion, timestamps, dap    |
+| `configuration.md`    | Pointer to the option reference                                    |
+| `self-development.md` | Three mistakes made repeatedly when developing this repo           |
+| `self-testing.md`     | What only `test:e2e` may run; the 3-try rule                       |
+| `web-workflow.md`     | Branch naming and push retry on Claude Code for the web            |
 
-| `handbook/` (on demand)               | Contents                                                |
-| ------------------------------------- | ------------------------------------------------------- |
-| `configuration.md`                    | Every `setup()` field, defaults, granular rule examples |
-| `architecture/module-map.md`          | Per-directory listing, key entry points, adapter split  |
-| `architecture/cli-integration.md`     | Hook protocol, backend seams, per-CLI measurements      |
-| `architecture/permissions.md`         | Evaluation order, Permission Builder, approval UI, #667 |
-| `architecture/lightweight-calls.md`   | How each backend restricts utility calls                |
-| `architecture/plugin-and-commands.md` | `--plugin-dir`, slash command discovery, startup cost   |
-| `architecture/per-request-diffs.md`   | git tree snapshot, overlap guard, fallback routing      |
-| `architecture/chat-lineage.md`        | Concurrency, fork, handoff, subagent chat               |
-| `architecture/orchestration.md`       | Notification state machine, queue, tree operations      |
-| `architecture/session-persistence.md` | The `working_dir` git-root boundary                     |
-| `features/usage-limits.md`            | Auto-resume, scheduled requests, retry budget           |
-| `features/chat-ui.md`                 | Subagent output, timestamps, AskUserQuestion            |
-| `features/editor-integration.md`      | Code Tour, nvim-dap analysis                            |
-| `mcp-tools.md`                        | The MCP tool catalogue and its non-obvious behaviour    |
-| `web-container-setup.md`              | The `SessionStart` hook for Claude Code on the web      |
+| `handbook/` (on demand)                 | Contents                                                 |
+| --------------------------------------- | -------------------------------------------------------- |
+| `configuration.md`                      | Every `setup()` field, defaults, granular rule examples  |
+| `ADAPTER_DEVELOPMENT.md`                | Adding a CLI backend: the descriptor, measure-first list |
+| `architecture/module-map.md`            | Per-directory listing, key entry points, adapter split   |
+| `architecture/cli-integration.md`       | Hook protocol, backend seams, per-CLI measurements       |
+| `architecture/permissions.md`           | Evaluation order, Permission Builder, approval UI, #667  |
+| `architecture/lightweight-calls.md`     | How each backend restricts utility calls                 |
+| `architecture/plugin-and-commands.md`   | `--plugin-dir`, slash command discovery, startup cost    |
+| `architecture/per-request-diffs.md`     | git tree snapshot, overlap guard, fallback routing       |
+| `architecture/processes-and-turns.md`   | `process_id` vs `turn_id`, the id alphabet, hook scope   |
+| `architecture/duplex-transport.md`      | The resident CLI process: opt-in, reuse key, reclaim     |
+| `architecture/approval-without-kill.md` | Waiting hook, the three-timeout ordering, measurements   |
+| `architecture/chat-lineage.md`          | Concurrency, fork, handoff, subagent chat                |
+| `architecture/orchestration.md`         | Notification state machine, queue, tree operations       |
+| `architecture/session-persistence.md`   | The `working_dir` git-root boundary                      |
+| `features/usage-limits.md`              | Auto-resume, scheduled requests, retry budget            |
+| `features/chat-ui.md`                   | Subagent output, timestamps, AskUserQuestion             |
+| `features/editor-integration.md`        | Code Tour, nvim-dap analysis                             |
+| `mutation-verification.md`              | Breaking what a new assertion guards; when to run it     |
+| `mcp-tools.md`                          | The MCP tool catalogue and its non-obvious behaviour     |
+| `web-container-setup.md`                | The `SessionStart` hook for Claude Code on the web       |
 
 | `.claude/skills/` (on demand)   | Invoke when                                         |
 | ------------------------------- | --------------------------------------------------- |
 | `self-testing`                  | Writing or debugging an E2E spec                    |
 | `test-design`                   | Designing scenarios before writing tests            |
 | `ci-gates`                      | Touching package.json scripts, CI, or a gate's test |
+| `stacked-pr-merge`              | Merging PRs that were cut from each other           |
 | `github-flow-for-claude-on-web` | Any GitHub operation from the web container         |
 | `remote-screenshot`             | Showing a UI change from the web container          |
 
@@ -73,13 +81,22 @@ marketplace root; the plugin root is one level below it. The normal path is no l
 marketplace, though: `cli_command_builder` passes `claude-plugin/` to the CLI per session with
 `--plugin-dir` (#618). `marketplace.json` remains only for a manual `claude plugin install`.
 
-| Path                                       | Contents                                          |
-| ------------------------------------------ | ------------------------------------------------- |
-| `.claude-plugin/marketplace.json`          | marketplace definition, `source: ./claude-plugin` |
-| `claude-plugin/.claude-plugin/plugin.json` | plugin definition; `${CLAUDE_PLUGIN_ROOT}` parent |
-| `claude-plugin/{agents,skills}/`           | **distributed** subagents and skills              |
-| `claude-plugin/mcp-server/`                | the distributed MCP server                        |
-| `.claude/{skills,commands,rules}/`         | **for developing this repo**; not distributed     |
+| Path                                       | Contents                                           |
+| ------------------------------------------ | -------------------------------------------------- |
+| `.claude-plugin/marketplace.json`          | marketplace definition, `source: ./claude-plugin`  |
+| `claude-plugin/.claude-plugin/plugin.json` | plugin definition; `${CLAUDE_PLUGIN_ROOT}` parent  |
+| `claude-plugin/{agents,skills}/`           | **distributed** subagents and skills               |
+| `claude-plugin/mcp-server/`                | the distributed MCP server                         |
+| `pi-extension/`                            | Pi's permission bridge and web tools; not a plugin |
+| `.claude/{skills,commands,rules}/`         | **for developing this repo**; not distributed      |
+| `AGENTS.md`, `.agents/skills`              | symlinks; see below                                |
+
+`AGENTS.md` is a symlink to this file and `.agents/skills` one to `.claude/skills`, because codex
+and grok look for those names and claude looks for these. There is one copy of each; do not edit
+through the link, and do not let a second copy reappear. Measured on the installed CLIs: claude
+reads `CLAUDE.md` only (an `AGENTS.md` alone reaches it not at all), codex reads `AGENTS.md`, and
+grok reads both but reports the shared content once. `.claude/rules/` has no counterpart — only
+claude loads it automatically, so codex and grok reach those files by following the map above.
 
 When adding a skill, the directory is decided by which reader it is for. The directory is not named
 `plugin/` because that is a Neovim reserved name: `plugin/**/*.lua` on the runtimepath is sourced
@@ -103,9 +120,13 @@ time Neovim starts.
   puts the tool in `ask` / `deny`. The criterion is "read-only built-in that creates, updates or
   deletes no file" (`Read` / `Glob` / `Grep`). Removing one from `DEFAULT_ALLOWED_TOOLS` does not
   disallow it while it is still here.
-- **`INTERNAL_TOOLS`** — harness-internal, side-effect-free control tools (`ToolSearch`,
-  `TodoWrite`, `ReportFindings`, `ScheduleWakeup`). Always allowed, ahead of `ALWAYS_ALLOWED_TOOLS`
-  in `can_use_tool.lua`, so not even `ask` / `deny` applies. No `VALID_TOOLS` entry needed; the
-  check reads `INTERNAL_TOOLS_MAP`.
+- **`INTERNAL_TOOLS`** — the harness's own control tools. Always allowed, ahead of
+  `ALWAYS_ALLOWED_TOOLS` in `can_use_tool.lua`, so not even `ask` / `deny` applies. No
+  `VALID_TOOLS` entry needed; the check reads `INTERNAL_TOOLS_MAP`. The criterion is **"is the
+  harness unusable without it"**, not "is it read-only" — which is why `NotebookEdit`, `Agent` and
+  `EnterWorktree` are in it. Read the membership from `tools.lua`; the four names listed here went
+  stale while the list grew to nineteen. A tool whose absence merely costs a prompt still belongs:
+  `ListAgents` was missing while `SendMessage` was present, so an orchestrated worker stalled on an
+  approval for reading the list of chats it was about to message.
 - Adding a tool: allowed by default → both `VALID_TOOLS` and `DEFAULT_ALLOWED_TOOLS`; not allowed
   by default (like `Bash`) → `VALID_TOOLS` only.

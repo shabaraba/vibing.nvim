@@ -1,6 +1,6 @@
 ---@diagnostic disable: undefined-field
 --- Covers the parts of the child environment only `claude_cli` decides: whether the CLI computes
---- its own git status block, and the variables the user declared through `agent.env` / the chat's
+--- its own git status block, and the variables the user declared through `ai.agents.claude.env` / the chat's
 --- `env:` frontmatter.
 ---
 --- They are environment assertions rather than argv ones because the CLI has no flag for either,
@@ -12,7 +12,13 @@ local helper = require("tests.helpers.adapter_stream")
 local claude = require("vibing.infrastructure.adapter.claude_cli")
 local AgentEnvironment = require("vibing.infrastructure.adapter.modules.agent_environment")
 
-local CONFIG = { agent = { default_model = "sonnet" } }
+local CONFIG = {
+  ai = {
+    chat = {
+      model = "sonnet",
+    },
+  },
+}
 local VAR = "CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS"
 
 describe("claude_cli environment", function()
@@ -35,7 +41,9 @@ describe("claude_cli environment", function()
 
   --- @param agent table? overrides merged into CONFIG.agent
   local function env_for(agent, opts)
-    local config = { agent = vim.tbl_extend("force", CONFIG.agent, agent or {}) }
+    local config = vim.deepcopy(CONFIG)
+    config.ai.agents =
+      { claude = { env = (agent or {}).env, extensions = { git_instructions = (agent or {}).git_instructions } } }
     helper.run_stream(claude:new(config), opts)
     return system.only_call().opts.env
   end
@@ -64,8 +72,8 @@ describe("claude_cli environment", function()
       assert.equals("0", env_for().CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS)
     end)
 
-    it("yields to a value declared through agent.env", function()
-      -- `agent.env` is applied first and this default only fills a gap, so the more specific
+    it("yields to a value declared through ai.agents.claude.env", function()
+      -- `ai.agents.claude.env` is applied first and this default only fills a gap, so the more specific
       -- statement wins -- the same way an exported variable does.
       assert.equals(
         "0",
@@ -74,7 +82,7 @@ describe("claude_cli environment", function()
     end)
   end)
 
-  describe("agent.env", function()
+  describe("ai.agents.claude.env", function()
     before_each(function()
       -- Module-level and therefore process-wide: another spec file having already warned about a
       -- key would otherwise silence the assertion below.
@@ -83,18 +91,19 @@ describe("claude_cli environment", function()
 
     --- `env_for`'s `only_call` allows one spawn per test; this one compares two.
     local function next_env(agent, opts)
-      local config = { agent = vim.tbl_extend("force", CONFIG.agent, agent or {}) }
+      local config = vim.deepcopy(CONFIG)
+      config.ai.agents =
+        { claude = { env = (agent or {}).env, extensions = { git_instructions = (agent or {}).git_instructions } } }
       helper.run_stream(claude:new(config), opts)
       local env = system.calls[#system.calls].opts.env
-      -- Regenerated per stream by design (it keys the hook back to this turn), so it is the one
-      -- key two spawns are expected to differ on.
-      env.VIBING_HANDLE_ID = nil
+      -- Regenerated per stream by design (it keys the hook back to this CLI process), so it is the
+      -- one key two spawns are expected to differ on.
+      env.VIBING_PROCESS_ID = nil
       return env
     end
 
     it("puts declared variables in the spawn environment", function()
-      local env =
-        env_for({ env = { CLAUDE_AUTOCOMPACT_PCT_OVERRIDE = 20, BASH_MAX_OUTPUT_LENGTH = "10000" } })
+      local env = env_for({ env = { CLAUDE_AUTOCOMPACT_PCT_OVERRIDE = 20, BASH_MAX_OUTPUT_LENGTH = "10000" } })
       assert.equals("20", env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE)
       assert.equals("10000", env.BASH_MAX_OUTPUT_LENGTH)
     end)
@@ -112,19 +121,30 @@ describe("claude_cli environment", function()
       assert.same(next_env(), next_env({ env = {} }))
     end)
 
+    it("tells the hook script how long it may block", function()
+      -- `pre-tool-use.sh` is one fixed file shared by every chat, so its deadline cannot be
+      -- generated per turn the way the settings file is — it arrives here or not at all. Without
+      -- it the script silently falls back to its own literal, and `permissions.approval_wait_sec`
+      -- stops meaning anything.
+      local WaitBudget = require("vibing.infrastructure.hooks.wait_budget")
+      assert.equals(tostring(WaitBudget.script_wait_sec()), env_for()[WaitBudget.MAX_WAIT_VAR])
+    end)
+
     it("cannot take over the variables that bind the child to this Neovim", function()
       local env = env_for({
-        env = { VIBING_NVIM_RPC_PORT = "1234", VIBING_HANDLE_ID = "spoofed", CLAUDECODE = "1" },
+        env = { VIBING_NVIM_RPC_PORT = "1234", VIBING_PROCESS_ID = "spoofed", CLAUDECODE = "1" },
       })
       -- 9999 is what the helper stubs the RPC server to report.
       assert.equals("9999", env.VIBING_NVIM_RPC_PORT)
-      assert.is_not.equals("spoofed", env.VIBING_HANDLE_ID)
+      -- A declared process id would let a chat claim another chat's permission decisions.
+      assert.is_string(env.VIBING_PROCESS_ID)
+      assert.is_not.equals("spoofed", env.VIBING_PROCESS_ID)
       assert.is_nil(env.CLAUDECODE)
     end)
 
-    it("does not reach a lightweight call", function()
+    it("also applies configured env to helper calls", function()
       local env = env_for({ env = { BASH_MAX_OUTPUT_LENGTH = "10000" } }, { lightweight = true })
-      assert.is_nil(env.BASH_MAX_OUTPUT_LENGTH)
+      assert.equals("10000", env.BASH_MAX_OUTPUT_LENGTH)
     end)
   end)
 end)

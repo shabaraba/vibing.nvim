@@ -1,6 +1,6 @@
 import { callNeovim } from '../rpc.js';
 import { z } from 'zod';
-import { APPROVAL_ACTIONS, CHAT_POSITIONS } from '../tools/chat.js';
+import { CHAT_POSITIONS } from '../tools/chat.js';
 import { validateChatTarget } from '../validation/schema.js';
 
 // `task` is written into the caller's own `orchestrated` entry as a `{path, task}` map
@@ -13,12 +13,27 @@ const taskSchema = z
   .refine((value) => !/[\r\n]/.test(value), { message: 'task must not contain line breaks' })
   .optional();
 
+// `agent` / `model` / `effort` / `profile` land on the NEW chat's own frontmatter, one line each,
+// so the same line-break rule as `task` applies. Which values are valid is decided on the Lua side
+// alone (`create_chat.resolve_frontmatter`), from the registries that define them — an enum
+// copied here would go stale the day a backend or a profile is added.
+function singleLineSchema(name: string) {
+  return z
+    .string()
+    .refine((value) => !/[\r\n]/.test(value), { message: `${name} must not contain line breaks` })
+    .optional();
+}
+
 const chatCreateArgsSchema = z.object({
   position: z.enum(CHAT_POSITIONS).optional(),
   working_dir: z.string().optional(),
   from_bufnr: z.number().optional(),
   task: taskSchema,
   delegated_scope: z.array(z.string()).optional(),
+  agent: singleLineSchema('agent'),
+  model: singleLineSchema('model'),
+  effort: singleLineSchema('effort'),
+  profile: singleLineSchema('profile'),
   rpc_port: z.number().optional(),
 });
 
@@ -46,15 +61,32 @@ const chatCreateArgsSchema = z.object({
  * (`delegated_scope`, same pattern syntax as `permissions_allow`), because it is
  * `approval_delegate.lua`'s "scoped" mode reading the answering chat's own declaration, not
  * something that belongs to whoever created it. It has no effect unless
- * `agent.orchestration.delegated_approval` is `"scoped"`.
+ * `permissions.delegated_approval` is `"scoped"`.
+ *
+ * `agent` / `model` / `effort` / `profile` are also the NEW chat's own frontmatter: they let a
+ * planner on an expensive model hand the implementation to a cheaper model or another CLI, in a
+ * chat that does not share the planner's prompt cache. Omitted ones fall back to
+ * `automation.orchestration.worker_defaults`, then to an ordinary new chat's defaults. An invalid value
+ * is an error rather than a dropped key, because a worker that silently ran on the default model
+ * defeats the reason for passing one.
  */
 export async function handleChatCreate(args: any): Promise<any> {
-  const { position, working_dir, from_bufnr, task, delegated_scope, rpc_port } =
-    chatCreateArgsSchema.parse(args);
+  const {
+    position,
+    working_dir,
+    from_bufnr,
+    task,
+    delegated_scope,
+    agent,
+    model,
+    effort,
+    profile,
+    rpc_port,
+  } = chatCreateArgsSchema.parse(args);
 
   const result = await callNeovim(
     'create_chat',
-    { position, working_dir, from_bufnr, task, delegated_scope },
+    { position, working_dir, from_bufnr, task, delegated_scope, agent, model, effort, profile },
     rpc_port
   );
 
@@ -125,72 +157,40 @@ export async function handleChatSendMessage(args: any): Promise<any> {
   );
 
   const queued = result?.queued === true;
+  // A chat over its `auto_compact` threshold spends a turn on `/compact` before taking the
+  // message. It is queued the same way, and the compaction's own completion delivers it; the
+  // wording differs only so the caller does not go looking for a turn that was busy with
+  // something else.
+  const compacting = result?.compacting === true;
+
+  let text: string;
+  if (compacting) {
+    text =
+      'That chat is compacting its conversation first, so the message was queued. It will be ' +
+      'delivered as a new turn as soon as the compaction finishes — no request carrying your ' +
+      'message has started yet.';
+  } else if (queued) {
+    text =
+      'That chat is responding right now, so the message was queued. It will be delivered ' +
+      'as a new turn as soon as that chat stops — no request has started yet.';
+  } else {
+    text = 'Message sent and AI request initiated in chat buffer';
+  }
 
   return {
-    content: [
-      {
-        type: 'text',
-        text: queued
-          ? 'That chat is responding right now, so the message was queued. It will be delivered ' +
-            'as a new turn as soon as that chat stops — no request has started yet.'
-          : 'Message sent and AI request initiated in chat buffer',
-      },
-    ],
+    content: [{ type: 'text', text }],
     // The Lua side resolved file_path to a buffer, so report what it actually reached rather than
     // echoing an argument that may have been a path.
     _meta: { bufnr: result?.bufnr ?? bufnr, sender: sender || 'User', queued },
   };
 }
 
-const askUserQuestionArgsSchema = z.object({
-  chat_bufnr: z.number(),
-  questions: z.array(z.any()),
-  rpc_port: z.number().optional(),
-});
-
-/**
- * Handler for nvim_ask_user_question
- *
- * Unlike a normal MCP tool, this does not return a real answer as its tool_result. It calls
- * `ask_user_question` on the Neovim RPC server (see
- * `lua/vibing/infrastructure/rpc/handlers/permission.lua`), which renders the questions as an
- * editable choice list in the chat buffer and then immediately cancels/kills the current turn —
- * so this handler's return value is never actually seen by the model. The user's next message in
- * that buffer (a fresh `--resume`d turn) IS the answer to this call.
- *
- * `chat_bufnr` correlates the call to the right chat buffer when several are active concurrently;
- * `rpc.ts` binds the MCP process to the right Neovim through its environment. The buffer number
- * (unlike a per-turn handle_id) is stable across turns of the same conversation,
- * so it doesn't defeat Anthropic's prompt cache — see issue #469. It is the buffer number rather
- * than the chat file path because `:VibingSetFileTitle` renames the file mid-conversation, which
- * would change the system prompt and invalidate that cache — see issue #489.
- */
-export async function handleAskUserQuestion(args: any): Promise<any> {
-  const { chat_bufnr, questions, rpc_port } = askUserQuestionArgsSchema.parse(args);
-
-  const result = await callNeovim('ask_user_question', { chat_bufnr, questions }, rpc_port);
-
-  if (result?.status !== 'ok') {
-    return {
-      content: [
-        {
-          type: 'text',
-          text: result?.reason || 'Failed to present the question in the vibing.nvim chat buffer.',
-        },
-      ],
-      isError: true,
-    };
-  }
-
-  return {
-    content: [{ type: 'text', text: 'Question presented to the user in the chat buffer.' }],
-  };
-}
-
 const chatAnswerApprovalArgsSchema = z.object({
   bufnr: z.number().nullish(),
   file_path: z.string().nullish(),
-  action: z.enum(APPROVAL_ACTIONS),
+  // The pending prompt in Lua owns the vocabulary, including native CLI decisions.
+  action: z.string().min(1),
+  request_id: z.string().nullish(),
   from_bufnr: z.number(),
   rpc_port: z.number().optional(),
 });
@@ -198,10 +198,19 @@ const chatAnswerApprovalArgsSchema = z.object({
 /**
  * Handler for nvim_chat_answer_approval
  *
- * A chat that hit a tool in its `ask` list has had its turn killed and the approval prompt drawn
- * into its buffer (`rpc/handlers/permission.lua`). It cannot continue, and it cannot report that
- * it is stuck — so until someone answers, it simply never moves again. By default that someone is
- * the user; `agent.orchestration.delegated_approval` lets an orchestrator stand in — fully when
+ * A chat that hit a tool in its `ask` list has the approval prompt drawn into its buffer
+ * (`rpc/handlers/permission.lua`) and stops there. It cannot continue, and it cannot report that
+ * it is stuck — so until someone answers, it simply never moves again.
+ *
+ * **What it is stopped on differs by backend, and the caller does not have to care.** Where the
+ * CLI has a measured wait floor the turn is still running with its PreToolUse hook blocked (#778),
+ * so the answer reaches that hook and the turn carries on; elsewhere the turn was killed and the
+ * answer arrives as a new one. Both go through the same `ChatBuffer:send_message()`, which is why
+ * there is one call here rather than two. The one visible difference is that a chat of the first
+ * kind reports `waiting_approval` while its turn is technically still in flight — so do not read
+ * `responding` as "it is fine, it is working".
+ *
+ * By default the someone who answers is the user; `permissions.delegated_approval` lets an orchestrator stand in — fully when
  * it is `true`, or only for tools within the target chat's own declared `delegated_scope` when
  * it is `"scoped"` (a denial always goes through either way).
  *
@@ -211,6 +220,11 @@ const chatAnswerApprovalArgsSchema = z.object({
  * wording the model should act on ("tell the user which chat is blocked") instead of a bare
  * refusal.
  *
+ * `request_id` names which prompt is being answered, and is required as soon as the target chat
+ * has more than one waiting. A CLI runs several PreToolUse hooks at once — measured on claude as
+ * three starting 0.54s apart and overlapping — so "the chat's pending approval" stops being a
+ * single thing, and the Lua side refuses to guess rather than spending the wrong grant.
+ *
  * `from_bufnr` is required here although the other chat tools keep it optional: this call removes
  * a permission gate, and one that cannot record whose decision it was should not be made at all.
  * Version skew is not an argument for softening it — a Neovim without the `answer_approval` RPC
@@ -219,6 +233,7 @@ const chatAnswerApprovalArgsSchema = z.object({
 export async function handleChatAnswerApproval(args: any): Promise<any> {
   const parsed = chatAnswerApprovalArgsSchema.parse(args);
   const { action, from_bufnr, rpc_port } = parsed;
+  const request_id = parsed.request_id ?? undefined;
   const bufnr = parsed.bufnr ?? undefined;
   const file_path = parsed.file_path ?? undefined;
 
@@ -226,7 +241,7 @@ export async function handleChatAnswerApproval(args: any): Promise<any> {
 
   const result = await callNeovim(
     'answer_approval',
-    { bufnr, file_path, action, from_bufnr },
+    { bufnr, file_path, action, request_id, from_bufnr },
     rpc_port
   );
 
@@ -235,8 +250,8 @@ export async function handleChatAnswerApproval(args: any): Promise<any> {
       {
         type: 'text',
         text:
-          `Answered ${result?.tool ?? 'the'} tool approval with ${action}. That chat has started ` +
-          'a new turn; it will come back to you when it stops.',
+          `Answered ${result?.tool ?? 'the'} tool approval with ${action}. ` +
+          'The answer was delivered through the chat approval path.',
       },
     ],
     _meta: { bufnr: result?.bufnr ?? bufnr, tool: result?.tool, action },

@@ -6,6 +6,7 @@ local tools_constants = require("vibing.core.constants.tools")
 local M = {}
 
 local Agents = require("vibing.core.constants.agents")
+local ModelCatalog = require("vibing.infrastructure.adapter.models.catalog")
 
 ---Agent enum and per-agent model candidates both come from the backend registry, so adding a
 ---backend needs no edit here.
@@ -23,6 +24,10 @@ local ENUMS = {
     { value = "high", description = "More reasoning for intelligence-sensitive work" },
     { value = "xhigh", description = "Recommended for coding and agentic work" },
     { value = "max", description = "Most reasoning, slowest and most expensive" },
+  },
+  process = {
+    { value = "oneshot", description = "One CLI process per turn (default)" },
+    { value = "duplex", description = "One resident CLI process for the chat; faster turns, ~200MB while idle" },
   },
   permission_mode = {
     { value = "default", description = "Ask for confirmation before each tool use" },
@@ -58,6 +63,12 @@ vim.list_extend(TOOL_NAMES, tools_constants.VIBING_NVIM_MCP_TOOL_PATTERNS)
 ---@return Vibing.CompletionItem[]
 function M.get_enum_values(field)
   local values = ENUMS[field]
+  -- Profiles are the built-ins plus whatever `ai.profiles` names, so they are read per call.
+  if field == "profile" then
+    values = vim.tbl_map(function(profile)
+      return { value = profile.name, description = profile.description }
+    end, require("vibing.core.constants.profiles").catalog(require("vibing.config").get()))
+  end
   if not values then
     return {}
   end
@@ -77,10 +88,13 @@ function M.get_enum_values(field)
 end
 
 ---Get model candidates for the given agent backend
----@param agent string? "claude" | "codex" | "copilot" (defaults to "claude")
+---
+---Through the catalogue rather than `Agents.models_for`: a backend whose CLI can be asked which
+---models it has answers for itself, and the constant is what is offered until it does.
+---@param agent string? "claude" | "codex" | "copilot" | "grok" (defaults to "claude")
 ---@return Vibing.CompletionItem[]
 function M.get_model_values(agent)
-  local models = Agents.models_for(agent)
+  local models = ModelCatalog.candidates_for(agent)
   local items = {}
   for _, m in ipairs(models) do
     table.insert(items, {

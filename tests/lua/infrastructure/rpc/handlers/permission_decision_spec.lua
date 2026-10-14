@@ -4,8 +4,14 @@
 --- to the CLI's own gate. Before #564 every allowed call took the second path, which in headless
 --- `-p` mode simply refuses vibing-nvim's own MCP tools.
 local permission = require("vibing.infrastructure.rpc.handlers.permission")
+local processes = require("vibing.infrastructure.adapter.modules.process_registry")
+local registry = require("vibing.infrastructure.adapter.modules.turn_registry")
 
-local HANDLE_ID = "decision-spec-handle"
+--- One "chat" is a process and the turn it currently has open, and the two are **different values**.
+--- The hook can only name the process (`VIBING_PROCESS_ID` is fixed at spawn); `rpc/hook_scope.lua`
+--- resolves the turn from the registry. So a spec that registered nothing would resolve to no turn
+--- and silently exercise the global config instead of the opts it just set.
+local CHAT = { process_id = "decision-spec-process", turn_id = "decision-spec-turn" }
 
 local comm_dir
 
@@ -26,12 +32,25 @@ local sandbox_cwd
 ---テストが `cwd` を書き忘れると、そのテストだけが実リポジトリをスナップショットしてしまう。
 ---before_each で1度渡すだけでは足りず、実際に1件見落としていた（#665 のレビュー指摘）。
 ---入口を1つにしておけば、テストを足すときに `cwd` を意識する必要がなくなる。
+---レジストリへの登録も同時に行う。`set_active_opts` はターン単位、フックが名乗れるのはプロセス
+---だけなので、両方を繋ぐエントリが無いと `hook_scope` がターンを解決できず、テストは自分が
+---設定した opts ではなくグローバル設定を見てしまう（＝何も確かめていないテストになる）
 ---@param opts table
----@param handle_id string? 既定は `HANDLE_ID`。承認がチャットを越えないことを見るテストだけが
----  2つ目を登録する（1つしか登録しないと `get_active_opts` の「唯一のエントリを返す」
----  フォールバックが働き、共有状態に戻しても落ちないテストになる）
-local function activate(opts, handle_id)
-  permission.set_active_opts(handle_id or HANDLE_ID, vim.tbl_extend("force", { cwd = sandbox_cwd }, opts))
+---@param chat table? 既定は `CHAT`。承認がチャットを越えないことを見るテストだけが2つ目を登録する
+local function activate(opts, chat)
+  chat = chat or CHAT
+  local process = { process_id = chat.process_id, adapter = nil }
+  processes.register(process)
+  registry.open({ turn_id = chat.turn_id, process = process })
+  permission.set_active_opts(chat.turn_id, vim.tbl_extend("force", { cwd = sandbox_cwd }, opts))
+end
+
+---@param chat table?
+local function deactivate(chat)
+  chat = chat or CHAT
+  permission.clear_active_opts(chat.turn_id)
+  registry.close(chat.turn_id)
+  processes.unregister(chat.process_id)
 end
 
 local function write_request(request_id, tool_name, tool_input)
@@ -45,9 +64,12 @@ end
 --- RPC の戻り値のほうなので、2つ目の返り値として渡す。
 --- @return table? hookSpecificOutput `.res` が書かれなかった場合は nil
 --- @return string status RPCハンドラの返した status
-local function decide(request_id, tool_name, tool_input, handle_id)
+local function decide(request_id, tool_name, tool_input, chat)
   write_request(request_id, tool_name, tool_input)
-  local rpc = permission.check_tool_permission({ request_id = request_id, handle_id = handle_id or HANDLE_ID })
+  local rpc = permission.check_tool_permission({
+    request_id = request_id,
+    process_id = (chat or CHAT).process_id,
+  })
 
   local f = io.open(comm_dir .. "/" .. request_id .. ".res", "r")
   if not f then
@@ -76,7 +98,7 @@ describe("permission handler hook decision", function()
   end)
 
   after_each(function()
-    permission.clear_active_opts(HANDLE_ID)
+    deactivate()
     -- 「このspecはスナップショットを取らない」を全テストに効く不変条件として毎回見る。
     -- `activate` を入口に1つ用意しても、それを通さない `set_active_opts` を直に呼ぶテストが
     -- 足されれば `cwd` は落ちる（#665 のレビューで実在した見落とし）。ここで見ておけば、
@@ -88,8 +110,8 @@ describe("permission handler hook decision", function()
     -- こちらが先に走ることがある。差し替え中は見ない
     local GitSnapshot = require("vibing.core.utils.git_snapshot")
     if GitSnapshot.has_baseline and GitSnapshot.clear then
-      local snapshotted = GitSnapshot.has_baseline(HANDLE_ID)
-      GitSnapshot.clear(HANDLE_ID)
+      local snapshotted = GitSnapshot.has_baseline(CHAT.turn_id)
+      GitSnapshot.clear(CHAT.turn_id)
       assert.is_false(snapshotted)
     end
     vim.env.VIBING_HOOK_COMM_DIR = original_comm_dir
@@ -103,13 +125,13 @@ describe("permission handler hook decision", function()
     local GitSnapshot = require("vibing.core.utils.git_snapshot")
 
     decide("req-no-snapshot", "Edit", { file_path = sandbox_cwd .. "/x.txt" })
-    assert.is_false(GitSnapshot.has_baseline(HANDLE_ID))
+    assert.is_false(GitSnapshot.has_baseline(CHAT.turn_id))
 
     -- 権限を差し替えたあとも同じであること。`set_active_opts` を直に呼ぶと `cwd` が落ちるので、
     -- `activate` を経由しない再設定が入ったらここが落ちる
     activate({ permissions_allow = { "Edit" }, permission_mode = "acceptEdits" })
     decide("req-no-snapshot-2", "Edit", { file_path = sandbox_cwd .. "/y.txt" })
-    assert.is_false(GitSnapshot.has_baseline(HANDLE_ID))
+    assert.is_false(GitSnapshot.has_baseline(CHAT.turn_id))
   end)
 
   it("grants vibing-nvim's own MCP tools outright", function()
@@ -130,8 +152,8 @@ describe("permission handler hook decision", function()
 
   it("defers a server whose name merely ends with vibing-nvim", function()
     -- Permitted by the allow list, so the only question left is which of the two "yes" answers it
-    -- gets. "allow" would hand an unrelated MCP server the same bypass of the user's own
-    -- settings.json that vibing-nvim's own tools get.
+    -- gets. "allow" would hand an unrelated MCP server the same override of the user's own
+    -- allowlist that vibing-nvim's own tools get, and nothing has looked at this call.
     local LOOKALIKE = "mcp__my-vibing-nvim__nvim_get_buffer"
     activate({
       permissions_allow = { LOOKALIKE },
@@ -144,8 +166,9 @@ describe("permission handler hook decision", function()
   end)
 
   it("defers an ordinary allowed tool to the CLI's own gate", function()
-    -- Not "allow": granting every permitted tool would also override the deny rules in the user's
-    -- own settings.json, which --setting-sources still pulls in.
+    -- Not "allow": a hook `allow` overrides the CLI's allowlist (measured), and vibing's own lists
+    -- saying "permitted" is not a human saying "approved". The one path that does write `allow` for
+    -- an ordinary tool is an approval somebody looked at -- see the release describe below.
     local output = decide("req-read", "Read", { file_path = "/tmp/x.lua" })
 
     assert.equals("defer", output.permissionDecision)
@@ -157,20 +180,31 @@ describe("permission handler hook decision", function()
     assert.equals("deny", output.permissionDecision)
     assert.is_truthy(output.permissionDecisionReason)
   end)
+  it("observes the same owning turn and input that the permission gate evaluates", function()
+    local observed
+    permission._get_active_opts(CHAT.turn_id)._observe_hook_input = function(scope, payload, tool, input)
+      observed = { scope.process_id, scope.turn_id, payload.tool_name, tool, input }
+    end
+    decide("req-observe", "Bash", { command = "echo observed" })
+    assert.same({ CHAT.process_id, CHAT.turn_id, "Bash", "Bash", { command = "echo observed" } }, observed)
+  end)
 
   describe("session permissions belong to one chat", function()
     -- 承認UIで出した答えは、答えたチャットのセッションに属する。以前はこれが
-    -- `permission.lua` のモジュールレベルのテーブルに入っていて、チャットでも handle_id でも
+    -- `permission.lua` のモジュールレベルのテーブルに入っていて、チャットでも turn_id でも
     -- キーされていなかったので、使い捨てワーカーで一度 `allow_for_session` を出すと
     -- エディタ上の全チャットに効き、各チャット自身の `permissions_ask` を迂回していた（#667）。
     --
-    -- 2つのハンドルを同時に登録するのが要点。1つしか登録していないと
-    -- `get_active_opts` のフォールバック（唯一のエントリを返す）が働いてしまい、
-    -- 共有テーブルに戻しても落ちないテストになる
-    local OTHER_HANDLE_ID = "decision-spec-other-handle"
+    -- 2つのチャットを同時に登録するのが要点。1つしか登録していないと `hook_scope` の
+    -- 「唯一のストリームを返す」フォールバックが働いてしまい、共有テーブルに戻しても落ちない
+    -- テストになる（そのフォールバックは、フックがプロセスを名乗らなかった場合にだけ働く）
+    local OTHER_CHAT = {
+      process_id = "decision-spec-other-process",
+      turn_id = "decision-spec-other-turn",
+    }
 
     after_each(function()
-      permission.clear_active_opts(OTHER_HANDLE_ID)
+      deactivate(OTHER_CHAT)
     end)
 
     -- `permissions_deny` は必ず明示する。省くと `build_permission_config` が
@@ -191,7 +225,7 @@ describe("permission handler hook decision", function()
     it("does not let one chat's session allow reach another chat", function()
       -- A だけが Bash を承認済み。B は自分の設定どおり Bash を聞く側のまま
       activate(chat_opts({ permissions_session_allow = { "Bash" } }))
-      activate(chat_opts({}), OTHER_HANDLE_ID)
+      activate(chat_opts({}), OTHER_CHAT)
 
       -- 許可された非MCPツールは "allow" ではなく "defer"（CLI自身のゲートに委ねる）
       local granted, status = decide("req-a-allow", "Bash", ECHO)
@@ -199,27 +233,48 @@ describe("permission handler hook decision", function()
       assert.equals("defer", granted.permissionDecision)
 
       -- B は承認を出していないので、自分の `permissions_ask` どおり承認待ちになる
-      assert.equals("pending", select(2, decide("req-b-allow", "Bash", ECHO, OTHER_HANDLE_ID)))
+      assert.equals("pending", select(2, decide("req-b-allow", "Bash", ECHO, OTHER_CHAT)))
     end)
 
     it("does not let one chat's session deny reach another chat", function()
       local both_allow = { permissions_allow = { "Read", "Bash" }, permissions_ask = {} }
       activate(chat_opts(vim.tbl_extend("force", both_allow, { permissions_session_deny = { "Bash" } })))
-      activate(chat_opts(both_allow), OTHER_HANDLE_ID)
+      activate(chat_opts(both_allow), OTHER_CHAT)
 
       assert.equals("deny", decide("req-a-deny", "Bash", ECHO).permissionDecision)
 
-      assert.equals("defer", decide("req-b-deny", "Bash", ECHO, OTHER_HANDLE_ID).permissionDecision)
+      assert.equals("defer", decide("req-b-deny", "Bash", ECHO, OTHER_CHAT).permissionDecision)
+    end)
+
+    it("does not lend a live chat's approvals to a hook from a process it does not know", function()
+      -- #667 through a door #667 did not close. `get_active_opts` used to fall back to the sole
+      -- registered entry even when the id was *present but unmatched* — where the registry itself
+      -- returned nil for the same input — so a hook arriving late, from a turn that had already
+      -- unregistered, was judged with whichever chat happened to still be running.
+      --
+      -- One chat only, deliberately: with two, the refusal could come from "cannot guess between
+      -- them" rather than from "will not guess for a named process". This pins the second.
+      activate(chat_opts({ permissions_session_allow = { "Bash" } }))
+
+      assert.equals("defer", decide("req-known", "Bash", ECHO).permissionDecision)
+
+      write_request("req-stranger", "Bash", ECHO)
+      local rpc = permission.check_tool_permission({
+        request_id = "req-stranger",
+        process_id = "a-process-that-died",
+      })
+
+      assert.is_not.equals("allowed", rpc.status)
     end)
 
     it("spends a :once grant on the chat that was given it, not on whoever calls first", function()
       -- `:once` は最初にマッチしたところで消費される。共有テーブルだと、承認を出していない
       -- 別のチャットがそれを食べてしまう — PR #666 の実機確認で踏んだのがこの形
       activate(chat_opts({ permissions_session_allow = { "Bash:once" } }))
-      activate(chat_opts({}), OTHER_HANDLE_ID)
+      activate(chat_opts({}), OTHER_CHAT)
 
       -- B が先に呼んでも A の1回分は減らない
-      assert.equals("pending", select(2, decide("req-b-once", "Bash", ECHO, OTHER_HANDLE_ID)))
+      assert.equals("pending", select(2, decide("req-b-once", "Bash", ECHO, OTHER_CHAT)))
 
       assert.equals("defer", decide("req-a-once-1", "Bash", ECHO).permissionDecision)
       -- 使い切ったので2回目は承認待ちに戻る
@@ -302,6 +357,428 @@ describe("permission handler hook decision", function()
         permission._capture_baselines("h3", "/repo", "Bash", {})
       end)
     end)
+
+    -- The three baselines are keyed by the **turn**, which is what `_handle_response` looks them up
+    -- by. The hook can only name a process, so the turn is resolved through `rpc/hook_scope.lua` —
+    -- and the two assertions below are the whole join, in both directions. Without them the
+    -- resolution could return the process id, or nothing at all, and per-request diffs would stop
+    -- working with every other test in this file still green: they only assert baselines are *not*
+    -- taken.
+    it("keys the baselines by the turn the hook's process has open", function()
+      local keyed_with = {}
+      stub("vibing.core.utils.git_snapshot", {
+        ensure_baseline = function(id)
+          keyed_with.snapshot = id
+        end,
+      })
+      stub("vibing.core.utils.request_diff", {
+        capture = function(id)
+          keyed_with.capture = id
+        end,
+      })
+
+      -- `activate` in before_each registered CHAT, so the process resolves to its turn.
+      decide("req-baseline-key", "Edit", { file_path = sandbox_cwd .. "/x.txt" })
+
+      assert.equals(CHAT.turn_id, keyed_with.snapshot)
+      assert.equals(CHAT.turn_id, keyed_with.capture)
+      assert.is_not.equals(CHAT.process_id, keyed_with.snapshot)
+    end)
+
+    it("takes no baseline for a process nothing has registered", function()
+      -- A straggler tool call from an already-killed process. Filing a baseline under an
+      -- unresolvable key leaks a `refs/worktree/vibing/<id>` that nothing ever clears, because
+      -- `clear()` is only reached through a response that will never come.
+      local called = false
+      stub("vibing.core.utils.git_snapshot", {
+        ensure_baseline = function()
+          called = true
+        end,
+      })
+      stub("vibing.core.utils.request_diff", {
+        capture = function()
+          called = true
+        end,
+      })
+
+      write_request("req-orphan", "Edit", { file_path = sandbox_cwd .. "/x.txt" })
+      permission.check_tool_permission({ request_id = "req-orphan", process_id = "a-process-that-died" })
+
+      assert.is_false(called)
+    end)
   end)
 
+  describe("asking without killing the CLI", function()
+    --- The point of #778: an `ask` on a backend measured to wait long enough leaves the hook
+    --- blocked instead of killing the process. Everything here is about which of the two shapes
+    --- ran, and the decisive observation is whether `adapter:cancel` was called — a spec that only
+    --- looked at the `.res` could not tell "still waiting" from "killed and the deny raced".
+    local Pending = require("vibing.infrastructure.rpc.pending_approvals")
+    local Notifier = require("vibing.application.chat.completion_notifier")
+
+    local WAITING = { process_id = "waiting-spec-process", turn_id = "waiting-spec-turn" }
+    local cancelled
+    local drawn
+    local announced
+    local original_on_approval_waiting
+
+    --- Register a turn whose process can be cancelled and whose chat can be found, and say whether
+    --- this backend may be waited on.
+    --- @param can_wait boolean
+    --- @param chat_bufnr number|nil
+    local function activate_waiting(can_wait, chat_bufnr)
+      local process = {
+        process_id = WAITING.process_id,
+        chat_bufnr = chat_bufnr,
+        adapter = {
+          cancel = function()
+            cancelled = true
+          end,
+        },
+      }
+      processes.register(process)
+      registry.open({
+        turn_id = WAITING.turn_id,
+        process = process,
+        on_approval_required = function(tool, _input, _options, request_id, waiting)
+          table.insert(drawn, { tool = tool, request_id = request_id, waiting = waiting })
+        end,
+      })
+      permission.set_active_opts(WAITING.turn_id, {
+        cwd = sandbox_cwd,
+        permissions_allow = { "Read" },
+        -- Explicit, for the reason the session describe above states: omitting it falls back to
+        -- `config.permissions.deny` (`{ "Bash" }` by default) and every case here would be denied
+        -- before it ever reached the `ask` branch under test.
+        permissions_deny = {},
+        permissions_ask = { "Bash" },
+        permission_mode = "default",
+        _can_wait_for_approval = can_wait,
+      })
+    end
+
+    --- `_ask_without_killing` runs on the next tick, like every other path that touches a buffer.
+    local function settle(predicate)
+      vim.wait(500, predicate or function()
+        return false
+      end)
+    end
+
+    before_each(function()
+      cancelled = false
+      drawn = {}
+      announced = {}
+      Pending._reset()
+      original_on_approval_waiting = Notifier.on_approval_waiting
+      ---@diagnostic disable-next-line: duplicate-set-field
+      Notifier.on_approval_waiting = function(bufnr, request_id)
+        table.insert(announced, { bufnr = bufnr, request_id = request_id })
+      end
+    end)
+
+    after_each(function()
+      Notifier.on_approval_waiting = original_on_approval_waiting
+      Pending._reset()
+      permission.clear_active_opts(WAITING.turn_id)
+      registry.close(WAITING.turn_id)
+      processes.unregister(WAITING.process_id)
+    end)
+
+    it("leaves the hook blocked and the process alive", function()
+      activate_waiting(true, 41)
+
+      local output, status = decide("req-wait", "Bash", { command = "echo hi" }, WAITING)
+      settle(function()
+        return Pending.get("req-wait") ~= nil
+      end)
+
+      assert.equals("pending", status)
+      assert.is_nil(output, "a withheld .res is the whole mechanism; writing one releases the hook")
+      assert.is_false(cancelled, "the CLI must survive the question")
+
+      local entry = Pending.get("req-wait")
+      assert.is_not_nil(entry, "the withheld response has to be owed to somebody")
+      assert.equals("Bash", entry.tool)
+      assert.equals(41, entry.chat_bufnr)
+      assert.equals(WAITING.turn_id, entry.turn_id)
+    end)
+
+    it("draws the prompt itself, because no turn end will", function()
+      -- `_handle_response` is what drew it on the kill path. A turn that keeps running never gets
+      -- there, so the prompt would be stored and never shown — and the hook would wait out the
+      -- whole limit with nothing on screen.
+      activate_waiting(true, 41)
+
+      decide("req-draw", "Bash", { command = "echo hi" }, WAITING)
+      settle(function()
+        return #drawn > 0
+      end)
+
+      assert.equals(1, #drawn)
+      assert.equals("req-draw", drawn[1].request_id)
+      assert.is_true(drawn[1].waiting, "without this the chat leaves the drawing to a turn end that never comes")
+    end)
+
+    it("tells the watchdog, since VibingResponseDone will not fire", function()
+      activate_waiting(true, 41)
+
+      decide("req-notify", "Bash", { command = "echo hi" }, WAITING)
+      settle(function()
+        return #announced > 0
+      end)
+
+      assert.same({ { bufnr = 41, request_id = "req-notify" } }, announced)
+    end)
+
+    it("kills and denies on a backend that has not been measured", function()
+      -- The fallback is not a degraded mode, it is today's behaviour. A backend with no measured
+      -- floor must keep it rather than wait past the evidence.
+      activate_waiting(false, 41)
+
+      local _, status = decide("req-nowait", "Bash", { command = "echo hi" }, WAITING)
+      settle(function()
+        return cancelled
+      end)
+
+      assert.equals("pending", status)
+      assert.is_true(cancelled, "an unmeasured backend must still be killed")
+      assert.is_nil(Pending.get("req-nowait"), "nothing may be left owed on the fallback path")
+    end)
+
+    it("releases a retry hook before asking with its actual input, without cancelling", function()
+      activate_waiting(false, 41)
+      local options = { { value = "allow_once", label = "allow_once - Allow this execution only" } }
+      local opts = permission._get_active_opts(WAITING.turn_id)
+      opts._retry_hook_approval, opts._hook_approval_options = true, options
+      registry.get(WAITING.turn_id).on_approval_required = function(tool, input, offered, request_id, waiting, kind)
+        local f = assert(io.open(comm_dir .. "/" .. request_id .. ".res", "r"))
+        local response = vim.json.decode(f:read("*a")).hookSpecificOutput
+        f:close()
+        table.insert(drawn, { tool, input, offered, request_id, waiting == nil, response.permissionDecision, kind })
+      end
+      local output, status = decide("req-retry", "Bash", { command = "echo exact" }, WAITING)
+      settle(function()
+        return #drawn > 0
+      end)
+      assert.same({ "deny", "pending", false, 0 }, { output.permissionDecision, status, cancelled, Pending.count() })
+      assert.matches("requires manual approval in the chat", output.permissionDecisionReason)
+      assert.same({ { "Bash", { command = "echo exact" }, options, "req-retry", true, "deny", "hook_retry" } }, drawn)
+    end)
+
+    it("never turns an explicit deny into a retry approval", function()
+      activate_waiting(false, 41)
+      local opts = permission._get_active_opts(WAITING.turn_id)
+      opts._retry_hook_approval, opts.permissions_deny = true, { "Bash" }
+      opts.permissions_session_allow = { "Bash:once" }
+      local output, status = decide("req-deny-retry", "Bash", {}, WAITING)
+      settle()
+      assert.same({ "deny", "denied", {} }, { output.permissionDecision, status, drawn })
+    end)
+
+    it("does not send a deferred retry prompt to a replacement turn", function()
+      activate_waiting(false, 41)
+      permission._get_active_opts(WAITING.turn_id)._retry_hook_approval = true
+      decide("req-stale-retry", "Bash", {}, WAITING)
+      registry.close(WAITING.turn_id)
+      registry.open({
+        turn_id = "replacement",
+        process = processes.get(WAITING.process_id),
+        on_approval_required = function()
+          table.insert(drawn, "wrong turn")
+        end,
+      })
+      settle()
+      registry.close("replacement")
+      assert.same({}, drawn)
+    end)
+
+    it("still owes the answer, and still tells the watchdog, when drawing fails", function()
+      -- Registering first is what makes this survivable: the wait limit is armed before anything
+      -- that can throw, so the worst case is a prompt nobody can see being denied on expiry rather
+      -- than a hook that is owed nothing and spins to the script's own deadline.
+      activate_waiting(true, 41)
+      local process = { process_id = WAITING.process_id, chat_bufnr = 41, adapter = { cancel = function() end } }
+      processes.register(process)
+      registry.open({
+        turn_id = WAITING.turn_id,
+        process = process,
+        on_approval_required = function()
+          error("the chat buffer went away mid-draw")
+        end,
+      })
+
+      decide("req-drawfail", "Bash", { command = "echo hi" }, WAITING)
+      settle(function()
+        return #announced > 0
+      end)
+
+      assert.is_not_nil(Pending.get("req-drawfail"), "the withheld response must still be owed")
+      assert.same({ { bufnr = 41, request_id = "req-drawfail" } }, announced)
+    end)
+
+    it("owes the answer even if the step after registering throws", function()
+      -- Why registering comes first, stated as the property rather than as the order: whatever else
+      -- this function grows, a throw past that point still ends in a written `.res` — the wait
+      -- limit is already armed. `on_approval_waiting` is the realistic thrower; it enqueues
+      -- notifications and drains queues on other buffers.
+      activate_waiting(true, 41)
+      ---@diagnostic disable-next-line: duplicate-set-field
+      Notifier.on_approval_waiting = function()
+        error("a subscriber's buffer was wiped mid-notification")
+      end
+
+      decide("req-notifyfail", "Bash", { command = "echo hi" }, WAITING)
+      settle(function()
+        return Pending.get("req-notifyfail") ~= nil
+      end)
+
+      assert.is_not_nil(Pending.get("req-notifyfail"), "the withheld response must still be owed")
+    end)
+
+    it("fails closed when there is no chat to ask", function()
+      -- Withholding a `.res` nobody can ever answer is a CLI hung inside its own hook until the
+      -- script's own deadline. Denying is the answer that cannot be wrong in a way that matters.
+      activate_waiting(true, nil)
+
+      decide("req-nochat", "Bash", { command = "echo hi" }, WAITING)
+      settle(function()
+        return vim.loop.fs_stat(comm_dir .. "/req-nochat.res") ~= nil
+      end)
+
+      local f = assert(io.open(comm_dir .. "/req-nochat.res", "r"), "an unaskable approval must be denied")
+      local decoded = vim.json.decode(f:read("*a"))
+      f:close()
+      assert.equals("deny", decoded.hookSpecificOutput.permissionDecision)
+      assert.is_nil(Pending.get("req-nochat"))
+      assert.same({}, drawn)
+    end)
+  end)
+
+  describe("releasing an approval the user answered", function()
+    --- The other half of #778. The hook is still sitting inside the CLI, and what goes into its
+    --- `.res` now is the whole decision.
+    local Pending = require("vibing.infrastructure.rpc.pending_approvals")
+    local GitSnapshot = require("vibing.core.utils.git_snapshot")
+
+    local RELEASE = { process_id = "release-spec-process", turn_id = "release-spec-turn" }
+
+    --- The chat whose answer this is. `release_answered_approval` reads the lists back off it
+    --- rather than off the turn's opts, which still hold the copy made when the turn was sent.
+    local function chat(session_allow, session_deny)
+      return {
+        get_session_allow = function()
+          return session_allow or {}
+        end,
+        get_session_deny = function()
+          return session_deny or {}
+        end,
+        get_frontmatter_list = function(_, key)
+          return key == "permissions_ask" and { "Bash" } or {}
+        end,
+      }
+    end
+
+    --- Get one `Bash` call as far as a blocked hook, the way the ask path really does.
+    local function ask(request_id)
+      decide(request_id, "Bash", { command = "echo hi" }, RELEASE)
+      vim.wait(500, function()
+        return Pending.get(request_id) ~= nil
+      end)
+      return assert(Pending.get(request_id), "the call has to be pending before it can be released")
+    end
+
+    local function res_of(request_id)
+      local f = assert(io.open(comm_dir .. "/" .. request_id .. ".res", "r"), "no .res was written")
+      local decoded = vim.json.decode(f:read("*a"))
+      f:close()
+      return decoded.hookSpecificOutput
+    end
+
+    before_each(function()
+      Pending._reset()
+      local process = {
+        process_id = RELEASE.process_id,
+        chat_bufnr = 77,
+        adapter = { cancel = function() end },
+      }
+      processes.register(process)
+      registry.open({
+        turn_id = RELEASE.turn_id,
+        process = process,
+        on_approval_required = function() end,
+      })
+      permission.set_active_opts(RELEASE.turn_id, {
+        cwd = sandbox_cwd,
+        permissions_allow = { "Read" },
+        permissions_deny = {},
+        permissions_ask = { "Bash" },
+        permission_mode = "default",
+        _can_wait_for_approval = true,
+      })
+    end)
+
+    after_each(function()
+      Pending._reset()
+      permission.clear_active_opts(RELEASE.turn_id)
+      registry.close(RELEASE.turn_id)
+      processes.unregister(RELEASE.process_id)
+      if GitSnapshot.clear then
+        GitSnapshot.clear(RELEASE.turn_id)
+      end
+    end)
+
+    it("releases an approved call with allow, not defer", function()
+      -- The decision this spec exists for. `defer` hands the call to a CLI gate whose
+      -- `--allowedTools` does not name this tool -- that is *why* it was asked about, and the argv
+      -- cannot change mid-turn -- so it would refuse exactly what the human just approved. What
+      -- `allow` overrides is that allowlist and nothing else: a tool-name deny removed the tool
+      -- before the hook ran, and a granular deny outranks this verdict downstream of it (measured,
+      -- `handbook/architecture/approval-without-kill.md`).
+      local entry = ask("req-release-allow")
+
+      assert.is_true(permission.release_answered_approval(entry, chat({ "Bash:once" })))
+      assert.equals("allow", res_of("req-release-allow").permissionDecision)
+      assert.is_nil(Pending.get("req-release-allow"), "the hook must not be left owed an answer")
+    end)
+
+    it("spends the :once grant, so the next call of the same tool asks again", function()
+      -- Why the verdict is re-derived by re-running `can_use_tool` instead of being read off the
+      -- action: running it is what consumes the grant. Deriving it directly would leave the entry
+      -- in the list and silently pay for the *next* call.
+      local entry = ask("req-release-once")
+      permission.release_answered_approval(entry, chat({ "Bash:once" }))
+
+      local _, status = decide("req-release-once-2", "Bash", { command = "echo hi" }, RELEASE)
+      assert.equals("pending", status)
+    end)
+
+    it("releases a refused call with deny, and with the reason the model will see", function()
+      -- `permissionDecisionReason` is the only channel a deny rule's message has to the model;
+      -- without it every refusal reads as a bare "denied by hook".
+      local entry = ask("req-release-deny")
+
+      assert.is_true(permission.release_answered_approval(entry, chat({}, { "Bash" })))
+
+      local out = res_of("req-release-deny")
+      assert.equals("deny", out.permissionDecision)
+      assert.is_truthy(out.permissionDecisionReason)
+    end)
+
+    it("declines an approval that something else has already answered", function()
+      -- The wait limit can expire between the user pressing the key and this running, and the
+      -- expiry's deny is already in the `.res`.
+      local entry = ask("req-release-expired")
+      Pending.resolve(entry.request_id, "deny", "the wait limit passed")
+
+      local answered = chat({ "Bash:once" })
+      assert.is_false(permission.release_answered_approval(entry, answered))
+      assert.equals("deny", res_of("req-release-expired").permissionDecision)
+
+      -- The `.res` is safe either way -- `PendingApprovals.resolve` refuses an entry that is gone,
+      -- so the early return is not what protects it. What the early return protects is this: the
+      -- re-evaluation is what *spends* the `:once`, and running it for a call the CLI has already
+      -- been told to refuse charges the user for an approval nothing will use.
+      assert.same({ "Bash:once" }, answered:get_session_allow())
+    end)
+  end)
 end)

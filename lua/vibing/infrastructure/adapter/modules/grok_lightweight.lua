@@ -173,15 +173,15 @@ end
 --- user put the *chat* in that mode, and a title generated behind their back is not the call they
 --- made.
 --- @param cmd string[]
+--- The flags, as data for the request spec. `--permission-mode dontAsk` is codex's
+--- `approval_policy="never"` in grok's vocabulary: no hook is registered for a lightweight call,
+--- so a mode that prompts would stall on an approval nothing can answer.
+--- @type string[]
+M.ARGS = { "--tools", LIGHTWEIGHT_TOOLS, "--deny", LIGHTWEIGHT_MCP_DENY, "--permission-mode", "dontAsk" }
+
+--- @param cmd string[]
 function M.append_flags(cmd)
-  table.insert(cmd, "--tools")
-  table.insert(cmd, LIGHTWEIGHT_TOOLS)
-  table.insert(cmd, "--deny")
-  table.insert(cmd, LIGHTWEIGHT_MCP_DENY)
-  -- codex's `approval_policy="never"`, in grok's vocabulary. grok_cli registers no hook for a
-  -- lightweight call, so a mode that prompts would stall on an approval nothing can answer.
-  table.insert(cmd, "--permission-mode")
-  table.insert(cmd, "dontAsk")
+  vim.list_extend(cmd, M.ARGS)
 end
 
 --- Write the lightweight environment overrides into the environment table the caller will spawn

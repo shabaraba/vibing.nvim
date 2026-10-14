@@ -59,7 +59,9 @@
    - `branch`: 英語kebab-caseのブランチ名
 3. 両方をユーザーに提示し、必要なら修正してもらってから確定する
 4. `.counter`をインクリメントして`workspace_id`（例: `0001-fix-auth-session-bug`）を決定する
-5. `.vibing/workspace/active/<workspace_id>/`を作成し、`meta.yaml`・`plan.md`をテンプレートからコピー、`git worktree add`で`worktree/`を作成する（既存`setup_environment`/`setup_node_modules`相当のロジックを流用: `.gitignore`, `package.json`等の設定ファイルコピー、`node_modules`シンボリックリンク）
+5. `.vibing/workspace/active/<workspace_id>/`を作成し、`meta.yaml`・`plan.md`をテンプレートからコピー、`git worktree
+add`で`worktree/`を作成する（既存`setup_environment`/`setup_node_modules`相当のロジックを流用: `.gitignore`, `package.json`等の設定ファイルコピー、
+   `node_modules`シンボリックリンク）
 6. `git worktree add`失敗時はエラーをそのまま表示し、作りかけの`active/<workspace_id>/`ディレクトリをロールバック（削除）する
 7. 現在のチャットバッファをこの新規workspaceに紐付ける（frontmatterに`workspace_id`を書き込み、`working_dir`をworktreeパスに設定、`meta.yaml`の`chat_files`に追記）。この紐付けは恒久的
 

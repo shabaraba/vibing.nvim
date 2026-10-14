@@ -45,19 +45,25 @@ function M.init_content(buf, session)
   end
 
   -- agent
-  local agent = frontmatter.agent or (config.adapter or "claude")
+  local agent = frontmatter.agent or (vim.tbl_get(config, "ai", "chat", "agent") or "claude")
   table.insert(lines, "agent: " .. agent)
 
   -- model
-  local model = frontmatter.model or (config.agent and config.agent.default_model)
+  local model = frontmatter.model or require("vibing.core.utils.ai_config").resolve(config, agent).model
   if model then
     table.insert(lines, "model: " .. model)
   end
 
   -- Always show the effective choice. `default` deliberately produces no CLI override, which is
   -- the exact behaviour chats had before effort became configurable.
-  local effort = frontmatter.effort or (config.agent and config.agent.default_effort) or Modes.DEFAULT_EFFORT
+  local effort = frontmatter.effort or require("vibing.core.utils.ai_config").resolve(config, agent).effort
   table.insert(lines, "effort: " .. effort)
+
+  -- Written only when something chose it (`nvim_chat_create`'s `profile`), unlike effort: an
+  -- ordinary chat keeps the file shape it has always had.
+  if frontmatter.profile then
+    table.insert(lines, "profile: " .. frontmatter.profile)
+  end
 
   -- permission_mode
   local permission_mode = frontmatter.permission_mode or (config.permissions and config.permissions.mode)
@@ -159,16 +165,139 @@ end
 -- Backward compatibility alias
 M.move_cursor_to_end = M.moveCursorToEnd
 
+---質問ブロック（`question_block.lua`）の選択肢を組み立てる（**唯一の組み立て口**）
+---
+---関数として切り出してあるのは、**剥がす側が同じものを読むため**（#788）。承認プロンプトは
+---`approval_parser.strip_prompt_lines` が固定の接頭辞と `<!-- vibing:req=... -->` から
+---「これはプロンプトの行だ」と読み取れるが、質問の選択肢にはその手掛かりが1つも無い —
+---出てくるのは質問文と `1. ラベル` で、ユーザーが自分で書いてもおかしくない形である。
+---テキストから見分ける規則を足すのは、ユーザーの本文を消す規則を足すのと同じことになる。
+---
+---代わりに `strip_choice_lines` は「**この選択肢から書いたはずの行**」をそのまま組み立てて
+---突き合わせる。書いた側の出力と1文字も違わないものだけが落ちるので、ユーザーが1行でも
+---編集していれば残る — そしてそれは答えそのものなので、残るのが正しい
+---
+---**描くのはキューの先頭1件だけで、残りは件数の1行になる。** 答えは自由文で、承認の選択肢行の
+---ような帰属の手掛かりを持たない（上のとおり、足してもいけない）。2件ぶんのブロックを並べると
+---「どちらへの答えか」を決める根拠が画面から消えるので、ブロックは常に1つしか出さない。
+---
+---**この関数の出力はキュー全体の純関数である。** 件数の1行が入るということは、待っている質問が
+---1件増減しただけで**組み立て直したものが変わる**ということで、描いた後にキューを触ると
+---`strip_choice_lines` が一致しなくなり、描いてあるブロックがユーザーの本文として残る。
+---キューを変える出来事は、変える前に畳んで、変えた後に描き直すこと
+---@param pendingChoices Vibing.PendingChoiceEntry[]? 保持している質問、古い順
+---@return string[] lines 末尾の空行まで含めたブロック
+function M.choice_lines(pendingChoices)
+  local entries = pendingChoices or {}
+  local drawn = entries[1]
+  if not drawn then
+    return {}
+  end
+
+  local choiceLines = {}
+  for _, q in ipairs(drawn.questions or {}) do
+    -- Add question text if available
+    if q.question and q.question ~= "" then
+      table.insert(choiceLines, q.question)
+      table.insert(choiceLines, "")
+    end
+
+    -- Use numbered list for single-select, bullet list for multi-select
+    -- Default to single-select (numbered list) when multiSelect is not explicitly true
+    local useNumberedList = q.multiSelect ~= true
+    local optionIndex = 1
+    for _, opt in ipairs(q.options or {}) do
+      -- Safe label extraction
+      local label = (opt.label and opt.label ~= "") and opt.label or ""
+      if label ~= "" then
+        if useNumberedList then
+          table.insert(choiceLines, optionIndex .. ". " .. label)
+          optionIndex = optionIndex + 1
+        else
+          table.insert(choiceLines, "- " .. label)
+        end
+        if opt.description and opt.description ~= "" then
+          table.insert(choiceLines, "  " .. tostring(opt.description))
+        end
+      end
+    end
+    table.insert(choiceLines, "")
+  end
+
+  local queued = #entries - 1
+  if queued > 0 then
+    table.insert(
+      choiceLines,
+      string.format(
+        "(%d more question%s waiting — the next one is shown once this is answered.)",
+        queued,
+        queued == 1 and " is" or "s are"
+      )
+    )
+    table.insert(choiceLines, "")
+  end
+
+  local lines = flatten_lines(choiceLines)
+  -- 生成文中のセクションヘッダーで回答欄の印が隠されないよう、引用行として描く。
+  for i, line in ipairs(lines) do
+    if Timestamp.is_header(line) then
+      lines[i] = "> " .. line
+    end
+  end
+  return lines
+end
+
+---描かれた選択肢ブロックだけを落とし、ユーザーが打った本文は残す（#788）
+---
+---`choice_lines` が書いたはずの並びを**連続した1本**として探し、最初に見つかったものだけを
+---落とす。見つからなければ何も落とさない。承認側の `strip_prompt_lines` と対になる、質問側の
+---「何がプロンプトの行か」の唯一の答え。
+---@param lines string[] 畳んだセクションの行
+---@param pendingChoices Vibing.PendingChoiceEntry[]? **描いたときのまま**のキュー。nil なら何もしない
+---@return string[] kept
+function M.strip_choice_lines(lines, pendingChoices)
+  local block = M.choice_lines(pendingChoices)
+  if #block == 0 or #block > #lines then
+    return lines
+  end
+
+  for start = 1, #lines - #block + 1 do
+    local matched = true
+    for offset = 1, #block do
+      if lines[start + offset - 1] ~= block[offset] then
+        matched = false
+        break
+      end
+    end
+    if matched then
+      local kept = {}
+      for index, line in ipairs(lines) do
+        if index < start or index >= start + #block then
+          table.insert(kept, line)
+        end
+      end
+      return kept
+    end
+  end
+
+  return lines
+end
+
 ---Add new user section
 ---@param buf number Buffer number
 ---@param win number? Window number
----@param pendingChoices table? Pending choices
----@param pendingApproval table? Pending tool approval request
+---@param pendingChoices Vibing.PendingChoiceEntry[]? Questions being held, oldest first. Only the
+---  head is drawn — `choice_lines` turns the rest into a count line, because a free-text answer
+---  carries nothing that says which of two drawn blocks it belongs to.
+---@param pendingApprovals table[]? Tool approval requests still waiting, in display order. A list
+---  rather than one, because a CLI runs several PreToolUse hooks at once — measured on claude as
+---  three hooks starting 0.54s apart and overlapping for their whole duration. Each entry carries
+---  its `request_id`, which is what makes an answer attributable when the numbered lists repeat.
 ---@param initial_message string? Initial message content (for programmatic send)
 ---@param header string? Section header to use instead of the plain unsent `## User` one.
 ---  Delivered chat-to-chat messages pass their own (`## Request` / `## Report` / `## Notice`);
 ---  it must still be an unsent header, since `commit_user_message` is what stamps it at send
-function M.addUserSection(buf, win, pendingChoices, pendingApproval, initial_message, header)
+function M.addUserSection(buf, win, pendingChoices, pendingApprovals, initial_message, header)
   local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
 
   while #lines > 0 and lines[#lines] == "" do
@@ -178,7 +307,7 @@ function M.addUserSection(buf, win, pendingChoices, pendingApproval, initial_mes
 
   local newLines = {
     "",
-    header or Timestamp.create_unsent_user_header(),
+    header or Timestamp.create_header("User", nil, nil, pendingChoices ~= nil),
     "",
   }
 
@@ -195,82 +324,88 @@ function M.addUserSection(buf, win, pendingChoices, pendingApproval, initial_mes
   vim.api.nvim_buf_set_lines(buf, #lines, #lines, false, flatten_lines(newLines))
 
   if pendingChoices then
-    local choiceLines = {}
-    for _, q in ipairs(pendingChoices) do
-      -- Add question text if available
-      if q.question and q.question ~= "" then
-        table.insert(choiceLines, q.question)
-        table.insert(choiceLines, "")
-      end
-
-      -- Use numbered list for single-select, bullet list for multi-select
-      -- Default to single-select (numbered list) when multiSelect is not explicitly true
-      local useNumberedList = q.multiSelect ~= true
-      local optionIndex = 1
-      for _, opt in ipairs(q.options or {}) do
-        -- Safe label extraction
-        local label = (opt.label and opt.label ~= "") and opt.label or ""
-        if label ~= "" then
-          if useNumberedList then
-            table.insert(choiceLines, optionIndex .. ". " .. label)
-            optionIndex = optionIndex + 1
-          else
-            table.insert(choiceLines, "- " .. label)
-          end
-          if opt.description and opt.description ~= "" then
-            table.insert(choiceLines, "  " .. tostring(opt.description))
-          end
-        end
-      end
-      table.insert(choiceLines, "")
-    end
-
     local currentLines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
     local insertPos = #currentLines
-    vim.api.nvim_buf_set_lines(buf, insertPos, insertPos, false, flatten_lines(choiceLines))
+    vim.api.nvim_buf_set_lines(buf, insertPos, insertPos, false, M.choice_lines(pendingChoices))
   end
 
-  if pendingApproval then
+  if pendingApprovals and #pendingApprovals > 0 then
     local approvalLines = {}
+    local ApprovalParser = require("vibing.presentation.chat.modules.approval_parser")
 
-    -- Warning header
-    table.insert(approvalLines, "⚠️  Tool approval required")
-    table.insert(approvalLines, "")
+    for _, pendingApproval in ipairs(pendingApprovals) do
+      -- Warning header
+      table.insert(approvalLines, ApprovalParser.PROMPT_HEADER)
+      if pendingApproval.expired then
+        -- Marked in place rather than deleted. The user may be editing this buffer right now, and
+        -- removing lines under their cursor moves everything below it.
+        --
+        -- **The options stay too.** Expiry denied the one call that was in flight; it did not
+        -- withdraw the user's chance to grant the permission — somebody back from a long absence
+        -- answers this exactly as before, and the answer travels as a retry instead of reaching a
+        -- hook that is no longer there.
+        table.insert(approvalLines, "   (expired — that call was denied; answering now retries it)")
+      end
+      table.insert(approvalLines, "")
 
-    -- Tool information
-    local toolName = (pendingApproval.tool and pendingApproval.tool ~= "") and pendingApproval.tool or "[unknown]"
-    table.insert(approvalLines, "Tool: " .. toolName)
+      -- Tool information
+      local toolName = (pendingApproval.tool and pendingApproval.tool ~= "") and pendingApproval.tool or "[unknown]"
+      table.insert(approvalLines, "Tool: " .. toolName)
 
-    -- Show input details based on tool type (nil-safe)
-    if pendingApproval.input then
-      if pendingApproval.input.command then
-        table.insert(approvalLines, "Command: " .. tostring(pendingApproval.input.command))
+      -- Show input details based on tool type (nil-safe)
+      if pendingApproval.input then
+        if pendingApproval.input.command then
+          table.insert(approvalLines, "Command: " .. tostring(pendingApproval.input.command))
+        end
+        if pendingApproval.input.file_path then
+          table.insert(approvalLines, "File: " .. tostring(pendingApproval.input.file_path))
+        end
+        if pendingApproval.input.pattern then
+          table.insert(approvalLines, "Pattern: " .. tostring(pendingApproval.input.pattern))
+        end
+        if pendingApproval.input.url then
+          table.insert(approvalLines, "URL: " .. tostring(pendingApproval.input.url))
+        end
+        -- Anything a channel wants shown that has no field of its own: the cwd and the reason on a
+        -- Codex command approval, the per-file kinds and the diff on a file-change one (#861).
+        --
+        -- **Indented, never given a new `Foo: ` prefix.** `approval_parser.continues_block` already
+        -- counts a three-space indent as part of a prompt block, so these are stripped with the
+        -- rest of it; a new prefix would have to be added to `FIELD_PREFIXES`, which widens what
+        -- `strip_prompt_lines` eats out of the user's own prose for every chat.
+        for _, line in ipairs(pendingApproval.input.details or {}) do
+          table.insert(approvalLines, "   " .. tostring(line))
+        end
       end
-      if pendingApproval.input.file_path then
-        table.insert(approvalLines, "File: " .. tostring(pendingApproval.input.file_path))
-      end
-      if pendingApproval.input.pattern then
-        table.insert(approvalLines, "Pattern: " .. tostring(pendingApproval.input.pattern))
-      end
-      if pendingApproval.input.url then
-        table.insert(approvalLines, "URL: " .. tostring(pendingApproval.input.url))
+
+      table.insert(approvalLines, "")
+
+      -- One numbered list per prompt, so the numbers repeat across prompts — which is exactly why
+      -- the line carries its request id. `approval_parser.option_line` is the only place that
+      -- composes it, shared with `approval_delegate` so a delegated answer is byte-identical to
+      -- the line a human would have left behind.
+      do
+        local optionIndex = 1
+        for _, opt in ipairs(pendingApproval.options or {}) do
+          local label = (opt.label and opt.label ~= "") and opt.label or ""
+          if label ~= "" then
+            table.insert(approvalLines, ApprovalParser.option_line(optionIndex, label, pendingApproval.request_id))
+            optionIndex = optionIndex + 1
+          end
+        end
+
+        -- 止まっていることが読めるようにする。承認プロンプトの下で何も動かない状態は、
+        -- ユーザーからは「固まった」と区別がつかない — 待たせる設計ではそれが最大
+        -- `permissions.approval_wait_sec` 続く。kill する経路には止めている出力が無いので
+        -- 書かない（`waiting` がそれを言う）。期限切れならもう何も止めていないので、これも書かない
+        if pendingApproval.waiting and not pendingApproval.expired then
+          table.insert(approvalLines, "   (the rest of this turn's output is paused until this is answered)")
+          table.insert(approvalLines, "")
+        end
       end
     end
 
-    table.insert(approvalLines, "")
-
-    -- Use numbered list for single-select approval options (nil-safe iteration)
-    local optionIndex = 1
-    for _, opt in ipairs(pendingApproval.options or {}) do
-      local label = (opt.label and opt.label ~= "") and opt.label or ""
-      if label ~= "" then
-        table.insert(approvalLines, optionIndex .. ". " .. label)
-        optionIndex = optionIndex + 1
-      end
-    end
-
-    table.insert(approvalLines, "")
-    table.insert(approvalLines, "Please select and press <CR> to send.")
+    table.insert(approvalLines, ApprovalParser.INSTRUCTION_LINE)
     table.insert(approvalLines, "")
 
     local currentLines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
@@ -293,7 +428,6 @@ function M.addUserSection(buf, win, pendingChoices, pendingApproval, initial_mes
     end
   end
 end
-
 
 -- Backward compatibility alias
 M.add_user_section = M.addUserSection

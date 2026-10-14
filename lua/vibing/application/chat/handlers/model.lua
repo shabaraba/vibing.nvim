@@ -1,5 +1,4 @@
 local notify = require("vibing.core.utils.notify")
-local Agents = require("vibing.core.constants.agents")
 
 ---@param args string[]
 ---@param chat_buffer Vibing.ChatBuffer
@@ -16,8 +15,19 @@ return function(args, chat_buffer)
     return false
   end
 
-  if not vim.tbl_contains(Agents.all_model_values(), model) then
-    notify.error(string.format("Invalid model: %s (valid: %s)", model, table.concat(Agents.all_model_values(), ", ")))
+  local known = require("vibing.infrastructure.adapter.models.catalog").all_values()
+  local codex_default = model == "default"
+    and chat_buffer
+    and chat_buffer.parse_frontmatter
+    and require("vibing.core.constants.modes").resolve_agent(
+      chat_buffer:parse_frontmatter(),
+      require("vibing.config").get()
+    ) == "codex"
+  if codex_default then
+    table.insert(known, 1, "default")
+  end
+  if not vim.tbl_contains(known, model) then
+    notify.error(string.format("Invalid model: %s (valid: %s)", model, table.concat(known, ", ")))
     return false
   end
 

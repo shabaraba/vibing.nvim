@@ -1,6 +1,5 @@
 local Config = require("vibing.config")
 local notify = require("vibing.core.utils.notify")
-local ProjectCodexPermissions = require("vibing.core.utils.project_codex_permissions")
 
 ---@class Vibing
 ---vibing.nvimプラグインのメインモジュール
@@ -14,20 +13,80 @@ local M = {}
 ---@type Vibing.Adapter?
 M.adapter = nil
 
+---Neovim終了時の後片付け
+---
+---`VimLeavePre` のコールバック本体。関数として切り出してあるのは**順序が仕様だから**で、
+---インラインのクロージャだと外から確かめる手段が無い。
+---
+---順序:
+---
+---1. Neovimが所有する長時間ジョブを止める。終了通知はshutdown中には新しいLLMターンを起こさない
+---   （job.managerが抑止する）
+---2. **答えを待たせているプロンプトを解放する（#778、#788）。** `.res` を書かないまま消えると
+---   フックは自分の締め切りまで空回りしてから一般的な文言で deny し、MCPツール呼び出しの返事を
+---   書かないまま消えるとCLIは自分のアイドル上限（claudeで1800秒）まで待つ。3より前でなければ
+---   ならない: 殺したあとのCLIは、もう待つのをやめる主体になれない
+---3. CLIプロセスを全てキャンセルする
+---4. RPCサーバーを止める。2がこれより後だと `.res` のパスを決める `comm_dir` がポートを失う
+---
+---どの段も pcall で包む。終了処理の途中で1つ投げると、残りが黙って走らなくなる
+function M._shutdown()
+  local steps = {
+    function()
+      require("vibing.application.job.manager").shutdown()
+    end,
+    -- 承認と質問の両方。1段なのは、片方だけ解放する出口を作れないようにするため（#788）
+    function()
+      require("vibing.infrastructure.rpc.pending_prompts").resolve_all(
+        "Neovim exited while this %s was waiting for an answer."
+      )
+    end,
+    function()
+      if M.adapter then
+        M.adapter:cancel()
+      end
+    end,
+    function()
+      if M._helper_adapter then
+        M._helper_adapter:cancel()
+      end
+    end,
+    function()
+      if
+        M.config
+        and vim.tbl_get(M.config, "integrations", "nvim")
+        and vim.tbl_get(M.config, "integrations", "nvim", "enabled")
+      then
+        require("vibing.infrastructure.rpc.server").stop()
+      end
+    end,
+  }
+
+  for _, step in ipairs(steps) do
+    pcall(step)
+  end
+end
+
 ---vibing.nvimプラグインを初期化
 ---設定のマージ、アダプター初期化、チャットシステム初期化、リモート制御初期化、ユーザーコマンド登録を実行
 ---アダプター読み込みに失敗した場合はエラー通知して初期化を中断
 ---@param opts? Vibing.Config ユーザー設定オブジェクト（nilの場合はデフォルト設定のみ使用）
 function M.setup(opts)
   Config.setup(opts)
+  M._helper_adapter = nil
   M.config = Config.get()
 
-  -- Projects created by older vibing.nvim versions already have `.vibing/` but not the Codex
-  -- profile introduced later. Backfill it on setup without creating `.vibing/` in unrelated
-  -- directories, and never replace a file the user already owns.
-  local ok_profile, profile_error = pcall(ProjectCodexPermissions.ensure_existing, vim.fn.getcwd())
-  if not ok_profile then
-    notify.warn("Could not initialize .vibing/codex-permissions.toml: " .. tostring(profile_error))
+  -- Projects created by older vibing.nvim versions already have `.vibing/` but not every file a
+  -- backend keeps there. Each descriptor backfills its own on setup without creating `.vibing/`
+  -- in unrelated directories, and never replaces a file the user already owns.
+  for _, def in ipairs(require("vibing.core.constants.agents").list()) do
+    local descriptor = require(def.descriptor_module)
+    if descriptor.on_setup then
+      local ok_setup, setup_error = pcall(descriptor.on_setup, vim.fn.getcwd(), M.config)
+      if not ok_setup then
+        notify.warn(string.format("Could not initialize %s project files: %s", def.id, tostring(setup_error)))
+      end
+    end
   end
 
   -- The small bundled parser isolates each chat section and keeps rendered tool commands out of
@@ -50,7 +109,7 @@ function M.setup(opts)
       if ok_ui then
         -- 現在のウィンドウとバッファでwrap設定を適用
         -- force=falseでis_chat_buffer()チェックを行う
-        pcall(ui_utils.apply_wrap_config, 0, nil, false)
+        pcall(ui_utils.apply_window_config, 0, nil, false)
       end
     end,
     desc = "Apply correct wrap settings when entering any window",
@@ -62,16 +121,16 @@ function M.setup(opts)
   -- 同一コールバック内で順に実行するので、RPCサーバーが受信可能になった時点でadapterは必ず存在する。
   -- また後続の vim.schedule(auto_resume.restore 等) より先に登録されるため、実行順も従来通り。
   vim.schedule(function()
-    if M.config.mcp and M.config.mcp.enabled then
+    if vim.tbl_get(M.config, "integrations", "nvim") and vim.tbl_get(M.config, "integrations", "nvim", "enabled") then
       local rpc_server = require("vibing.infrastructure.rpc.server")
-      local port = rpc_server.start(M.config.mcp.rpc_port)
+      local port = rpc_server.start(vim.tbl_get(M.config, "integrations", "nvim", "port"))
       if port > 0 then
         notify.info(string.format("MCP RPC server started on port %d", port))
       end
     end
 
     local adapter_factory = require("vibing.infrastructure.adapter.factory")
-    M.adapter = adapter_factory.create(M.config.adapter, M.config)
+    M.adapter = adapter_factory.create(vim.tbl_get(M.config, "ai", "chat", "agent"), M.config)
   end)
 
   -- Cleanup stale hook communication directories from previous sessions.
@@ -102,6 +161,13 @@ function M.setup(opts)
     end)
   end)
 
+  -- 予約送信の完了待ち受け。予約が無ければ1ターンにつき空振り1回
+  vim.schedule(function()
+    pcall(function()
+      require("vibing.application.chat.reservations").setup()
+    end)
+  end)
+
   -- 自動 `/compact` の完了待ち受け。completion_notifier と同じく設定に関わらず張る
   -- （理由は auto_compact.setup() のコメント参照）
   vim.schedule(function()
@@ -129,10 +195,10 @@ function M.setup(opts)
 
   -- nvim-dapの停止イベントを購読する。nvim-dapがまだロードされていない可能性があるので
   -- VimEnter後に遅らせる（未インストールならsetup側がfalseを返して何もしない）
-  if M.config.dap and M.config.dap.enabled then
+  if vim.tbl_get(M.config, "integrations", "dap") and vim.tbl_get(M.config, "integrations", "dap", "enabled") then
     vim.schedule(function()
       pcall(function()
-        require("vibing.application.debug.analyze").setup(M.config.dap)
+        require("vibing.application.debug.analyze").setup(vim.tbl_get(M.config, "integrations", "dap"))
       end)
     end)
   end
@@ -142,16 +208,7 @@ function M.setup(opts)
   vim.api.nvim_create_autocmd("VimLeavePre", {
     group = augroup,
     callback = function()
-      -- CLIプロセスを全てキャンセル
-      if M.adapter then
-        M.adapter:cancel()
-      end
-
-      -- RPCサーバー停止
-      if M.config.mcp and M.config.mcp.enabled then
-        local rpc_server = require("vibing.infrastructure.rpc.server")
-        rpc_server.stop()
-      end
+      M._shutdown()
     end,
   })
 
@@ -168,18 +225,28 @@ function M.setup(opts)
   require("vibing.application.completion").setup()
 end
 
----位置指定を取るコマンド（VibingChat/VibingChatFork/VibingChatHandoff/VibingSubagentChat）の補完候補
----@param arg_lead string
----@return string[]
-local function complete_positions(arg_lead)
-  local matches = {}
-  for _, pos in ipairs(require("vibing.core.constants.chat").POSITIONS) do
-    if pos:find("^" .. vim.pesc(arg_lead)) then
-      table.insert(matches, pos)
+---決まった候補から前方一致で選ぶ補完関数を作る
+---
+---候補の並びは渡す側が持つ（`ChatConstants.POSITIONS` / `ChatConstants.FLAGS`）。ここに
+---literalを書くと、controller が受け付ける集合との二重定義になる
+---@param candidates string[]|fun(): string[]
+---@return fun(arg_lead: string): string[]
+local function complete_from(candidates)
+  return function(arg_lead)
+    local matches = {}
+    for _, candidate in ipairs(type(candidates) == "function" and candidates() or candidates) do
+      if candidate:find("^" .. vim.pesc(arg_lead)) then
+        table.insert(matches, candidate)
+      end
     end
+    return matches
   end
-  return matches
 end
+
+---位置指定を取るコマンド（VibingChat/VibingChatFork/VibingChatHandoff/VibingSubagentChat）の補完候補
+local complete_positions = complete_from(function()
+  return require("vibing.core.constants.chat").POSITIONS
+end)
 
 ---プロジェクト固有のClaude Codeプラグインの雛形を作成する
 ---作成後は`--plugin-dir`の解決結果を捨てて、再起動なしで読み込めるようにする
@@ -285,41 +352,50 @@ function M._register_commands()
     require("vibing.presentation.chat.controller").show_slash_commands()
   end, { desc = "Show slash command picker" })
 
-  vim.api.nvim_create_user_command("VibingSetFileTitle", function()
-    require("vibing.presentation.chat.controller").handle_set_file_title()
-  end, { desc = "Generate AI title and rename chat file" })
+  ---@param command string `ChatConstants.FLAGS` のキー
+  ---@return fun(arg_lead: string): string[]
+  local function complete_flags(command)
+    return complete_from(function()
+      return require("vibing.core.constants.chat").FLAGS[command]
+    end)
+  end
+
+  vim.api.nvim_create_user_command("VibingSetFileTitle", function(opts)
+    require("vibing.presentation.chat.controller").handle_set_file_title(opts.args)
+  end, {
+    nargs = "*",
+    desc = "Generate AI title and rename chat file (--linked also renames linked chats)",
+    complete = complete_flags("set_file_title"),
+  })
 
   vim.api.nvim_create_user_command("VibingSummarize", function(opts)
     require("vibing.presentation.chat.controller").handle_summarize(opts.args)
   end, {
-    nargs = "?",
+    nargs = "*",
     desc = "Generate and insert summary from chat history (--with-title also renames the file)",
-    complete = function(arg_lead)
-      local matches = {}
-      for _, flag in ipairs({ "--with-title" }) do
-        if flag:find("^" .. vim.pesc(arg_lead)) then
-          table.insert(matches, flag)
-        end
-      end
-      return matches
-    end,
+    complete = complete_flags("summarize"),
   })
 
   vim.api.nvim_create_user_command("VibingDeleteChats", function(opts)
-    require("vibing.presentation.chat.deletion_controller").handle_delete_command(opts, M.config)
+    require("vibing.presentation.chat.deletion_controller").handle_delete_command(opts, M.config.chat)
   end, {
     nargs = "?",
     desc = "Delete chat files (use --unrenamed to delete all unrenamed files)",
-    complete = function(arg_lead, cmd_line, cursor_pos)
-      local flags = { "--unrenamed" }
-      local matches = {}
-      for _, flag in ipairs(flags) do
-        if flag:find("^" .. vim.pesc(arg_lead)) then
-          table.insert(matches, flag)
-        end
-      end
-      return matches
-    end,
+    complete = complete_flags("delete_chats"),
+  })
+
+  vim.api.nvim_create_user_command("VibingChatSearch", function(opts)
+    require("vibing.presentation.chat.search_controller").handle_search_command(opts, M.config.chat)
+  end, {
+    nargs = "*",
+    desc = "Search past chats by topic and open the matches (prompts when given no query)",
+  })
+
+  vim.api.nvim_create_user_command("VibingSessionSearch", function(opts)
+    require("vibing.presentation.chat.search_controller").handle_session_search_command(opts)
+  end, {
+    nargs = "*",
+    desc = "Search past Claude/Codex CLI sessions and resume or hand one off (prompts when given no query)",
   })
 
   -- mote統合（と :VibingCleanMote / :VibingMoteDir）は削除された。設定を残したまま
@@ -363,14 +439,63 @@ function M._register_commands()
       chat_buffer = view._current_buffer
     end
     if chat_buffer then
-      local adapter = chat_buffer:_get_active_adapter()
-      if adapter then
-        adapter:cancel(chat_buffer._current_handle_id)
-      end
+      -- アダプターを直接叩かない。`cancel_turn` → `cancel_request` には、止めているフックの解放
+      -- （permissions.md「すべての出口でブロック中のフックを解放する」）と、止める相手が既に
+      -- 回収済みだったときにチャット側のターンを畳む後始末がぶら下がっている
+      chat_buffer:cancel_turn()
     elseif M.adapter then
       M.adapter:cancel()
     end
   end, { desc = "Cancel current Vibing request" })
+
+  -- 予約送信。対象はカレントのチャットバッファだけ: 応答中のチャットは複数ありうるので、
+  -- `:VibingCancel` のような「直近のチャット」へのフォールバックは別のチャットに予約を積みうる
+  vim.api.nvim_create_user_command("VibingReserve", function(opts)
+    local chat_buffer = require("vibing.presentation.chat.view").get_current()
+    if not chat_buffer then
+      notify.warn("Not in a chat buffer")
+      return
+    end
+    if opts.args == "" then
+      chat_buffer:prompt_reservation()
+      return
+    end
+    local ok, err = require("vibing.application.chat.reservations").add(chat_buffer:get_buffer(), opts.args)
+    if not ok then
+      notify.warn(err)
+    end
+  end, {
+    nargs = "?",
+    desc = "Reserve a message to send when this chat's current response finishes",
+  })
+
+  vim.api.nvim_create_user_command("VibingReservations", function()
+    local chat_buffer = require("vibing.presentation.chat.view").get_current()
+    if not chat_buffer then
+      notify.warn("Not in a chat buffer")
+      return
+    end
+    local items = require("vibing.application.chat.reservations").list(chat_buffer:get_buffer())
+    if #items == 0 then
+      notify.info("No reserved messages")
+      return
+    end
+    local lines = { string.format("%d reserved message(s):", #items) }
+    for i, item in ipairs(items) do
+      table.insert(lines, string.format("%d. %s", i, item))
+    end
+    notify.info(table.concat(lines, "\n"))
+  end, { desc = "List the messages reserved for this chat" })
+
+  vim.api.nvim_create_user_command("VibingCancelReservations", function()
+    local chat_buffer = require("vibing.presentation.chat.view").get_current()
+    if not chat_buffer then
+      notify.warn("Not in a chat buffer")
+      return
+    end
+    local cleared = require("vibing.application.chat.reservations").clear(chat_buffer:get_buffer())
+    notify.info(string.format("Cancelled %d reserved message(s)", cleared))
+  end, { desc = "Cancel every message reserved for this chat" })
 
   vim.api.nvim_create_user_command("VibingOrchestrationTree", function(opts)
     require("vibing.presentation.chat.orchestration_controller").handle_tree(opts.args)
@@ -403,6 +528,7 @@ function M._register_commands()
       notify.info(string.format("Cleared annotations in %d buffer(s)", count))
     end
   end, { desc = "Clear vibing.nvim inline review annotations from all buffers" })
+
   -- `/compact` は未登録のスラッシュコマンドとして素通しでCLIに届く経路が元からあるが、
   -- それだと `/help` の一覧にも補完にも出ず、知っている人しか使えない。コマンドにすると
   -- 「未送信本文があるなら断る」「claude以外なら断る」を一箇所で言える
@@ -435,8 +561,7 @@ function M._register_commands()
     end
 
     local AutoResume = require("vibing.application.chat.auto_resume")
-    local agent = M.config.agent or {}
-    local grace = (agent.auto_resume_on_limit and agent.auto_resume_on_limit.grace_sec) or 10
+    local grace = vim.tbl_get(M.config, "automation", "limits", "grace_sec") or 10
 
     local fire_at, reason
     if opts.args ~= "" then
@@ -566,8 +691,6 @@ function M._register_commands()
     local completion = require("vibing.application.completion")
     local skills = require("vibing.infrastructure.completion.providers.skills")
     local plugin_dirs = require("vibing.infrastructure.plugins.plugin_dirs")
-    local codex_plugin_config = require("vibing.infrastructure.adapter.modules.codex_plugin_config")
-    local codex_permission_profile = require("vibing.infrastructure.adapter.modules.codex_permission_profile")
 
     commands.reload_custom()
 
@@ -575,13 +698,14 @@ function M._register_commands()
     -- from this one, so clearing it second would refill them from the list being discarded.
     -- This is also what makes a plugin newly dropped into `.vibing/plugins` take effect.
     plugin_dirs.clear_cache()
-    -- Codex memoizes the argv it builds from that list, plus which manifests it already warned
-    -- about; both go, so a plugin added or fixed after the warning is read again.
-    codex_plugin_config.clear_cache()
-    -- Its git-common-dir lookups are memoized per cwd for the life of the process; a worktree
-    -- removed and recreated at the same path within one Neovim session would otherwise keep
-    -- serving a stale (or stale-missing) result until restart.
-    codex_permission_profile.clear_cache()
+    -- Whatever a backend memoised from that list or from the cwd (codex: the plugin argv and the
+    -- permission profile) goes with it, so a plugin added or fixed after a warning is read again.
+    for _, def in ipairs(require("vibing.core.constants.agents").list()) do
+      local descriptor = require(def.descriptor_module)
+      if descriptor.clear_caches then
+        descriptor.clear_caches()
+      end
+    end
 
     completion.clear_cache()
     skills.preload()
@@ -644,10 +768,20 @@ function M.get_adapter()
   return M.adapter
 end
 
----現在の設定を取得
----setup()で初期化された設定を返す
----setup()未実行の場合はデフォルト設定を返す
----@return Vibing.Config 現在の設定オブジェクトまたはデフォルト設定
+--- Resolve the adapter for auxiliary work independently of chat frontmatter.
+---@return Vibing.Adapter
+function M.get_helper_adapter()
+  local config = M.config or Config.get()
+  if not M._helper_adapter or M._helper_adapter_config ~= config then
+    local selection = require("vibing.core.utils.ai_config").resolve(config, nil, true)
+    M._helper_adapter = require("vibing.infrastructure.adapter.factory").create(selection.agent, config)
+    M._helper_adapter_config = config
+  end
+  return M._helper_adapter
+end
+
+---現在の設定を取得。setup()未実行の場合はデフォルト設定を返す。
+---@return Vibing.Config
 function M.get_config()
   return M.config or Config.defaults
 end

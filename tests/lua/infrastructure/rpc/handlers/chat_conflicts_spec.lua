@@ -11,6 +11,7 @@
 
 local ChatBuffers = require("tests.helpers.chat_buffers")
 local Git = require("vibing.core.utils.git")
+local Fs = require("vibing.core.utils.fs")
 
 describe("rpc handlers: chat_conflicts", function()
   local handler
@@ -27,7 +28,7 @@ describe("rpc handlers: chat_conflicts", function()
 
   local function write(path, content)
     local dir = vim.fn.fnamemodify(path, ":h")
-    vim.fn.mkdir(dir, "p")
+    Fs.ensure_dir(dir)
     local f = assert(io.open(path, "w"))
     f:write(content)
     f:close()

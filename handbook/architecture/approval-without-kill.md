@@ -1,0 +1,1331 @@
+# Answering an approval without killing the CLI
+
+What a tool-approval prompt costs today is the whole turn: `permission.lua` kills the process, the
+hook denies, and the user's answer comes back as a _new_ turn carrying a synthesized
+"I approved the X tool..." message. #778 removes the kill. This file is why the shape it takes is
+the one it is, and the measurements the numbers come from.
+
+Identifier background is `processes-and-turns.md`; the resident transport is `duplex-transport.md`.
+
+## The mechanism: the hook already knew how to wait
+
+`bin/hooks/pre-tool-use.sh` writes a `<request_id>.req`, pokes the RPC server with `nc -w 1`
+(fire-and-forget — the RPC reply is _not_ the decision), and then **polls for `<request_id>.res`**.
+The decision travels as a file, not as the RPC response, which means the hook can already block for
+as long as the `.res` is withheld. Before #778 it never blocked, only because `cancel_and_deny`
+wrote the deny immediately — which is still what a backend with no `measured_wait_floor_sec` does.
+
+So "answer in place" is not a new transport. It is: **stop writing the `.res` until the human
+answers.** The CLI sits inside its own hook; nothing is killed; the turn continues afterwards.
+
+### Every withheld response is owed, and by whom
+
+`rpc/pending_approvals.lua` holds one entry per withheld `.res` and guarantees each is written
+exactly once. The four exits are the whole contract; a fifth would be a CLI hanging inside its own
+hook until the script's deadline.
+
+| exit                  | written by                             | reached from                                                  |
+| --------------------- | -------------------------------------- | ------------------------------------------------------------- |
+| the human answers     | `permission.release_answered_approval` | `ChatBuffer:_answer_pending_approval`, on `<CR>`              |
+| the wait limit passes | the entry's own timer → `expire`       | armed by `open`; `on_timeout` tells the chat                  |
+| the chat goes away    | `resolve_for_chat`                     | the chat's `BufUnload` cleanup, **before** it cancels the CLI |
+| Neovim exits          | `resolve_all`                          | `VimLeavePre`, **before** the CLI is cancelled                |
+
+The turn being stopped rather than answered — `:VibingCancel`, or typing a new message instead of
+answering — reaches the third row too, through `ChatBuffer:cancel_request` and **before**
+`stop_turn`.
+
+Those "before"s are one fact stated three times: a killed CLI can no longer be the thing that stops
+waiting, so the release has to happen while the process is still alive. `tests/lua/shutdown_spec.lua`,
+`tests/lua/presentation/chat/view_approval_release_spec.lua` and the cancel cases in
+`approval_prompts_spec.lua` pin each ordering.
+
+**Reaching the limit denies one tool call and kills nothing.** Hooks run concurrently, so the user
+is quite likely answering a different prompt of the same turn when this one expires; killing would
+take the turn they are in the middle of. The hook exits 2, the model sees that one refusal, and the
+turn carries on.
+
+**Expiry denies the call, not the permission.** The question this feature was first asked was
+"what if the user is away for half a day?", and past `approval_wait_sec` the honest answer has to
+stay as good as the kill design's: there, the prompt outlived the turn and answering it any time
+later retried the work. So an expired prompt keeps its option lines and is still spendable — what
+changes is only how the answer travels. The registry entry is gone, so
+`ChatBuffer:_answer_pending_approval` finds no blocked hook and routes it to `retry_as_new_turn`,
+which is byte-for-byte the kill path. Refusing to spend it — the first shape of this — made waiting
+**worse than today for exactly the absence it was meant to survive**, by taking away the user's
+chance to grant the permission at all.
+
+"Do not answer an expired prompt in place" is the part that is real, and **it is satisfied by
+ordering rather than by a check**: `expire` calls `resolve` — which drops the registry entry —
+before `on_timeout` marks the chat's copy expired, so no window exists in which a prompt is expired
+and still registered. `_answer_pending_approval` then finds no blocked entry and has nowhere to
+route it. A delegated answer is the one place that still refuses, and only while the target chat is
+running: answering starts a new turn there, and that would cancel what it is doing.
+
+**An invariant implemented twice ends up with one copy too wide.** That is the whole shape of this
+mistake and it is worth keeping: `consume`'s check said the same thing the ordering already said,
+except the check keyed on "expired" where the structure keys on "a hook is waiting". Those coincide
+for the in-place route and diverge for the retry route, so the redundant copy silently took the
+retry route with it — and the retry route was the user's only way back. The surviving test asserts
+the property (`never sends an expired answer toward a hook`) rather than either implementation of
+it, so the next person may move the guarantee without having to keep a particular `if`.
+
+The wait limit also changes what the retry message may claim. The ordinary wording is written for a
+turn that stopped _at_ the prompt, where nothing has happened since; after expiry the call was
+denied and the model carried on, possibly finishing another way, so "proceed with the same
+operation" can ask for work that is already done. `retry_message` takes `expired` and states the
+grant instead of instructing. **Neither wording's effect on a model is measured** — what is known
+without measuring is only that the original one says something false on this path.
+
+## Why not answering `can_use_tool`
+
+**What was measured is the round trip, not the argv that switched it on.** This section used to be
+titled "Why not `--permission-prompt-tool stdio`", and that title was read later as evidence that
+the flag had been passed with that value — it is not; the body below only ever claimed the
+mechanism. The probe's script was not kept, so **which argv produced these events is not recorded**.
+What the claude 2.1.236 binary's own strings say about it, as a hypothesis and not as evidence:
+
+- `--permission-prompt-tool <tool>` normally names an **MCP tool** — `permissionPromptToolServerName`,
+  and three errors of the form `tool … (passed via --permission-prompt-tool) must be an MCP tool`.
+- `stdio` sits immediately next to `--permission-prompt-tool` in the string table, which is
+  consistent with it being a recognised special value meaning "ask over the stream-json control
+  channel" rather than through a server.
+- The two are alternatives, and the CLI says so: `canUseTool callback cannot be used with
+permissionPromptToolName. Please use one or the other.`
+
+So there are two shapes with the same name attached to them, and they differ in what they need:
+answering over the control channel needs `--input-format stream-json` — which
+`backends/claude.lua` passes **only on the duplex transport**, and oneshot is the default
+(`process_model.lua`) — while an MCP tool needs no control channel at all.
+
+The issue's original design was to answer the CLI's `control_request {subtype: "can_use_tool"}`
+with a `control_response`. It works — measured, verbatim, against claude 2.1.236:
+
+```json
+{
+  "type": "control_request",
+  "request_id": "2b3badea-…",
+  "request": {
+    "subtype": "can_use_tool",
+    "tool_name": "Write",
+    "display_name": "Write",
+    "input": { "file_path": "…/probe-output.txt", "content": "hello-from-probe" },
+    "description": "probe-output.txt",
+    "permission_suggestions": [
+      { "type": "setMode", "mode": "acceptEdits", "destination": "session" }
+    ],
+    "tool_use_id": "toolu_01Q1uQRPQvUKJtJLG5QEqsbo"
+  }
+}
+```
+
+Answering `{"behavior":"allow","updatedInput":{…}}` ran the tool and the turn completed with the
+process alive; answering `{"behavior":"deny","message":"…"}` reached the model as a `tool_result`
+with `is_error: true`, recorded one entry in `result.permission_denials`, and the turn carried on
+and answered normally. The synthesized retry message is genuinely unnecessary on that path.
+
+That inner object is recorded; **the envelope it travelled in is not**, and neither is the argv. A
+re-run therefore has to discover the envelope again, and has to be able to tell "the CLI never
+asked" apart from "the CLI asked and rejected our answer" — the binary has a distinct path for the
+second (`Ignoring can_use_tool control_response for request_id=…`, and a
+`permission_response_malformed` marker), so the difference is observable if the harness looks for
+it rather than only for whether the tool ran.
+
+**It was rejected anyway, because the prompt tool sits at the _end_ of the CLI's own gate.**
+Measured: with `--allowedTools Write`, `can_use_tool` is **never called** — and it is not called for
+a `Bash(echo …)` either, which the CLI's own safe-command classifier allows first. Routing vibing's
+`ask` decisions through it would mean the user's own `settings.json` allow rules, and a
+classifier we do not control, silently outvote vibing's `permissions.ask` list. There is no guard
+available from inside that path: we are simply not asked.
+
+The PreToolUse hook runs _before_ the gate, so the waiting design has no such hole. It is also
+backend-neutral — nothing about it is claude-specific — where `--permission-prompt-tool` is.
+
+### The third shape, built and then removed
+
+A narrower use of the same channel survived that rejection for a while and was implemented:
+**release the approved call with `defer`, then answer the gate's own question** when it comes back.
+The gate's veto is not a hole there, because a `defer` invites exactly that veto — steps 1 and 3
+have both had their say before step 4 is reached, and re-running `can_use_tool` at step 4 would
+only find the `:once` grant the human just spent already consumed. So step 4 could answer `allow`
+with no second opinion, and the wait stayed where it was measured: in the hook, against claude's
+1090s floor, rather than on a control-channel timeout nobody has timed.
+
+It was removed once the control cell above showed a hook `allow` is equally safe, because **reach**
+is what was left to decide on:
+
+|                  | option B | third shape |
+| ---------------- | -------- | ----------- |
+| claude / duplex  | yes      | yes         |
+| claude / oneshot | yes      | **no**      |
+| copilot          | yes      | **no**      |
+
+`stdio` means "ask over the control channel", which needs `--input-format stream-json`, which is
+duplex-only — and oneshot is the default every chat gets. The third shape therefore left #778
+switched off unless a user opted into a resident process, and withdrew it from copilot altogether
+despite its 1700s floor being ample. An approval-without-kill that does not apply by default does
+not answer the issue.
+
+Worth restoring if the channel is wanted for its own sake: answering at step 4 puts the human's
+approval **after** the user's granular rules rather than before them, which is a better ordering
+than `allow` can offer. It would need to be acceptable as a duplex-only feature, and it would need
+a measurement of how long the **control channel** tolerates a wait — `measured_wait_floor_sec`
+times the hook, not the channel, and substituting one for the other is the mistake this page
+records twice already. The reverted implementation is commit `e84ecf9e`, and the revert's own
+message lists the three things in it that are expensive to rediscover.
+
+#### Arm B, measured: the flag does take an MCP tool, and it does not change the answer
+
+The row that decided the table above — `claude / oneshot: no` — rested on `stdio` being the only
+way to reach the gate's question. It is not. Measured against claude 2.1.236 (#789), the same
+version arm A was measured on:
+
+**`--permission-prompt-tool mcp__<server>__<tool>` is accepted, needs no `--input-format
+stream-json`, and works on oneshot.** The question arrives as an ordinary MCP `tools/call`:
+
+```json
+{
+  "name": "approve",
+  "arguments": {
+    "tool_name": "Write",
+    "input": { "file_path": "…/probe-out.txt", "content": "ok" },
+    "tool_use_id": "toolu_01JdMB3SEXDiEeFu1ZuqgkT6"
+  },
+  "_meta": { "claudecode/toolUseId": "toolu_01JdMB3SEXDiEeFu1ZuqgkT6", "progressToken": 2 }
+}
+```
+
+Replying with `content[0].text` holding the JSON string `{"behavior":"allow","updatedInput":{…}}`
+ran the tool. The `tool_use_id` arrives **twice**, in `arguments` and in `_meta`, and a
+`progressToken` comes with it; that is transcribed from the probe's log for the same reason the
+`control_response` envelope above is — it is expensive to rediscover and impossible to guess.
+
+**Tool-name deny is applied at step 1 on arm B too.** With `permissions.deny: ["Write"]`, Write
+reached neither the hook nor the consultation — `No such tool available: Write. Write is disabled
+for this session` — which is arm A's `stdio-deny` result verbatim. The model fell back to `Bash`,
+which was consulted and allowed.
+
+**Where the consultation sits relative to the _allowlist_ is NOT established by this run**, and the
+first version of this section claimed it was. The claim, and why it does not hold:
+
+In the same deny cell the model also called `Read`. The hook logged `DEFER Read`; the prompt tool
+was never consulted about it, while `Bash` was. That was written up as "the prompt tool is asked
+only about calls the allowlist does not already satisfy, therefore it sits after the allowlist
+check, therefore the third shape's one advantage survives on arm B". **Two variables differ between
+those tools, not one:**
+
+| tool   | consulted? | in `--allowedTools` | read-only |
+| ------ | ---------- | ------------------- | --------- |
+| `Bash` | **yes**    | no                  | no        |
+| `Read` | **no**     | **yes**             | **yes**   |
+
+Both MCP cells run `--allowedTools Read` and nothing else, so allowlist membership and
+safe-by-classifier move together. The competing explanation is not hypothetical — #774 recorded it
+already: `echo` "was treated as a CLI built-in safe command and ran without emitting
+`can_use_tool`", which is why that issue says to verify approval paths with `Write` rather than
+something the classifier waves through. `Read`'s silence is consistent with either cause and this
+log distinguishes neither.
+
+This is the same defect as "a cell is not an observation of a tool", one level out: the _absence_ of
+a log line names its cause no better than a file on disk names its author.
+
+**The cell that would separate them, so the next person does not have to design it:**
+`--allowedTools "Read,Write"`, no deny, prompt tool as in `mcp-allow`, and ask for the Write. If
+Write is **not** consulted, allowlist membership suppresses the consultation for a tool no
+classifier would call safe, and the allowlist explanation stands. If Write **is** consulted, the
+allowlist does not suppress it and `Read`'s silence was the classifier. One cell, one variable, and
+it settles the ordering claim this section had to withdraw.
+
+One relevant prior, which is evidence but not a substitute for that cell: arm A measured that with
+`--allowedTools Write`, `can_use_tool` is never called — and `Write` is not read-only, so on _that_
+arm the allowlist does suppress the consultation on its own. Carrying it to arm B is cross-arm
+inference about a mechanism the two arms reach by different routes, which is exactly the kind of
+step this page exists to stop being taken silently.
+
+**So what B1 establishes about ordering is only: the hook ran and the consultation still happened
+for the same call.** Step 1 is settled, on both arms. The consultation's position relative to the
+allowlist and to granular rules is not — and granular rules are where the third shape's entire
+claimed advantage lives.
+
+**It still should not be adopted, and the reason is not anything arm B's cells measured.**
+codex and copilot have no equivalent of this flag, so the best case is not a replacement for
+option B but a _coexistence_: claude on the third shape, every other backend on the hook `allow`.
+That is a second implementation of what an approval means, which `.claude/rules/permissions.md`
+names as the specific failure the delegated-approval shape exists to prevent. Worse than a missed
+opportunity, adopting it would **take copilot's working behaviour away** — copilot's 1700s floor is
+ample and option B already serves it. The reach table's final row never moves:
+
+|                  | option B | third shape (`stdio`) | third shape (arm B) |
+| ---------------- | -------- | --------------------- | ------------------- |
+| claude / duplex  | yes      | yes                   | yes                 |
+| claude / oneshot | yes      | **no**                | **yes**             |
+| copilot          | yes      | **no**                | **no**              |
+
+Measuring "can it" answered a different question from "should it". Arm B passing is a proof of
+possibility, not a reason for adoption.
+
+**How the codex/copilot conclusion was reached**, so the next person does not re-derive it: both
+CLIs' own `--help` were read for a flag that names a caller-supplied tool as the permission gate,
+and neither has one. What they have instead delegates to something built in — codex 0.153's
+`--approve-for-me` ("Route approval requests through automatic review using the workspace-write
+sandbox") and copilot's `--assisted-approval` ("Review tool permission requests with the
+assisted-approval safety judge"). Neither takes a tool name, so neither can be pointed at vibing.
+This cost nothing to establish and does not expire with a probe run.
+
+**What #789 did not determine:**
+
+- **Where the consultation sits relative to the allowlist.** Two variables moved together in the
+  only cell that bore on it; the separating cell is designed above and unrun.
+- **Granular ordering on arm B — not observed, and not inferable either.** The deny cell used a
+  tool-**name** deny. Arm A measured granular rules in its own cells; arm B did not. This bullet
+  first said the step-4 evidence "implies" granular rules keep their say on arm B; there is no
+  step-4 evidence, so there is no implication. **This is the gap that matters most**, because
+  answering after the user's granular rules is the third shape's entire advantage over a hook
+  `allow` — the one property the whole question was about is the one still unmeasured on this arm.
+- **How long the MCP path tolerates a wait is still unmeasured.** The probe answered immediately, on
+  purpose: a deliberate delay would have confounded the primary question. `measured_wait_floor_sec`
+  times the **hook** and cannot be carried over to this path either — the same substitution this
+  page warns about for the control channel. The 1800s ceiling in "How long the CLI waits for an MCP
+  tool" is the relevant bound, and it bounds `nvim_ask_user_question` for the same reason.
+
+**Cells, cost and logs.** Two cells on `claude-haiku-4-5-20251001`: `mcp-allow` ($0.0907) and
+`mcp-deny` ($0.0999), **$0.1906 total, against a $0.15 ceiling — an overrun of $0.0406.** The
+estimate came from dividing #778's $0.4100 by its seven cells. That $0.059 is a figure no cell ever
+cost, and the real per-cell numbers were **free to read**: every cell's `stream.jsonl` carries
+`total_cost_usd` on its `result` event, and the archived arm A logs were being re-read with
+`report-only` in the same session. A derived number was used where an observed one was already in
+hand — see "A number whose provenance you have not checked" below.
+The negative control was not run and did not need to be: the allow cell was consulted, so the flag
+value demonstrably reached the mechanism and there was nothing left for a control to separate. Raw
+logs are under `.vibing/probe/permission-prompt-tool/mcp-{allow,deny}/`.
+
+### There is no free way to find out whether the flag value is accepted
+
+The flag is still a live question for decision 1, so `permission_prompt_tool.sh` has to establish
+the argv it was never recorded with. It opened with a pre-flight that was believed to cost nothing:
+with `--input-format stream-json` and stdin at EOF there is no user message, so no request is sent,
+and only the CLI's own argv validation runs. **That check could not fail.** Measured on claude
+2.1.236 with three values — `stdio`, `mcp__probe__approve`, and a deliberate
+`bogus_value_negative_control`:
+
+| invocation          | all three values                                                             |
+| ------------------- | ---------------------------------------------------------------------------- |
+| without `--verbose` | exit 1, `When using --print, --output-format=stream-json requires --verbose` |
+| with `--verbose`    | exit 0, **empty stderr and empty stdout** — not even a `system/init` line    |
+
+The first row is why the check reported success: the error never names the flag, so the pre-flight's
+`grep` for `permission-prompt-tool` matched nothing and it printed "accepted at startup" — **for the
+bogus value too**. It did not fail to reject; it accepted everything.
+
+Adding `--verbose` does not revive it, and **the empty stdout is what settles that**. "No rejection
+message" alone would still read two ways, but a run that does not emit even `system/init` has exited
+before session init — and the prompt tool is resolved at or after session init. So the pre-flight is
+not mis-written, it is structurally unable to reach the code that would reject a value. The only
+place `--permission-prompt-tool`'s argument is validated is inside a real turn.
+
+`--help` cannot answer it either: the flag is undocumented in 2.1.236, and `--help` short-circuits
+before option validation, so a bogus flag exits 0 there as well.
+
+**The negative control is the whole reason this is known rather than suspected**, which is the same
+lesson as "Register the reading before the run" below, applied one step earlier — to the check that
+decides whether the run is needed at all. A cheap check that cannot fail is worse than no check: it
+would have reported both hypotheses confirmed, for free, before a single token was spent. The
+harness now carries the control as a cell on the same code path, run when — and only when — the arm
+reports it was never consulted, which is the one outcome a rejected value and a gate that decided
+first both produce.
+
+### What the run measured, and the invariant it disproved
+
+Run on claude 2.1.236, arm A, 2026-09-18, $0.18. Two cells.
+
+**The allow cell re-established both missing records.** `--permission-prompt-tool stdio` is a real
+value and is accepted; `control_request{subtype:"can_use_tool"}` arrived for `Write`; the **first**
+candidate envelope was the one acted on:
+
+```json
+{ "type": "control_response",
+  "response": { "subtype": "success", "request_id": "…", "response": { "behavior": "allow", "updatedInput": {…} } } }
+```
+
+So the argv and the envelope that the earlier probe failed to keep are recorded again — this time
+in a committed script, with the raw logs under `.vibing/probe/permission-prompt-tool/`.
+
+**The deny cell disproved the invariant it was written to test.** With
+`permissions.deny: ["Write"]`, `Write` never reached the hook or the consultation. The model's own
+`tool_result` reads:
+
+> `Error: No such tool available: Write. Write is disabled for this session, in subagents as well as here.`
+
+**A tool-name-level deny is applied when the toolset is built — upstream of the PreToolUse hook and
+of any consultation.** An `allow` written into the `.res` therefore _cannot_ override it: the
+question is never put to us. The sentence in `.claude/rules/architecture.md` and in this file — "an
+`allow` skips the CLI's own gate, and with it the user's `settings.json` deny rules" — is wrong for
+tool-level deny. (`.claude/` is not writable from here; the correction is an item on #779.)
+
+Two limits on that sentence, neither measured away:
+
+1. **The deny arrived through `--settings`, with `--setting-sources project`.** A `user`-scope deny
+   was not loaded in this run. The conclusion is about _where in the pipeline_ a deny is applied,
+   and sources merge before that point — but that merge is inferred here, not observed. Closing it
+   means writing to the real `~/.claude/settings.json`, which the probe refuses to do.
+2. **Granular rules (`Bash(rm -rf:*)`) are untouched by this.** They cannot be resolved at
+   toolset-construction time, since they depend on one call's arguments. `default_deny_rules` and
+   `destructive_commands.lua` live exactly there. So B's risk is **narrowed** to granular rules —
+   and the next section measures it there too, and finds none.
+
+### Granular deny runs before the consultation — and outranks a hook `allow`
+
+The sentence above leaves B's risk narrowed to granular rules and unmeasured within them. Two more
+cells settled it (claude 2.1.236, 2026-09-18, logs in `granular-control/` and `granular-ask/`).
+
+**The command is not free to choose, and the obvious design walks into a trap this file already
+records.** `can_use_tool` is not called for a `Bash(echo …)` — the CLI's safe-command classifier
+allows it first — so a cell using a bare `echo` returns "never consulted" for a reason unrelated to
+the deny rule, which reads exactly like "the granular deny ran first". The cells use
+`echo "ok" > probe-out.txt`, whose consultation with no granular rule present was already logged by
+arm A's deny cell. The redirect takes it out of the safe-command path.
+
+**And the control cannot be "the same cell without the prompt tool".** With `Bash` outside
+`--allowedTools` and nobody able to approve it, the refusal is unattributable. So G0 puts `Bash`
+**in** `--allowedTools`, which makes a refusal the rule's doing and also shows the rule outranking
+an explicit allow.
+
+| cell                                            | called | hook | consulted | succeeded |
+| ----------------------------------------------- | ------ | ---- | --------- | --------- |
+| G0 — `--allowedTools Bash`, no prompt tool      | 1      | 1    | **0**     | 0         |
+| G1 — `--allowedTools Read`, prompt tool `stdio` | 1      | 1    | **0**     | 0         |
+
+Both returned the same `tool_result`:
+`Permission to use Bash with command echo "ok" > probe-out.txt has been denied.`
+
+The pre-registered mapping for that row was "not consulted + refused → the granular deny runs
+first; the third shape is safe", and that is the outcome. Combining both arms gives the order:
+
+```text
+1. toolset construction  — a tool-NAME deny removes the tool entirely
+2. PreToolUse hook       — runs, and may defer          (HOOK DEFER fired in both cells)
+3. granular deny rules   — evaluated here
+4. can_use_tool          — reached only if 3 permits    (arm A's allow cell proves it is reached)
+```
+
+**So the third shape preserves every layer of the user's own settings**: it answers at step 4, and
+step 4 is only reached by calls that already survived steps 1 and 3. Nothing it can say reaches a
+deny rule, because a denied call never gets that far. That was the argument for building it, and it
+is sound; what it turned out not to be is _exclusive_.
+
+**That does not settle option B, and the two must not be run together.** There are two different
+`allow`s here and they sit on opposite sides of step 3:
+
+|                        | written at                       | is it consulted?         | vs. granular deny |
+| ---------------------- | -------------------------------- | ------------------------ | ----------------- |
+| third shape's `allow`  | step 4, answering `can_use_tool` | only for surviving calls | cannot reach it   |
+| **option B's `allow`** | **step 2, in the hook's `.res`** | **every call**           | **see below**     |
+
+`HOOK DEFER Bash` fired in both granular cells, and that is the proof that the hook _is_ asked, and
+asked **before** step 3. Option B writes its `allow` exactly there. So "an `allow` cannot be offered
+where nothing asks" is true of step 4 and false of step 2 — an earlier version of this paragraph
+used the first to license the second, which is the same collapse-two-things-sharing-a-name mistake
+as reading Bash's hook line as Write's.
+
+Neither granular cell measured it, because `defer-hook.sh` always defers: both took the defer path.
+The open question was:
+
+> When the hook writes `allow`, is the step-3 granular deny skipped?
+
+The order table **suggested it is skipped**, since the decision is rendered upstream of step 3, and
+that suggestion was wrong. Two more cells settled it. Each differs from `granular-control` in
+exactly one variable, and the probe's hook emits claude's own shape,
+`{"hookSpecificOutput":{"permissionDecision":"allow"}}` — the same thing `bin/hooks/pre-tool-use.sh`
+writes — so it exercises the mechanism production uses rather than a look-alike.
+
+| cell                          | hook writes | `--allowedTools` | deny           | result                     |
+| ----------------------------- | ----------- | ---------------- | -------------- | -------------------------- |
+| `granular-control`            | `defer`     | `Bash`           | `Bash(echo:*)` | refused                    |
+| `granular-hook-allow`         | `allow`     | `Bash`           | `Bash(echo:*)` | refused                    |
+| `granular-hook-allow-control` | `allow`     | **`Read`**       | **`[]`**       | **ran** (`is_error=false`) |
+
+The third row is the one that makes the second mean anything. `Bash` is not in its `--allowedTools`
+and nothing else permits it, so the only thing that could have run it is our `allow` — **the hook's
+`allow` is parsed and honoured.** The same `allow`, with one variable changed, then loses to
+`Bash(echo:*)`. So:
+
+> **A hook `allow` overrides the CLI's allowlist. It does not override its denylist.**
+
+That is the answer to decision 1. B's cost is not the user's deny rules — a tool-name deny is out of
+reach at step 1, a granular deny outranks the verdict at step 3 — it is only the allowlist, which by
+construction could not have named the tool being approved. With the safety difference gone, reach
+decides, and B reaches the default transport and a second backend where the third shape reaches
+neither (see "Why not answering `can_use_tool`").
+
+**`granular-hook-allow` was run accidentally, before its control existed.** A command meant to test
+the arm's refusal path ran the arm instead (`OUT=… bash …` does not reach a script that recomputes
+`OUT` from its own location). How a number was obtained is part of the number, and for a while this
+one could not be read at all: refused, with no control, is the same single observation with two
+possible authors as the 950s copilot cell — the `allow` was honoured and the deny beat it, or the
+`allow` was never honoured. Its logs are in `granular-hook-allow/`.
+
+```text
+hook.log     HOOK ALLOW Bash
+driver.log   ATTEMPTED Bash {"command":"echo \"ok\" > probe-out.txt"}
+             TOOL_RESULT is_error=true
+               Permission to use Bash with command echo "ok" > probe-out.txt has been denied.
+```
+
+`HOOK ALLOW Bash` proves our script ran and printed; it says nothing about whether the CLI parsed
+it. The prior was good — the envelope is copied from `bin/hooks/pre-tool-use.sh`, which emits
+exactly this for claude and demonstrably allows tools in production — but that is a different
+configuration (vibing's generated settings, not `--settings` inline), which raises a prior without
+closing it. The control is what closed it, and **the accidental cell is not retroactively made
+sound by its control arriving later**: it was unreadable when it was run, and the reason to say so
+is that the next person deciding whether a cell is worth paying for needs the order of operations,
+not just the pair.
+
+Two unmeasured assumptions remain, stated rather than closed:
+
+1. **The deny arrived through `--settings`, with `--setting-sources project`.** A `user`-scope deny
+   was not loaded in either granular cell — the same limit as the tool-name result above, and for
+   the same reason: closing it means writing to the real `~/.claude/settings.json`.
+2. **The ordering may depend on _which_ command the rule names.** `echo` was used because it is
+   harmless while `Bash(rm -rf:*)` is the rule under real concern. Nothing here rules out a
+   classifier treating a destructive command differently — though it would have to do so by
+   refusing more readily, which is the safe direction for B.
+
+What this does not settle: the third shape needs `--permission-prompt-tool stdio`, hence
+`--input-format stream-json`, which `backends/claude.lua` passes **only on the duplex transport**
+while oneshot is the default. Arm B — the MCP-tool form, which needs no control channel — is the
+question of whether the same shape reaches oneshot. Its precondition, "worth a turn only if the
+deny runs before the consultation", is now **met**. It has not been run.
+
+### A cell is not an observation of a tool
+
+The deny cell's summary said the opposite of its log, and the design principle the harness was
+built on is what hid it. "Three signals, never collapsed into one verdict" was implemented, and it
+was not enough: each signal was counted **per cell** while the reading table meant **per tool**.
+Write was denied, the model fell back to `Bash`, and every count then described `Bash` — the hook
+had fired, we had been consulted, `probe-out.txt` existed. Printed verdict: _"we were consulted and
+our allow decided the outcome"_, which the pre-registered table maps to **decision 1 is B**. The
+correct reading survived only because someone read the raw log instead of the summary.
+
+The axis that mattered was not signal-into-signal but **tool-into-cell**. Separating signals is
+worthless while each one aggregates over whichever tools the model happened to try, and a
+filesystem effect — the probe file whose existence this document once called "the verdict" — names
+no author at all.
+
+Two further readings were wrong on the way to fixing it, both the same shape one level down:
+
+- **A zero from an instrument that was not installed is not a zero.** Scoping the signals made the
+  _allow_ cell report "measurement failed — the model never called Write", because its log predates
+  the `ATTEMPTED` lines. Absence of the instrument now prints `?` and is tracked separately from
+  absence of the event.
+- **Being consulted proves the call was made**, so consultation has to be tested before the attempt
+  count. Ordering it the other way produced the reading above.
+
+The first of those has now appeared **three times**, which is what makes it a type rather than an
+incident. The third was caught before it could mislead anybody: `report()` counted `HOOK DEFER`
+only, so the hook-`allow` cells — the ones that settled decision 1 — would have printed "the hook
+never saw it" for a hook that saw it and allowed it. Its instrument, `grep -c 'HOOK DEFER'`, was
+not installed for the thing being measured. It now counts both verdicts and prints which. Each of
+the three has the same tell: a count that _cannot go up_ in the configuration it is being read in.
+Worth asking of any zero before believing it.
+
+The harness now carries `self-test` (four crafted logs, no tokens) and `report-only <dir>`, which
+re-reads a saved cell. `report-only` is what makes a corrected _reading_ distinguishable from a
+corrected _measurement_: it holds the log fixed. All three defects are mutation-tested — each
+mutant restores the wrong reading and is caught by a different self-test case, which is the check
+that the cases are not passing vacuously.
+
+### A test that passes for a reason you have not written down
+
+Third of the same family, and the one that is hardest to notice because nothing is red.
+
+The reverted third shape prefiltered stdout with a substring test (`line:find('"can_use_tool"')`)
+before paying for a JSON decode, and a test asserted that ordinary prose mentioning the subtype
+passes through to the decoder untouched. It passed. It passed because **JSON escapes quotes**: the
+same characters inside a string value arrive as `\"can_use_tool\"` and do not contain the unescaped
+needle. That sentence was nowhere in the test, so what the test actually pinned was the outcome,
+not the mechanism — and an encoder change, or a prefilter rewritten without quotes in the needle,
+would have broken the safety property while the test went on passing.
+
+The general form: **a prefilter is a stand-in for a structural test, and it is only sound while the
+property that makes it equivalent holds.** If that property is not named in the test, the test does
+not defend it. The fix is not a stronger assertion on the same observation — it is to assert the
+_property_ (here, that encoding produces the escaped form) so that losing it fails something.
+
+Related but distinct from the equivalent mutant in the same commit, which is the honest opposite
+case: a line of code no test can distinguish, recorded as such rather than defended with a
+contrived test. One is a test claiming more than it checks; the other is a test that cannot exist.
+Both are worth writing down; only the first is a defect.
+
+### A procedure that grows by appending keeps its old step at full strength
+
+Fourth of the family, and the one that survives longest, because it lives outside the code and
+outside the tests where nothing looks at it at all.
+
+The edits this issue owed `.claude/rules/` could not be made where they were found — writes under
+`.claude/` are denied in that environment — so they were staged as a document,
+`.vibing/notes/779-claude-rules-edits.md`, to be applied later by someone else. Its item on what a
+hook `allow` skips was written in two passes, one per measurement: the first when only the
+tool-name cells had run and a granular deny still looked skippable, the second when the control
+cell settled that it is not. The second pass **appended** its replacement block. Both blocks then
+named the same three lines of the same file, both were well-formed, and neither said which was
+later. A reader applying the document top-down would have written the disproved invariant into
+`.claude/rules/` — the one directory that is loaded into every request, where a wrong invariant is
+not a stale note but the premise of all subsequent work.
+
+The general form: **code retracts by deletion and prose does not.** Superseding a line of code
+removes it; superseding a paragraph leaves two paragraphs, equally current-looking, and recency in
+the file is not recency in time — the appended block is later, but an appended block is also just
+as often an elaboration of the one above it. A superseded instruction is worse than a missing one,
+because a missing one gets noticed.
+
+The tell it shares with the other three: nothing is red, and the defect is invisible in either
+block alone. It is only visible by reading the whole document before applying any of it, and only
+detectable at all by noticing that two blocks address one target. The fix is the same shape as
+`report-only` holding a log fixed — make the corrected state distinguishable from the accumulated
+one: **when a new measurement changes an instruction, rewrite the block rather than adding
+another**, and say in the item how many replacement blocks it contains, so a second one is a
+contradiction the reader can see rather than a step they can follow.
+
+### A number whose provenance you have not checked
+
+Fifth of the family, and the only one with four independent instances from a single day — which is
+what promoted it from a run of coincidences to a type. In each, a number that was **free to
+observe** was replaced by one that was derived, borrowed, assumed, or measured in a tree it could
+not be compared out of, and in each the substitute looked entirely reasonable.
+
+- **A derived value where an observed one was free.** #789's probe budget was estimated by dividing
+  #778's $0.4100 by its seven cells. No cell ever cost that $0.059; the actual per-cell figures sit
+  on each run's `result` event as `total_cost_usd`, and that session was already re-reading the
+  archived arm A logs for other reasons. The estimate was 38% low and the ceiling was overrun.
+- **A hedge where `git log -p` was available.** A markdownlint count moving 192 → 193 was reported
+  as "one was **apparently** added in #786". The commit that changed it is a query, not an
+  inference; the word "apparently" was doing the work a two-second command would have done.
+- **A measurement of a different thing.** The 1800s MCP ceiling was nearly adopted as the bound for
+  how long an MCP tool may take to answer. 1800s was measured against a server that **never
+  answers**; a server that answers slowly is a different experiment, and the two coincide only if
+  the CLI's timer cannot be reset — which is the very thing being assumed.
+- **A number that could not be compared out of the tree it was measured in — and was then
+  distributed.** A `lint:md` baseline of "5566" was handed to three chats at once as the
+  repository's figure. It was a **raw** count from a worktree with a large `node_modules`:
+  `markdownlint --ignore node_modules` excludes only the top-level path, so every `.md` under
+  `node_modules/**/node_modules/…` is counted, and the total then varies with which dependencies
+  happen to be installed. The repository's own figure is **684**, and the same three trees measured
+  5566 / 804 / 684 raw against 680 / 684 / 684 excluded. The comparable form is
+  `pnpm run lint:md 2>&1 | grep -E '^\S+\.md:' | grep -vc 'node_modules'`; **a raw count is not
+  comparable across trees at all.**
+  Since `.markdownlintignore` excludes `**/node_modules/**`, the count no longer depends on the
+  tree, and it is zero — `lint:md` now fails CI instead of reporting a number.
+
+The shared tell is not that the numbers were wrong. It is that **each was cheaper to check than to
+justify**, and none was checked. A derived figure, a hedged figure, a borrowed figure and an
+environment-dependent figure all read as ordinary prose; nothing is red, which is this family's
+whole signature.
+
+The four differ in what the substitute was — an aggregate standing in for a member, a guess standing
+in for a lookup, a neighbouring measurement standing in for the one required, a tree-local count
+standing in for a repository property — so the rule cannot be about any one of those. It is about
+provenance: **before a number is used, say where it came from.** An average is not a unit price.
+"Apparently" is not a citation. A ceiling measured under one condition does not transfer to another
+by sharing a unit. A count taken inside one checkout is not a property of the repository. If saying
+where it came from is awkward, that is the signal — and the check is usually free, because the
+observation that would settle it is normally already on disk.
+
+**The fourth instance is the one that shows what the type actually costs, and it is the
+orchestrator's own.** The other three were _self-contained_ — the person who produced the figure
+was the person who used it, and the damage stopped there. This one was **distributed**, and became
+the stated baseline for three separate pieces of work. That difference is the whole reason it is
+worth a paragraph rather than a bullet: **the other three could only mislead their author, and this
+one could only mislead everybody else.**
+
+What the three recipients did is the finding. **One** reported that the number did not reproduce.
+**One — this issue's author — noticed and said nothing**: the count here was plainly 684 rather than
+5566, and the response was to quietly switch to comparing a single file against its base version
+rather than ask why the baseline was off by a factor of eight. **One did not notice at all.** So the
+error was detected by two of three and reported by one of three, and the gap between those two
+numbers is where the cost lives.
+
+**The danger of this type is not that a number is wrong; it is that a wrong number arrives with
+authority and nobody re-derives it.** A figure handed down by someone with more context reads as
+already-checked, so the default is to trust it; and when trust fails, the second failure has its own
+cause. **Being able to route around a bad number removes the motive to report it** — the local
+problem is solved, the work proceeds, and nothing feels unfinished. That is precisely when the
+report is owed, because the figure is still upstream and still wrong for everyone who did not
+happen to notice.
+
+So the norm is two-sided, and the receiving half is the half that was missing here. Publishing a
+number obliges you to say where it came from. **Receiving one obliges you to say out loud when it
+does not reproduce** — not merely to find a method that works. Working around a number you cannot
+reproduce is the same act as publishing one you did not verify, one seat further down, and it is
+what turns a single unchecked figure into three people's premise.
+
+### A control that stops short of the boundary is not a control
+
+Another of the family, and the only one where the thing that failed was **the control itself**.
+
+The E2E for #788 kept dying with no plenary summary, no `VimLeavePre`, an empty stderr and exit 1,
+while the child Neovim carried on and finished its turn half a minute later. Read as a crash, that sent
+the search into the feature's own code. Three token-free probes were run to clear the pieces, and
+one of them — a 45-second poll against a live child — "passed", which was taken as evidence that
+polling a child was fine.
+
+It was not evidence of anything. plenary's `test_harness.lua` defaults to `timeout = 50000`, and
+`PlenaryBustedFile` has no argument that could carry another value, so a spec run by hand outside
+`package.json`'s `test:e2e` (which passes `timeout = 240000`) is killed at 50 seconds. **The 45s
+control had simply ended before the wall it was supposed to be testing for.** Its green said "this
+finishes in under 45 seconds", which was never in question.
+
+Two general forms, and the first is the cheaper one:
+
+- **A deadline fires at the same number every time; a crash does not.** Two runs dying at exactly
+  50s is the tell, and a stopwatch is cheaper than any amount of reading. What made it look
+  organic was the signature: the parallel branch of `test_paths` — `sequential = false` is the
+  default — joins with the timeout, counts a still-running child (`code == nil`) as failed, and
+  calls `1cq` **without killing it**. Parent gone in silence, child alive and working: exactly what
+  a crash in the parent would look like, produced by a deadline.
+- **A control has to cross the boundary it is controlling for.** A probe shorter than the deadline
+  under suspicion cannot distinguish "the mechanism works" from "we did not reach the mechanism",
+  which is the same indistinguishability as the vacuous replacement test above — met here from the
+  opposite direction, by a probe that ran rather than one that did not.
+
+Recorded with its ending because that is the part that generalises: this was written up as a
+harness defect, with an issue half-drafted, before anyone re-read `package.json` — where the
+`timeout = 240000` had been sitting, free to read, from the start. The audit that found it cost
+nothing; the seven paid E2E runs that preceded it did not.
+
+## The ordering invariant, and why every backend needs it
+
+Three numbers, in three different files and two languages, that must stay in this order:
+
+```text
+permissions.approval_wait_sec  <  pre-tool-use.sh's own wait  <  <backend>'s configured hook timeout
+```
+
+**Both CLIs measured fail OPEN when their configured hook timeout expires: the tool runs with no
+verdict at all.** This was not obvious, and two earlier readings of it were wrong — see
+"How this was measured wrong twice" below.
+
+The invariant makes that unreachable, twice over:
+
+1. vibing's own wait limit expires first, and the fallback writes `deny` into the `.res`. The hook
+   returns a verdict and exits normally.
+2. If that never happens — Neovim crashed, the RPC server died, the timer was never armed — the
+   hook script reaches its own deadline and **exits 2 on its own** (`# Timeout - fail closed`).
+
+Only something outside our control (the hook process being SIGKILLed) can reach the CLI's timeout.
+
+`copilot_settings_generator.lua` already stated half of this — "`HOOK_TIMEOUT_SEC` … has to stay
+comfortably above [the script's wait] or a slow approval would turn into a silent allow" — and
+attributed it to copilot's fail-open behaviour. The measurement below shows the same hole in claude,
+where `settings_generator.lua`'s `timeout = 120` and the script's own 120s were **equal**, with no
+margin at all — a present-tense bug, independent of #778, which is why it was fixed on its own
+(`fix(hooks): give claude's hook timeout a margin over the script's own deadline`).
+
+Being right about one backend was never the problem; being right about one backend _only_ was.
+`copilot_settings_generator_spec.lua` was the sole place the ordering was checked, so claude, codex
+and grok were free to drift. The check now runs per descriptor over `agents.lua`
+(`hook_timeout_ordering_spec.lua`), and each transport reports the timeout it registers rather than
+the spec re-deriving each generator's schema — claude's `timeout`, copilot's `timeoutSec`, codex's
+`-c` TOML fragment, grok's delegation to claude's generator. A transport that cannot answer fails
+the spec, because "no timeout reported" and "an unsafe timeout" are indistinguishable from outside.
+
+## Measurements
+
+claude 2.1.236, copilot 1.0.83 (the 950s re-run: 1.0.85), macOS. Reproduce with
+`VIBING_PERF=1 tests/perf/hook_wait_ceiling.sh <backend> <block_sec> <configured_timeout_sec> [mode] [gate_preallowed]`.
+
+**Two of the rows below predate that script and were produced by an ad-hoc `.vibing/probe/hook.sh`,
+which logged the same events under different names** — `HOOK FINISHED NORMALLY` where the committed
+reproducer says `HOOK REACHED ITS OWN BUDGET`, and `SIGTERM after Ns` where it says
+`CUT BY SIGTERM after Ns`. The two hooks are otherwise behaviourally identical (same 10s heartbeat,
+same three traps, same budget, same `exit 0`), so the numbers are comparable. Grepping a fresh run
+for a string quoted here is not: **the quotes below are verbatim from the logs that produced the
+numbers, not from what a re-run emits.**
+
+### How long a hook may block
+
+Configured timeout set to 1800s; the hook blocks and heartbeats every 10s.
+
+**Every number here is a floor, and the column that says why is not decoration.** Two runs ending
+at different numbers usually means two runs watched for different lengths of time, so the table
+records _who stopped it_ next to each one. Read without that column, "claude 1090 / copilot 1700"
+says copilot is the more patient CLI, which is not something either run measured.
+
+| backend | blocked for | who stopped it                                            | ceiling      |
+| ------- | ----------- | --------------------------------------------------------- | ------------ |
+| claude  | **1090s**   | **we did** — SIGTERM from our own job stop, at 1090s      | not establd. |
+| copilot | **1700s**   | **nobody** — the hook completed its own 1700s budget      | not establd. |
+| codex   | —           | **not measured** (usage limit)                            | —            |
+| grok    | —           | **not measured** (not signed in on the measuring machine) | —            |
+
+Both runs were configured with a 1700s budget against an 1800s timeout. copilot's reached the end
+of it (`HOOK FINISHED NORMALLY after 1700s`); claude's was killed at 1090s when the harness was
+stopped, so nothing was learned about claude past 1090 — and in particular **not** that claude is
+less patient than copilot.
+
+**A measured floor is necessary and not sufficient, so copilot does not wait today.** The waiting
+path names the chat that draws the prompt through `turn.process.chat_bufnr`, which `cli_adapter`
+records only for a descriptor with `register_chat_bufnr` — and copilot's is `false`, because
+`nvim_ask_user_question` was never wired for it. Switched on by the floor alone, every `ask` took
+the waiting branch, found no bufnr, and wrote a deny with an internal-error reason, which is not a
+degraded prompt but **no prompt at all**: it removed the Tool Approval UI copilot already had
+(#512). `transports.can_wait_for_approval` therefore takes the whole descriptor and requires both
+fields, copilot keeps kill-and-retry, and the 1700s stays recorded here because the measurement is
+real and will be what enables copilot once its waiting path is wired and verified on that CLI. The
+implication is asserted over every registered descriptor in
+`tests/lua/infrastructure/adapter/conformance/descriptor_shape_spec.lua`, so a floor added to an
+unwired backend fails the suite rather than disabling that backend's approvals.
+
+A separate 950s copilot run confirms the same thing independently
+(`HOOK REACHED ITS OWN BUDGET after 950s without being cut`, copilot 1.0.85). That run also logs
+`VERDICT: the tool did not run`, which is **copilot's gate refusing a tool it had no rule for**, not
+the hook's verdict — `mode=default` with the gate not pre-allowed is exactly the confound described
+in "How this was measured wrong twice". The only thing that cell says about the hook is that it
+blocked for 950s, was not cut, and exited 0.
+
+An earlier copilot run was reported as **670s** and read as a shorter ceiling. It was neither: the
+log was read while the run was still going. That reading was enough to motivate a whole design —
+clamping the wait per backend — which is the failure this column exists to prevent.
+
+The 120s vibing configured before this work was **not** a CLI limit. It was a value we chose, and
+both CLIs honour a much larger one — which is what makes the 930s the default now derives possible
+at all.
+
+### What expiry does
+
+Block 150s against a 30s configured timeout, so the timeout is certainly reached.
+
+| backend | permission mode   | CLI gate pre-allows the tool | tool ran?                                |
+| ------- | ----------------- | ---------------------------- | ---------------------------------------- |
+| claude  | default           | no                           | no — **the gate's deny, not the hook's** |
+| claude  | default           | yes                          | **yes — fail open**                      |
+| claude  | bypassPermissions | no                           | **yes — fail open**                      |
+| copilot | default           | no                           | no — the gate's deny                     |
+| copilot | default           | yes                          | **yes — fail open**                      |
+| copilot | bypassPermissions | no                           | **yes — fail open**                      |
+
+The hook fires in every cell, including the pre-allowed ones — so `--allowedTools` covering a tool
+does **not** skip PreToolUse. (`HOOK START` in the log is the proof; it is not assumed.)
+
+### copilot retries a timed-out hook
+
+copilot ran the hook **twice** in every expiry cell. A retry is a _new_ `.req` with a new
+`request_id`, so a design that withholds the `.res` can produce **two approval prompts for one tool
+call** — and answering one leaves the other spinning to the script's own deadline. The invariant above means
+copilot never times out in normal operation, but the fallback path can still reach this, so it is
+handled rather than assumed away.
+
+**Both prompts are shown, and that is deliberate.** Collapsing them by matching `(tool, input)` is
+the obvious move and it is wrong: a model calling the same tool twice with the same input is
+legitimate, and since hooks run concurrently the two can be **in flight at the same time** — so the
+rule would silently refuse a second call that nobody asked about. Detecting the orphan properly is
+not available either: nothing tells us a hook died, so any such rule is a guess, and a wrong guess
+here denies a call the user never saw.
+
+**What the decision costs, measured as a test rather than assumed** (`approval_prompts_spec.lua`,
+"keeps holding while another prompt is still open"): the orphan's registry entry outlives every
+answer the user gives, so the output hold stays on after the real prompt is answered. The user
+still sees output at each answer — `add_user_section` flushes on the way — but the turn's **tail**
+arrives only when the turn ends, where `_finish_turn` releases the orphan and flushes. Late, not
+lost. Making output arrive late is the safe side of this trade; denying a tool call on a guess is
+not.
+
+### copilot: an _errored_ hook is not a _timed-out_ hook
+
+A hook that exits non-zero for its own reasons is refused — `Denied by preToolUse hook … (hook
+errored)` — where a hook that times out is allowed through. Two different code paths. Do not
+generalise either one into "copilot is safe" or "copilot is unsafe".
+
+### How long the CLI waits for an MCP tool — a fourth deadline, measured at 1800s
+
+A different ceiling, and `nvim_ask_user_question` sits on it: that tool never goes through
+PreToolUse, so none of the three numbers above apply to it. Against a stub MCP server that never
+answers, claude ran to the end and said so:
+
+```text
+MCP server "probe" tool "wait_forever" sent no response or progress for 1800s; aborting.
+```
+
+**1800 seconds, on claude. Measured.** codex and grok are not measured here either.
+
+Everything else in that message — a per-server `timeout` in milliseconds, a global
+`CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT`, `0` to disable — is **the CLI describing itself, which is a
+hypothesis and not evidence** (the same shape as the binary string in "How this was measured wrong
+twice"). None of it was tried, and two of the three could not be reached from here anyway:
+`cli_mcp_config.spec()` carries `command` / `args` / `env` only, it emits nothing at all unless
+`ai.agents.claude.mcp.inherit_cli_servers = false`, and on the normal path vibing's server arrives through
+`--plugin-dir` reading `claude-plugin/.claude-plugin/plugin.json`. Raising the ceiling would mean
+writing a `timeout` into two places and trusting a claim.
+
+It does not need raising. `approval_wait_sec` plus its margins is **990s against a measured 1800**,
+so the in-place answer route for `nvim_ask_user_question` fits inside the deadline as it ships
+("The other channel", below). What that costs instead is one more thing to keep ordered, so
+`hook_timeout_ordering_spec.lua` asserts the whole derived budget stays under 1800 — a user raising
+`approval_wait_sec` past it would otherwise get a silent 30-minute hang.
+
+**This number licenses nothing on that route by itself**, and the section below says why: it
+measures a server that answers nothing, not one that answers late.
+
+**Two different things are called "progress" here, and they point opposite ways.** The message means
+MCP `notifications/progress`, sent **by an MCP server to the CLI**; `tool_progress` is a stream
+event the **CLI sends us**. Our MCP server implements neither, so "just send progress to reset the
+timer" describes machinery that does not exist on our side.
+
+`tool_progress` has no `by_type` handler in `decoders/claude_stream_json.lua`, so it is decoded and
+dropped, which is the documented behaviour for an unknown type. Worth remembering as material: it
+is the event that could render "waiting for approval, 1 minute" without any polling of our own.
+
+## Where 900 seconds comes from
+
+`permissions.approval_wait_sec` defaults to **900** (15 minutes). The reason is _not_ that the
+measured floors are above it — **the ceiling is a constraint, not a justification**, and a future
+CLI raising it is not a reason to raise this.
+
+The reason is what the number is for. Half-day absences are not meant to be waited out; they are
+what the fallback exists for, and the fallback is byte-for-byte today's behaviour. So the limit only
+has to cover "the user stepped away and is coming back", and every second beyond that is paid for:
+
+- **the prompt cache TTL is 55/60 minutes** (`token_usage.DEFAULT_CACHE_TTL_SEC`,
+  `prefix_rewrite.CACHE_TTL_SECONDS`). A wait that crosses it re-pays the whole prefix on resume.
+- **a resident process is ~200MB of RSS** held for the duration (`duplex-transport.md`).
+
+15 minutes is comfortably inside both — which is a check that the choice is _possible_, not the
+argument for it.
+
+**One value, for every backend.** A per-backend limit derived from the floors above would be
+recording how long each run happened to be watched, not a difference between the CLIs: claude's
+1090 is where the harness was stopped and copilot's 1700 is where the hook's own budget ran out,
+and **neither log contains a CLI deciding anything**. Clamping to a floor bakes a measurement
+artifact into the product and leaves "why is claude shorter?" with no answer — a question that had
+already been asked the other way round, about copilot, from a number read off a running log.
+
+What the floors _are_ good for is checking the invariant's precondition, and that check is not
+optional: if the script's deadline exceeds what a CLI will actually wait, that CLI's timeout fires
+and the table above says the tool then runs ungated. So every backend the feature is enabled for
+needs a measured floor above the script's deadline — not a guess that it is probably fine.
+
+### The derivation, and where it currently stands
+
+`wait_budget.lua` turns the one configured number into the three:
+
+```text
+approval_wait_sec            900   what the user configures (floored at 30)
+  + SCRIPT_MARGIN_SEC  30 =  930   pre-tool-use.sh's own deadline
+  + CLI_MARGIN_SEC     60 =  990   what every backend registers as its hook timeout
+```
+
+The margins are sized by what each one covers, not by taste. The script's 30s is slack for the
+fallback timer's deny to be written and land — it is a backstop for "Neovim answered the RPC and
+then wrote nothing", which is our own bug, since a dead RPC server already fails closed on `nc -w 1`
+and a dead Neovim takes its CLI children with it. The CLI's 60s covers everything before the poll
+loop starts counting (process spawn, `cat` of stdin, the `nc` round trip) and is the larger of the
+two because being wrong there fails _open_ where being wrong in the script fails closed.
+
+The script's deadline travels in the child's environment (`VIBING_HOOK_MAX_WAIT_SEC`), since
+`pre-tool-use.sh` is one fixed file shared by every chat. Its env-absent fallback is **60s, not
+930** — deliberately below the smallest timeout the derivation can produce (30 + 30 + 60 = 120), so
+that a user who _lowers_ `approval_wait_sec` does not end up with a script outlasting the timeouts
+it lowered. A resident duplex process is handed its environment once at spawn, so a changed setting
+reaches it on the next process rather than the next turn.
+
+Against the measured floors, with the default 900:
+
+| backend | measured floor | script deadline 930 inside it? |
+| ------- | -------------- | ------------------------------ |
+| claude  | 1090s          | yes                            |
+| copilot | 1700s          | yes                            |
+| codex   | not measured   | **no — feature stays off**     |
+| grok    | not measured   | **no — feature stays off**     |
+
+"Not measured" is not "probably fine": those two keep today's `cancel_and_deny` behaviour until
+somebody runs `tests/perf/hook_wait_ceiling.sh` against them. The ordering itself is asserted for
+all four in `tests/lua/infrastructure/hooks/hook_timeout_ordering_spec.lua`, because a backend that
+does not wait still registers a timeout and still must not be the one to give up first.
+
+## The other channel: answering a question in place (#788)
+
+> **Removed.** `nvim_ask_user_question` and everything below that serves it — `pending_questions`,
+> `mcp.measured_answer_wait_sec`, `question_wait_sec`, the question exemptions from the
+> "responding" guards — are gone. A question is now a `vibing-question` block the model writes at
+> the end of its reply, and the answer is the next turn (`handbook/features/chat-ui.md` →
+> AskUserQuestion Support). This section stays as the record of what holding the turn open cost,
+> which is the reason it was dropped once duplex made the resident process the default.
+
+`nvim_ask_user_question` is the second thing a human is waited for on, and until #788 it was the
+last kill path left after #778: the handler called `adapter:cancel`, the turn died, and the user's
+answer came back as the next message on a `--resume`.
+
+**It is a different route, and none of the three deadlines above reach it.** An approval travels
+through a shell hook; a question _is_ an MCP tool call. So `measured_wait_floor_sec` says nothing
+about it — that number measured a hook — and the mechanism had to be built rather than uncovered.
+The hook could already block before #778, because not writing the `.res` was the whole trick.
+Nothing on this route could: `rpc/server.lua` replied from its handler's return value, so
+`Server.DEFERRED` and `pending_questions.lua` are what "reply later" had to become.
+
+### Its own measurement, and what that number is
+
+`mcp.measured_answer_wait_sec = 960` on the claude descriptor, measured 2026-09-18 against claude
+2.1.236. Instrument: `tests/perf/mcp_answer_after_delay.sh`; logs in
+`.vibing/probe/mcp-answer-after-delay/`.
+
+```text
+question_wait_sec  900   shares permissions.approval_wait_sec — one number for one wait
+  + MCP_MARGIN_SEC  60 = 960   what the CLI must still be willing to consume
+```
+
+The gate is `question_budget_sec() <= mcp.measured_answer_wait_sec`, so **the default sits exactly
+on the measured value — deliberately, not by luck.** 960 is the production budget itself, which is
+what the cell was built to exercise: a shorter, more convenient delay would only have licensed a
+shorter wait, since the number is a floor. Raising `approval_wait_sec` therefore turns the feature
+off for that backend rather than waiting past the evidence, which is the same "enabled by a
+measurement, not a flag" rule the hook path follows.
+
+**It is not the 1800s in `wait_budget.MCP_TOOL_IDLE_TIMEOUT_SEC`, and the distinction is the point.**
+That one measured how long claude tolerates a server that answers **nothing**. This one measures
+whether an answer that arrives **late** is still consumed. Two experiments, two phenomena; using the
+silence ceiling to license a late answer is the same substitution this page records twice already.
+Both numbers stay, each with a comment saying what it measured.
+
+The cell is built the way "Register the reading before the run" asks. Five signals per cell, four
+pre-registered readings, a **control cell that answers immediately** — without it a failing arm is
+unreadable, because "no tool_result" and "the model never called the tool" look identical — and a
+per-cell marker string that appears nowhere in the prompt, so the marker showing up in the model's
+own text separates _the result was delivered_ from _the model consumed it_. `self-test` exercises
+the instrument against crafted logs and costs no tokens.
+
+### A question has no deny
+
+An expiring approval writes `deny` and the turn carries on: a refusal is a thing a model can act on
+correctly. An expiring question has no equivalent. "The user did not say which approach they
+wanted" leaves the choice it asked about still open, and the honest reading of that — pick one and
+continue — is exactly what asking existed to prevent. **So expiry ends the turn**, the reply is
+written first, and the user's answer arrives later as a new turn: byte-for-byte today's route.
+
+**Except when something else in that turn is still blocked.** claude dispatches several `tool_use`
+blocks from one assistant message at once, so `[nvim_ask_user_question, Bash]` blocks a question on
+the MCP channel and an approval in its hook **at the same time**. Killing unconditionally would
+take the turn the user is in the middle of answering the approval for — the door beside the
+one #778 closed, and the reason the approval path may not kill on expiry either. The condition
+therefore asks about prompts rather than about registries: if any approval _or_ question is still
+holding the turn, the expiring question ends alone and the turn keeps running, which is the
+approval path's behaviour exactly. `ChatBuffer:expire_question` is where it is decided, because it
+is the one place that can ask both.
+
+This is the same observation that merged the rendering state (`_prompts_rendered_unsent`, formerly
+`_approvals_rendered_unsent`): an approval and a question are one thing — _a prompt holding this
+turn open_. Merging the drawing and leaving the lifetimes split is how the two silently drift.
+
+### The duplicate-send guard swallowed every answer, on both routes
+
+`ChatBuffer:send_message()` opens with `if self._is_sending then return false end`, and both
+`_answer_pending_approval` and `_answer_pending_question` sit **below** it. Its docstring said the
+flag covers "the gap from `<CR>` to the CLI starting"; it does not. `send_message` sets it and only
+`_handle_response` — the end of the turn — clears it, which was **measured on a live editor while a
+turn was streaming**, not read off the code. A prompt that holds a running turn open is therefore
+always answered in exactly the state the guard rejects.
+
+The rejection is silent. `send_message` returns `false` and nothing else happens: no deny, no
+retry, no message. The hook spins to its own limit and the question waits for the CLI's 1800s MCP
+idle timeout. Seven real E2E runs of #788 ended with no `tool_result` at all, and this was why.
+
+**It was not new in #788.** The same line is what an in-place _approval_ answer hits, and claude
+enables that path by default (`approval_wait_sec` 900 < `measured_wait_floor_sec` 1090), so #778
+shipped with it. It survived because **no spec ever set `_is_sending`** — every case in
+`approval_prompts_spec.lua` and `question_prompts_spec.lua` called `send_message()` on a chat left
+at the default `false`, so the one gate a real answer must pass was never once exercised. Both specs now
+have a case that sets it, and both go red if the guard is restored unconditionally.
+
+The exemption is scoped to the answer and closed again straight after:
+
+```lua
+local blocking = self:_blocked_approval_count() + self:_blocked_question_count()
+if self._is_sending and blocking == 0 then return false end
+-- ... the two answer attempts ...
+if self._is_sending then return false end
+```
+
+The condition asks _is anything still holding this turn_, the same question and the same pair of
+counts as `_resume_after_prompts`, rather than whether prompt lines are still on screen.
+
+### An empty `<CR>` is not an answer, and while the turn runs it is nothing at all
+
+Pressing `<CR>` on an empty input never becomes the answer — handing a model a blank where a
+decision belongs is the one outcome that must not happen, and a test pins it.
+
+What happens instead depends on whether the turn is still running, and the live case is the second
+one. With the turn over (the kill route, or a prompt left drawn after it died) the press falls
+through to the ordinary send path, whose `cancel_request()` ends the turn and releases the question
+as `unanswered`. With the turn **still running** — which is every in-place prompt — it hits the
+re-closed guard above and does nothing: the prompt stays answerable and the wait limit is what
+eventually ends it.
+
+That is deliberate rather than incidental. Letting a stray `<CR>` through would cancel the turn the
+prompt is holding, which is the duplicate send the guard exists to stop, and there is already an
+explicit way out (`:VibingCancel`). It is also not a regression anybody can have felt: before the
+fix the guard swallowed the empty press too, so this is the documented behaviour changing to match
+the real one, not the real one changing.
+
+### Opening one exception closed the other one
+
+`programmatic_sender.validate` refuses to deliver into a chat that is responding, and #778 opened
+exactly one hole in it: a delivery that answers a hook the target is actually blocked on. That
+exemption asks `pending_approvals` by `request_id`, and nothing else.
+
+Answering a question in place put questions on the wrong side of it. A chat waiting on
+`nvim_ask_user_question` is responding by the same definition an approval-blocked one is, so every
+`nvim_chat_send_message` aimed at one hit the guard — **an orchestrator could see
+`asked_question` and could not answer it.** The worker-stopped notice was already telling it to
+answer with `nvim_chat_send_message`; the instruction did not become wrong, the code underneath it
+did. This is the sixth type's shape read backwards: the feature that made questions answerable by a
+human is the same feature that made them unanswerable by anyone else, and the half that broke was
+the half nobody was looking at.
+
+The two halves fail differently, and the quiet one is the one that matters:
+
+| call                           | before the fix                             | who notices             |
+| ------------------------------ | ------------------------------------------ | ----------------------- |
+| plain `nvim_chat_send_message` | `error: Chat buffer is already responding` | the caller, immediately |
+| with `queue_if_busy`           | `queued`                                   | **nobody**              |
+
+The queued answer sits for `question_wait_sec` — 900s by default — and is delivered as a _new
+turn_ only once the question it was the answer to has expired and been denied. The orchestrator
+polls a chat that has moved on, holding a receipt that says the message was accepted. "Queued means
+no request has started yet" was already an invariant; this is the case where queueing means the
+request can never start.
+
+The fix is the symmetric exemption, with one deliberate asymmetry: **it takes no `request_id`.**
+The id is what makes the approval exemption strong — it separates a prompt still drawn from a dead
+turn from a hook that is genuinely blocked. For questions that separation already lives somewhere
+else: a prompt that is only drawn sits in `_pending_choices`, and `pending_questions` holds nothing
+but replies actually being withheld. Asking the registry is the strong condition there, so an id
+would buy nothing. The opts flag is still required, and not as ceremony — `auto_compact`'s
+`/compact`, `auto_resume`'s re-send and `append_notice` all reach the same `validate`, and any of
+them slipping through would be eaten by `_answer_pending_question` as the answer.
+
+Two consequences follow from "an answer resumes a turn rather than starting one", and both are
+tested. It is not subject to `max_concurrent`, because it adds nothing to the count that limit is
+about. And it skips `auto_compact.before_delivery`: `/compact` is itself a send that starts a new
+turn, so on a chat whose turn is still open it cannot run — routing the answer behind it is the
+queueing failure above wearing a different hat. The compaction is deferred, not lost; the next
+delivery asks again, once the answered turn has finished.
+
+### What to measure before enabling another backend
+
+codex is the one where this is a real gap rather than a formality — its choice-list UI is already
+wired (`register_chat_bufnr`), so the only thing missing is the number. Run
+`tests/perf/mcp_answer_after_delay.sh` with its `claude -p` invocation replaced by the equivalent
+`codex exec` one, then add `mcp.measured_answer_wait_sec` to the descriptor. Two cells, both
+required: the control makes the arm readable, and the arm must use `question_budget_sec()` rather
+than a shorter delay, for the floor reason above. Grok cannot reach the MCP tool at all, so there
+is nothing to measure there yet.
+
+## The third channel: a CLI asking for itself (#861)
+
+Under `ai.agents.codex.process = "duplex"` the CLI is a resident `codex app-server`, and it can send
+**its own** approval requests over the open connection — `item/commandExecution/requestApproval`
+and `item/fileChange/requestApproval`. Before #861 every one of them was answered
+`{decision="decline"}` on arrival, so `approval_policy = "on-request"` had nowhere to put a human.
+
+**It is a third route, and neither of the other two measurements reaches it.**
+`hook.measured_wait_floor_sec` timed a hook blocking; `mcp.measured_answer_wait_sec` timed a late
+MCP answer being consumed; this one times a late **JSON-RPC decision** being acted on by a process
+that has been sitting on an open request. Borrowing either is the substitution this page already
+records twice.
+
+### What it asks, which is not what the hook asks
+
+They are different questions about the same call, and measurement settles the ordering: the
+PreToolUse hook runs **first**, and when it denies, codex never sends an approval request at all
+(observed: `hook/completed` with `status: "blocked"`, no request, the command un-run, the turn
+completing normally). So the hook answers _may this tool run_, and what survives it reaches the
+sandbox, which asks _may this call leave it_. Both prompts can be seen for one command, in
+sequence, never at once.
+
+That is also why the answer must not touch `permissions.allow` / `permissions.deny`. A human
+approving a sandbox escape has said nothing about vibing.nvim's own gate, and
+`application/chat/native_approval_decision.lua` exists so the omission is a different module rather
+than a flag inside `approval_decision.consume`.
+
+### Its own measurement
+
+`native_approval.measured_wait_floor_sec = 960` on the codex descriptor, measured 2026-10-06
+against codex-cli 0.160.1. Instrument: `tests/perf/codex_approval_answer_after_delay.sh`.
+
+```text
+approval_wait_sec              900   the same number every prompt shares
+  + NATIVE_APPROVAL_MARGIN_SEC  60 = 960   what the CLI must still be willing to act on
+```
+
+Two cells, both PASS. The control answered at 0s; the arm answered at 960s and codex acknowledged
+it (`serverRequest/resolved`), **ran the approved command**, and completed the turn normally. Signal
+4 is the one the plumbing cannot fake: a per-cell marker path that only the approved command
+creates.
+
+As on the other two routes the gate is `native_approval_budget_sec() <= floor`, so the default sits
+exactly on the evidence and raising `approval_wait_sec` turns the waiting **off** here rather than
+waiting past it.
+
+### The protocol facts the implementation leans on
+
+All measured, none read off the docs:
+
+- The request `id` is a **small integer that restarts at 0 per process**, so the chat's prompt is
+  keyed by `codex-<process_id>-<rpc_id>`. Keying on codex's id alone is the #667 collision with
+  extra steps.
+- `availableDecisions` is a **heterogeneous array** — strings for payload-free decisions,
+  single-key objects for the rest (`{"acceptWithExecpolicyAmendment": {...}}`). The chosen element
+  is echoed back verbatim; rebuilding its body from the option's slug would be a second copy of
+  codex's schema.
+- **`decline` appeared in no observed `availableDecisions` and is honoured by all of them**: the
+  call is marked `declined`, the model is told, the turn carries on. It is therefore always offered,
+  because a human whose listed options are `accept` and `cancel` could otherwise refuse one command
+  only by aborting the turn.
+- `item/fileChange/requestApproval` carries **no path and no diff** — only an `itemId`. Those were
+  in the `item/started` notification just before it, which is why the protocol module keeps a
+  per-turn `rpc.file_changes` table.
+- **`serverRequest/resolved` is a fifth exit the other two registries have no equivalent of.** Codex
+  can resolve its own request, after which a response names an id it no longer holds; `forget` is
+  the only exit that writes nothing.
+- `approval_policy = "untrusted"` **kills the process at startup** on 0.160.1
+  (`is no longer supported; remove this setting`), so the config enum does not offer the word.
+- Hook trust is content-hashed over the whole hook entry **including `timeout`**. A probe that
+  changed the timeout to a convenient value reported `trustStatus: "modified"` and codex silently
+  ran no hook — which read exactly like "app-server never runs hooks", and was wrong. Verify with
+  `hooks/list` **using the production argv**, never a simplified one.
+
+### What is deliberately not handled
+
+`item/permissions/requestApproval` keeps its `-32601`. Its response is not a decision at all — the
+struct carries `permissions`, `scope` and `strict_auto_review`, i.e. a grant being negotiated — so
+answering it with `{decision=...}` would be inventing a protocol. It could not be triggered in any
+probe, so there is nothing measured to build the real UI against.
+
+## How this was measured wrong twice
+
+Both mistakes produced a plausible verdict rather than an error, which is the only reason they were
+worth the second look. Recorded because the harness now controls for them and someone re-measuring
+should know what the controls are for.
+
+1. **`bypassPermissions` was used "to isolate the hook".** It isolates the _gate_: that mode leaves
+   nothing to refuse a tool whose hook timed out, so of course the tool runs. The reading "claude
+   fails open" was true of that mode and said nothing about the mode real chats use.
+2. **The gate, not the hook, was answering.** In headless `default` mode the gate has nobody to
+   prompt, so it refuses a tool it has no rule for. "The tool did not run" was the gate's verdict;
+   the hook's own behaviour only became visible once `--allowedTools Write` guaranteed the gate
+   would say yes.
+
+### Register the reading before the run
+
+Every mistake on this page has the same shape from the outside: a number or an outcome was produced
+first and interpreted afterwards, and the interpretation fitted whatever had appeared. 670 / 950 /
+1700 were read off logs, "the tool did not run" was read off a cell with two possible authors, and
+52 / 384 were read off whatever the last command happened to print.
+
+So the harnesses here print **what was measured and, separately, what it means** — and the mapping
+from one to the other is written into the script before it is ever run.
+`tests/perf/permission_prompt_tool.sh` is the clearest case: it reports three signals
+(did the hook fire, was the prompt tool called, did the tool run) and then prints one of four
+pre-registered readings. Two of those four look identical in a single verdict and answer the
+question in opposite directions, which is exactly the confusion that made the 950s cell wrong.
+
+The cost is a few lines. What it buys is that a surprising result stays surprising instead of
+becoming the reading you would have chosen for it.
+
+And one wrong inference from a source that looked authoritative: the claude binary contains
+`"PreToolUse hook did not respond before its timeout … The tool call was not executed"`, which was
+read as proof of fail-closed. It continues `(host client may be unreachable)` — it belongs to the
+remote hook-forwarding path, not to a local command hook. **A string in the binary is a hypothesis;
+only the measurement is evidence.**
+
+### Keep the instrument, not just the number
+
+Three numbers on this page were produced by tooling that was not kept, and each went unnoticed until
+somebody tried to use it:
+
+- the **verbatim `control_request`** above — the probe's script was not kept, so the argv that
+  elicited it is unrecorded, and re-establishing it is now a whole harness
+  (`tests/perf/permission_prompt_tool.sh`) rather than a re-run.
+- the **1090s / 1700s** rows — produced by an ad-hoc `.vibing/probe/hook.sh`, not by the
+  `hook_wait_ceiling.sh` this page names as the reproducer, and logging the same events under
+  different strings. Quoting one and naming the other makes a re-run look like it failed.
+- the PR's **46 mutations** — the appliers lived in `/tmp`; they and their inputs were rescued into
+  `.vibing/probe/mutations/` before a reboot would have taken them. Eight of the 46 had already
+  lost both, having been applied as inline heredocs that never existed as files.
+
+The pattern is not carelessness about logs — **the logs were all kept.** It is that a measurement's
+evidence is treated as its output, when the thing that decays is the _instrument_. A number whose
+instrument is gone cannot be re-run, only re-measured, and a re-measurement is a new result that
+happens to be compared against an old one.
+
+This compounds with the corollary above: a reproducer is the cheapest claim on a page to check —
+run it — so it is the one nobody checks, and it rots silently. **If a number is worth recording,
+commit the thing that produced it**, or say in the same breath that it is unreproducible.
+
+**An instrument is not the same thing as its script.** The mutation rescue had to be done three
+times before it was real: the scripts alone raised `FileNotFoundError`, because each reads its
+pre-mutation source from a snapshot beside it rather than from the live file; copying the snapshots
+too still left the scripts pointing at `/tmp`, which fails only _later_, and until then reads
+whatever happens to be at that path. A tool's inputs, and the paths it resolves them by, are part
+of it. **The test of a rescue is running the thing, not counting the files** — the version that
+finally worked was confirmed by applying one mutation to a scratch copy and checking it removed
+what it claims to.
+
+And the snapshots decay in a second way that nothing warns about: they are the source **as of the
+run**, so a stale one silently reverts the file it is written over. Four of the nine surviving
+inputs still match HEAD; the rest differ by up to 238 lines. That asymmetry is the whole reason to
+record staleness next to a preserved instrument rather than just its existence — and to report it
+per input, because **a set of inputs is only as fresh as its oldest member.** One series here writes
+four files at once and three of its four snapshots match HEAD exactly, which buys nothing: the
+fourth went stale when later work touched that file, so running it reverts 35 lines whatever the
+other three say. Summarising those four numbers as "current" is the same collapse as reading a cell
+with two possible authors as one answer.
+
+**Preserving an instrument can remove the accident that was protecting you.** While the snapshots
+sat in `/tmp`, a stale run was going to become a `FileNotFoundError` the next time the OS cleared
+it — and that looked like a reason to leave them there. It is not a safety property: it depends on
+when an unrelated process runs, it does nothing in the window before that, and it fires just as
+readily on the snapshots that are still correct. The fix is not to preserve the accident but to
+make the dangerous operation check itself, so `_guard.py` now compares each snapshot against the
+file it would overwrite and refuses, by name and with the drift. **A safety property that nothing
+states and nothing tests is a coincidence**, and moving files is enough to end it.
+
+The guard's first draft reported ~1312 changed lines where `diff` says 207, because it compared
+positionally and an insertion near the top shifts everything after it. Worth recording only because
+of where it happened: an error message overstating the damage, inside the check written to stop a
+number from being wrong. Most of the errors collected on this page make things look **better** than
+they are — 52/384, "accepted at startup", a reproducer that does not reproduce. This one overstates,
+from the same mechanism, which is worth knowing when deciding how much to trust a surprising number
+in either direction.
+
+**And the guard was verified against the wrong thing first.** The check was exercised by calling
+`require_current` directly and watching it allow two series and refuse three — which tests the
+function, not the scripts. One script writes both production files unconditionally _before_
+deciding what to do, so the guard sat after the damage there: `restore` never reached it, and an
+applied mutation printed `REFUSED` with 318 lines already reverted. Testing a component in place of
+the path it sits in is how a guard passes review while protecting nothing.
+
+Two attempts at the replacement test then passed **vacuously** — a shell quoting slip meant the
+scripts never ran, and the second one printed "production files BYTE-IDENTICAL", which is exactly
+what a working guard prints. What settled it was a **positive control**: forcing the guard off and
+confirming the files really do change by 318 lines. A verification that cannot distinguish "the
+guard held" from "nothing executed" is the same defect as the pre-flight at the top of this page,
+found the same way.
+
+**What actually saved these was an audit, not a handover.** The location of the scripts was never
+written down; `/tmp` came up only because the numbers they produced were being re-derived and
+somebody went looking for the cost of re-running them. So "write down where the tool is" is the
+wrong lesson to take from this — nobody who had the tool thought of it as something to keep. The
+lesson is the one above: **when a number is recorded, its instrument is part of the record**, and
+the moment to act on that is when the number is written, not when it is questioned.
+
+## Questions as reply blocks
+
+The in-place question route (`nvim_ask_user_question`, `pending_questions`, and its measured
+late-answer budget) was removed when Claude's duplex mode became the default. A resident process
+already survives between turns and the prompt cache is server-side, so holding the question turn
+open no longer justified the registry and sending exceptions. Questions now end a reply in a
+`vibing-question` block; the user's answer starts the next turn.
+
+Generated questions and their answers are data, even when they begin with `/permission` or another
+slash command. The rendered answer section keeps a `question-answer` header marker through reload
+and submission. Local command dispatch skips that section; generated header-shaped lines are
+quoted to prevent a question from impersonating a new user section.

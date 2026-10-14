@@ -19,16 +19,16 @@ most expensive mistake a postmortem (#692) found was broadcasting `/simplify` to
 chats — each spawns its own subagents, so that's the chat count times the subagent count, and it
 was one of two runs that hit the session limit. Decide this before creating anything.
 
-|                        | Subagent                                         | Orchestrated chat                                   |
-| ---------------------- | ------------------------------------------------ | --------------------------------------------------- |
-| Lifetime               | Dies with the parent turn                        | Survives restarts                                   |
-| Output                 | One final text blob                              | Its own transcript                                  |
-| Visibility             | None                                             | Buffer can be opened and read, mid-task             |
-| Approval prompts       | Can't clear one (turn just fails)                | Can handle questions and approvals                  |
-| Owns a branch/worktree | No                                               | Yes, via `working_dir` frontmatter                  |
-| Survives a rate limit  | No                                               | Yes (auto_resume / scheduled resend)                |
-| Spin-up cost           | Low, no protocol                                 | Floor ~61k tokens + report contract + notifications |
-| Coordination can fail  | No — the return value is structurally guaranteed | Yes — this run failed 9 of 18 dispatches            |
+|                        | Subagent                                         | Orchestrated chat                                              |
+| ---------------------- | ------------------------------------------------ | -------------------------------------------------------------- |
+| Lifetime               | Dies with the parent turn                        | Survives restarts                                              |
+| Output                 | One final text blob                              | Its own transcript                                             |
+| Visibility             | None                                             | Buffer can be opened and read, mid-task                        |
+| Approval prompts       | Can't clear one (turn just fails)                | Can handle questions and approvals                             |
+| Owns a branch/worktree | No                                               | Yes, via `working_dir` frontmatter                             |
+| Survives a rate limit  | No                                               | Yes (auto_resume / scheduled resend)                           |
+| Spin-up cost           | Low, no protocol                                 | Floor ~51k–61k tokens (#807) + report contract + notifications |
+| Coordination can fail  | No — the return value is structurally guaranteed | Yes — this run failed 9 of 18 dispatches                       |
 
 **A subagent is enough only if all five hold** — one exception and it's a chat:
 
@@ -46,6 +46,24 @@ record you'll want later.
 
 **General rule: parallelism inside work that already has a chat belongs to subagents. Don't add
 chats to get parallelism** — a chat's floor is ownership, not concurrency.
+
+## Reuse a worker chat or start a new one?
+
+Default: **one new chat per task** (per PR, per independent unit of work). Reusing a chat
+saves exactly one brief, while everything that chat has already read stays in its context
+and is billed again on every later request — once there is more than a request or two of
+work left, a new chat is very likely the cheaper one.
+
+- **Reuse only when the next task genuinely needs the prior task's own context, and the
+  remaining work is short.** Otherwise create a new chat with a fresh, self-contained brief
+  (see "Say what must hold, not how to do it" below).
+- **If a chat needs compaction, it was already too long.** Compaction defers the bill, it
+  does not cut it — the detail it drops gets read back in later, at the same cost it would
+  have taken to just start over.
+- This only holds if the brief is complete — an incomplete brief costs a re-investigation
+  round-trip, which is worse than reusing would have been. The reasoning and the measurement
+  behind both of these is `handbook/architecture/orchestration.md` → "Worker cost: reuse vs.
+  new chat, and brief completeness".
 
 ## Operator rules
 
@@ -81,7 +99,7 @@ file in ways that only collide at merge time. Once workers are running, call
 `main` and names the files two or more of them touch. It warns, it does not block; call it before
 you merge anything, and read the overlapping files in both branches yourself.
 
-If the split isn't obvious, ask with `nvim_ask_user_question` before creating anything. Creating
+If the split isn't obvious, ask the user with a `vibing-question` block before creating anything. Creating
 five chats for a job that was really one is expensive and the user has to clean them up.
 
 ## 2. Create one worker chat per task
@@ -98,6 +116,23 @@ nvim_chat_create({
 - `position: "back"` (the default) creates the buffer without opening a window, so the user's
   layout is untouched. Don't use a split position for workers unless the user asked to watch them.
 - `working_dir` is relative to the git root and must already exist — create the worktree first.
+- **Pick the worker's profile and model.** The profiles are listed in `nvim_chat_create`'s own
+  `profile` argument (and in `nvim_chat_list`'s `profiles`), each with what it is for and the model
+  it runs on. A narrowed one loads a fraction of a normal chat on every request, so prefer the one
+  that fits the task. Built in: `focused` (Bash/Read/Edit/Write/Glob/Grep, project rules kept) for
+  implementation, `reviewer` (Read/Glob/Grep/Bash) for reviewing a change, and `default` for
+  anything else. Neither narrowed built-in has `Skill` or `Agent`: a worker that will need a skill
+  (this one included, to orchestrate in turn) or subagents needs `default` or a configured
+  profile that lists them. MCP tools, `nvim_chat_create` among them, stay available on every
+  profile. Without a
+  `model` (from the profile or yours) a worker runs on the user's default — usually as expensive
+  as you. A worker whose brief is complete rarely needs your model: give it `model` (and `agent`
+  for another CLI, e.g. `agent: "codex"`), and keep the design decisions in your own chat.
+- **A narrowed profile may not load the project's rules**, so the brief has to carry the
+  invariants the task touches — state them as checked facts, not as "see CLAUDE.md".
+- The returned `agent` / `model` / `profile` are what was actually written — check them, since
+  the profile and the user's `worker_defaults` fill whatever you leave out. The user can take a
+  worker over with `/profile default`.
 - **Always pass `from_bufnr`**: the exact "Current vibing.nvim chat buffer number" from your
   system prompt. It records the relationship in both chat files' frontmatter (`orchestrated` here,
   `orchestrated_by` on the worker), which is what makes it survive a rename or a restart.
@@ -111,7 +146,7 @@ nvim_chat_create({
   conversation resumed the next morning would drive the wrong buffer. The path keeps working, and
   a worker chat that is no longer open is opened for you. Pass one or the other; passing both is
   an error.
-- If `agent.orchestration.delegated_approval` is `"scoped"`, declare what this worker may need
+- If `permissions.delegated_approval` is `"scoped"`, declare what this worker may need
   approved up front with `delegated_scope` (same pattern syntax as `permissions_allow`, e.g.
   `delegated_scope: ["Bash(npm:*)"]`). It is written on the worker's own frontmatter, and is what
   makes "Answering a worker's tool approval" below a safe machine check instead of a judgment call
@@ -135,13 +170,48 @@ request, not the files already discussed, not the decisions already made. Write 
 someone who just walked in — goal, the files or directories involved, the constraints, and what
 "done" looks like. A brief that says "do the refactor we discussed" produces nothing useful.
 
+### Say what must hold, not how to do it
+
+You are writing from what you remember reading; the worker is reading the code as it is now. The
+gap between those two is **freshness**, not abstraction level, so it does not close by being more
+specific — a more specific brief written from memory is a wronger one. Measured over one 15-PR
+run: three briefs carried a design instruction, all three were wrong, and the worker was right all
+three times. The fix was in a different function than the brief named; an assertion the brief
+dictated turned out to be unfalsifiable under the gate it was written for; a change the brief
+specified could not detect the failure it was aimed at. A fourth brief named a symbol that existed
+only on another branch.
+
+**Belongs in the brief:**
+
+- The invariant that has to hold when the task is done, and why the obvious approach is not enough
+  if you know that it isn't.
+- The observation point — where someone looks to see this broken, and what they see there.
+- **Facts you checked yourself, labelled as checked**, with where: "`.vibing/patches/` is written
+  from `git_snapshot.lua`; I read it on this branch". A worker can re-verify a stated fact; it
+  cannot re-verify a memory you did not mark as one.
+- **The call sites you know of, plus the fact that you do not know they are all of them.**
+  Coverage is the one thing you see better than the worker does (step 6).
+- Constraints from outside the code: which branch and worktree, what not to touch, what "done"
+  means, what the user already decided.
+
+**Does not belong in the brief:**
+
+- How to implement it — which function to change, what the new code should say.
+- Symbol names, line numbers and file positions quoted from memory. Name the file, or better the
+  behaviour, and let the worker find the current name.
+- The exact assertion a test should make. Say what the test has to be able to catch; an assertion
+  dictated from outside gets written even when it cannot fail.
+
+If you are about to write an implementation because you are afraid the worker will pick the wrong
+one, that fear is really an invariant you have not stated yet. State it instead.
+
 ### The brief does not need to teach the worker to report back
 
 That used to be your job to write into every brief; it is not anymore (#706). Creating the worker
 with `from_bufnr` records `orchestrated_by` on it, and vibing.nvim reads that frontmatter on every
 turn to inject the report protocol into the worker's own system prompt — this chat's `file_path`
 already resolved in, the call shape (`nvim_chat_send_message`, `from_bufnr`, `queue_if_busy: true`),
-the report shape (conclusion → what changed → what's unresolved → what's needed next), and what not
+the report shape (a few lines: the conclusion, then only what is unresolved or needs deciding), and what not
 to do. The full version is the `vibing-worker` skill, bundled for exactly this purpose. Your brief
 only needs to be the task itself, as below — writing the reporting instructions into it too is
 redundant, not more reliable, since the injected line does not depend on the worker having read the
@@ -160,7 +230,7 @@ Once every brief is sent, end the turn with the worker list:
 Each worker's own report is what wakes you. `queue_if_busy: true` makes that delivery reliable: a
 report that arrives while you are mid-turn waits and starts a new turn the moment you stop, and
 several arriving together are coalesced into one turn. This works regardless of
-`agent.chat_notifications.enabled` — the report is a message the worker chose to send you, not a
+`automation.orchestration.notifications.enabled` — the report is a message the worker chose to send you, not a
 notification vibing.nvim volunteers.
 
 That setting governs the **watchdog** instead: with it enabled, a worker that stops _without_
@@ -171,7 +241,7 @@ never reported is silent — say "進捗は?と聞いてください" and wait f
 question, that is sitting on a tool-approval prompt, or whose turn failed cannot report: all three
 kill its turn before it could call `nvim_chat_send_message`, and it will not run again until
 someone acts on it. Those three are delivered to you regardless of
-`agent.chat_notifications.enabled`, and the notice names the status.
+`automation.orchestration.notifications.enabled`, and the notice names the status.
 
 ## 5. Read what arrived
 
@@ -210,8 +280,9 @@ Alongside the transcript the result carries a chat-status line, in the same voca
   the user if only they can decide. It will not move until someone answers.
 - `status: waiting_approval` — the worker stopped on a tool-approval prompt. By default only the
   user can clear that one: say which worker is blocked and on what. If the user turned on
-  `agent.orchestration.delegated_approval` (`true` or `"scoped"`), you can answer it yourself — see
-  "Answering a worker's tool approval" below.
+  `permissions.delegated_approval` (`true` or `"scoped"`), you can answer it yourself — see
+  "Answering a worker's tool approval" below. It is reported as `waiting_approval` whether or not
+  its turn is technically still in flight, so never read `responding` as "that one is fine".
 - `status: error` — the last turn ended with an error. Read the tail of the transcript for the
   message and decide whether to re-brief the worker or report the failure.
 
@@ -238,16 +309,49 @@ When no worker is still running, summarize the results together — what changed
 still needs the user. Point at each worker's `file_path` so the user can open the full transcript.
 
 "Not running" includes the blocked statuses above: a worker sitting on `asked_question` or
-`waiting_approval` will never reach `idle` on its own, so waiting for it is waiting forever.
-Report it as blocked and say what it needs.
+`waiting_approval` is not going to move because you waited. `asked_question` never resolves itself
+at all. `waiting_approval` has a limit — once it passes, vibing.nvim **denies that one tool call**
+and the worker carries on without it — so ignoring one does not merely stall the worker, it
+silently decides the question the wrong way. Either way: report it as blocked and say what it
+needs, or answer it, now.
+
+### Check coverage, not design
+
+You are worse than the worker at deciding how something should be written (step 3) and better than
+it at noticing what it did not look at. On the same run that produced three wrong design
+instructions, this position caught two real defects that had already passed the worker's own
+review, a `/code-review` with no findings, a full mutation pass and green CI. **Both had one
+shape: the worker kept the discipline at the call sites it had in mind, and missed a third one.**
+
+So, before you call a result done or recommend merging it:
+
+- **Enumerate the call sites yourself**, from the tree as merged, not from the worker's list. One
+  of the two defects was a function mutating shared state before folding — correct in two of the
+  three places that reach it, wrong in the third.
+- **Ask what became newly reachable.** A function that now returns `nil`, a guard that now lets a
+  case through, a branch nothing used to take: the other defect was an existing invariant breaking
+  on a path the change did not touch but did open.
+- **Verify the claims you are about to act on.** Read the lines a report or a review says
+  something about. A claim that reaches a merge decision is yours to check; relaying it unchecked
+  makes you a transport, and a transport cannot catch either of the two above.
+
+Do not review **how** it was done. That is the judgment you were wrong about three times, and the
+worker is the one with the code in front of it. If something looks wrong, report the observation
+and the invariant you think it breaks, and let the worker choose the fix.
 
 ### Answering a worker's tool approval
 
-A worker that reaches a tool in its `ask` list has its turn killed and the approval prompt drawn
-into its own buffer. It cannot continue and cannot report that it is stuck. **By default the only
+A worker that reaches a tool in its `ask` list has the approval prompt drawn into its own buffer
+and stops there. It cannot continue and cannot report that it is stuck. **By default the only
 one who can clear that is the user** — name the worker and the tool in your reply and end the turn.
 
-If the user set `agent.orchestration.delegated_approval` to `true` or `"scoped"`, you can answer it
+`waiting_approvals` on `nvim_get_buffer` / `nvim_chat_list` lists what is open, with the
+`request_id` to answer and whether it has **expired**. An expired one is still answerable — that
+grant is still the user's to give — but answering it starts a **new turn** on that worker rather
+than releasing the call it was raised for, so it only goes through once that worker has stopped.
+Answer the ones that have not expired first.
+
+If the user set `permissions.delegated_approval` to `true` or `"scoped"`, you can answer it
 instead:
 
 ```text
@@ -272,6 +376,15 @@ The two modes differ in who judges the prompt:
   out of the scope you declared, so fall back to naming the worker and the tool to the user, the
   same as when the setting is off. Don't try to widen the scope yourself to force a match; that
   defeats the point of having declared it up front.
+
+For a Codex native approval, pass the exact value offered by its prompt (`accept`,
+`accept_for_session`, `accept_with_execpolicy_amendment`, `decline`, or `cancel` when offered),
+rather than a hook action. Prefer `accept`. Command approvals match `Bash(...)` entries in
+`delegated_scope` using the displayed command; a shell wrapper must match as displayed.
+Native file approvals use the bare `Codex file change` scope entry. Native refusals need no
+scope. `accept_with_execpolicy_amendment` requires `delegated_approval = true`: it remembers a
+command pattern that can authorize later calls beyond the declared scope, so `"scoped"` refuses
+it even with a matching scope. Do not widen the setting to force an answer.
 
 Regardless of mode:
 
@@ -312,10 +425,11 @@ proceed) still fire right away, whether or not your own workers have finished.
 - Report to your parent when the last one is in. One report, summarizing all of them, not one per
   worker: your parent's job is the same as yours, and forwarding raw worker output makes it pay for
   a transcript twice.
-- **Do not wait forever.** A worker that stops `asked_question`, `waiting_approval` or `error` is
-  not going to report on its own. Deal with it if you can (answer the question, answer the tool
-  approval if that is enabled, re-brief it); if you cannot, report to your parent now with that
-  worker's state named, rather than holding the whole tree open for something only the user can
-  clear.
+- **Do not wait it out.** A worker that stops `asked_question`, `waiting_approval` or `error` is
+  not going to report because you waited, and an unanswered `waiting_approval` ends as a **denial**
+  of that tool call rather than as an answer. Deal with it if you can (answer the question, answer
+  the tool approval if that is enabled, re-brief it); if you cannot, report to your parent now with
+  that worker's state named, rather than holding the whole tree open for something only the user
+  can clear.
 - If your own brief turns out to be ambiguous, ask your parent before dispatching. Splitting a
   misunderstood task fans the misunderstanding out across several chats.

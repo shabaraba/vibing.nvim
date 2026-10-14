@@ -1,5 +1,5 @@
 local Fs = require("vibing.core.utils.fs")
-local ProjectCodexPermissions = require("vibing.core.utils.project_codex_permissions")
+local Config = require("vibing.config")
 local ProjectSystemPrompt = require("vibing.core.utils.project_system_prompt")
 
 local M = {}
@@ -18,14 +18,21 @@ end
 function M.ensure_project_files(project_root)
   project_root = project_root:gsub("/+$", "")
   ProjectSystemPrompt.ensure(project_root)
-  ProjectCodexPermissions.ensure(project_root)
+  -- Each backend adds the files it keeps in a project's `.vibing/` (codex: its sandbox profile).
+  local config = Config.get()
+  for _, def in ipairs(require("vibing.core.constants.agents").list()) do
+    local descriptor = require(def.descriptor_module)
+    if descriptor.on_project_open then
+      descriptor.on_project_open(project_root, config)
+    end
+  end
 end
 
 ---保存ディレクトリを取得
 ---@param config table 設定
 ---@return string directory_path
 function M.get_save_directory(config)
-  local location_type = config.save_location_type or "project"
+  local location_type = vim.tbl_get(config, "storage", "location") or "project"
 
   if location_type == "project" then
     local project_root = vim.fn.getcwd()
@@ -34,7 +41,7 @@ function M.get_save_directory(config)
   elseif location_type == "user" then
     return vim.fn.stdpath("data") .. "/vibing/chats/"
   elseif location_type == "custom" then
-    local custom_path = config.save_dir
+    local custom_path = (vim.tbl_get(config, "storage", "path") or vim.fn.stdpath("data") .. "/vibing/chats")
     if not custom_path:match("/$") then
       custom_path = custom_path .. "/"
     end

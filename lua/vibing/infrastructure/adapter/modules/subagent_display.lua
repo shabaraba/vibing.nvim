@@ -15,7 +15,7 @@ function M.get_show_prefix()
     return false
   end
   local config = config_mod.get()
-  local subagent = config.agent and config.agent.subagent
+  local subagent = vim.tbl_get(config, "ui", "subagents")
   return (subagent and subagent.show_prefix) == true
 end
 
@@ -52,6 +52,39 @@ function M.format_buffer(subagent_type, text, show_prefix)
   end
 
   return table.concat(lines, "\n") .. "\n"
+end
+
+--- The chat line a background subagent's completion is worth.
+---
+--- Deliberately metadata only. The subagent's own answer reaches the model through the
+--- notification and it will say what it found in its own words; repeating the whole thing here
+--- would print every report twice.
+--- @param event table a `background_task_done` canonical event
+--- @param entry Vibing.BackgroundTask? what the launch recorded, when the launch was seen
+--- @param context table
+--- @return string
+function M.format_completion(event, entry, context)
+  local ToolDisplay = require("vibing.infrastructure.adapter.modules.tool_display")
+  local parts = {}
+  if event.status and event.status ~= "completed" then
+    table.insert(parts, event.status)
+  end
+  local usage = type(event.usage) == "table" and event.usage or {}
+  if type(usage.duration_ms) == "number" then
+    local When = require("vibing.core.utils.when")
+    table.insert(parts, When.format_duration(math.floor(usage.duration_ms / 1000 + 0.5)))
+  end
+  if type(usage.total_tokens) == "number" then
+    local TokenUsage = require("vibing.core.utils.token_usage")
+    table.insert(parts, TokenUsage.humanize(usage.total_tokens) .. " tokens")
+  end
+
+  return string.format(
+    "\n%s Subagent finished: %s%s\n",
+    ToolDisplay.resolve_marker("Agent", ToolDisplay.get_cached_markers(context)),
+    (entry and entry.description) or event.task_id or "subagent",
+    #parts > 0 and (" (" .. table.concat(parts, ", ") .. ")") or ""
+  )
 end
 
 return M

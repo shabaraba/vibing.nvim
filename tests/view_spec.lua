@@ -43,10 +43,10 @@ describe("vibing.presentation.chat.view", function()
 
       local chat_buf = view.render({ session_id = "session-1" }, "back")
 
-      assert.equals("back", chat_buf.config.window.position)
-      assert.equals("current", config.chat.window.position)
-      assert.equals("current", require("vibing.config").defaults.chat.window.position)
-      assert.is_false(chat_buf.config.window == config.chat.window)
+      assert.equals("back", chat_buf.config.ui.window.position)
+      assert.equals("current", config.ui.window.position)
+      assert.equals("current", require("vibing.config").defaults.ui.window.position)
+      assert.is_false(chat_buf.config.ui.window == config.ui.window)
     end)
   end)
 
@@ -66,7 +66,7 @@ describe("vibing.presentation.chat.view", function()
       -- Simulate the live failure: a chat file is open but was never attached
       -- (detection autocmd never fired). The command entry path must still
       -- recognize it by attaching on demand rather than reporting "not a chat".
-      local dir = "/tmp/vibing_selfheal/.vibing/chat"
+      local dir = vim.fn.tempname() .. "/vibing_selfheal/.vibing/chat"
       vim.fn.mkdir(dir, "p")
       local path = dir .. "/chat-selfheal.md"
       vim.fn.writefile({ "---", "vibing.nvim: true", "---", "# Vibing Chat" }, path)

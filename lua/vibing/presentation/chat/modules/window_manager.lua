@@ -73,11 +73,11 @@ end
 ---wrap設定を適用
 ---@param winnr number ウィンドウ番号
 ---@param bufnr? number バッファ番号（省略時はウィンドウから取得）
-function M.apply_wrap_config(winnr, bufnr)
+function M.apply_window_config(winnr, bufnr)
   local ok, ui_utils = pcall(require, "vibing.core.utils.ui")
   if ok and winnr then
     -- force=true: ChatBufferから呼ばれる場合は常にチャットバッファなので強制適用
-    pcall(ui_utils.apply_wrap_config, winnr, bufnr, true)
+    pcall(ui_utils.apply_window_config, winnr, bufnr, true)
   end
 end
 

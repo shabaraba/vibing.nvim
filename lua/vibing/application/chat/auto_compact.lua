@@ -15,17 +15,27 @@
 --- Deliberately narrow, for the same reason `auto_resume` is -- every path here spends tokens on
 --- a turn the user did not ask for:
 ---
----   * opt-in (`agent.token_usage.auto_compact.enabled`, default false)
----   * **manual sends only.** Never a scheduled request, an auto-resume, or a message delivered
----     from another chat. That is why the hook is on the `<CR>` keymap rather than inside
----     `ChatBuffer:send_message()`, which every one of those paths also goes through. It runs
----     inside `cache_expiry_prompt.guard`'s callback, so a send the user calls off at that
----     prompt does not leave a rewritten `/compact` behind.
+---   * opt-in (`chat.context.compaction.enabled`, default false)
+---   * **manual sends and deliveries from other chats only.** Never a scheduled request or an
+---     auto-resume. That is why neither hook is inside `ChatBuffer:send_message()`, which every
+---     one of those paths also goes through: the manual one is on the `<CR>` keymap, inside
+---     `cache_expiry_prompt.guard`'s callback so a send the user calls off at that prompt does
+---     not leave a rewritten `/compact` behind, and the delivery one is `before_delivery`, called
+---     from `delivery_message.deliver`. Deliveries are in because an orchestrator is woken almost
+---     only by `## Report` / `## Notice` turns; a hook on `<CR>` alone never fired for exactly the
+---     chat that grows the most.
+---   * **a delivery's compaction parks nothing here.** The message stays in (or goes back to)
+---     `message_queue`, and the compaction turn's own completion re-enters `flush`, which
+---     delivers it on the cooldown. Parking the built text in `pending` and re-sending it from
+---     `on_response_done` raced that same `flush`: whichever ran second found the chat responding
+---     and the delivery was dropped without a trace.
 ---   * **claude only.** Codex maps the same config to its native
 ---     `model_auto_compact_token_limit` in `codex_command_builder`; on the remaining backends
 ---     `/compact` would arrive as a line of prose and be answered as one.
----   * **at most every other manual send.** If a compaction fails to shrink the conversation,
----     the cooldown is what stops every subsequent send from costing two turns.
+---   * **at most every other send.** If a compaction fails to shrink the conversation, the
+---     cooldown is what stops every subsequent send from costing two turns. The cooldown is one
+---     per chat, shared by both paths: a delivery's compaction is spent by the next manual send
+---     or the next delivery, whichever comes first.
 ---
 --- @module vibing.application.chat.auto_compact
 
@@ -44,15 +54,14 @@ local AUGROUP = "VibingAutoCompact"
 --- @type table<number, string>
 local pending = {}
 
---- Chats that just ran an inserted compaction. Consumed by the next manual send.
+--- Chats that just ran an inserted compaction. Consumed by the next manual send or delivery.
 --- @type table<number, boolean>
 local cooldown = {}
 
 --- @return table
 local function options()
   local config = require("vibing.config").get()
-  local token_usage = config.agent and config.agent.token_usage or {}
-  return token_usage.auto_compact or {}
+  return vim.tbl_get(config, "chat", "context", "compaction") or {}
 end
 
 --- The message that gets sent as a turn.
@@ -106,7 +115,7 @@ M._rewrite_unsent_body = rewrite_unsent_body
 --- `ChatBuffer:can_defer_send`, which the caller consults. This is the third interception on the
 --- `<CR>` path and the third to need exactly that judgement, so re-deriving it here is how one of
 --- the three silently stops excluding an approval answer.
---- @param opts table `agent.token_usage.auto_compact`
+--- @param opts table `chat.context.compaction`
 --- @param agent string The backend this chat resolves to
 --- @param context number|nil The last reported context size, if any
 --- @param on_cooldown boolean Whether the previous manual send already inserted a compaction
@@ -117,7 +126,7 @@ function M.should_compact(opts, agent, context, on_cooldown)
   end
 
   local TokenUsage = require("vibing.core.utils.token_usage")
-  local at = tonumber(opts.at) or TokenUsage.DEFAULT_AUTO_COMPACT_AT
+  local at = tonumber(opts.threshold_tokens) or TokenUsage.DEFAULT_AUTO_COMPACT_AT
   -- `at <= 0` reads as "off" rather than "always", matching how `warn_context = 0` silences the
   -- warning instead of firing it on every turn.
   if at <= 0 or not context then
@@ -143,6 +152,46 @@ function M._limit_active(bufnr, agent)
   local LimitState = require("vibing.infrastructure.storage.limit_state")
   local ok, state = pcall(LimitState.get_active, vim.fn.fnamemodify(chat_file_path, ":h"), agent)
   return ok and state ~= nil
+end
+
+--- The one judgement both entry points share: consume the cooldown, measure the chat, and say
+--- whether this send should be preceded by a compaction.
+---
+--- Returns the measured context when it should, nil otherwise. The message-shaped exclusions
+--- (`can_defer_send`) stay with `before_manual_send`, and must run **before** this: the cooldown
+--- is consumed here, and a send that was never a candidate must not spend it.
+--- @param chat_buf table
+--- @param bufnr number
+--- @param opts table `chat.context.compaction`
+--- @return number? context
+local function decide(chat_buf, bufnr, opts)
+  local on_cooldown = cooldown[bufnr] == true
+  cooldown[bufnr] = nil
+
+  local Modes = require("vibing.core.constants.modes")
+  local config = require("vibing.config").get()
+  local agent = Modes.resolve_agent(chat_buf:parse_frontmatter(), config)
+
+  -- The chat's size is read the same way the cache gate reads it, and from the same helper: the
+  -- `### Tokens` section of the **last assistant turn only**. Scanning the whole buffer for the
+  -- last heading is the trap `read_last_turn` exists to avoid -- `parse_context`'s humanized
+  -- fallback matches any line starting `context <number>`, which ordinary prose produces.
+  local _, context = require("vibing.application.chat.cache_expiry").read_last_turn(bufnr)
+
+  if not M.should_compact(opts, agent, context, on_cooldown) then
+    return nil
+  end
+
+  -- Not while the backend's usage limit is on record. `ChatBuffer:_try_schedule_instead_of_send`
+  -- parks a message rather than sending it, but it exempts slash commands, so the `/compact`
+  -- would go out and be rejected -- and `_reschedule_rejected_message` then writes *its* text
+  -- back into the unsent section and arms a timer to send it. Two writers would be aiming at one
+  -- section. A limit is also the worst moment to spend a turn on compaction.
+  if M._limit_active(bufnr, agent) then
+    return nil
+  end
+
+  return context
 end
 
 --- Turn a manual send into a compaction, parking the user's message for the turn after it.
@@ -171,34 +220,12 @@ function M.before_manual_send(chat_buf)
     return false
   end
 
-  -- The cooldown is spent only by the kind of send it exists to skip. Clearing it above this
-  -- guard let an empty `<CR>`, a `/model` or an approval answer consume it, and the next real
-  -- message would then compact again off the compaction turn's own `### Tokens` -- which reports
-  -- the size of the request that carried the whole conversation, i.e. the pre-compaction figure.
-  local on_cooldown = cooldown[bufnr] == true
-  cooldown[bufnr] = nil
-
-  local Modes = require("vibing.core.constants.modes")
-  local TokenUsage = require("vibing.core.utils.token_usage")
-  local config = require("vibing.config").get()
-  local agent = Modes.resolve_agent(chat_buf:parse_frontmatter(), config)
-
-  -- The chat's size is read the same way the cache gate reads it, and from the same helper: the
-  -- `### Tokens` section of the **last assistant turn only**. Scanning the whole buffer for the
-  -- last heading is the trap `read_last_turn` exists to avoid -- `parse_context`'s humanized
-  -- fallback matches any line starting `context <number>`, which ordinary prose produces.
-  local _, context = require("vibing.application.chat.cache_expiry").read_last_turn(bufnr)
-
-  if not M.should_compact(opts, agent, context, on_cooldown) then
-    return false
-  end
-
-  -- Not while the backend's usage limit is on record. `ChatBuffer:_try_schedule_instead_of_send`
-  -- parks a message rather than sending it, but it exempts slash commands, so the `/compact`
-  -- would go out and be rejected -- and `_reschedule_rejected_message` then writes *its* text
-  -- back into the unsent section and arms a timer to send it. Two writers would be aiming at one
-  -- section. A limit is also the worst moment to spend a turn on compaction.
-  if M._limit_active(bufnr, agent) then
+  -- The cooldown is spent only by the kind of send it exists to skip. Deciding above this guard
+  -- let an empty `<CR>`, a `/model` or an approval answer consume it, and the next real message
+  -- would then compact again off the compaction turn's own `### Tokens` -- which reports the size
+  -- of the request that carried the whole conversation, i.e. the pre-compaction figure.
+  local context = decide(chat_buf, bufnr, opts)
+  if not context then
     return false
   end
 
@@ -212,7 +239,68 @@ function M.before_manual_send(chat_buf)
   vim.notify(
     string.format(
       "[vibing] Context is %s - running /compact first, then sending your message.",
-      TokenUsage.humanize(context)
+      require("vibing.core.utils.token_usage").humanize(context)
+    ),
+    vim.log.levels.INFO
+  )
+  return true
+end
+
+--- Spend a turn on compaction before a delivery from another chat, if the chat has grown past
+--- the threshold.
+---
+--- Called from `delivery_message.deliver`, i.e. from both `message_queue.flush` and the immediate
+--- path of `nvim_chat_send_message`, so a delivery is measured the same way whether or not the
+--- chat happened to be busy when it was sent. Returns true when a `/compact` turn has been
+--- started **instead of** the delivery; the caller then keeps (or re-queues) the message, and the
+--- compaction's own `VibingResponseDone` brings `flush` round again, where the cooldown lets the
+--- message through. Returns false when the delivery should simply go ahead.
+---
+--- The `/compact` goes out as an ordinary `## User` section rather than under the delivery's
+--- own `## Report` header: that header names who the turn is from, and the compaction is from
+--- nobody. The delivery keeps its header for the turn that actually carries it.
+--- @param bufnr number The chat about to receive the delivery
+--- @param section Vibing.Application.DeliveryMessage.Section? What is waiting, for the notice
+--- @return boolean compacting
+function M.before_delivery(bufnr, section)
+  if not vim.api.nvim_buf_is_valid(bufnr) then
+    return false
+  end
+
+  -- Same disabled-path discipline as `before_manual_send`: this runs on every delivery, and the
+  -- feature is off by default, so nothing below may touch the buffer before this check.
+  local opts = options()
+  if not opts.enabled then
+    return false
+  end
+
+  local chat_buf = require("vibing.presentation.chat.view").get_chat_buffer(bufnr)
+  if not chat_buf then
+    return false
+  end
+
+  local context = decide(chat_buf, bufnr, opts)
+  if not context then
+    return false
+  end
+
+  -- `ProgrammaticSender.send` rather than `rewrite_unsent_body` + `send_message()`: the delivery
+  -- has not been written into the buffer yet (that is the point -- it is not going out on this
+  -- turn), so there is no unsent section to rewrite. The sender adds one, sends it, and raises
+  -- if the chat cannot take a turn right now, which the callers already treat as "not delivered,
+  -- keep the message".
+  local ProgrammaticSender = require("vibing.presentation.chat.modules.programmatic_sender")
+  local result = ProgrammaticSender.send(bufnr, M.compact_prompt(opts.focus))
+  if not (result and result.success) then
+    return false
+  end
+  cooldown[bufnr] = true
+
+  vim.notify(
+    string.format(
+      "[vibing] Context is %s - running /compact first, then delivering the %s.",
+      require("vibing.core.utils.token_usage").humanize(context),
+      section and section.kind or "message"
     ),
     vim.log.levels.INFO
   )
@@ -327,6 +415,17 @@ function M.compact_now(focus)
   chat_buf:send_message()
 end
 
+--- Whether a message is parked here, waiting for this bufnr's compaction turn to finish before
+--- it is written back and sent. `reservations.lua` asks this **synchronously** in its own
+--- `on_response_done`: `M.on_response_done` clears `pending` before it schedules the resend, so a
+--- check made inside a later `vim.schedule` would already read false, and a reservation sent first
+--- would make that resend find the chat responding and drop this parked message.
+--- @param bufnr number
+--- @return boolean
+function M.has_pending(bufnr)
+  return pending[bufnr] ~= nil
+end
+
 --- @param bufnr number
 function M.forget(bufnr)
   pending[bufnr] = nil
@@ -341,16 +440,7 @@ end
 function M.setup()
   local group = vim.api.nvim_create_augroup(AUGROUP, { clear = true })
 
-  vim.api.nvim_create_autocmd("User", {
-    group = group,
-    pattern = "VibingResponseDone",
-    callback = function(event)
-      local bufnr = event.data and event.data.bufnr
-      if type(bufnr) == "number" then
-        M.on_response_done(bufnr)
-      end
-    end,
-  })
+  require("vibing.core.events").on_response_done(group, "auto-compact", M.on_response_done)
 
   vim.api.nvim_create_autocmd({ "BufDelete", "BufWipeout" }, {
     group = group,

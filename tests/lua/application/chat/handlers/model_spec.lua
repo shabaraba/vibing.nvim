@@ -1,6 +1,7 @@
 describe("model handler", function()
   local handler
   local original_notify
+  local restore_clis
 
   before_each(function()
     original_notify = package.loaded["vibing.core.utils.notify"]
@@ -11,9 +12,13 @@ describe("model handler", function()
       info = function() end,
     }
     handler = require("vibing.application.chat.handlers.model")
+    -- Validation goes through ModelCatalog.all_values(), which asks a real codex/grok CLI on
+    -- PATH -- see tests/helpers/model_catalog.lua.
+    restore_clis = require("tests.helpers.model_catalog").without_clis()
   end)
 
   after_each(function()
+    restore_clis()
     package.loaded["vibing.application.chat.handlers.model"] = nil
     package.loaded["vibing.core.utils.notify"] = original_notify
   end)
@@ -41,6 +46,27 @@ describe("model handler", function()
     }
 
     assert.is_false(handler({ "sonett" }, chat_buffer))
+    assert.is_nil(written)
+  end)
+
+  it("accepts default only for a Codex chat", function()
+    local written
+    local chat_buffer = {
+      parse_frontmatter = function()
+        return { agent = "codex" }
+      end,
+      update_frontmatter = function(_, key, value)
+        written = { key = key, value = value }
+        return true
+      end,
+    }
+    assert.is_true(handler({ "default" }, chat_buffer))
+    assert.same({ key = "model", value = "default" }, written)
+    chat_buffer.parse_frontmatter = function()
+      return { agent = "claude" }
+    end
+    written = nil
+    assert.is_false(handler({ "default" }, chat_buffer))
     assert.is_nil(written)
   end)
 end)

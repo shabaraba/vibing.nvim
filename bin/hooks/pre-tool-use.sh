@@ -40,13 +40,17 @@ RES_FILE="$COMM_DIR/${REQUEST_ID}.res"
 printf '%s' "$INPUT" > "${REQ_FILE}.tmp"
 mv "${REQ_FILE}.tmp" "$REQ_FILE"
 
-# Identifies which chat buffer's stream this hook invocation belongs to (see
-# ActiveStreamRegistry), so concurrent chats don't cross-wire each other's approval UI.
-# Restricted to [A-Za-z0-9_] since it's interpolated directly into the JSON request below.
-HANDLE_ID="${VIBING_HANDLE_ID//[^A-Za-z0-9_]/}"
+# Identifies the CLI process this hook invocation belongs to. An environment variable is fixed when
+# the child is spawned, so this can only ever name a process; which *turn* is in flight on it is
+# resolved in Neovim by rpc/hook_scope.lua, and that is what keeps concurrent chats from
+# cross-wiring each other's approval UI.
+# Restricted to [A-Za-z0-9_] since it's interpolated directly into the JSON request below. The same
+# character class is asserted against lua/vibing/core/utils/identity.lua by its spec, so a rename
+# on either side fails the build instead of silently losing attribution.
+PROCESS_ID="${VIBING_PROCESS_ID//[^A-Za-z0-9_]/}"
 
 # Notify Neovim RPC server (fire-and-forget)
-printf '{"method":"check_tool_permission","id":1,"params":{"request_id":"%s","handle_id":"%s"}}\n' "$REQUEST_ID" "$HANDLE_ID" \
+printf '{"method":"check_tool_permission","id":1,"params":{"request_id":"%s","process_id":"%s"}}\n' "$REQUEST_ID" "$PROCESS_ID" \
   | nc -w 1 127.0.0.1 "$PORT" >/dev/null 2>&1
 NC_STATUS=$?
 debug_log "nc status=$NC_STATUS, waiting for $RES_FILE"
@@ -59,13 +63,31 @@ if [ "$NC_STATUS" -ne 0 ]; then
   exit 2
 fi
 
-# Poll for response file (max 120 seconds, in 0.1s ticks)
-# Raising this is not local to this script: copilot ignores a hook that outlives its own
-# `timeoutSec` and runs the tool anyway, so HOOK_TIMEOUT_SEC in
-# lua/vibing/infrastructure/hooks/copilot_settings_generator.lua must stay above it. Its spec
-# reads MAX_WAIT back out of this file and fails if the two ever cross.
+# Poll for the response file, in 0.1s ticks.
+#
+# How long this may block is one of three deadlines that must stay in this order:
+#
+#   permissions.approval_wait_sec  <  this  <  the backend's configured hook timeout
+#
+# Every CLI measured ignores a hook that outlives its own configured timeout and runs the tool
+# anyway -- fail open -- where this script's own expiry exits 2 and fails closed. So this must give
+# up strictly first, and vibing.nvim's own approval limit must give up before that. All three come
+# from one number (lua/vibing/infrastructure/hooks/wait_budget.lua), handed here in the environment
+# because this file is fixed on disk and shared by every chat.
+#
+# Without the variable we do not know which of the three numbers the CLI was configured with, so
+# the fallback is not the default derivation -- it is deliberately *below the smallest timeout
+# vibing.nvim will ever register*, which is what keeps the ordering true even for a user who lowered
+# approval_wait_sec. A hook reaching this without the variable is already off the normal path (a
+# stale generated settings file, a CLI that dropped the environment); the variable travels with the
+# RPC port, and without a port this script has already exited above. Its spec pins the fallback
+# against that smallest timeout, and pins the multiplier below against the sleep.
+MAX_WAIT_SEC="${VIBING_HOOK_MAX_WAIT_SEC:-60}"
+case "$MAX_WAIT_SEC" in
+  '' | *[!0-9]*) MAX_WAIT_SEC=60 ;;
+esac
 ELAPSED=0
-MAX_WAIT=1200
+MAX_WAIT=$((MAX_WAIT_SEC * 10))
 while [ ! -f "$RES_FILE" ] && [ "$ELAPSED" -lt "$MAX_WAIT" ]; do
   sleep 0.1
   ELAPSED=$((ELAPSED + 1))

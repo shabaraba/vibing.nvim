@@ -108,9 +108,11 @@ function M.matches_bash_pattern(command, rule_content, pattern_type)
   local rule = rule_content:lower()
 
   if pattern_type == "bash_wildcard" then
-    local base_pattern = rule:match("^([^:]+)")
-    local cmd_parts = vim.split(cmd, "%s+", { trimempty = true })
-    return cmd_parts[1] == base_pattern
+    -- The prefix is matched word for word, so `gh pr view:*` covers `gh pr view 876`. Comparing
+    -- only the first word made every multi-word prefix match nothing at all.
+    local prefix = vim.trim(rule:match("^([^:]+)")):gsub("%s+", " ")
+    local words = cmd:gsub("%s+", " ")
+    return words == prefix or vim.startswith(words, prefix .. " ")
   else
     return cmd == rule or vim.startswith(cmd, rule .. " ")
   end
@@ -161,6 +163,24 @@ function M.matches_permission(tool_name, input, permission_str)
     if parsed.type == "tool_name" then
       local perm_tool_name = parsed.tool_name
       local actual_tool_name = tool_name:lower()
+
+      -- Backends disagree on how an MCP server label is spelled in the tool name: codex normalizes
+      -- `-` to `_` before composing it, so `chrome-devtools` arrives as `mcp__chrome_devtools__*`
+      -- while claude sends it verbatim. Comparing both sides in the `_` spelling lets one allow
+      -- entry cover every backend, instead of the user listing each spelling by hand.
+      --
+      -- The `_` direction is the safe one: it folds a pattern *down* onto the name a backend
+      -- actually sends. Restoring `-` in the tool name would be guesswork -- nothing in
+      -- `mcp__a_b__x` says which underscore used to be a hyphen. (`codex_tool_vocabulary` can
+      -- afford that guess only because it anchors on one known prefix.)
+      --
+      -- Scoped to `mcp__` on both sides so no built-in tool name is affected. It does merge two
+      -- servers whose names differ solely by `-` vs `_`, which is the cost of not requiring the
+      -- user to know each backend's spelling rule.
+      if vim.startswith(perm_tool_name, "mcp__") and vim.startswith(actual_tool_name, "mcp__") then
+        perm_tool_name = perm_tool_name:gsub("%-", "_")
+        actual_tool_name = actual_tool_name:gsub("%-", "_")
+      end
 
       if vim.endswith(perm_tool_name, "*") then
         local prefix = perm_tool_name:sub(1, -2)

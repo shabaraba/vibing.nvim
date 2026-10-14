@@ -1,387 +1,180 @@
-# Adapter Development Guide
+# Adding a CLI Backend
 
-This guide explains how to create custom adapters for vibing.nvim to integrate with different LLM providers.
+A backend is a **descriptor**: one Lua table under `lua/vibing/infrastructure/adapter/backends/`
+that says how a request is sent, how the response stream is read, and how the PreToolUse hook
+reaches the CLI. The adapter itself — `cli_adapter.lua` — is shared and never names a backend.
+The design and its limits are ADR 009 (`handbook/adr/009-declarative-backend-descriptor.md`).
 
-## Architecture Overview
+The Claude backend's behaviour is the contract every other backend is measured against. The
+conformance suite (`tests/lua/infrastructure/adapter/conformance/`) states that contract as tests
+and runs them over every registered descriptor, so a new backend is checked by existing.
 
-```
-User Input → ChatBuffer → Adapter → LLM Provider
-                              ↓
-                         Response Stream
-```
+## What you write
 
-All adapters inherit from `lua/vibing/infrastructure/adapter/base.lua` and implement a common interface.
+| Piece                                 | Where                                                  | Data or code            |
+| ------------------------------------- | ------------------------------------------------------ | ----------------------- |
+| Registry entry (id, models, options)  | `core/constants/agents.lua`                            | data                    |
+| Descriptor                            | `adapter/backends/<id>.lua`                            | data + a few functions  |
+| Decoder (stream → canonical events)   | `adapter/decoders/<id>_<format>.lua`                   | code, small, pure       |
+| Tool vocabulary                       | `adapter/modules/<id>_tool_vocabulary.lua`             | data                    |
+| Argv extras the flag table cannot say | `adapter/modules/<id>_command_builder.lua`             | code, only what is left |
+| Captured fixtures                     | `tests/fixtures/streams/<id>/`, the hook payload table | captures                |
 
-## Existing Adapters
+A backend whose CLI registers hooks the way one of the existing five does needs **no new
+transport**. One that needs a sixth way writes one module under `infrastructure/hooks/` and names
+it in `hooks/transports.lua`.
 
-| Adapter  | File                                    | Description                            |
-| -------- | --------------------------------------- | -------------------------------------- |
-| `claude` | `infrastructure/adapter/claude_cli.lua` | Claude CLI, spawned directly (default) |
-| `codex`  | `infrastructure/adapter/codex_cli.lua`  | Codex CLI (`codex exec --json`)        |
+The fifth is worth reading before you write a sixth: `pi_settings_generator` exists because Pi
+offers **no external-process hook at all**, only in-process handlers. It resolves a shipped
+TypeScript extension instead of writing a file, and that extension spawns the same
+`bin/hooks/pre-tool-use.sh` and reads its exit code. The shape to copy is that the transport moved,
+and the _decision_ did not.
 
-## Creating a New Adapter
+## Before writing anything: measure the CLI
 
-### Step 1: Create the Adapter File
+Every shape in the existing descriptors was read off the real CLI, not its documentation, and the
+places where the two disagreed are exactly where a gate would have failed open
+(`handbook/architecture/cli-integration.md` → "Backend Seams"). Capture these first, with the CLI
+version, and keep the captures:
 
-Create `lua/vibing/infrastructure/adapter/your_adapter.lua`:
+1. **A headless turn with a tool call**, as the CLI writes it to stdout (`stream-json`, JSONL or
+   whatever the CLI offers). Which line names the session? Which carries text deltas? How does a
+   tool call start and end, and are the two paired by an id? Where is usage reported, per request
+   or once per turn? How does a failed turn look, and does the process exit non-zero?
+2. **A PreToolUse hook payload**, by registering a script that dumps stdin. Key names
+   (`tool_name`/`tool_input` or camelCase?), whether arguments arrive as a table or a JSON string,
+   and the tool names for a shell command, a file edit and a file read.
+3. **How the CLI reads a hook decision.** Does exit 2 deny? Does stderr reach the model? Does a
+   JSON `allow` skip the CLI's own gate, and is a silent exit 0 "no opinion" or an approval? What
+   happens on hook timeout — codex hangs, copilot fails _open_, claude denies.
+4. **How a hook is registered for one run.** A settings file behind a flag, a config override, a
+   per-run plugin directory, or only a file discovered from the project tree (and if so, under
+   what trust conditions).
+5. **How to take the tools away** for a lightweight call, and whether an empty list means "none"
+   or is ignored (copilot ignores an empty list; grok fails open on a name it cannot map).
+6. **How the CLI resumes a session** and which flags a resumed invocation refuses.
+7. **What the CLI does with an open stdin** when the prompt is in the argv. Pi 0.87.1 never issues
+   a request at all and writes nothing, silently, until killed — 600s of a capture run spent
+   before anyone thought to close it. That is what `descriptor.stdin = ""` is for, and it is not a
+   precaution on every backend.
+8. **Whether the CLI gates tool calls at all.** Four of the five do, and vibing.nvim's rules are an
+   extra layer; Pi does not, so its rules are the only layer and a failed hook installation cannot
+   be a warning. Ask this before deciding what a missing gate should do.
+
+## The descriptor
 
 ```lua
-local Base = require("vibing.adapters.base")
+--- lua/vibing/infrastructure/adapter/backends/<id>.lua
+local Builder = require("vibing.infrastructure.adapter.modules.<id>_command_builder")
+local Processor = require("vibing.infrastructure.adapter.modules.<id>_event_processor")
+local Vocabulary = require("vibing.infrastructure.adapter.modules.<id>_tool_vocabulary")
 
----@class Vibing.YourAdapter : Vibing.Adapter
-local YourAdapter = setmetatable({}, { __index = Base })
-YourAdapter.__index = YourAdapter
+---@type Vibing.BackendDescriptor
+return {
+  id = "<id>",
+  features = { streaming = true, tools = true, model_selection = true, context = true, session = true },
 
-function YourAdapter:new(config)
-  local instance = Base.new(self, config)
-  setmetatable(instance, YourAdapter)
-  instance.name = "your_adapter"
-  -- Initialize adapter-specific fields
-  return instance
-end
-
-return YourAdapter
-```
-
-### Step 2: Implement Required Methods
-
-#### `build_command(prompt, opts)`
-
-Build the command or request parameters.
-
-```lua
----@param prompt string User prompt
----@param opts Vibing.AdapterOpts Options (context, mode, model, etc.)
----@return table Command or request configuration
-function YourAdapter:build_command(prompt, opts)
-  return {
-    url = "http://localhost:11434/api/generate",
-    method = "POST",
-    body = {
-      model = opts.model or "llama2",
-      prompt = prompt,
-      stream = true,
+  -- Request: an ordered list of parts. Data where the engine has a primitive, `extra` where it
+  -- does not. See `request_builder.lua` for the primitives and their conditions.
+  request = {
+    binary = Builder.BINARY, -- { name = "<cli>", missing = "..." } or { resolve = fn, reset = fn }
+    parts = {
+      { kind = "args", "-p", "--output-format", "stream-json" },
+      { kind = "model", flag = "--model", names = "native" }, -- "claude" only for claude itself
+      { kind = "effort", flag = "--effort" },
+      { kind = "resume", flag = "--resume" },
+      { kind = "hook_arg", flag = "--settings", unless = "lightweight" },
+      { kind = "args", "--tools", "", when = "lightweight" },
+      { kind = "extra", fn = Builder.permission_args, unless = "lightweight" },
+      { kind = "prompt", terminator = "--" },
     },
-  }
-end
+  },
+  build = Builder.build,
+
+  -- Response: the decoder behind the shared renderer, wrapped by stream_decoder.processor.
+  event_processor = Processor,
+  stdin = "", -- "" if the CLI reads stdin when no prompt argument is present
+  stderr_filter = nil,
+
+  -- Hook: transport × dialect. Both must be names `hooks/transports.lua` knows.
+  hook = { transport = "settings_file", dialect = "claude", keep_in_bypass = true },
+
+  vocabulary = Vocabulary,
+  -- Gates answering an approval without killing the CLI: that path names the chat through
+  -- `turn.process.chat_bufnr`, which is filled in only when this is true, so `hook.measured_wait_floor_sec` does nothing on
+  -- its own. Both or neither — `transports.can_wait_for_approval` requires the pair.
+  register_chat_bufnr = false,
+}
 ```
 
-#### `execute(prompt, opts)`
+Then register it in `core/constants/agents.lua` (`adapter_module`, `descriptor_module`,
+`command_builder_module`, `export_name`, `description`, `models`, and `config_fields` for any
+option of its own), add the two-line `adapter/<id>_cli.lua` and `adapter/modules/<id>_event_processor.lua`
+shims the other backends have, and run `npm run test:lua`. The conformance suite tells you which
+contracts the descriptor does not yet meet.
 
-Synchronous execution (blocking).
+## Resident protocol
 
-```lua
----@param prompt string User prompt
----@param opts Vibing.AdapterOpts Options
----@return Vibing.Response Response with content and optional error
-function YourAdapter:execute(prompt, opts)
-  opts = opts or {}
-  local result = { content = "" }
-  local done = false
+A descriptor declaring `process = "duplex"` must supply `duplex` with three functions:
+`send_prompt(record, prompt, params)`, `process_line(record, line)`, and
+`interrupt(record, seq)`. The conformance suite checks their presence and fixed signatures for
+all registered duplex backends. `params` is `Vibing.DuplexRunParams`; `seq` is the shared
+per-process interrupt counter and may be ignored by a protocol with its own request ids.
 
-  self:stream(prompt, opts, function(chunk)
-    result.content = result.content .. chunk
-  end, function(response)
-    if response.error then
-      result.error = response.error
-    end
-    done = true
-  end)
+The protocol owns the wire envelopes and resolves the current or idle event context from the
+record when it handles a line. Claude's stream-json is explicit too
+(`claude_duplex_protocol.lua`); an absent protocol has no fallback. Shared sending and routing
+read `descriptor.duplex`, including interruption through `adapter.descriptor`, without storing
+a second protocol copy on the process. The pool, argv reuse key, turn, timers and reclaim paths
+remain shared.
 
-  vim.wait(120000, function() return done end, 100)
-  return result
-end
-```
+## The decoder
 
-#### `stream(prompt, opts, on_chunk, on_done)`
+A decoder is `{ decode = function(msg, state) return events end }`: one JSON line in, a list of
+canonical events out, no rendering, no callbacks. The event set is `Vibing.CanonicalEvent` in
+`event_renderer.lua`: `session`, `first_response`, `text`, `thinking`, `tool_start`, `tool_end`,
+`subagent_text`, `usage`, `cli_info`, `rate_limit`, `error`. Emit tool names in the CLI's own
+vocabulary; the renderer canonicalises them through the same table the permission handler uses,
+so a tool is called the same thing in the chat and in a rule.
 
-Streaming execution (non-blocking, recommended).
+Keep whatever must be remembered across lines in `state` (copilot remembers which messages already
+streamed; codex remembers which items started). `usage` is either `{ record = <one request> }`,
+accumulated like claude's, or `{ accumulator = TokenUsage.cumulative(totals) }` for a CLI that
+reports one running total per turn.
 
-```lua
----@param prompt string User prompt
----@param opts Vibing.AdapterOpts Options
----@param on_chunk fun(chunk: string) Callback for each text chunk
----@param on_done fun(response: Vibing.Response) Callback when complete
-function YourAdapter:stream(prompt, opts, on_chunk, on_done)
-  opts = opts or {}
-  local config = self:build_command(prompt, opts)
+## The vocabulary
 
-  -- Example using curl via vim.system
-  local cmd = {
-    "curl", "-s", "-X", "POST",
-    "-H", "Content-Type: application/json",
-    "-d", vim.json.encode(config.body),
-    config.url
-  }
+Three optional functions, applied in this order by `permission.normalize_hook_input`:
+`normalize_payload` (the payload's own key names), `to_canonical` (the tool's name),
+`normalize_input` (where the path lives). Every entry should come from a captured payload; an alias
+the CLI never sends is inert, a missing one lets a deny rule fall open.
 
-  self._handle = vim.system(cmd, {
-    text = true,
-    stdout = function(err, data)
-      if data then
-        vim.schedule(function()
-          -- Parse streaming response
-          local ok, parsed = pcall(vim.json.decode, data)
-          if ok and parsed.response then
-            on_chunk(parsed.response)
-          end
-        end)
-      end
-    end,
-  }, function(obj)
-    vim.schedule(function()
-      self._handle = nil
-      if obj.code ~= 0 then
-        on_done({ content = "", error = "Request failed" })
-      else
-        on_done({ content = "" })
-      end
-    end)
-  end)
-end
-```
+An optional `is_always_allowed(tool_name)` predicate classifies backend built-ins after name
+normalization. The permission handler passes it to the shared evaluator alongside the chat's
+lists. It is evaluated with `ALWAYS_ALLOWED_TOOLS`, after deny rules and session denials, and
+respects explicit `ask`. Codex uses this to permit control tools without requiring allow-list
+entries for each one; the patterns live in `core/constants/tools.lua`. Operations mapped to
+canonical tools such as Bash, Edit, Read and WebSearch use their normal permission settings,
+including when wrapped in the `functions` namespace. MCP tool names
+are excluded from that predicate, including names wrapped in the `functions` namespace. Other
+backends that omit it keep their existing behavior. Hook responses still defer to the CLI's
+native permission gate, so this classification does not override its sandbox or approvals.
 
-#### `supports(feature)`
+## What stays code, and where
 
-Declare supported features.
+- **Hook transport quirks** live in the transport module: codex hangs on an untrusted hook or a
+  script outside its writable roots, copilot rejects a matcher and fails open on timeout, grok
+  needs a trusted git repository.
+- **Permission-mode mapping** onto a sandbox that is not Claude's is an `extra`
+  (`codex_command_builder.permission_args`).
+- **Lightweight fencing** is `args` when the CLI has a flag for it and an `extra` when it needs a
+  scratch directory or environment (grok).
+- **Anything that names a `vibing.nvim` MCP tool in a prompt** must only be sent to a CLI that can
+  reach the server (`handbook/architecture/plugin-and-commands.md`). Questions use the shared
+  reply-block protocol in `adapter/modules/ask_user_question_instructions.lua`, without an MCP tool.
 
-```lua
----@param feature string Feature name
----@return boolean
-function YourAdapter:supports(feature)
-  local features = {
-    streaming = true,      -- Supports streaming responses
-    tools = false,         -- Supports tool use
-    model_selection = true, -- Supports multiple models
-    context = true,        -- Supports file context
-    session = false,       -- Supports session persistence
-  }
-  return features[feature] or false
-end
-```
+## Per-backend options
 
-#### `cancel()`
-
-Cancel running request.
-
-```lua
-function YourAdapter:cancel()
-  if self._handle then
-    self._handle:kill(9)
-    self._handle = nil
-  end
-end
-```
-
-### Step 3: Register the Adapter
-
-Update `lua/vibing/init.lua` to recognize your adapter:
-
-```lua
-local function create_adapter(config)
-  local adapter_name = config.adapter or "claude"
-
-  if adapter_name == "your_adapter" then
-    local YourAdapter = require("vibing.adapters.your_adapter")
-    return YourAdapter:new(config)
-  end
-  -- ... existing adapters
-end
-```
-
-### Step 4: Configure
-
-Users can now use your adapter:
-
-```lua
-require("vibing").setup({
-  adapter = "your_adapter",
-  -- adapter-specific config
-})
-```
-
-## Example: OpenAI-Compatible Adapter
-
-For OpenAI API, Codex, or compatible local LLMs (LocalAI, vLLM, etc.):
-
-```lua
-local Base = require("vibing.adapters.base")
-
-local OpenAI = setmetatable({}, { __index = Base })
-OpenAI.__index = OpenAI
-
-function OpenAI:new(config)
-  local instance = Base.new(self, config)
-  setmetatable(instance, OpenAI)
-  instance.name = "openai"
-  instance.base_url = config.openai and config.openai.base_url or "https://api.openai.com/v1"
-  instance.api_key = config.openai and config.openai.api_key or os.getenv("OPENAI_API_KEY")
-  return instance
-end
-
-function OpenAI:stream(prompt, opts, on_chunk, on_done)
-  local cmd = {
-    "curl", "-s", "-N",
-    "-X", "POST",
-    "-H", "Content-Type: application/json",
-    "-H", "Authorization: Bearer " .. self.api_key,
-    "-d", vim.json.encode({
-      model = opts.model or "gpt-4",
-      messages = {{ role = "user", content = prompt }},
-      stream = true,
-    }),
-    self.base_url .. "/chat/completions"
-  }
-
-  self._handle = vim.system(cmd, {
-    text = true,
-    stdout = function(err, data)
-      if data then
-        vim.schedule(function()
-          -- Parse SSE format: data: {...}
-          for line in data:gmatch("[^\n]+") do
-            if line:match("^data: ") then
-              local json_str = line:sub(7)
-              if json_str ~= "[DONE]" then
-                local ok, parsed = pcall(vim.json.decode, json_str)
-                if ok and parsed.choices and parsed.choices[1].delta.content then
-                  on_chunk(parsed.choices[1].delta.content)
-                end
-              end
-            end
-          end
-        end)
-      end
-    end,
-  }, function(obj)
-    vim.schedule(function()
-      self._handle = nil
-      on_done({ content = "" })
-    end)
-  end)
-end
-
-function OpenAI:supports(feature)
-  return ({ streaming = true, model_selection = true, context = true })[feature] or false
-end
-
-return OpenAI
-```
-
-## Example: Ollama Adapter
-
-For local LLMs via Ollama:
-
-```lua
-local Base = require("vibing.adapters.base")
-
-local Ollama = setmetatable({}, { __index = Base })
-Ollama.__index = Ollama
-
-function Ollama:new(config)
-  local instance = Base.new(self, config)
-  setmetatable(instance, Ollama)
-  instance.name = "ollama"
-  instance.base_url = config.ollama and config.ollama.base_url or "http://localhost:11434"
-  instance.default_model = config.ollama and config.ollama.model or "codellama"
-  return instance
-end
-
-function Ollama:stream(prompt, opts, on_chunk, on_done)
-  local cmd = {
-    "curl", "-s", "-N",
-    "-X", "POST",
-    "-H", "Content-Type: application/json",
-    "-d", vim.json.encode({
-      model = opts.model or self.default_model,
-      prompt = prompt,
-      stream = true,
-    }),
-    self.base_url .. "/api/generate"
-  }
-
-  local buffer = ""
-  self._handle = vim.system(cmd, {
-    text = true,
-    stdout = function(err, data)
-      if data then
-        vim.schedule(function()
-          buffer = buffer .. data
-          -- Ollama returns JSON lines
-          while true do
-            local newline = buffer:find("\n")
-            if not newline then break end
-            local line = buffer:sub(1, newline - 1)
-            buffer = buffer:sub(newline + 1)
-            local ok, parsed = pcall(vim.json.decode, line)
-            if ok and parsed.response then
-              on_chunk(parsed.response)
-            end
-          end
-        end)
-      end
-    end,
-  }, function(obj)
-    vim.schedule(function()
-      self._handle = nil
-      on_done({ content = "" })
-    end)
-  end)
-end
-
-function Ollama:supports(feature)
-  return ({ streaming = true, model_selection = true })[feature] or false
-end
-
-return Ollama
-```
-
-## Type Definitions
-
-```lua
----@class Vibing.AdapterOpts
----@field streaming? boolean Enable streaming
----@field mode? string Execution mode (code, plan, etc.)
----@field model? string Model name
----@field context? string[] Context files
----@field permissions_allow? string[] Allowed tools
----@field permissions_deny? string[] Denied tools
----@field permission_mode? string Permission mode
-
----@class Vibing.Response
----@field content string Response text
----@field error? string Error message if failed
-```
-
-## Testing Your Adapter
-
-Create `tests/your_adapter_spec.lua`:
-
-```lua
-describe("vibing.adapters.your_adapter", function()
-  local YourAdapter
-
-  before_each(function()
-    package.loaded["vibing.adapters.your_adapter"] = nil
-    YourAdapter = require("vibing.adapters.your_adapter")
-  end)
-
-  it("should create adapter instance", function()
-    local adapter = YourAdapter:new({})
-    assert.equals("your_adapter", adapter.name)
-  end)
-
-  it("should support streaming", function()
-    local adapter = YourAdapter:new({})
-    assert.is_true(adapter:supports("streaming"))
-  end)
-end)
-```
-
-## Best Practices
-
-1. **Error Handling**: Always handle network errors and invalid responses gracefully
-2. **Timeout**: Implement reasonable timeouts for requests
-3. **Cancellation**: Support cancellation to avoid orphaned processes
-4. **Streaming**: Prefer streaming for better UX (progressive display)
-5. **Configuration**: Make API endpoints and keys configurable
-6. **Buffer Management**: Handle partial JSON in streaming responses
+Declare them as `config_fields` on the registry entry; they surface as `ai.agents.<id>.extensions.<field>` in
+`setup()`, with defaults and validation derived from the declaration (`kind`: `string`, `boolean`,
+`path_or_false`, `string_list`). `config.lua` never names a backend.

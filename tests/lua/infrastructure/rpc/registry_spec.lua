@@ -1,6 +1,7 @@
 -- Tests for vibing.infrastructure.rpc.registry module
 
 local ENV_REGISTRY_DIR = require("vibing.infrastructure.rpc.registry").ENV_REGISTRY_DIR
+local Fs = require("vibing.core.utils.fs")
 
 describe("vibing.infrastructure.rpc.registry", function()
   local registry
@@ -207,7 +208,7 @@ describe("vibing.infrastructure.rpc.registry", function()
     local function write_dead_instance(port)
       -- Above the platform PID ceiling, so it cannot collide with a real process.
       local dead_pid = 4000000 + port
-      vim.fn.mkdir(registry.get_registry_dir(), "p")
+      Fs.ensure_dir(registry.get_registry_dir())
       local file_path = registry.get_registry_dir() .. "/" .. dead_pid .. ".json"
       vim.fn.writefile({
         vim.json.encode({ pid = dead_pid, port = port, cwd = vim.fn.getcwd(), started_at = os.time() }),

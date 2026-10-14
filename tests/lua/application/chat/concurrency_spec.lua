@@ -3,7 +3,7 @@
 
 local Config = require("vibing.config")
 local view = require("vibing.presentation.chat.view")
-local registry = require("vibing.infrastructure.adapter.modules.active_stream_registry")
+local registry = require("vibing.infrastructure.adapter.modules.turn_registry")
 local Concurrency = require("vibing.application.chat.concurrency")
 
 describe("Concurrency", function()
@@ -13,7 +13,7 @@ describe("Concurrency", function()
   ---@param agent table?
   local function configure(agent)
     Config.get = function()
-      return { agent = agent }
+      return { automation = { orchestration = agent and agent.orchestration } }
     end
   end
 

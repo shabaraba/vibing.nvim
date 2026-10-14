@@ -36,7 +36,7 @@ function M.execute(display_path)
   local cancelled = {}
   for _, node in ipairs(targets) do
     local chat_buf = view.get_chat_buffer(node.bufnr)
-    if chat_buf and chat_buf:cancel_request() then
+    if chat_buf and chat_buf:cancel_turn() then
       table.insert(cancelled, node)
     end
   end

@@ -1,23 +1,40 @@
---- CLI command builder for `claude -p` execution
---- Builds the command array for the Claude CLI with streaming JSON I/O
+--- The parts of the `claude -p` argv a flag table cannot express (ADR 009 P2).
+---
+--- The request itself -- which flags, in what order -- is `request` in `backends/claude.lua`;
+--- `request_builder.lua` resolves the shared values (model, effort, resume, prompt). What stays
+--- here is composed from several sources: the permission lists with their always-allowed floor,
+--- the plugin directories, the MCP re-registration, the system prompt block and the setting
+--- sources. `build()` remains as the historical entry point over that spec.
 --- @module vibing.infrastructure.adapter.modules.cli_command_builder
 
 local tools_constants = require("vibing.core.constants.tools")
 local CliMcpConfig = require("vibing.infrastructure.adapter.modules.cli_mcp_config")
 local CommonBuilder = require("vibing.infrastructure.adapter.modules.command_builder_common")
+local AskUserQuestionInstructions = require("vibing.infrastructure.adapter.modules.ask_user_question_instructions")
 local PluginDirs = require("vibing.infrastructure.plugins.plugin_dirs")
-local ReasoningEffort = require("vibing.infrastructure.adapter.modules.reasoning_effort")
 local worktree_constants = require("vibing.core.constants.worktree")
+local Profiles = require("vibing.core.constants.profiles")
 
 local M = {}
 
 local DEFAULT_SETTING_SOURCES = { "user", "project", "local" }
 local VALID_SETTING_SOURCES = { user = true, project = true, ["local"] = true }
 
-local binary_path = CommonBuilder.binary_resolver(
-  "claude",
-  "Claude CLI not found in PATH. Please install Claude Code CLI."
-)
+local RequestBuilder = require("vibing.infrastructure.adapter.modules.request_builder")
+
+M.BINARY = { name = "claude", missing = "Claude CLI not found in PATH. Please install Claude Code CLI." }
+
+--- `Profiles.resolve` for this request, cached on `ctx` -- several `extra` parts need the same
+--- profile and `ctx` is already the one object shared between them for this build.
+--- @param ctx Vibing.RequestContext
+--- @return table
+local function resolved_profile(ctx)
+  if not ctx._profile then
+    local _, profile = Profiles.resolve(ctx.opts.profile, ctx.config)
+    ctx._profile = profile
+  end
+  return ctx._profile
+end
 
 --- Resolve the `--setting-sources` list, falling back to the default when config
 --- is missing, malformed, or contains entries outside `user`/`project`/`local`.
@@ -28,7 +45,7 @@ local binary_path = CommonBuilder.binary_resolver(
 --- @param config Vibing.Config
 --- @return string[]
 function M.resolve_setting_sources(config)
-  local setting_sources = config.agent and config.agent.setting_sources
+  local setting_sources = config and vim.tbl_get(config, "ai", "agents", "claude", "settings", "sources")
   if type(setting_sources) ~= "table" or #setting_sources == 0 then
     return DEFAULT_SETTING_SOURCES
   end
@@ -42,19 +59,6 @@ function M.resolve_setting_sources(config)
   return setting_sources
 end
 
---- Resolve model name to CLI-compatible format
---- Lightweight calls (title generation, summarize, daily summary) always use
---- config.agent.utility_model, taking priority over opts.model.
---- @param opts Vibing.AdapterOpts
---- @param config Vibing.Config
---- @return string|nil
-local function resolve_model(opts, config)
-  if opts.lightweight then
-    return (config.agent and config.agent.utility_model) or "sonnet"
-  end
-  return opts.model or (config.agent and config.agent.default_model)
-end
-
 --- Append tools that are not in the list yet, preserving the user's own ordering
 --- @param allow_tools string[]
 --- @param tools string[]
@@ -66,10 +70,12 @@ local function allow_additionally(allow_tools, tools)
   end
 end
 
---- Build permission flags for the CLI
---- @param cmd string[]
---- @param opts Vibing.AdapterOpts
-local function add_permission_args(cmd, opts)
+--- The permission flags: the allow list with its always-allowed floor, the deny list and the mode.
+--- @param ctx Vibing.RequestContext
+--- @return string[]
+function M.permission_args(ctx)
+  local opts = ctx.opts
+  local cmd = {}
   local permissions_allow = opts.permissions_allow or {}
   if type(permissions_allow) ~= "table" then
     permissions_allow = {}
@@ -109,115 +115,92 @@ local function add_permission_args(cmd, opts)
     table.insert(cmd, "--permission-mode")
     table.insert(cmd, opts.permission_mode)
   end
-end
-
---- Add optional flag if value is present
---- @param cmd string[]
---- @param flag string
---- @param value any
-local function add_flag_if_present(cmd, flag, value)
-  if value ~= nil then
-    table.insert(cmd, flag)
-    table.insert(cmd, tostring(value))
-  end
+  return cmd
 end
 
 --- Forget the resolved binary path. Test seam only: the cache is process-wide, so a spec that
 --- wants to exercise the "CLI missing" path has to clear what an earlier spec resolved.
 function M._reset_path_cache()
-  binary_path.reset()
+  RequestBuilder.reset_binary(require("vibing.infrastructure.adapter.backends.claude").request)
 end
 
---- Build the `claude` CLI command array
---- @param prompt string User prompt
---- @param opts Vibing.AdapterOpts Adapter options
---- @param session_id string|nil Session ID for resumption
---- @param config Vibing.Config Plugin config
---- @param settings_path string|nil Path to hook settings file
---- @return string[] Command array for vim.system()
-function M.build(prompt, opts, session_id, config, settings_path)
-  local cmd = { binary_path.resolve() }
-
-  table.insert(cmd, "-p")
-  table.insert(cmd, "--output-format")
-  table.insert(cmd, "stream-json")
-  table.insert(cmd, "--verbose")
-  table.insert(cmd, "--include-partial-messages")
-
-  add_flag_if_present(cmd, "--model", resolve_model(opts, config))
-  add_flag_if_present(cmd, "--effort", ReasoningEffort.resolve(opts, config))
-
-  if session_id then
-    table.insert(cmd, "--resume")
-    table.insert(cmd, session_id)
-    if opts._is_fork then
-      table.insert(cmd, "--fork-session")
-    end
+--- vibing.nvim's own plugin (the nvim_* MCP tools and the bundled skills) is loaded for this
+--- session only, from this checkout, instead of being installed into Claude Code's user scope.
+--- That is what keeps the MCP server from drifting away from the Neovim plugin it serves -- a
+--- worktree now runs its own copy rather than the globally installed one. `.vibing/plugins/*/`
+--- rides along on the same flag.
+---
+--- Not on the lightweight path: `core/types.lua` obliges utility calls to load no tools and no
+--- project config. `--strict-mcp-config` already blocks the MCP servers there (verified: zero
+--- connection log lines), but a plugin's skill descriptions still cost prompt tokens, and
+--- lightweight has no tools to invoke them with anyway.
+--- @param ctx Vibing.RequestContext
+--- @return string[]
+function M.plugin_dir_args(ctx)
+  local cmd = {}
+  for _, plugin_dir in ipairs(PluginDirs.resolve(ctx.opts.cwd, ctx.config)) do
+    table.insert(cmd, "--plugin-dir")
+    table.insert(cmd, plugin_dir)
   end
+  return cmd
+end
 
-  if opts.lightweight then
-    -- Lightweight calls need no tools: skip permission args/hooks entirely and empty out the
-    -- CLI's built-in tool set. --tools "" removes the tools rather than gating them, which is
-    -- why it works where the alternatives don't: an empty --allowedTools alone does NOT block
-    -- execution (verified — with no --permission-mode, or with --permission-mode dontAsk, the
-    -- model still invokes Bash/Write despite an empty allow list), and --permission-mode plan
-    -- does hard-block but leaks plan-mode meta-commentary ("this isn't a planning task...")
-    -- into plain text-generation output, corrupting title/summary content.
-    --
-    -- This replaces an earlier --disallowedTools enumeration of the known built-in tools. That
-    -- worked, but a denylist has to be updated every time the CLI grows a tool, and it had
-    -- already drifted (Agent/TaskCreate were never listed) — see #488. --tools names nothing,
-    -- so it cannot drift. Verified against the CLI directly: with --tools "" plus the empty
-    -- MCP config below, prompts explicitly ordering Write/Bash produce no file at all.
-    --
-    -- No version probe: on a claude CLI predating --tools the process just fails, and the three
-    -- callers already surface that as response.error — a failed title/summary, not a broken chat.
-    table.insert(cmd, "--tools")
-    table.insert(cmd, "")
-  else
-    add_permission_args(cmd, opts)
+--- `ai.agents.claude.mcp.inherit_cli_servers = false` only: empty otherwise, so the ordinary turn is untouched. It
+--- has to follow the `--plugin-dir` flags rather than replace them -- the plugins still carry
+--- their skills and subagents in, and only their MCP half is re-registered by hand.
+--- @param ctx Vibing.RequestContext
+--- @return string[]
+function M.mcp_config_args(ctx)
+  return CliMcpConfig.args(ctx.opts.cwd, ctx.config)
+end
 
-    if settings_path then
-      table.insert(cmd, "--settings")
-      table.insert(cmd, settings_path)
-    end
-
-    -- Without this the CLI swallows everything a subagent says and only its final tool_result
-    -- surfaces. Opt-in because it makes long delegated turns much noisier.
-    local subagent = config.agent and config.agent.subagent
-    if subagent and subagent.enabled then
-      table.insert(cmd, "--forward-subagent-text")
-    end
-
-    -- vibing.nvim's own plugin (the nvim_* MCP tools and the bundled skills) is loaded for this
-    -- session only, from this checkout, instead of being installed into Claude Code's user
-    -- scope. That is what keeps the MCP server from drifting away from the Neovim plugin it
-    -- serves -- a worktree now runs its own copy rather than the globally installed one.
-    -- `.vibing/plugins/*/` rides along on the same flag.
-    --
-    -- Not passed on the lightweight path: `core/types.lua` obliges utility calls to load no
-    -- tools and no project config. `--strict-mcp-config` already blocks the MCP servers there
-    -- (verified: zero connection log lines), but a plugin's skill descriptions still cost prompt
-    -- tokens, and lightweight has no tools to invoke them with anyway.
-    for _, plugin_dir in ipairs(PluginDirs.resolve(opts.cwd, config)) do
-      table.insert(cmd, "--plugin-dir")
-      table.insert(cmd, plugin_dir)
-    end
-
-    -- `agent.mcp.user_servers = false` only: empty otherwise, so the ordinary turn is untouched.
-    -- It has to follow the `--plugin-dir` flags rather than replace them — the plugins still carry
-    -- their skills and subagents in, and only their MCP half is re-registered by hand.
-    vim.list_extend(cmd, CliMcpConfig.args(opts.cwd, config))
+--- `--setting-sources`, and for a lightweight call the empty MCP config that keeps the user's
+--- servers out: no CLAUDE.md/rules, no MCP servers, no hook settings for utility calls.
+--- @param ctx Vibing.RequestContext
+--- @return string[]
+function M.setting_source_args(ctx)
+  if ctx.opts.lightweight then
+    return { "--setting-sources", "", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}' }
   end
+  -- A profile's own list replaces the configured one outright — an empty list included, which is
+  -- "no CLAUDE.md, no project settings" and a deliberate choice, not a malformed value.
+  local profile = resolved_profile(ctx)
+  if profile.setting_sources then
+    return { "--setting-sources", table.concat(profile.setting_sources, ",") }
+  end
+  return { "--setting-sources", table.concat(M.resolve_setting_sources(ctx.config), ",") }
+end
 
+--- `--tools` for a profile that names its built-in tools; nothing otherwise, which is the CLI's
+--- full set. The flag only narrows built-ins — MCP tools, vibing-nvim's report tool among them,
+--- stay reachable (measured: `nvim_chat_send_message` found under `--tools Read,Bash`).
+--- @param ctx Vibing.RequestContext
+--- @return string[]
+function M.profile_tool_args(ctx)
+  local profile = resolved_profile(ctx)
+  -- A subagent-bound chat exists to call Agent/SendMessage (see `permission_args`); a tool list
+  -- written for implementation work would leave it unable to do the one thing it is for.
+  if not profile.tools or ctx.opts._subagent_id then
+    return {}
+  end
+  return { "--tools", table.concat(profile.tools, ",") }
+end
+
+--- The `--append-system-prompt` block: worktree convention, MCP tool guidance, the chat buffer
+--- number, the orchestrator line, the project prompt and the language instruction.
+--- @param ctx Vibing.RequestContext
+--- @return string[]
+function M.system_prompt_args(ctx)
+  local opts, config = ctx.opts, ctx.config
   -- System prompt additions (worktree convention + chat file path + optional language). This
   -- entire block must stay byte-for-byte identical across turns of the same conversation —
   -- Anthropic's prompt cache matches on a forward-prefix basis (tools -> system -> messages), so
-  -- any per-turn value here (e.g. a freshly generated handle_id) would invalidate the cached
+  -- any per-turn value here (e.g. a freshly generated turn_id) would invalidate the cached
   -- system+history prefix on every single turn. See issue #469.
   -- Lightweight calls have no tools/MCP servers at all, so tool-usage instructions below would
   -- just be wasted prompt tokens describing capabilities that don't exist.
   local system_prompt_lines = {}
+  local profile = resolved_profile(ctx)
 
   if not opts.lightweight then
     table.insert(
@@ -234,12 +217,14 @@ function M.build(prompt, opts, session_id, config, settings_path)
     )
     table.insert(
       system_prompt_lines,
-      "When you need the user to choose among options (single or multi-select), always call the "
-        .. "mcp__vibing-nvim__nvim_ask_user_question tool instead of asking in free text. Do not use "
-        .. "the native AskUserQuestion tool for this — it is unavailable in this environment. Pass "
-        .. 'this turn\'s "Current vibing.nvim chat buffer number" (given elsewhere in this system '
-        .. "prompt) as the chat_bufnr argument."
+      "When starting a development server, watcher, long-running script, or any process intended "
+        .. "to outlive the current model turn, you MUST use the vibing-nvim nvim_job_start MCP tool. "
+        .. "Do not use shell backgrounding such as &, nohup, or setsid for these processes. Use "
+        .. "nvim_job_status, nvim_job_wait, and nvim_job_stop to manage them. If nvim_job_start is "
+        .. "unavailable, say so instead of silently substituting shell backgrounding."
     )
+    vim.list_extend(system_prompt_lines, AskUserQuestionInstructions.lines())
+    vim.list_extend(system_prompt_lines, AskUserQuestionInstructions.chat_buffer_lines(opts.chat_bufnr))
     table.insert(
       system_prompt_lines,
       "When the user asks to see code, show it rather than describing where it lives: call "
@@ -274,11 +259,6 @@ function M.build(prompt, opts, session_id, config, settings_path)
       )
     end
 
-    -- Buffer number, not file path: it survives a rename, keeping this prefix byte-stable (#489).
-    if opts.chat_bufnr then
-      table.insert(system_prompt_lines, "Current vibing.nvim chat buffer number: " .. tostring(opts.chat_bufnr))
-    end
-
     -- Which chat dispatched this one, taken from the `orchestrated_by` frontmatter list.
     --
     -- The **path** is what the model is told to address, because that is the only form that
@@ -288,7 +268,10 @@ function M.build(prompt, opts, session_id, config, settings_path)
     -- still gets the line — `nvim_chat_send_message` opens the chat file itself.
     --
     -- The frontmatter is written once at creation, so in the ordinary case the line stays
-    -- byte-stable across turns and the cached system prefix (#469) survives. It is not a
+    -- byte-stable across turns and the cached system prefix (#469) survives. It is also only ever
+    -- read once: claude records the system prompt on a conversation's first request and replays
+    -- it on every resume, so an orchestrator linked later is not in it. That case is carried by the
+    -- delivered request itself (`delivery_message.reply_instructions`). It is not a
     -- guarantee, and the bufnr half is the weaker one: closing or reopening the orchestrator
     -- changes it, as does `:VibingSetFileTitle` renaming the orchestrator (which moves the path
     -- too, via `OrchestrationChatScanner`). Each costs one cache miss.
@@ -319,8 +302,7 @@ function M.build(prompt, opts, session_id, config, settings_path)
     -- against the transcript, not spliced into this cached prefix per turn.
     if opts.orchestrators and #opts.orchestrators > 0 then
       local named = vim.tbl_map(function(orchestrator)
-        return orchestrator.bufnr
-            and string.format("%s (currently buffer %d)", orchestrator.path, orchestrator.bufnr)
+        return orchestrator.bufnr and string.format("%s (currently buffer %d)", orchestrator.path, orchestrator.bufnr)
           or orchestrator.path
       end, opts.orchestrators)
       -- Usually one path, but `orchestrated_by` is a list: a second chat that later messages this
@@ -340,9 +322,10 @@ function M.build(prompt, opts, session_id, config, settings_path)
           .. " — when the task is done, before you act on something you expect will need "
           .. "approval, and the moment you find you cannot proceed — by calling "
           .. "nvim_chat_send_message with that file_path, your own chat buffer number as "
-          .. "from_bufnr and queue_if_busy: true. State the conclusion, "
-          .. "what changed, what is unresolved, and what input you need next, briefly: it can "
-          .. "read this transcript for the rest, and can be asked the same way if the brief is "
+          .. "from_bufnr and queue_if_busy: true. Keep the report to a few lines: the "
+          .. "conclusion, then only what is unresolved or what you need decided — omit empty "
+          .. "parts and do not retell the work or list verification steps; it can read this "
+          .. "transcript for the rest, and can be asked the same way if the brief is "
           .. "ambiguous or you get stuck. Do not stop with only a prose report in your own chat "
           .. "buffer — that report is never read unless you also send it. This duty covers "
           .. "orchestrated work: turns whose message opens by naming the chat that sent it, "
@@ -360,9 +343,26 @@ function M.build(prompt, opts, session_id, config, settings_path)
     -- An unedited file keeps the block byte-for-byte identical across turns.
     -- Resolved against `opts.cwd` (the chat's `working_dir`, e.g. a worktree) first,
     -- like every other cwd-sensitive part of the request, then the Neovim root.
-    local project_prompt = require("vibing.core.utils.project_system_prompt").read_for_cwd(opts.cwd)
+    local ProjectPrompt = require("vibing.core.utils.project_system_prompt")
+    local project_prompt = ProjectPrompt.read_for_cwd(opts.cwd)
     if project_prompt then
       table.insert(system_prompt_lines, project_prompt)
+    end
+
+    -- The profile's stand-in for what its `setting_sources` left out. Recorded by the CLI with the
+    -- rest of this block on the conversation's first request, so an edit reaches new chats only
+    -- (`core/constants/profiles.lua`). A missing file is said out loud: a worker that silently
+    -- lost the invariants it was meant to carry fails in the work, far from the cause.
+    for _, file in ipairs(profile.context_files or {}) do
+      local content = ProjectPrompt.read_relative_for_cwd(file, opts.cwd)
+      if content then
+        table.insert(system_prompt_lines, content)
+      else
+        require("vibing.core.utils.notify").warn(
+          string.format("Profile context file %s is missing or empty", file),
+          "Chat"
+        )
+      end
     end
   end
 
@@ -371,32 +371,25 @@ function M.build(prompt, opts, session_id, config, settings_path)
     table.insert(system_prompt_lines, 1, language_instruction)
   end
 
-  table.insert(cmd, "--append-system-prompt")
-  table.insert(cmd, table.concat(system_prompt_lines, "\n"))
+  return { "--append-system-prompt", table.concat(system_prompt_lines, "\n") }
+end
 
-  table.insert(cmd, "--setting-sources")
-  if opts.lightweight then
-    table.insert(cmd, "")
-    -- No CLAUDE.md/rules, no MCP servers, no hook settings for utility calls.
-    table.insert(cmd, "--strict-mcp-config")
-    table.insert(cmd, "--mcp-config")
-    table.insert(cmd, '{"mcpServers":{}}')
-  else
-    table.insert(cmd, table.concat(M.resolve_setting_sources(config), ","))
-  end
-
-  -- Build prompt with context prefix (only for new sessions, not resume)
-  local full_prompt = prompt
-  if not session_id then
-    local context_prefix = CommonBuilder.context_prefix(opts)
-    full_prompt = context_prefix .. prompt
-  end
-
-  -- End of options marker (prevents prompt starting with --- being parsed as flags)
-  table.insert(cmd, "--")
-  table.insert(cmd, full_prompt)
-
-  return cmd
+--- Build the `claude` CLI command array from the request spec in `backends/claude.lua`.
+--- @param prompt string User prompt
+--- @param opts Vibing.AdapterOpts Adapter options
+--- @param session_id string|nil Session ID for resumption
+--- @param config Vibing.Config Plugin config
+--- @param settings_path string|nil Path to hook settings file
+--- @return string[] Command array for vim.system()
+function M.build(prompt, opts, session_id, config, settings_path)
+  return RequestBuilder.build(
+    require("vibing.infrastructure.adapter.backends.claude").request,
+    prompt,
+    opts,
+    session_id,
+    config,
+    settings_path
+  )
 end
 
 return M

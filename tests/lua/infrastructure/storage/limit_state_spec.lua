@@ -1,3 +1,4 @@
+local Fs = require("vibing.core.utils.fs")
 describe("limit_state", function()
   local LimitState = require("vibing.infrastructure.storage.limit_state")
 
@@ -61,7 +62,7 @@ describe("limit_state", function()
 
   it("ignores a corrupt store instead of erroring", function()
     local path = LimitState.get_path(tmp_root)
-    vim.fn.mkdir(vim.fn.fnamemodify(path, ":h"), "p")
+    Fs.ensure_dir(vim.fn.fnamemodify(path, ":h"))
     vim.fn.writefile({ "{ not json" }, path)
 
     assert.is_nil(LimitState.load(tmp_root))
@@ -93,7 +94,7 @@ describe("limit_state", function()
 
     it("reads an agent-less record as claude's, for stores written before this field existed", function()
       local path = LimitState.get_path(tmp_root)
-      vim.fn.mkdir(vim.fn.fnamemodify(path, ":h"), "p")
+      Fs.ensure_dir(vim.fn.fnamemodify(path, ":h"))
       vim.fn.writefile({ vim.json.encode({ resets_at = os.time() + 600, observed_at = os.time() }) }, path)
 
       assert.is_not_nil(LimitState.get_active(tmp_root, "claude"))

@@ -12,18 +12,6 @@ import { withRpcPort } from './common.js';
  */
 export const CHAT_POSITIONS = ['back', 'current', 'right', 'left', 'top', 'bottom'] as const;
 
-/**
- * The four answers a tool-approval prompt accepts, mirroring `APPROVAL_OPTIONS` in
- * `lua/vibing/infrastructure/rpc/handlers/permission.lua` and the vocabulary
- * `presentation/chat/modules/approval_parser.lua` reads back out of the buffer.
- */
-export const APPROVAL_ACTIONS = [
-  'allow_once',
-  'deny_once',
-  'allow_for_session',
-  'deny_for_session',
-] as const;
-
 export const chatTools: Tool[] = [
   {
     name: 'nvim_chat_create',
@@ -82,12 +70,44 @@ export const chatTools: Tool[] = [
           description:
             'Tool/command patterns (same syntax as the permissions_allow frontmatter field, ' +
             'e.g. "Bash(npm:*)", "Read") that you may auto-approve on this new chat\'s behalf ' +
-            'with nvim_chat_answer_approval, once agent.orchestration.delegated_approval is set ' +
+            'with nvim_chat_answer_approval, once permissions.delegated_approval is set ' +
             'to "scoped". Recorded on the NEW chat\'s own frontmatter as delegated_scope — it is ' +
             'what is being asked, not who is allowed to answer for it, which stays a config ' +
             'decision. Denials are always answerable regardless of this list; only allow_once / ' +
             'allow_for_session answers are checked against it. Has no effect unless ' +
             'delegated_approval is "scoped" (and none at all if it is unset or true/false).',
+        },
+        agent: {
+          type: 'string',
+          description:
+            'CLI backend for the new chat: "claude", "codex", "copilot" or "grok". Use it with ' +
+            "model to hand implementation to a cheaper model than yours. Omitted: the user's " +
+            'worker_defaults, else the default backend. An unknown value fails the call.',
+        },
+        model: {
+          type: 'string',
+          description:
+            'Model for the new chat, in that backend\'s own naming (e.g. "sonnet", "haiku" on ' +
+            "claude). Omitted: worker_defaults, else the user's default model — often as " +
+            'expensive as yours, so pass it when the work does not need your model.',
+        },
+        effort: {
+          type: 'string',
+          description:
+            'Reasoning effort: "default", "low", "medium", "high", "xhigh" or "max". Omitted: ' +
+            "worker_defaults, else the user's default.",
+        },
+        profile: {
+          type: 'string',
+          description:
+            'What the new chat loads on every request, by name: "default" (everything), ' +
+            '"focused" (only Bash/Read/Edit/Write/Glob/Grep of the built-in tools, project rules ' +
+            'kept), "reviewer" (only Read/Glob/Grep/Bash, project rules kept), or a kind the user ' +
+            'configured — nvim_chat_list returns them, with the model each one runs on. MCP tools ' +
+            'stay available on every profile. A ' +
+            "configured kind can cut a chat's fixed per-request cost several-fold; its " +
+            'agent/model/effort fill any you leave out. Omitted: worker_defaults, else ' +
+            '"default". The user can widen a chat later with /profile default.',
         },
       }),
       required: [],
@@ -146,7 +166,13 @@ export const chatTools: Tool[] = [
             'turn the moment that chat stops, and several queued messages arrive coalesced ' +
             'into one turn. Use it for anything the other chat must receive whether or not it ' +
             'happens to be busy right now — a completion report to your orchestrator, an ' +
-            'answer to a question it asked you.',
+            'answer to a question it asked you. One target is never queued however you set this: ' +
+            'a chat reporting chat_status "asked_question" is waiting on your answer inside a ' +
+            'turn it cannot leave, so the message is delivered straight into that turn. Queueing ' +
+            'it would hold the answer until the question had already timed out and been denied. ' +
+            'That applies to a message you send DOWN the link (a brief or an answer to a worker); ' +
+            'a completion report sent UP to your orchestrator is never treated as the answer to a ' +
+            'question that orchestrator asked its own user, and is queued like any other message.',
         },
         task: {
           type: 'string',
@@ -167,76 +193,12 @@ export const chatTools: Tool[] = [
     },
   },
   {
-    name: 'nvim_ask_user_question',
-    description:
-      'Ask the user one or more multiple-choice questions directly in the vibing.nvim chat buffer. ' +
-      'Use this instead of asking questions in free text, and instead of the native AskUserQuestion ' +
-      'tool (which is unavailable in headless CLI mode). ' +
-      'IMPORTANT: calling this tool renders the questions as an editable choice list in the chat ' +
-      'buffer and then immediately cancels/kills your current turn — you will NOT get a normal ' +
-      'tool_result back, and you cannot do anything else after calling it. The user edits the list ' +
-      "(deleting unwanted options) and sends it. Your NEXT invocation's prompt IS the user's answer " +
-      'to this question, delivered as a fresh turn — treat it as such rather than waiting for a ' +
-      'tool response. ' +
-      'You MUST pass chat_bufnr using the exact "Current vibing.nvim chat buffer number" value ' +
-      'given to you in your system prompt — it identifies which chat buffer to render the ' +
-      'question in.',
-    inputSchema: {
-      type: 'object',
-      properties: withRpcPort({
-        chat_bufnr: {
-          type: 'number',
-          description:
-            'The exact "Current vibing.nvim chat buffer number" given to you in your system ' +
-            'prompt. Required to associate this question with the correct chat buffer.',
-        },
-        questions: {
-          type: 'array',
-          description: 'One or more questions to present to the user',
-          items: {
-            type: 'object',
-            properties: {
-              question: {
-                type: 'string',
-                description: 'The question text',
-              },
-              multiSelect: {
-                type: 'boolean',
-                description: 'Whether multiple options can be selected (default: false)',
-              },
-              options: {
-                type: 'array',
-                description: 'The choices offered to the user',
-                items: {
-                  type: 'object',
-                  properties: {
-                    label: {
-                      type: 'string',
-                      description: 'The option text shown to the user',
-                    },
-                    description: {
-                      type: 'string',
-                      description: 'Optional additional detail shown under the option',
-                    },
-                  },
-                  required: ['label'],
-                },
-              },
-            },
-            required: ['question', 'options'],
-          },
-        },
-      }),
-      required: ['chat_bufnr', 'questions'],
-    },
-  },
-  {
     name: 'nvim_chat_answer_approval',
     description:
       "Answer another chat's pending tool-approval prompt — the one that leaves it stuck at " +
       'status waiting_approval, unable to continue or even to report back. Read what it is ' +
       'stuck on with nvim_get_buffer first; the prompt names the tool and its input. ' +
-      'This is off unless the user turned it on (agent.orchestration.delegated_approval), and ' +
+      'This is off unless the user turned it on (permissions.delegated_approval), and ' +
       'the call fails with an explanation when it is off — then the only thing to do is tell ' +
       'the user which chat is blocked and on what. When it is set to true, you are standing in ' +
       'for the user on a decision they asked to be consulted about: answer only when the tool ' +
@@ -244,8 +206,13 @@ export const chatTools: Tool[] = [
       'user instead. When it is set to "scoped", the call itself enforces this: an allow_once ' +
       "or allow_for_session answer only succeeds if the tool matches that chat's declared " +
       'delegated_scope (see nvim_chat_create), so it is fine to just try it — a denial ' +
-      '(deny_once/deny_for_session) always succeeds either way. Your answer is recorded in ' +
-      'that chat as coming from you. It can only be answered once, and only while it is pending.',
+      '(deny_once/deny_for_session, or Codex decline/cancel) always succeeds either way. ' +
+      'Codex accept/accept_for_session also require a matching scope. ' +
+      'accept_with_execpolicy_amendment requires true, even with a matching scope, because ' +
+      'Codex remembers a command pattern beyond the scoped call. Your answer is recorded in ' +
+      'that chat as coming from you. It is answered exactly once. An expired prompt is still ' +
+      'answerable — the wait limit denied that one tool call, not the decision — but the answer ' +
+      'reaches the chat as a new turn instead of releasing the call that was blocked on it.',
     inputSchema: {
       type: 'object',
       properties: withRpcPort({
@@ -263,12 +230,25 @@ export const chatTools: Tool[] = [
         },
         action: {
           type: 'string',
-          enum: [...APPROVAL_ACTIONS],
+          minLength: 1,
           description:
-            'Which of the four options to choose. The "_once" pair applies to this one call; ' +
-            'the "_for_session" pair is written into that chat\'s frontmatter and applies to ' +
-            'every later call in it, so prefer allow_once unless the chat will clearly need the ' +
-            'tool repeatedly.',
+            'The exact value of an option offered by this prompt; Lua validates membership. ' +
+            'Hook prompts offer allow_once/deny_once/allow_for_session/deny_for_session. ' +
+            'Codex native prompts may offer accept, accept_for_session, ' +
+            'accept_with_execpolicy_amendment, decline or cancel; use only an offered value. ' +
+            'Prefer allow_once (hook) or accept (Codex). Execpolicy amendments remember a ' +
+            'command pattern beyond this call and require delegated_approval=true.',
+        },
+        request_id: {
+          type: 'string',
+          description:
+            'Which prompt you are answering. A chat can be sitting on several tool-approval ' +
+            'prompts at once, because a CLI runs its tool calls — and their permission hooks — ' +
+            'in parallel. Omit it only when exactly one is waiting; with more than one the call ' +
+            'is refused rather than guessing. Get the ids from waiting_approvals, reported by ' +
+            'nvim_chat_list and by nvim_get_buffer with include_chat_status — it is the live set, ' +
+            'so one read tells you which are still blocking a call and which already expired. ' +
+            'Both are answerable; only an unexpired one releases the call in place.',
         },
         from_bufnr: {
           type: 'number',
@@ -291,7 +271,10 @@ export const chatTools: Tool[] = [
     description:
       'List every open vibing.nvim chat buffer with its status in one call, instead of polling ' +
       'each with nvim_get_buffer one at a time. For each chat, reports bufnr, file_path, ' +
-      'chat_status (responding/idle/waiting_approval/asked_question/error), context_size (the ' +
+      'chat_status (responding/idle/waiting_approval/asked_question/error), waiting_approvals ' +
+      '(present only while the chat is sitting on tool-approval prompts: one entry per prompt ' +
+      'with its request_id, tool and whether it already expired — this is where the request_id ' +
+      'for nvim_chat_answer_approval comes from), context_size (the ' +
       "chat's last measured context size in tokens, or omitted if it has not completed a turn " +
       'yet), updated_at (frontmatter timestamp of the last write), orchestrated_by (the ' +
       "chat file paths of this chat's orchestrator(s), if any), and task (the one-line " +
@@ -300,7 +283,9 @@ export const chatTools: Tool[] = [
       'orchestrator is also open in this session, omitted otherwise). Use this to check on ' +
       'several worker chats at once in a multi-agent workflow (see the vibing-orchestrate ' +
       'skill). Only chats currently open in this Neovim session are listed — a chat file that ' +
-      'was never opened this session is not included.',
+      'was never opened this session is not included. Also returns profiles: the built-in and ' +
+      'configured ones (name, description, and the agent/model a chat created on it gets) — ' +
+      "pick one for nvim_chat_create's profile.",
     inputSchema: {
       type: 'object',
       properties: withRpcPort({}),

@@ -1,11 +1,11 @@
 # Per-Request Diffs
 
 Detail behind `.claude/rules/architecture.md` → "Per-Request Diffs". Each turn's
-`### Modified Files` list and its `.vibing/patches/*.patch` come from two git tree snapshots of
+`### Modified Files` list and its `.vibing/diffs/*.diff` come from two git tree snapshots of
 the working tree, taken before and after the turn. The point of that shape is what it does _not_
 need to know: which tool made the change (#625).
 
-Each turn's `### Modified Files` list and its `.vibing/patches/*.patch` come from **two git tree
+Each turn's `### Modified Files` list and its `.vibing/diffs/*.diff` come from **two git tree
 snapshots of the working tree**, taken before and after the turn and compared with `git diff`
 (`core/utils/git_snapshot.lua`). That is the main path, not the only one: a read-only turn takes
 no snapshot at all, and the two cases in the table below fall back to `request_diff.lua`.
@@ -14,6 +14,11 @@ The point of that shape is what it does _not_ need to know: which tool made the 
 mechanism it replaced (`request_diff.lua`) backed up the file named in a Write/Edit tool's
 arguments, so `sed -i`, `mv`, a formatter, or anything else run through Bash produced no diff
 section at all — the change simply did not exist as far as the chat was concerned. This is #625.
+
+New turns write `Diff: <absolute path>` below `### Modified Files`. Readers also accept saved
+`Patch:` lines pointing to `.vibing/patches/*.patch` and legacy `<!-- patch: ... -->` comments;
+files are not moved or migrated. Internal `patch_viewer` / `patch_finder` / `patch_text` names
+stay distinct from the existing `diff_opener`, `diff_mode` and related display modules.
 
 **The baseline is lazy, and that is what keeps it cheap.** It is taken at the PreToolUse hook for
 the first tool of the turn that could write, not at the start of the request, so a read-only turn
@@ -49,7 +54,7 @@ Three details are not interchangeable:
   `get_cwd()` can point at a subdirectory, and in a linked worktree the whole scope — which index,
   which refs — is decided by that directory. `rev-parse --git-path index` is what finds the index
   at all, since a worktree's lives under `.git/worktrees/<name>/`.
-- **`refs/worktree/vibing/<handle>` is a per-worktree namespace** (git 2.23+), so removing a
+- **`refs/worktree/vibing/<turn_id>` is a per-worktree namespace** (git 2.23+), so removing a
   worktree takes its leftover refs with it instead of leaving them in the common ref store. The
   ref is only a guard against a `git gc` landing mid-turn, so an `update-ref` that fails (an older
   git) is swallowed and the turn proceeds — freshly written objects are not pruned by gc's
@@ -90,7 +95,7 @@ Three details are not interchangeable:
   here, against 20ms per `git add -A` (twice a turn). A turn whose patch came back empty skips it
   entirely, since an empty patch already answers "no files changed".
 - **`.vibing/` is excluded by pathspec**, not left to `.gitignore`. It holds the chat files and the
-  patches themselves and changes during the turn, so for anyone who has not git-ignored it every
+  diff files themselves and changes during the turn, so for anyone who has not git-ignored it every
   turn would list the conversation log as its own output and put the whole transcript in the patch.
   The removed mote integration excluded the same directory through `.moteignore`. The exclusion is
   unconditional on the diff calls (where it matters) and **conditional on `git add -A`**, where it
@@ -159,7 +164,7 @@ changes of one overlapping turn is the less wrong answer.
 
 **The overlap has to be recorded when the baseline is taken, not asked about at response time**,
 and getting that wrong makes the guard protect the wrong side. A point-in-time
-`find_other_active_for_worktree` at response time is only answered honestly for the turn that
+`find_other_writing_in` at response time is only answered honestly for the turn that
 finishes _first_ — by the time the second one asks, the first has already unregistered, so it reads
 "no overlap" and takes the snapshot path. But its window (its own baseline → its own diff) is
 precisely the one that contains the other turn's changes, so the misattribution lands on exactly
@@ -170,14 +175,18 @@ of them (`had_overlap`). A session lives from its baseline to its `clear()`, whi
 the diff covers, so two open sessions on one root _are_ two overlapping windows. Marking both is
 what makes the fallback symmetric — the second turn still knows, long after the first has gone.
 
-`ActiveStreamRegistry.find_other_active_for_worktree` is kept as the second signal, for a stream
+`TurnRegistry.find_other_writing_in` is kept as the second signal, for a stream
 that is writing without a session of its own to be seen through (a `write-tree` that failed on a
-conflicted index, say). It excludes by **handle_id**, not by `chat_bufnr` the way
-`find_other_active_for_session` does — codex and grok register no `chat_bufnr` (see `features.md`),
-so two of those would compare `nil` against `nil` and never see each other.
+conflicted index, say). It excludes by **turn id**, not by `chat_bufnr` the way
+`find_other_holding_session` does — grok and copilot register no `chat_bufnr` (see
+`features.md`), so two streams on either of those backends would compare `nil` against `nil` and
+never see each other. The turn is the right scope and not an accident of naming: the window this
+guard is about runs from a baseline to its `clear()`, which is a turn's window, so asking about
+processes would make every chat in a repository overlap with every other one permanently once
+processes outlive turns (`processes-and-turns.md`).
 
 **Both overlap signals are process-local, so two Neovim instances on one worktree are out of
-scope.** `sessions` and `ActiveStreamRegistry` are module tables, so a chat running in a second
+scope.** `sessions` and `TurnRegistry` are module tables, so a chat running in a second
 Neovim is invisible to the first: both would take the snapshot path and each would report the
 other's changes as its own — **all** of them, not just the Bash-driven ones, since a tree diff
 carries every change made in the window whatever produced it. So it is the same misattribution the
@@ -195,7 +204,7 @@ starts a turn — so reaping purely by age would drop the session of a turn stil
 TTL, which a long agent run reaches routinely. The next tool of that turn would then find no
 session and re-baseline against the tree as it stands, so everything it changed before the sweep
 falls out of the diff with no warning and no fallback: the silent loss again, through a third door.
-It therefore asks `ActiveStreamRegistry` whether the request is still running — the same registry
+It therefore asks `TurnRegistry` whether the request is still running — the same registry
 that tells `ChatBuffer:is_responding()` a run is over — and keeps the TTL only as the outer bound
 that stops the table growing when a stream never registered.
 
@@ -234,9 +243,10 @@ ordering is the invariant: the supplement runs inside `_finalize_snapshot_diff`,
 `_handle_response` reaches `RequestDiff.clear`.
 
 What the supplement cannot save is a gitignored file with no backup — changed by Bash alone it
-produces no tool event and no list entry at all, and codex's `apply_patch` carries no path in
-`tool_input` so nothing was captured (see `architecture.md` → codex vocabulary). A file that is
-listed but could not get a section from either source is warned about (`vim.notify`) rather than
+produces no tool event and no list entry at all. Codex's `apply_patch` envelope is decoded into
+all diff targets, including both sides of a move, and resolved against the chat cwd before
+backup. These diff targets are separate from the single `file_path` used by permission rules.
+A file that is listed but could not get a section from either source is warned about (`vim.notify`) rather than
 silently rendered as list-only, the same no-silent-loss rule as the empty-turn warning above.
 Deliberate list-only cases — binary content, a path outside the base directory, an unchanged
 file — stay silent, since `request_diff.generate` treats them the same way.

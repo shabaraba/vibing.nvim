@@ -10,6 +10,10 @@
 ---食い違いが実際に起きた。
 local M = {}
 
+local function is_system_notice(item)
+  return item.kind == "notice" or item.kind == "passive_notice"
+end
+
 ---@param bufnr number
 ---@param cache table<number, string>
 ---@return string
@@ -170,6 +174,16 @@ local function message_section(items, cache)
   }, "\n")
 end
 
+---@param items Vibing.Application.MessageQueue.Item[]
+---@return string
+local function notice_body_section(items)
+  local bodies = {}
+  for _, item in ipairs(items) do
+    table.insert(bodies, item.body)
+  end
+  return table.concat(bodies, "\n\n")
+end
+
 ---@class Vibing.Application.DeliveryMessage.Section
 ---@field kind "Request"|"Report"|"Notice" 配達セクションの種別
 ---@field from string? 送信元の表示パス（1つに定まらない配達では nil）
@@ -191,7 +205,7 @@ function M.section_for(queue, to_bufnr, cache)
 
   local kind = nil
   for _, item in ipairs(queue) do
-    if item.body then
+    if item.body and not is_system_notice(item) then
       -- 送信元が消えた本文（`message_queue.forget`）は匿名で配達されるので向きを決められない
       local direction = item.bufnr and OrchestrationLink.direction(item.bufnr, to_bufnr) or "Report"
       kind = (kind == nil or kind == direction) and direction or "Report"
@@ -221,9 +235,15 @@ end
 ---@param cache table<number, string>? 表示パスの使い回し（`section_for` と共有する）
 ---@return string
 function M.build(queue, cache)
-  local notifications, messages = {}, {}
+  local notifications, messages, notices = {}, {}, {}
   for _, item in ipairs(queue) do
-    table.insert(item.body and messages or notifications, item)
+    if is_system_notice(item) then
+      table.insert(notices, item)
+    elseif item.body then
+      table.insert(messages, item)
+    else
+      table.insert(notifications, item)
+    end
   end
 
   cache = cache or {}
@@ -234,8 +254,58 @@ function M.build(queue, cache)
   if #notifications > 0 then
     table.insert(sections, notification_section(notifications, cache))
   end
+  if #notices > 0 then
+    table.insert(sections, notice_body_section(notices))
+  end
 
   return table.concat(sections, "\n\n")
+end
+
+---依頼（`Request`）の本文の末尾に付ける「どこへ、どう報告するか」
+---
+---報告義務はシステムプロンプトの orchestrator 行（`cli_command_builder.lua`）でも伝えているが、
+---claude はシステムプロンプトを**会話の最初のリクエストで記録し、以降の再開でもそれを使い回す**
+---（`--system-prompt-snapshot`、2.1.295 で実測）。最初のメッセージより後に `orchestrated_by` に
+---加わった送り手 — あとから別のチャットに依頼されたチャット — はその行に永久に載らず、
+---ワーカーは報告先を知らないまま止まっていた。ターンごとの本文は記録の対象外なので、依頼の
+---本文そのものに書けば必ず届く。
+---
+---最初から orchestrator 行に載っている送り手にとっては重複になる（1依頼あたり約70トークン）。
+---それでも常に付けるのは、どの送り手が記録済みの行に載っているかをこちらから知る手段が
+---無いため。宛先番号は「いまの解決結果」で、プロンプトのキャッシュ前方一致には関わらない
+---@param queue Vibing.Application.MessageQueue.Item[]
+---@param to_bufnr number
+---@param cache table<number, string>
+---@return string? 付ける文。宛先にできる送り手が1つも無ければ nil
+function M.reply_instructions(queue, to_bufnr, cache)
+  local paths, seen = {}, {}
+  for _, item in ipairs(queue) do
+    if item.body and item.bufnr and not is_system_notice(item) then
+      local path = resolve_path(item.bufnr, cache)
+      if path and not seen[path] then
+        seen[path] = true
+        table.insert(paths, string.format('"%s"', path))
+      end
+    end
+  end
+  if #paths == 0 then
+    return nil
+  end
+
+  local target = #paths == 1 and ("file_path " .. paths[1])
+    or ("each of these file_paths in its own call: " .. table.concat(paths, ", "))
+  return table.concat({
+    "Report back through vibing.nvim, not only in this chat: when this is done, the moment you",
+    string.format(
+      "need a decision, or when you cannot proceed, call nvim_chat_send_message with %s,",
+      target
+    ),
+    string.format(
+      "from_bufnr %d and queue_if_busy true — the conclusion first, then only what is left open.",
+      to_bufnr
+    ),
+    "An answer written only in your own chat is never read. The vibing-worker skill has the rest.",
+  }, "\n")
 end
 
 ---1通にまとめて、宛先のチャットに新しいターンとして配達する
@@ -243,15 +313,41 @@ end
 ---`section_for` → `build` → 送信の順序をここが所有する。呼び出し側に並べさせていたころ、
 ---即配達経路が `section` を渡さずに送っていたせいで、同じ報告が相手の状態によって別の形に
 ---見えていた。3手のうち1つを渡し忘れても文法上は成立してしまうので、手順ごと1箇所に置く
+---
+---自動 `/compact` の判定もここに置く。`flush` と即配達の両方がここで合流するので、宛先が
+---たまたま応答中だったかどうかで「閾値を超えていても圧縮されない」経路が残らない。
+---圧縮が挟まったときは**配達しない**: `/compact` だけを送り、`compacting = true` を返す。
+---本文の行き先は呼び出し側が決める（`flush` はキューに残し、即配達経路は積み直す）。
+---圧縮ターンの完了が `flush` を呼び直し、cooldown が効いて今度は本文が通る
 ---@param queue Vibing.Application.MessageQueue.Item[]
 ---@param to_bufnr number
 ---@param sender string?
----@return {success: boolean, bufnr: number}
-function M.deliver(queue, to_bufnr, sender)
+---@param opts table? `programmatic_sender.send` にそのまま渡す
+---@return {success: boolean, bufnr: number, compacting: boolean?, kind: string} `compacting` は
+---  本文の代わりに `/compact` ターンを始めたとき true。本文はまだ届いていない。
+---  `kind` は `section_for` が決めた向き（`Request` / `Report` / `Notice`）で、呼び出し元が
+---  購読の向き判定に使い回せるように返す — `direction` は `git rev-parse` を伴う
+function M.deliver(queue, to_bufnr, sender, opts)
   local cache = {}
   local section = M.section_for(queue, to_bufnr, cache)
+  if require("vibing.application.chat.auto_compact").before_delivery(to_bufnr, section) then
+    return { success = true, bufnr = to_bufnr, compacting = true, kind = section.kind }
+  end
   local text = M.build(queue, cache)
-  return require("vibing.presentation.chat.modules.programmatic_sender").send(to_bufnr, text, sender, section)
+  -- 質問への答えには付けない: その本文はモデルに「人間の答え」としてそのまま渡るので、
+  -- 末尾の指示まで答えの一部として読まれる
+  if section.kind == "Request" and not (opts and opts.answers_blocked_question) then
+    local reply = M.reply_instructions(queue, to_bufnr, cache)
+    if reply then
+      text = text .. "\n\n" .. reply
+    end
+  end
+  local result =
+    require("vibing.presentation.chat.modules.programmatic_sender").send(to_bufnr, text, sender, section, opts)
+  -- `kind` は両方の出口に載せる。圧縮側で落とすと、呼び出し元は積み直したあとの `on_sent` で
+  -- 向きを聞き直すことになり、この戻り値が存在する理由が半分だけ消える
+  result.kind = section.kind
+  return result
 end
 
 return M

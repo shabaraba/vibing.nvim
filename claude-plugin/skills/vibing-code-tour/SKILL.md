@@ -64,12 +64,11 @@ the open returned, not `0`.
 
 ### 4. Let the user set the pace
 
-Every stop or two, ask with `nvim_ask_user_question` — options along the lines of "next", "go
-deeper here", "stop".
+Every stop or two, ask the user to choose — options along the lines of "next", "go deeper here",
+"stop" — by ending your reply with a `vibing-question` block, as your system prompt describes.
 
-**This ends your turn.** `nvim_ask_user_question` cancels the in-flight turn to render the choice
-list, so nothing after it runs and the tool never returns an answer to you; the user's reply
-arrives as the next turn (see `.claude/rules/features.md` → AskUserQuestion Support).
+**This ends your turn.** The block must be the last thing you write, so nothing after it runs;
+the user's choice arrives as the next turn's message.
 
 The consequence for a tour: **nothing you are holding in your head survives the question.** Before
 every ask, write the tour state into your chat message as plain text — which stop you are on, how

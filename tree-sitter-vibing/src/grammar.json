@@ -21,6 +21,10 @@
           },
           {
             "type": "SYMBOL",
+            "name": "thinking_block"
+          },
+          {
+            "type": "SYMBOL",
             "name": "markdown_chunk"
           }
         ]
@@ -48,24 +52,8 @@
               "name": "tool_header"
             },
             {
-              "type": "SEQ",
-              "members": [
-                {
-                  "type": "SYMBOL",
-                  "name": "tool_header_open"
-                },
-                {
-                  "type": "REPEAT",
-                  "content": {
-                    "type": "SYMBOL",
-                    "name": "tool_argument_line"
-                  }
-                },
-                {
-                  "type": "SYMBOL",
-                  "name": "tool_argument_end"
-                }
-              ]
+              "type": "SYMBOL",
+              "name": "tool_header_multiline"
             }
           ]
         },
@@ -106,39 +94,6 @@
         }
       }
     },
-    "tool_header_open": {
-      "type": "TOKEN",
-      "content": {
-        "type": "PREC",
-        "value": 3,
-        "content": {
-          "type": "PATTERN",
-          "value": "[^\\x00-\\x7f\\s][^ \\t\\r\\n]* [A-Za-z_][A-Za-z0-9_.:-]*\\([^\\r\\n]*\\r?\\n"
-        }
-      }
-    },
-    "tool_argument_line": {
-      "type": "TOKEN",
-      "content": {
-        "type": "PREC",
-        "value": 0,
-        "content": {
-          "type": "PATTERN",
-          "value": "[^\\r\\n]*\\r?\\n"
-        }
-      }
-    },
-    "tool_argument_end": {
-      "type": "TOKEN",
-      "content": {
-        "type": "PREC",
-        "value": 3,
-        "content": {
-          "type": "PATTERN",
-          "value": "[^\\r\\n]*\\)\\r?\\n"
-        }
-      }
-    },
     "tool_result": {
       "type": "TOKEN",
       "content": {
@@ -158,6 +113,28 @@
         "content": {
           "type": "PATTERN",
           "value": "     [^\\r\\n]*\\r?\\n"
+        }
+      }
+    },
+    "thinking_block": {
+      "type": "PREC_RIGHT",
+      "value": 0,
+      "content": {
+        "type": "REPEAT1",
+        "content": {
+          "type": "SYMBOL",
+          "name": "thinking_line"
+        }
+      }
+    },
+    "thinking_line": {
+      "type": "TOKEN",
+      "content": {
+        "type": "PREC",
+        "value": 5,
+        "content": {
+          "type": "PATTERN",
+          "value": "💭[^\\r\\n]*\\r?\\n"
         }
       }
     },
@@ -207,6 +184,10 @@
     {
       "type": "SYMBOL",
       "name": "fenced_markdown_block"
+    },
+    {
+      "type": "SYMBOL",
+      "name": "tool_header_multiline"
     }
   ],
   "inline": [],

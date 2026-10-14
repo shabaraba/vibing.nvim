@@ -1,5 +1,6 @@
 local cli_command_builder = require("vibing.infrastructure.adapter.modules.cli_command_builder")
 local PluginDirs = require("vibing.infrastructure.plugins.plugin_dirs")
+local Fs = require("vibing.core.utils.fs")
 
 describe("cli_command_builder", function()
   local original_exepath
@@ -33,6 +34,12 @@ describe("cli_command_builder", function()
   end
 
   describe("system prompt", function()
+    it("encodes the requested output schema as a CLI argument", function()
+      local schema = require("vibing.application.chat.search.chat_schema")
+      local cmd = cli_command_builder.build("search", { output_schema = schema }, nil, {}, nil)
+      assert.are.same(schema, vim.json.decode(cmd[find_flag(cmd, "--json-schema") + 1]))
+      assert.is_nil(find_flag(cli_command_builder.build("chat", {}, nil, {}, nil), "--json-schema"))
+    end)
     it("always appends the worktree directory convention instruction", function()
       local cmd = cli_command_builder.build("hello", {}, nil, {}, nil)
       local idx = find_flag(cmd, "--append-system-prompt")
@@ -49,8 +56,20 @@ describe("cli_command_builder", function()
       assert.is_true(prompt_text:find("nvim_set_cursor", 1, true) ~= nil)
     end)
 
+    it("requires Neovim-owned jobs for processes that outlive the turn", function()
+      local cmd = cli_command_builder.build("hello", {}, nil, {}, nil)
+      local prompt_text = cmd[find_flag(cmd, "--append-system-prompt") + 1]
+      assert.is_truthy(prompt_text:find("MUST use the vibing-nvim nvim_job_start", 1, true))
+      assert.is_truthy(prompt_text:find("Do not use shell backgrounding", 1, true))
+      assert.is_truthy(prompt_text:find("nohup", 1, true))
+    end)
+
     it("combines the language instruction and worktree instruction into a single flag", function()
-      local config = { language = "ja" }
+      local config = {
+        chat = {
+          language = "ja",
+        },
+      }
       local cmd = cli_command_builder.build("hello", {}, nil, config, nil)
 
       local count = 0
@@ -118,8 +137,13 @@ describe("cli_command_builder", function()
     it("still names an orchestrator whose chat is closed", function()
       -- The restart case #641 exists for: the path is all there is, and dropping the line would
       -- leave the worker with no way to reach back.
-      local cmd =
-        cli_command_builder.build("hello", { orchestrators = { { path = ".vibing/chat/boss.md" } } }, nil, {}, nil)
+      local cmd = cli_command_builder.build(
+        "hello",
+        { orchestrators = { { path = ".vibing/chat/boss.md" } } },
+        nil,
+        {},
+        nil
+      )
       local prompt_text = cmd[find_flag(cmd, "--append-system-prompt") + 1]
       assert.is_true(prompt_text:find("started by vibing.nvim chat .vibing/chat/boss.md", 1, true) ~= nil)
       assert.is_nil(prompt_text:find("currently buffer", 1, true))
@@ -163,23 +187,21 @@ describe("cli_command_builder", function()
       assert.equals(before[before_idx + 1], after[after_idx + 1])
     end)
 
-    it("instructs the model to pass chat_bufnr on nvim_ask_user_question, without any per-turn id", function()
+    it("tells the model to ask by ending its reply with a vibing-question block", function()
       local cmd = cli_command_builder.build("hello", {}, nil, {}, nil)
-      local idx = find_flag(cmd, "--append-system-prompt")
-      assert.is_not_nil(idx)
-      local prompt_text = cmd[idx + 1]
-      assert.is_true(prompt_text:find("nvim_ask_user_question", 1, true) ~= nil)
-      assert.is_true(prompt_text:find("chat_bufnr argument", 1, true) ~= nil)
+      local prompt_text = cmd[find_flag(cmd, "--append-system-prompt") + 1]
+      assert.is_truthy(prompt_text:find("vibing-question", 1, true))
+      assert.is_nil(prompt_text:find("nvim_ask_user_question", 1, true))
     end)
 
-    it("never embeds a handle_id, so the same conversation's system prompt is byte-identical across turns", function()
+    it("never embeds a turn_id, so the same conversation's system prompt is byte-identical across turns", function()
       local opts = { chat_bufnr = 12 }
       local cmd1 = cli_command_builder.build("hello", opts, nil, {}, nil)
       local cmd2 = cli_command_builder.build("hello again", opts, "session-1", {}, nil)
       local idx1 = find_flag(cmd1, "--append-system-prompt")
       local idx2 = find_flag(cmd2, "--append-system-prompt")
       assert.equals(cmd1[idx1 + 1], cmd2[idx2 + 1])
-      assert.is_nil(cmd1[idx1 + 1]:find("handle_id", 1, true))
+      assert.is_nil(cmd1[idx1 + 1]:find("turn_id", 1, true))
     end)
 
     it("names both MCP registration styles, so the model does not cite a tool that is not there", function()
@@ -208,12 +230,187 @@ describe("cli_command_builder", function()
     end)
   end)
 
+  describe("profile", function()
+    local function prompt_for_config(opts, config)
+      local cmd = cli_command_builder.build("hello", opts, nil, config, nil)
+      return cmd[find_flag(cmd, "--append-system-prompt") + 1]
+    end
+
+    local function prompt_for(opts)
+      return prompt_for_config(opts, {})
+    end
+
+    -- A profile narrows tools and setting sources, never the instruction block: it is under 1k
+    -- tokens, and the two editor-watching lines once dropped for orchestrated chats saved 320.
+    it("sends the same instruction block on every built-in profile", function()
+      local none = prompt_for({})
+      assert.equals(none, prompt_for({ profile = "focused" }))
+      assert.equals(none, prompt_for({ profile = "reviewer" }))
+      assert.is_truthy(none:find("nvim_highlight_range", 1, true))
+      assert.is_truthy(none:find("nvim_annotate", 1, true))
+    end)
+
+    it("passes each narrowed built-in's tools, keeping ToolSearch and the configured sources", function()
+      local function value_of(cmd, flag)
+        local idx = find_flag(cmd, flag)
+        return idx and cmd[idx + 1] or nil
+      end
+      local focused = cli_command_builder.build("hello", { profile = "focused" }, nil, {}, nil)
+      assert.equals("Bash,Read,Edit,Write,Glob,Grep,ToolSearch", value_of(focused, "--tools"))
+      assert.equals("user,project,local", value_of(focused, "--setting-sources"))
+
+      local reviewer = cli_command_builder.build("hello", { profile = "reviewer" }, nil, {}, nil)
+      assert.equals("Read,Glob,Grep,Bash,ToolSearch", value_of(reviewer, "--tools"))
+      assert.equals("user,project,local", value_of(reviewer, "--setting-sources"))
+    end)
+
+    it("keeps everything that changes what an orchestrated chat produces", function()
+      local worker = prompt_for({
+        profile = "focused",
+        chat_bufnr = 7,
+        orchestrators = { { path = ".vibing/chat/orchestrator.md", bufnr = 3 } },
+      })
+      assert.is_truthy(worker:find(".vibing/worktrees/", 1, true))
+      assert.is_truthy(worker:find("MUST use the vibing-nvim nvim_job_start", 1, true))
+      assert.is_truthy(worker:find("vibing-question", 1, true))
+      -- The report protocol is the one line a worker is guaranteed to be told (#706)
+      assert.is_truthy(worker:find(".vibing/chat/orchestrator.md", 1, true))
+      assert.is_truthy(worker:find("nvim_chat_send_message", 1, true))
+    end)
+
+    it("is the ordinary block for profile 'default' and for no profile at all", function()
+      local none = prompt_for({})
+      assert.equals(none, prompt_for({ profile = "default" }))
+      assert.is_truthy(none:find("nvim_highlight_range", 1, true))
+      assert.is_truthy(none:find("nvim_annotate", 1, true))
+    end)
+
+    describe("configured in ai.profiles", function()
+      local Profiles = require("vibing.core.constants.profiles")
+      local implementer = {
+        ai = {
+          profiles = {
+            {
+              name = "implementer",
+              tools = { "Bash", "Read", "Edit" },
+              setting_sources = { "user", "local" },
+            },
+            { name = "bare", setting_sources = {} },
+          },
+        },
+      }
+
+      before_each(Profiles._reset_warnings)
+
+      local function value_of(cmd, flag)
+        local idx = find_flag(cmd, flag)
+        return idx and cmd[idx + 1] or nil
+      end
+
+      it("narrows the built-in tools, keeping ToolSearch so MCP tools stay deferred", function()
+        local cmd = cli_command_builder.build("hello", { profile = "implementer" }, nil, implementer, nil)
+        assert.equals("Bash,Read,Edit,ToolSearch", value_of(cmd, "--tools"))
+      end)
+
+      it("replaces the setting sources, an empty list included", function()
+        local cmd = cli_command_builder.build("hello", { profile = "implementer" }, nil, implementer, nil)
+        assert.equals("user,local", value_of(cmd, "--setting-sources"))
+
+        local bare = cli_command_builder.build("hello", { profile = "bare" }, nil, implementer, nil)
+        assert.equals("", value_of(bare, "--setting-sources"))
+      end)
+
+      it("leaves an ordinary chat on the CLI's full tool set and the configured sources", function()
+        local cmd = cli_command_builder.build("hello", {}, nil, implementer, nil)
+        assert.is_nil(find_flag(cmd, "--tools"))
+        assert.equals("user,project,local", value_of(cmd, "--setting-sources"))
+      end)
+
+      it("never narrows the tools of a subagent-bound chat", function()
+        local cmd = cli_command_builder.build(
+          "hello",
+          { profile = "implementer", _subagent_id = "agent-1" },
+          nil,
+          implementer,
+          nil
+        )
+        assert.is_nil(find_flag(cmd, "--tools"))
+      end)
+
+      it("keeps the prompt as the argument after the end-of-options marker", function()
+        -- `--tools` is variadic: without `--` in front of the prompt it would swallow it.
+        local cmd = cli_command_builder.build("hello", { profile = "implementer" }, nil, implementer, nil)
+        assert.equals("--", cmd[#cmd - 1])
+        assert.equals("hello", cmd[#cmd])
+      end)
+    end)
+
+    describe("context_files", function()
+      local Profiles = require("vibing.core.constants.profiles")
+      local root, original_getcwd
+
+      before_each(function()
+        Profiles._reset_warnings()
+        root = vim.fn.tempname()
+        Fs.ensure_dir(root .. "/.vibing")
+        vim.fn.writefile({ "IMPLEMENTER-INVARIANTS-MARKER" }, root .. "/.vibing/implementer.md")
+        original_getcwd = vim.fn.getcwd
+        vim.fn.getcwd = function()
+          return root
+        end
+      end)
+
+      after_each(function()
+        vim.fn.getcwd = original_getcwd
+        vim.fn.delete(root, "rf")
+      end)
+
+      local function config(files)
+        return { ai = { profiles = { { name = "implementer", context_files = files } } } }
+      end
+
+      it("appends each file to the system prompt", function()
+        local prompt = prompt_for_config({ profile = "implementer" }, config({ ".vibing/implementer.md" }))
+        assert.is_truthy(prompt:find("IMPLEMENTER-INVARIANTS-MARKER", 1, true))
+      end)
+
+      it("says so when a file is missing, instead of dropping it silently", function()
+        local notify = require("vibing.core.utils.notify")
+        local original_warn = notify.warn
+        local warned
+        notify.warn = function(message)
+          warned = message
+        end
+        prompt_for_config({ profile = "implementer" }, config({ ".vibing/nope.md" }))
+        notify.warn = original_warn
+
+        assert.is_truthy(warned and warned:find(".vibing/nope.md", 1, true))
+      end)
+    end)
+
+    it("falls back to the full block for an unknown profile rather than trimming it", function()
+      -- The warning is once per session, so an earlier spec in this process may have spent it.
+      require("vibing.core.constants.profiles")._reset_warnings()
+      local notify = require("vibing.core.utils.notify")
+      local original_warn = notify.warn
+      local warned = false
+      notify.warn = function()
+        warned = true
+      end
+      local unknown = prompt_for({ profile = "lean" })
+      notify.warn = original_warn
+
+      assert.is_true(warned)
+      assert.equals(prompt_for({}), unknown)
+    end)
+  end)
+
   describe("project-local system prompt (.vibing/system-prompt.md)", function()
     local project_root
     local original_getcwd
 
     local function write_project_prompt(lines)
-      vim.fn.mkdir(project_root .. "/.vibing", "p")
+      Fs.ensure_dir(project_root .. "/.vibing")
       vim.fn.writefile(lines, project_root .. "/.vibing/system-prompt.md")
     end
 
@@ -269,7 +466,10 @@ describe("cli_command_builder", function()
       local cmd1 = cli_command_builder.build("hello", opts, nil, {}, nil)
       local cmd2 = cli_command_builder.build("hello again", opts, "session-1", {}, nil)
 
-      assert.equals(cmd1[find_flag(cmd1, "--append-system-prompt") + 1], cmd2[find_flag(cmd2, "--append-system-prompt") + 1])
+      assert.equals(
+        cmd1[find_flag(cmd1, "--append-system-prompt") + 1],
+        cmd2[find_flag(cmd2, "--append-system-prompt") + 1]
+      )
     end)
 
     it("picks up an edit on the next request", function()
@@ -299,7 +499,7 @@ describe("cli_command_builder", function()
       local worktree_root
 
       local function write_worktree_prompt(lines)
-        vim.fn.mkdir(worktree_root .. "/.vibing", "p")
+        Fs.ensure_dir(worktree_root .. "/.vibing")
         vim.fn.writefile(lines, worktree_root .. "/.vibing/system-prompt.md")
       end
 
@@ -396,19 +596,34 @@ describe("cli_command_builder", function()
     end)
 
     it("does not pass --permission-mode even when opts.permission_mode is set", function()
-      local cmd = cli_command_builder.build("hello", { lightweight = true, permission_mode = "acceptEdits" }, nil, {}, nil)
+      local cmd = cli_command_builder.build(
+        "hello",
+        { lightweight = true, permission_mode = "acceptEdits" },
+        nil,
+        {},
+        nil
+      )
       assert.is_nil(find_flag(cmd, "--permission-mode"))
     end)
 
-    it("uses config.agent.utility_model, defaulting to sonnet when unset", function()
+    it("uses config.ai.helpers.model, defaulting to haiku when unset", function()
       local cmd = cli_command_builder.build("hello", { lightweight = true }, nil, {}, nil)
       local idx = find_flag(cmd, "--model")
       assert.is_not_nil(idx)
-      assert.equals("sonnet", cmd[idx + 1])
+      assert.equals("haiku", cmd[idx + 1])
     end)
 
-    it("prefers config.agent.utility_model over opts.model and config.agent.default_model", function()
-      local config = { agent = { default_model = "sonnet", utility_model = "opus" } }
+    it("prefers config.ai.helpers.model over opts.model and config.ai.chat.model", function()
+      local config = {
+        ai = {
+          chat = {
+            model = "sonnet",
+          },
+          helpers = {
+            model = "opus",
+          },
+        },
+      }
       local cmd = cli_command_builder.build("hello", { lightweight = true, model = "fable" }, nil, config, nil)
       local idx = find_flag(cmd, "--model")
       assert.is_not_nil(idx)
@@ -422,7 +637,7 @@ describe("cli_command_builder", function()
       assert.equals("opus", cmd[idx + 1])
     end)
 
-    it("omits the worktree and ask_user_question tool instructions from the system prompt", function()
+    it("omits the worktree and question instructions from the system prompt", function()
       local cmd = cli_command_builder.build(
         "hello",
         { lightweight = true, chat_bufnr = 12 },
@@ -435,14 +650,18 @@ describe("cli_command_builder", function()
       assert.is_not_nil(idx)
       local prompt_text = cmd[idx + 1]
       assert.is_nil(prompt_text:find(".vibing/worktrees/", 1, true))
-      assert.is_nil(prompt_text:find("nvim_ask_user_question", 1, true))
+      assert.is_nil(prompt_text:find("vibing-question", 1, true))
       assert.is_nil(prompt_text:find("Your rpc_port for this turn is", 1, true))
       assert.is_nil(prompt_text:find("Current vibing.nvim chat buffer number:", 1, true))
       assert.is_nil(prompt_text:find("nvim_highlight_range", 1, true))
     end)
 
     it("still applies the language instruction to the system prompt", function()
-      local config = { language = "ja" }
+      local config = {
+        chat = {
+          language = "ja",
+        },
+      }
       local cmd = cli_command_builder.build("hello", { lightweight = true }, nil, config, nil)
       local idx = find_flag(cmd, "--append-system-prompt")
       assert.is_not_nil(idx)
@@ -488,15 +707,25 @@ describe("cli_command_builder", function()
   end)
 
   describe("--setting-sources", function()
-    it("defaults to user,project,local when config.agent.setting_sources is not set", function()
+    it("defaults to user,project,local when config.ai.agents.claude.settings.sources is not set", function()
       local cmd = cli_command_builder.build("hello", {}, nil, {}, nil)
       local idx = find_flag(cmd, "--setting-sources")
       assert.is_not_nil(idx)
       assert.equals("user,project,local", cmd[idx + 1])
     end)
 
-    it("uses config.agent.setting_sources when provided", function()
-      local config = { agent = { setting_sources = { "project", "local" } } }
+    it("uses config.ai.agents.claude.settings.sources when provided", function()
+      local config = {
+        ai = {
+          agents = {
+            claude = {
+              settings = {
+                sources = { "project", "local" },
+              },
+            },
+          },
+        },
+      }
       local cmd = cli_command_builder.build("hello", {}, nil, config, nil)
       local idx = find_flag(cmd, "--setting-sources")
       assert.is_not_nil(idx)
@@ -504,35 +733,85 @@ describe("cli_command_builder", function()
     end)
 
     it("falls back to the default when setting_sources is not a table", function()
-      local config = { agent = { setting_sources = "project" } }
+      local config = {
+        ai = {
+          agents = {
+            claude = {
+              settings = {
+                sources = "project",
+              },
+            },
+          },
+        },
+      }
       local cmd = cli_command_builder.build("hello", {}, nil, config, nil)
       local idx = find_flag(cmd, "--setting-sources")
       assert.equals("user,project,local", cmd[idx + 1])
     end)
 
     it("falls back to the default when setting_sources is an empty table", function()
-      local config = { agent = { setting_sources = {} } }
+      local config = {
+        ai = {
+          agents = {
+            claude = {
+              settings = {
+                sources = {},
+              },
+            },
+          },
+        },
+      }
       local cmd = cli_command_builder.build("hello", {}, nil, config, nil)
       local idx = find_flag(cmd, "--setting-sources")
       assert.equals("user,project,local", cmd[idx + 1])
     end)
 
     it("falls back to the default when setting_sources contains a non-string element", function()
-      local config = { agent = { setting_sources = { "project", 42 } } }
+      local config = {
+        ai = {
+          agents = {
+            claude = {
+              settings = {
+                sources = { "project", 42 },
+              },
+            },
+          },
+        },
+      }
       local cmd = cli_command_builder.build("hello", {}, nil, config, nil)
       local idx = find_flag(cmd, "--setting-sources")
       assert.equals("user,project,local", cmd[idx + 1])
     end)
 
     it("falls back to the default when setting_sources contains an empty string element", function()
-      local config = { agent = { setting_sources = { "project", "" } } }
+      local config = {
+        ai = {
+          agents = {
+            claude = {
+              settings = {
+                sources = { "project", "" },
+              },
+            },
+          },
+        },
+      }
       local cmd = cli_command_builder.build("hello", {}, nil, config, nil)
       local idx = find_flag(cmd, "--setting-sources")
       assert.equals("user,project,local", cmd[idx + 1])
     end)
 
     it("falls back to the default when setting_sources contains an unsupported source name", function()
-      local config = { agent = { setting_sources = { "project", "workspace" } } }
+      local config = {
+        ai = {
+          agents = {
+            claude = {
+              settings = {
+                sources = { "project", "workspace" },
+              },
+            },
+          },
+        },
+      }
       local cmd = cli_command_builder.build("hello", {}, nil, config, nil)
       local idx = find_flag(cmd, "--setting-sources")
       assert.equals("user,project,local", cmd[idx + 1])
@@ -545,20 +824,39 @@ describe("cli_command_builder", function()
       assert.is_nil(find_flag(cmd, "--forward-subagent-text"))
     end)
 
-    it("is emitted when agent.subagent.enabled is true", function()
-      local config = { agent = { subagent = { enabled = true } } }
+    it("is emitted when ui.subagents.show_output is true", function()
+      local config = {
+        ui = {
+          subagents = {
+            show_output = true,
+          },
+        },
+      }
       local cmd = cli_command_builder.build("hello", {}, nil, config, nil)
       assert.is_not_nil(find_flag(cmd, "--forward-subagent-text"))
     end)
 
-    it("is omitted when agent.subagent.enabled is false", function()
-      local config = { agent = { subagent = { enabled = false, show_prefix = true } } }
+    it("is omitted when ui.subagents.show_output is false", function()
+      local config = {
+        ui = {
+          subagents = {
+            show_output = false,
+            show_prefix = true,
+          },
+        },
+      }
       local cmd = cli_command_builder.build("hello", {}, nil, config, nil)
       assert.is_nil(find_flag(cmd, "--forward-subagent-text"))
     end)
 
     it("is omitted for lightweight calls, which have no tools to delegate with", function()
-      local config = { agent = { subagent = { enabled = true } } }
+      local config = {
+        ui = {
+          subagents = {
+            show_output = true,
+          },
+        },
+      }
       local cmd = cli_command_builder.build("hello", { lightweight = true }, nil, config, nil)
       assert.is_nil(find_flag(cmd, "--forward-subagent-text"))
     end)
@@ -602,7 +900,11 @@ describe("cli_command_builder", function()
         project_root .. "/plugins/extra1/.claude-plugin/plugin.json"
       )
 
-      local config = { agent = { plugins = { extra = { project_root .. "/plugins/extra1" } } } }
+      local config = {
+        integrations = {
+          plugins = { extra = { project_root .. "/plugins/extra1" } },
+        },
+      }
       local dirs = plugin_dirs(cli_command_builder.build("hello", {}, nil, config, nil))
 
       assert.equals(2, #dirs)
@@ -611,12 +913,16 @@ describe("cli_command_builder", function()
     end)
 
     it("passes none when the whole feature is turned off", function()
-      local config = { agent = { plugins = { self = false, project_dir = false } } }
+      local config = {
+        integrations = {
+          plugins = { self = false, project_dir = false },
+        },
+      }
       assert.same({}, plugin_dirs(cli_command_builder.build("hello", {}, nil, config, nil)))
     end)
   end)
 
-  describe("agent.mcp.user_servers", function()
+  describe("ai.agents.claude.mcp.inherit_cli_servers", function()
     local function mcp_config(cmd)
       local idx = find_flag(cmd, "--mcp-config")
       return idx and cmd[idx + 1] or nil
@@ -632,7 +938,17 @@ describe("cli_command_builder", function()
     -- claude 2.1.231: 42 nvim_* tools gone), so the flag is never emitted without the
     -- re-registration that follows it.
     it("re-registers the bundled server when user servers are excluded", function()
-      local config = { agent = { mcp = { user_servers = false } } }
+      local config = {
+        ai = {
+          agents = {
+            claude = {
+              mcp = {
+                inherit_cli_servers = false,
+              },
+            },
+          },
+        },
+      }
       local cmd = cli_command_builder.build("hello", {}, nil, config, nil)
 
       assert.is_not_nil(find_flag(cmd, "--strict-mcp-config"))
@@ -644,7 +960,17 @@ describe("cli_command_builder", function()
 
     -- The plugins still carry their skills and subagents in; only their MCP half is rebuilt.
     it("keeps the --plugin-dir flags alongside it", function()
-      local config = { agent = { mcp = { user_servers = false } } }
+      local config = {
+        ai = {
+          agents = {
+            claude = {
+              mcp = {
+                inherit_cli_servers = false,
+              },
+            },
+          },
+        },
+      }
       local cmd = cli_command_builder.build("hello", {}, nil, config, nil)
       assert.is_not_nil(find_flag(cmd, "--plugin-dir"))
     end)
@@ -660,7 +986,18 @@ describe("cli_command_builder", function()
       }, project_root .. "/plugins/extra1/.claude-plugin/plugin.json")
 
       local config = {
-        agent = { mcp = { user_servers = false }, plugins = { extra = { project_root .. "/plugins/extra1" } } },
+        ai = {
+          agents = {
+            claude = {
+              mcp = {
+                inherit_cli_servers = false,
+              },
+            },
+          },
+        },
+        integrations = {
+          plugins = { extra = { project_root .. "/plugins/extra1" } },
+        },
       }
       local decoded = vim.json.decode(mcp_config(cli_command_builder.build("hello", {}, nil, config, nil)))
 
@@ -672,7 +1009,20 @@ describe("cli_command_builder", function()
     -- With nothing left to register the turn must still run, with no MCP servers at all. An empty
     -- Lua table encodes as `[]`, which the CLI rejects as an mcpServers map.
     it("emits an empty object when no plugin declares a server", function()
-      local config = { agent = { mcp = { user_servers = false }, plugins = { self = false, project_dir = false } } }
+      local config = {
+        ai = {
+          agents = {
+            claude = {
+              mcp = {
+                inherit_cli_servers = false,
+              },
+            },
+          },
+        },
+        integrations = {
+          plugins = { self = false, project_dir = false },
+        },
+      }
       local cmd = cli_command_builder.build("hello", {}, nil, config, nil)
       assert.equals('{"mcpServers":{}}', mcp_config(cmd))
     end)
@@ -680,7 +1030,17 @@ describe("cli_command_builder", function()
     -- Lightweight already blocks every server with its own empty --mcp-config; the option must not
     -- turn that into a re-registration of the bundled one.
     it("does not reach a lightweight call", function()
-      local config = { agent = { mcp = { user_servers = false } } }
+      local config = {
+        ai = {
+          agents = {
+            claude = {
+              mcp = {
+                inherit_cli_servers = false,
+              },
+            },
+          },
+        },
+      }
       local cmd = cli_command_builder.build("hello", { lightweight = true }, nil, config, nil)
       assert.equals('{"mcpServers":{}}', mcp_config(cmd))
     end)

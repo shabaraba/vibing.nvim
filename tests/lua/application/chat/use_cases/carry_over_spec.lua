@@ -16,10 +16,19 @@ describe("carry_over", function()
     original_get_config = vibing.get_config
     vibing.get_config = function()
       return {
-        adapter = "claude",
-        agent = { default_mode = "code", default_model = "sonnet" },
+        ai = {
+          chat = {
+            agent = "claude",
+            model = "sonnet",
+          },
+        },
         permissions = { mode = "acceptEdits", allow = { "Read" }, deny = {} },
-        chat = { save_location_type = "custom", save_dir = tmp_root },
+        chat = {
+          storage = {
+            location = "custom",
+            path = tmp_root,
+          },
+        },
       }
     end
     created_bufs = {}

@@ -1,5 +1,7 @@
 ---@class Vibing.StreamHandler
 ---Manages stdout/stderr buffering and line-by-line processing for streaming responses.
+local TurnOutcome = require("vibing.infrastructure.adapter.modules.turn_outcome")
+
 local M = {}
 
 ---stdoutコールバックを作成
@@ -50,6 +52,20 @@ function M.create_stdout_handler(eventProcessor, context, is_cancelled_fn)
   end
 end
 
+--- Show the user what the CLI wrote to stderr, once per collection.
+---
+--- Both transports report stderr in one notification rather than per chunk, and both truncate at the
+--- same point; the difference is only what "a collection" is. Oneshot has no boundary but the
+--- process, so it reports at exit; a resident process outlives every turn, so `duplex_routing`
+--- reports at turn teardown. The truncation is one decision and lives here.
+--- @param text string the whole collected stderr; nothing is notified when it is empty
+function M.notify_stderr(text)
+  if not text or text == "" then
+    return
+  end
+  vim.notify(string.format("[vibing] Process stderr:\n%s", text:sub(1, 500)), vim.log.levels.WARN)
+end
+
 ---stderrコールバックを作成
 ---エラー出力をバッファに追加
 ---@param errorOutput string[] エラー出力バッファ
@@ -71,14 +87,18 @@ function M.create_stderr_handler(errorOutput)
 end
 
 ---プロセス終了時のコールバックを作成
----@param handleId string ハンドルID
----@param handles table<string, table> ハンドルマップ
+---
+---oneshot では「プロセス終了 = ターン完了」なので、ここが唯一の正常完了経路になる。プロセスを
+---落とすのは `ids.process_id` 単位、レスポンスに載せる素性は両方 —— 後者は呼び先が別々のことに
+---使うため（`_turn_id` は staleness 判定、`_process_id` はセッションの読み戻し）。
+---@param ids Vibing.RequestIds
+---@param processes table<string, table> プロセスマップ（process_id キー）
 ---@param output string[] 出力バッファ
 ---@param errorOutput string[] エラー出力バッファ
 ---@param onDone fun(response: Vibing.Response) 完了コールバック
 ---@param get_result_errors? fun(): string[]|nil CLIが自ら「このターンは失敗」と告げた本文
 ---@return function 終了コールバック関数
-function M.create_exit_handler(handleId, handles, output, errorOutput, onDone, get_result_errors)
+function M.create_exit_handler(ids, processes, output, errorOutput, onDone, get_result_errors)
   local debug_mode = vim.g.vibing_debug_stream
 
   return function(obj)
@@ -90,8 +110,8 @@ function M.create_exit_handler(handleId, handles, output, errorOutput, onDone, g
     end
 
     vim.schedule(function()
-      -- クリーンアップ：ハンドルをマップから削除（セッションIDは保持）
-      handles[handleId] = nil
+      -- クリーンアップ：プロセスをマップから削除（セッションIDは保持）
+      processes[ids.process_id] = nil
 
       -- onDone は常に呼び出される（エラー時も正常終了時も）
       -- これによりキューがブロックされるのを防ぐ
@@ -102,29 +122,25 @@ function M.create_exit_handler(handleId, handles, output, errorOutput, onDone, g
       -- （例: codex の "failed to load models cache" 警告）、それで生成済みの
       -- stdout を握り潰すとタイトル生成などが不必要に失敗する。失敗判定は
       -- 終了コードで行い、stderr は可視化のため通知だけ残す。
-      if #errorOutput > 0 then
-        vim.notify(string.format("[vibing] Process stderr:\n%s", stderr_text:sub(1, 500)), vim.log.levels.WARN)
-      end
+      M.notify_stderr(stderr_text)
 
       if obj.code ~= 0 then
         local error_msg = stderr_text
         if error_msg == "" then
           error_msg = "Process exited with code " .. tostring(obj.code)
         end
-        onDone({
-          content = table.concat(output, ""),
-          error = error_msg,
-          _handle_id = handleId,
-        })
+        onDone(TurnOutcome.ended(ids, table.concat(output, ""), error_msg))
       else
         -- 終了コードが0でも、CLIがresultイベントでエラーを宣言していればそれは失敗。
         -- stderrと違い警告混じりではないので握り潰さない
         local result_errors = get_result_errors and get_result_errors() or nil
-        onDone({
-          content = table.concat(output, ""),
-          error = result_errors and #result_errors > 0 and table.concat(result_errors, "\n") or nil,
-          _handle_id = handleId,
-        })
+        onDone(
+          TurnOutcome.ended(
+            ids,
+            table.concat(output, ""),
+            result_errors and #result_errors > 0 and table.concat(result_errors, "\n") or nil
+          )
+        )
       end
     end)
   end

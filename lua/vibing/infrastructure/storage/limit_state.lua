@@ -5,9 +5,10 @@
 --- still needs in order to schedule rather than send. One record per project, in
 --- `<project root>/.vibing/limit-state.json`.
 ---
---- Only a record carrying a reset timestamp is stored: the StopFailure hook and the error-text
---- fallback confirm a rejection without saying when it lifts, and a record that cannot answer
---- "still active?" would strand every later request.
+--- Only a record carrying a reset timestamp is stored, and a record that cannot answer "still
+--- active?" would strand every later request. The StopFailure hook never supplies one; the error
+--- text does when the CLI printed it, which is what lets a backend with no stream event (codex)
+--- park its sibling chats instead of letting them send into a limit still in force.
 ---
 --- The record is also scoped to the backend that hit the limit. A limit belongs to one provider's
 --- plan, while the store is per project, so a claude limit says nothing about a codex chat in the
@@ -28,7 +29,7 @@ local M = {}
 --- @field limit_type string|nil e.g. "five_hour"
 --- @field observed_at number Unix seconds when the limit was observed
 --- @field agent string|nil Backend that hit the limit. Absent in stores written before this
----   field existed, which are read as claude's — the only backend that reports a rate limit.
+---   field existed, which are read as claude's.
 
 --- Memoized `git rev-parse` results, keyed by the directory asked about — the same reason
 --- pending_resume.lua caches: one send/receive cycle resolves the path several times.

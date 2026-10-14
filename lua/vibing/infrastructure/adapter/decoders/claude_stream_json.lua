@@ -1,0 +1,251 @@
+--- `claude -p --output-format stream-json --include-partial-messages`, as canonical events.
+---
+--- The reference decoder: what it emits is what every other backend is rendered to look like.
+--- Shapes captured from claude 2.1.x; `tests/fixtures/streams/claude/` holds real captures.
+--- @module vibing.infrastructure.adapter.decoders.claude_stream_json
+
+local M = {}
+
+--- A JSON field as a string, or nil when it was absent, null or empty.
+---
+--- `vim.json.decode` turns JSON `null` into `vim.NIL`, which is **truthy in Lua**, so every field
+--- the CLI may omit is read through here rather than tested directly.
+--- @param value any
+--- @return string|nil
+local function str_or_nil(value)
+  return type(value) == "string" and value ~= "" and value or nil
+end
+
+--- The id of the tool call a message belongs to, or nil for the parent's own messages.
+---
+--- Top-level messages carry `"parent_tool_use_id": null`. Testing the field directly would
+--- classify every ordinary assistant message as subagent output and stop tool results from
+--- rendering at all.
+--- @param msg table
+--- @return string|nil
+local function parent_tool_use_id(msg)
+  return str_or_nil(msg.parent_tool_use_id)
+end
+
+--- @param content any a tool_result block's content
+--- @return string
+local function result_text(content)
+  if type(content) == "string" then
+    return content
+  end
+  if type(content) == "table" then
+    local parts = {}
+    for _, c in ipairs(content) do
+      if type(c) == "table" and c.text then
+        table.insert(parts, c.text)
+      end
+    end
+    return table.concat(parts, "")
+  end
+  return ""
+end
+
+--- @param value any
+--- @return number|nil
+local function count_of(value)
+  return type(value) == "table" and #value or nil
+end
+
+--- A message's content blocks, or none when the CLI put prose there instead of a block list.
+---
+--- `/compact` is where this stops being hypothetical. After `compact_boundary` the CLI replays two
+--- `user` events -- the summary it has just written, and `<local-command-stdout>Compacted </…>` --
+--- whose `content` is a plain **string**. `ipairs` on a string raises, and on the resident transport
+--- that raise escapes the stdout callback: the `result` line sharing the batch is dropped, so the
+--- turn never ends and the chat sits at `responding` forever. Captured from claude 2.1.x.
+--- @param message table
+--- @return table[]
+local function content_blocks(message)
+  local content = message.content
+  return type(content) == "table" and content or {}
+end
+
+--- Only `text` blocks: thinking blocks are not what the reader asked to see.
+--- @param message table
+--- @return string
+local function text_blocks(message)
+  local parts = {}
+  for _, block in ipairs(content_blocks(message)) do
+    if block.type == "text" and block.text then
+      table.insert(parts, block.text)
+    end
+  end
+  return table.concat(parts, "")
+end
+
+--- @param events Vibing.CanonicalEvent[]
+--- @param message table
+local function tool_blocks(events, message)
+  for _, block in ipairs(content_blocks(message)) do
+    if block.type == "tool_use" and block.id then
+      table.insert(events, { kind = "tool_start", id = block.id, name = block.name, input = block.input or {} })
+    elseif block.type == "tool_result" and block.tool_use_id then
+      table.insert(events, { kind = "tool_end", id = block.tool_use_id, result = result_text(block.content) })
+    end
+  end
+end
+
+local by_type = {}
+
+--- `init` is the only place the CLI states its own version and how many tools and MCP servers it
+--- loaded, and `compact_boundary` is the only signal that the conversation was compacted -- both
+--- die with the process, so they are carried out as `cli_info`.
+by_type.system = function(msg, events)
+  if msg.subtype == "init" then
+    table.insert(events, {
+      kind = "cli_info",
+      version = msg.claude_code_version,
+      model = msg.model,
+      tools = count_of(msg.tools),
+      mcp_servers = count_of(msg.mcp_servers),
+    })
+  elseif msg.subtype == "compact_boundary" then
+    table.insert(events, { kind = "cli_info", compacted = true })
+  elseif msg.subtype == "task_started" then
+    -- `is_backgrounded` が真のものだけが「ターンが終わったあとに戻ってくる」subagent。
+    -- 前景のものは tool_result としてそのターン内で閉じるので、追跡する意味がない
+    if msg.is_backgrounded then
+      table.insert(events, { kind = "background_task_started", task_id = msg.task_id, description = msg.description })
+    end
+  elseif msg.subtype == "task_notification" then
+    -- バックグラウンド subagent の完了。CLI はこれを受けて**自分で次のターンを開始する**ので、
+    -- これは「何かを起こす合図」ではなく「起きたことの記録」
+    table.insert(events, {
+      kind = "background_task_done",
+      task_id = msg.task_id,
+      status = msg.status,
+      usage = msg.usage,
+    })
+  end
+  -- The first system event proves the CLI is alive.
+  table.insert(events, { kind = "first_response" })
+end
+
+by_type.stream_event = function(msg, events)
+  local event = msg.event
+  if event and event.type == "content_block_delta" and event.delta then
+    local delta = event.delta
+    if delta.type == "text_delta" and delta.text then
+      table.insert(events, { kind = "text", delta = delta.text })
+    end
+  end
+end
+
+--- Verified against the CLI: with --forward-subagent-text, a subagent's contribution arrives as
+--- complete `assistant`/`user` events carrying a top-level `parent_tool_use_id` -- never as
+--- `stream_event` deltas. So the parent's streaming text is untouched, and the subagent's output is
+--- held (by the renderer) until its tool_result lands.
+by_type.assistant = function(msg, events)
+  local message = msg.message
+  if not message then
+    return
+  end
+  local subagent_of = parent_tool_use_id(msg)
+
+  -- Recorded before the subagent bail-out below, because a subagent's requests cost real tokens
+  -- even though its context is its own.
+  if message.usage then
+    table.insert(events, { kind = "usage", record = message.usage, subagent = subagent_of ~= nil })
+  end
+
+  if subagent_of then
+    local text = text_blocks(message)
+    if text ~= "" then
+      table.insert(events, { kind = "subagent_text", parent_id = subagent_of, text = text })
+    end
+    return
+  end
+
+  tool_blocks(events, message)
+end
+
+--- A subagent's `user` events belong to its transcript, not the parent's: the prompt echo the
+--- parent already showed in the tool header, and its own nested tool results.
+by_type.user = function(msg, events)
+  if parent_tool_use_id(msg) or not msg.message then
+    return
+  end
+  tool_blocks(events, msg.message)
+end
+
+--- The end of a turn, whether or not it succeeded.
+---
+--- Under the oneshot transport this is redundant — the process exits, and that exit is what
+--- completes the turn. A resident process exits at the end of the *session*, so `result` is the
+--- only thing that says a turn is over, and it is also the boundary the per-turn half of the event
+--- context (`tokenUsage` / `cliInfo` / `resultErrors` / `output`) is cut on.
+---
+--- `user_message_uuid` is which prompt this `result` answers, echoed back from the input envelope.
+--- A turn the CLI started for itself omits the field entirely, so `nil` means "not ours, or this
+--- CLI does not echo" and only `prompt_ack` can tell those two apart.
+by_type.result = function(msg, events)
+  local prompt_uuid = str_or_nil(msg.user_message_uuid)
+  if not msg.is_error and msg.subtype == "success" and type(msg.structured_output) == "table" then
+    table.insert(events, { kind = "structured_output", value = msg.structured_output, prompt_uuid = prompt_uuid })
+  end
+  if msg.subtype == "error" or msg.is_error then
+    -- Carries the same `prompt_uuid` as the `turn_end` below, both cut from this one `result`, so
+    -- `event_renderer.handlers.error` can tell a foreign turn's failure apart from this one's the
+    -- same way `ends_this_turn` does.
+    table.insert(
+      events,
+      { kind = "error", message = msg.result or "Unknown error", fatal = true, prompt_uuid = prompt_uuid }
+    )
+  end
+  table.insert(events, { kind = "turn_end", subtype = msg.subtype, prompt_uuid = prompt_uuid })
+end
+
+--- The CLI acknowledging a prompt it was handed on stdin, by the id that prompt carried.
+---
+--- Emitted only when the input envelope supplied a `uuid`, which makes it the one available proof
+--- that this CLI echoes the correlation at all. It arrives on the *queued* state, before the turn
+--- it opens — so a turn that has seen its own ack may reject a foreign `result`, and one that has
+--- not must not.
+by_type.command_lifecycle = function(msg, events)
+  local uuid = str_or_nil(msg.command_uuid)
+  if uuid then
+    table.insert(events, { kind = "prompt_ack", prompt_uuid = uuid, state = str_or_nil(msg.state) })
+  end
+end
+
+--- Error/unknown-command responses that bypass streaming.
+by_type.text = function(msg, events)
+  if msg.text then
+    table.insert(events, { kind = "text", delta = msg.text })
+  end
+end
+
+--- Emitted mid-stream both as a remaining-quota warning and when a request is actually turned
+--- away; the renderer merges them.
+by_type.rate_limit_event = function(msg, events)
+  local info = require("vibing.core.utils.rate_limit").from_event(msg)
+  if info then
+    table.insert(events, { kind = "rate_limit", info = info })
+  end
+end
+
+--- @param msg table one decoded stream-json line
+--- @param state table
+--- @return Vibing.CanonicalEvent[]
+function M.decode(msg, state)
+  local events = {}
+
+  -- Every line carries the session id; report it when it first appears or changes.
+  if type(msg.session_id) == "string" and msg.session_id ~= state.session_id then
+    state.session_id = msg.session_id
+    table.insert(events, { kind = "session", session_id = msg.session_id })
+  end
+
+  local handler = by_type[msg.type]
+  if handler then
+    handler(msg, events, state)
+  end
+  return events
+end
+
+return M

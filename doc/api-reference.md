@@ -211,7 +211,8 @@ end
 - ✅ Context
 - ✅ Session management（`--resume <session_id>`）
 
-**Implementation:** `lua/vibing/infrastructure/adapter/claude_cli.lua`
+**Implementation:** `lua/vibing/infrastructure/adapter/backends/claude.lua`（記述子）と共通の
+`lua/vibing/infrastructure/adapter/cli_adapter.lua`
 
 #### Codex CLI Adapter
 
@@ -235,7 +236,8 @@ OpenAI の `codex` CLI（`codex exec --json`）を使用するアダプター。
 - ✅ Context
 - ✅ Session management
 
-**Implementation:** `lua/vibing/infrastructure/adapter/codex_cli.lua`
+**Implementation:** `lua/vibing/infrastructure/adapter/backends/codex.lua`（記述子）と共通の
+`lua/vibing/infrastructure/adapter/cli_adapter.lua`
 
 ## Chat API
 

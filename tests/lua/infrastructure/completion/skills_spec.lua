@@ -1,4 +1,5 @@
 local Skills = require("vibing.infrastructure.completion.providers.skills")
+local Fs = require("vibing.core.utils.fs")
 
 describe("skills provider frontmatter", function()
   local root
@@ -9,7 +10,7 @@ describe("skills provider frontmatter", function()
   ---@return string
   local function write_skill(skill_name, lines)
     local dir = root .. "/" .. skill_name
-    vim.fn.mkdir(dir, "p")
+    Fs.ensure_dir(dir)
     local path = dir .. "/SKILL.md"
     vim.fn.writefile(lines, path)
     return path

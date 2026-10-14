@@ -89,4 +89,17 @@ function M.paths(entries)
   return paths
 end
 
+---frontmatterの1フィールドを、それが名指しているパスの並びにする
+---
+---`as_list` と `M.paths` は常にこの順で2段とも要る。前者はリスト/スカラー/未設定という
+---フィールド値の3つの形を吸収し、後者は `orchestrated` だけが取りうるマップ要素を開く（#717）。
+---片方だけ通すと、手書きの1行 `orchestrated_by: path.md` かtask付きの要素のどちらかで落ちる
+---@param data table frontmatter
+---@param key string
+---@return string[]
+function M.field_paths(data, key)
+  local Frontmatter = require("vibing.infrastructure.storage.frontmatter")
+  return M.paths(Frontmatter.as_list(data[key]))
+end
+
 return M
