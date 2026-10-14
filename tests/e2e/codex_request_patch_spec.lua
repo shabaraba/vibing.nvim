@@ -57,7 +57,7 @@ describe("E2E: Codex patch during an overlapping turn", function()
       local root = ...
       local chat = require("vibing.presentation.chat.view")._current_buffer
       local text = table.concat(vim.api.nvim_buf_get_lines(chat.buf, 0, -1, false), "\n")
-      local path = text:match("Patch: ([^\n]+)")
+      local path = text:match("Diff: ([^\n]+)")
       require("vibing.core.utils.git_snapshot").clear("held-competing-turn")
       if not path then return { error = text } end
       local patch = table.concat(vim.fn.readfile(path), "\n")

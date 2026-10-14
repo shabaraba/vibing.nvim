@@ -245,6 +245,7 @@ describe("git_snapshot", function()
       -- ユーザーでも会話ログ自身がdiffに載らないこと
       local turn = run_turn(function()
         write(repo .. "/.vibing/chat/2026-01-01.md", "## User\nhello\n")
+        write(repo .. "/.vibing/diffs/turn.diff", "internal diff\n")
         write(repo .. "/tracked.txt", "after\n")
       end)
 
@@ -266,6 +267,7 @@ describe("git_snapshot", function()
       git_ok({ "add", ".gitignore" })
       git_ok({ "commit", "-q", "-m", "ignore .vibing" })
       write(repo .. "/.vibing/chat/2026-01-01.md", "## User\nhello\n")
+      write(repo .. "/.vibing/diffs/turn.diff", "internal diff\n")
       GitSnapshot._reset()
 
       local turn = next_turn()
@@ -292,6 +294,7 @@ describe("git_snapshot", function()
       assert.is_true(GitSnapshot.has_baseline(turn))
 
       write(repo .. "/.vibing/chat/2026-01-01.md", "## User\nhello\n")
+      write(repo .. "/.vibing/diffs/turn.diff", "internal diff\n")
       write(repo .. "/tracked.txt", "after\n")
       local files, _, patch, ok = GitSnapshot.generate(turn, nil)
 
@@ -329,7 +332,7 @@ describe("git_snapshot", function()
       -- The git diff already excludes `.vibing`, but FileChange events are merged in afterwards.
       -- Without the same boundary here, a path under another managed worktree reappears in the
       -- left pane even though it was correctly absent from the patch.
-      local internal = repo .. "/.vibing/worktrees/other/lua/plugin.lua"
+      local internal = repo .. "/.vibing/diffs/turn.diff"
       local turn = run_turn(function()
         write(internal, "return {}\n")
       end, { [internal] = true })

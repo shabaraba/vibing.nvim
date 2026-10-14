@@ -234,7 +234,7 @@ function M.setup(buf, callbacks, keymaps)
     end, { buffer = buf, desc = "Open URL or media file under cursor" })
 
     -- NOTE: gp (preview all) was removed - use gd on individual files in Modified Files section
-    -- Diff display now uses patch files in .vibing/patches/<session_id>/
+    -- Diff display now uses patch files in .vibing/diffs/
 
     vim.keymap.set("n", "q", function()
       if callbacks.close then

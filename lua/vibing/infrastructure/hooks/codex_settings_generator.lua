@@ -29,7 +29,7 @@ end
 --- error, no entry in `hooks/list`. vibing.nvim shipped `hooks.pre_tool_use` (snake_case) with a
 --- flat handler list, which parsed as TOML and was then dropped on the floor, so **no PreToolUse
 --- hook fired on codex at all**: no permission gate, and no git-snapshot baseline, which took the
---- per-request diff and every `.vibing/patches/*.patch` with it.
+--- per-request diff and every `.vibing/diffs/*.diff` with it.
 ---
 --- Verified against codex 0.153.4 by asking the app-server for the hooks it actually resolved
 --- (`handbook/architecture/cli-integration.md` has the runnable form). `hooks/list` is the cheap

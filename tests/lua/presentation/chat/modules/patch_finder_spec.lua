@@ -20,6 +20,30 @@ describe("patch_finder", function()
   end)
 
   describe("parse_patch_line", function()
+    it("reads Diff: /tmp/My Project/.vibing/diffs/x.diff", function()
+      assert.equals("/tmp/My Project/.vibing/diffs/x.diff", PatchFinder.parse_patch_line("Diff: /tmp/My Project/.vibing/diffs/x.diff"))
+    end)
+
+    it("reads Patch: /tmp/My Project/.vibing/patches/x.patch", function()
+      assert.equals("/tmp/My Project/.vibing/patches/x.patch", PatchFinder.parse_patch_line("Patch: /tmp/My Project/.vibing/patches/x.patch"))
+    end)
+
+    it("reads Diff: /tmp/My Project/x.patch", function()
+      assert.equals("/tmp/My Project/x.patch", PatchFinder.parse_patch_line("Diff: /tmp/My Project/x.patch"))
+    end)
+
+    it("reads Patch: /tmp/My Project/x.diff", function()
+      assert.equals("/tmp/My Project/x.diff", PatchFinder.parse_patch_line("Patch: /tmp/My Project/x.diff"))
+    end)
+
+    it("reads <!-- patch: /tmp/My Project/x.patch -->", function()
+      assert.equals("/tmp/My Project/x.patch", PatchFinder.parse_patch_line("<!-- patch: /tmp/My Project/x.patch -->"))
+    end)
+
+    it("reads <!-- patch: /tmp/My Project/x.diff -->", function()
+      assert.equals("/tmp/My Project/x.diff", PatchFinder.parse_patch_line("<!-- patch: /tmp/My Project/x.diff -->"))
+    end)
+
     it("reads the visible form", function()
       assert.equals("/tmp/a/.vibing/patches/x.patch", PatchFinder.parse_patch_line("Patch: /tmp/a/.vibing/patches/x.patch"))
     end)
@@ -45,6 +69,8 @@ describe("patch_finder", function()
     it("declines the one-line summary and a bare path", function()
       assert.is_nil(PatchFinder.parse_patch_line("3 files changed: a.lua, b.lua"))
       assert.is_nil(PatchFinder.parse_patch_line("lua/vibing/init.lua"))
+      assert.is_nil(PatchFinder.parse_patch_line("Diff: applied two files"))
+      assert.is_nil(PatchFinder.parse_patch_line("Diff: /tmp/x.diff extra"))
       -- 文中の "Patch:" を拾わない
       assert.is_nil(PatchFinder.parse_patch_line("Patch: applied two files and then some"))
     end)

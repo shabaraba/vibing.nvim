@@ -848,19 +848,19 @@ function M._emit_diff_output(callbacks, base_dir, files, abs_files, patch_conten
   end
 
   if patch_content then
-    local patch_dir = base_dir .. "/.vibing/patches"
+    local patch_dir = base_dir .. "/.vibing/diffs"
     Fs.ensure_dir(patch_dir)
     local suffix = tostring(turn_id or ""):gsub("%W", ""):sub(-6)
-    local patch_path = string.format("%s/%s_%s.patch", patch_dir, os.date("%Y%m%d_%H%M%S"), suffix)
+    local patch_path = string.format("%s/%s_%s.diff", patch_dir, os.date("%Y%m%d_%H%M%S"), suffix)
     local f = io.open(patch_path, "w")
     if f then
       f:write(patch_content)
       f:close()
       -- HTMLコメントではなく素の行で出す。patchはこれから前面に出る扱いなので、
       -- 読み手に見えている必要がある。旧形式の `<!-- patch: ... -->` も読めるままにしてある
-      callbacks.append_chunk("\nPatch: " .. patch_path .. "\n")
+      callbacks.append_chunk("\nDiff: " .. patch_path .. "\n")
     else
-      vim.notify("[vibing] Failed to write patch file: " .. patch_path, vim.log.levels.WARN)
+      vim.notify("[vibing] Failed to write diff file: " .. patch_path, vim.log.levels.WARN)
     end
   end
 

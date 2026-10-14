@@ -1,5 +1,5 @@
 ---@class Vibing.Presentation.FileUnderCursor
----`gf`（カーソル下のファイルを開く）が「どのファイルのことか」を決める三段。
+---`gf`（カーソル下のファイルを開く）が「どのファイルのことか」を決める順序。
 ---
 ---順序は入れ替えられない。`<cfile>` は `isfname` に従うだけなので、
 ---`[ラベル](path.lua)` のラベルの上ではラベルの文字列を拾ってしまう。リンク記法の
@@ -24,7 +24,21 @@ function M.resolve(buf)
     return linked, lnum
   end
 
-  -- 3. それ以外は `<cfile>`
+  -- 3. 差分行のパスは空白を含みうるので、`<cfile>` で切らず行全体から読む。
+  local row = vim.api.nvim_win_get_cursor(0)[1]
+  local line = vim.trim(vim.api.nvim_buf_get_lines(buf, row - 1, row, false)[1] or "")
+  if line:match("^Diff:%s") or line:match("^Patch:%s") then
+    local path = require("vibing.presentation.chat.modules.patch_finder").parse_patch_line(line)
+    if path then
+      local expanded = vim.fn.expand(path)
+      if vim.fn.filereadable(expanded) == 1 then
+        return expanded
+      end
+    end
+    return nil
+  end
+
+  -- 4. それ以外は `<cfile>`
   local cfile = vim.fn.expand("<cfile>")
   if cfile == "" then
     return nil

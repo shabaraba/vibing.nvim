@@ -491,7 +491,10 @@ describe("send_message", function()
       for _, line in ipairs(vim.split(out, "\n", { plain = true })) do
         patch_path = patch_path or PatchFinder.parse_patch_line(line)
       end
-      assert.is_truthy(patch_path, "no patch annotation written: " .. out)
+      assert.is_truthy(out:match("\nDiff: "), out)
+      assert.is_truthy(patch_path:find(root .. "/.vibing/diffs/", 1, true), patch_path)
+      assert.is_truthy(patch_path:match("%.diff$"), patch_path)
+      assert.equals(0, vim.fn.isdirectory(root .. "/.vibing/patches"))
       local pf = assert(io.open(patch_path, "r"))
       local content = pf:read("*a")
       pf:close()
