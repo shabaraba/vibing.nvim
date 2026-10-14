@@ -1,6 +1,6 @@
 # Stream fixtures
 
-One directory per backend id (`claude/`, `codex/`, `copilot/`, `grok/`), each file a real capture
+One directory per backend id (`claude/`, `codex/`, `copilot/`, `grok/`, `pi/`), each file a real capture
 of that CLI's stdout for one turn, one JSON line per line, exactly as the CLI wrote it. The
 conformance suite (`tests/lua/infrastructure/adapter/conformance/stream_fixtures_spec.lua`) replays
 every file here through the backend's decoder and the shared renderer and asserts the contracts of
@@ -18,6 +18,13 @@ derived from these; when a CLI changes its stream, the capture here is what show
 | `codex/read_note_turn.jsonl`       | codex   | 0.154.0 | `command_execution` start/end pair, `agent_message` text   |
 | `copilot/read_note_turn.jsonl`     | copilot | 1.0.80  | `tool.execution_start`/`_complete` paired by `toolCallId`  |
 | `grok/text_turn.jsonl`             | grok    | 0.2.101 | thought/text deltas and the `end` event carrying sessionId |
+| `pi/tool_turn.jsonl`               | pi      | 0.87.1  | two model turns around one bash call; `agent_settled` end  |
+
+Pi's capture is the one **trimmed** file here, and only by whole records: `--mode json` echoes the
+entire system prompt back as a `message_start`/`message_end` pair, which is kilobytes of Pi's own
+prose per turn and says nothing about stream shape. The records that were kept are byte-identical
+to what Pi wrote. It is also the capture that shows why `agent_settled` and not `turn_end` is the
+decoder's terminal event: one request, two `turn_end`s.
 
 Grok's capture has **no tool event and that is the point**: the turn did call a tool, and grok's
 headless stream still carried only `thought`, `text` and `end`. That is what

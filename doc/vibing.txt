@@ -761,7 +761,7 @@ with YAML frontmatter: >
       - .vibing/chat/orchestrator.md
     continued_from: .vibing/chat/long.md     # optional: handed off from
     working_dir: .vibing/worktrees/fix-auth   # optional, relative to git root
-    agent: claude
+    agent: claude                             # claude|codex|copilot|grok|pi
     mode: code                                # code | plan | explore
     model: sonnet
     effort: default                           # CLI/model default; or low..max
@@ -1002,7 +1002,8 @@ way. The table of what is worth setting is in `handbook/configuration.md` →
 ==============================================================================
 9. BACKENDS                                                  *vibing-backends*
 
-Set globally with `adapter`, or per chat with the `agent` frontmatter field.
+Set globally with `ai.chat.agent`, or per chat with the
+`agent` frontmatter field.
 
 claude                                                        *vibing-claude*
     Default. Runs `claude -p --output-format stream-json --verbose
@@ -1014,9 +1015,19 @@ codex                                                          *vibing-codex*
     Runs the Codex CLI (`codex exec --json`).
     Requires: the `codex` CLI.
 
-Both implement the same adapter interface (`execute`, `stream`, `cancel`,
-`supports`), so chat behaviour is the same either way; only the flags and the
-stream format differ.
+pi                                                              *vibing-pi*
+    Runs Pi in resident RPC mode (`pi --mode rpc`) by default. Multiple
+    turns reuse a process; cancellation aborts the turn and keeps the session.
+    Requires: Pi 1.2.0 and a configured provider/model (including local MLX).
+    Set ai.chat.agent = "pi", ai.chat.model to the model id, and
+    ai.agents.pi.extensions.provider to your models.json provider name.
+    ai.agents.pi.path optionally selects the executable.
+    See handbook/pi-backend.md for local model setup and manual verification.
+    Pi's own mcp.json is supported. Claude plugin MCP servers are not
+    injected.
+
+All implement the same adapter interface (`execute`, `stream`, `cancel`,
+`supports`); flags and stream formats differ.
 
 ==============================================================================
 10. API                                                           *vibing-api*

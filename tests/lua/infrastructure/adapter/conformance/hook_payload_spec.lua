@@ -47,6 +47,12 @@ local PAYLOADS = {
     path = { toolName = "read_file", toolInput = { target_file = "lua/a.lua" }, canonical = "Read" },
     shell = { toolName = "run_terminal_command", toolInput = { command = "ls" } },
   },
+  -- Synthetic Pi extension payload. The bridge forwards toolName/input from the upstream
+  -- tool_call schema: https://pi.dev/docs/latest/extensions (tool_call event).
+  pi = {
+    path = { toolName = "edit", input = { path = "lua/a.lua", oldText = "a", newText = "b" } },
+    shell = { toolName = "bash", input = { command = "ls" } },
+  },
 }
 
 --- @param payload table one of the `path` entries above; its own `canonical` names the expectation

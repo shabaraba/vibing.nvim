@@ -20,9 +20,15 @@ and runs them over every registered descriptor, so a new backend is checked by e
 | Argv extras the flag table cannot say | `adapter/modules/<id>_command_builder.lua`             | code, only what is left |
 | Captured fixtures                     | `tests/fixtures/streams/<id>/`, the hook payload table | captures                |
 
-A backend whose CLI registers hooks the way one of the existing four does needs **no new
-transport**. One that needs a fifth way writes one module under `infrastructure/hooks/` and names
+A backend whose CLI registers hooks the way one of the existing five does needs **no new
+transport**. One that needs a sixth way writes one module under `infrastructure/hooks/` and names
 it in `hooks/transports.lua`.
+
+The fifth is worth reading before you write a sixth: `pi_settings_generator` exists because Pi
+offers **no external-process hook at all**, only in-process handlers. It resolves a shipped
+TypeScript extension instead of writing a file, and that extension spawns the same
+`bin/hooks/pre-tool-use.sh` and reads its exit code. The shape to copy is that the transport moved,
+and the _decision_ did not.
 
 ## Before writing anything: measure the CLI
 
@@ -47,6 +53,13 @@ version, and keep the captures:
 5. **How to take the tools away** for a lightweight call, and whether an empty list means "none"
    or is ignored (copilot ignores an empty list; grok fails open on a name it cannot map).
 6. **How the CLI resumes a session** and which flags a resumed invocation refuses.
+7. **What the CLI does with an open stdin** when the prompt is in the argv. Pi 0.87.1 never issues
+   a request at all and writes nothing, silently, until killed — 600s of a capture run spent
+   before anyone thought to close it. That is what `descriptor.stdin = ""` is for, and it is not a
+   precaution on every backend.
+8. **Whether the CLI gates tool calls at all.** Four of the five do, and vibing.nvim's rules are an
+   extra layer; Pi does not, so its rules are the only layer and a failed hook installation cannot
+   be a warning. Ask this before deciding what a missing gate should do.
 
 ## The descriptor
 
