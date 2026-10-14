@@ -117,11 +117,11 @@ install_plenary() {
   git clone --depth 1 --quiet https://github.com/nvim-lua/plenary.nvim "${PLENARY_DIR}"
 }
 
-# The root and claude-plugin/mcp-server are two separate npm trees, and CI runs `npm ci` in
+# The root and agent-plugin/mcp-server are two separate npm trees, and CI runs `npm ci` in
 # each. Installing only the root leaves test:node's MCP server gate
 # (tests/mcp-server-test-gate.test.mjs) failing on a missing vitest — an error that belongs to
 # this setup, not to the repository.
-NODE_DEP_DIRS=("${PROJECT_DIR}" "${PROJECT_DIR}/claude-plugin/mcp-server")
+NODE_DEP_DIRS=("${PROJECT_DIR}" "${PROJECT_DIR}/agent-plugin/mcp-server")
 
 install_node_deps() {
   local dir="$1"

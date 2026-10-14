@@ -1,19 +1,19 @@
 # MCP Integration
 
 An async RPC server (`infrastructure/rpc/server.lua`) is queried by the Node MCP server
-(`claude-plugin/mcp-server/`) acting as a TCP client. Nothing is installed: `build.sh` builds the
+(`agent-plugin/mcp-server/`) acting as a TCP client. Nothing is installed: `build.sh` builds the
 server and `--plugin-dir` hands it to the CLI per session.
 
 The tool catalogue, the orchestration tools, annotations and background LSP analysis are in
 `handbook/mcp-tools.md`; the shipped tool descriptions are the authority for arguments. Setup is
-`claude-plugin/mcp-server/README.md` and `handbook/lazy-setup-example.lua`.
+`agent-plugin/mcp-server/README.md` and `handbook/lazy-setup-example.lua`.
 
 ## Invariants
 
 - **The prefix depends on how the server was registered**: `mcp__vibing-nvim__<tool>` for a plain
   user-level entry, `mcp__plugin_vibing-nvim_vibing-nvim__<tool>` when it arrives inside the
   plugin — which is the normal case on claude. That second form is built from the **plugin** name
-  and the MCP server name, both from `claude-plugin/.claude-plugin/plugin.json`. The marketplace
+  and the MCP server name, both from `agent-plugin/.claude-plugin/plugin.json`. The marketplace
   name never appears in it, and `tests/lua/core/constants/tools_spec.lua` reads `plugin.json` for
   exactly that reason. On codex the server is registered per run with
   `-c mcp_servers.vibing-nvim.*` instead, so the plain form is what that backend sees.
@@ -30,7 +30,7 @@ The tool catalogue, the orchestration tools, annotations and background LSP anal
   classified), since the server can also be registered at user scope where an unrelated session
   would otherwise get `nvim_execute` against whichever Neovim is live. The one home for both this
   and the prefix rule is
-  `claude-plugin/skills/nvim-context/SKILL.md` → "Calling the tools"; other skills state it in a
+  `agent-plugin/skills/nvim-context/SKILL.md` → "Calling the tools"; other skills state it in a
   line and point there, because a skill is loaded on its own.
 - **Never assume `winnr: 0`.** `nvim_get_window_info({ winnr: 0 })` returns the _active_ window,
   which is often not the one the user is looking at. Call `nvim_list_windows()` first, match on
