@@ -28,8 +28,10 @@ M.DECLINE = "decline"
 
 --- The option values a request with no `availableDecisions` gets. `accept` is not guessed: both
 --- legacy methods and `item/fileChange/requestApproval` take the same `{ decision = ... }` reply,
---- and these two are the pair every observed request accepted.
-local IMPLIED = { "accept", M.DECLINE }
+--- these two were measured on 0.160.1.
+-- Codex 0.162 no longer sends availableDecisions. Both modern response enums still
+-- support cancel; keep aborting the turn available without granting remembered policy.
+local IMPLIED = { "accept", M.DECLINE, "cancel" }
 
 --- Human wording per known decision. An unknown one still becomes an option — codex adding a
 --- decision must not make it unofferable — it just gets no sentence of its own.

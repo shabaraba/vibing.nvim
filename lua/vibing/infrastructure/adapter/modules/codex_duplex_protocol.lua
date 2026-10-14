@@ -94,7 +94,11 @@ local function start_turn(record, prompt, params)
     local queued = rpc.queued
     rpc.queued = {}
     for _, msg in ipairs(queued) do
-      notification(record, msg)
+      if msg.id ~= nil then
+        M.process_line(record, vim.json.encode(msg))
+      else
+        notification(record, msg)
+      end
     end
     -- A cancel that arrived while this turn/start was still in flight could not name a turn id
     -- yet, so `M.interrupt` deferred it instead of refusing outright (which would have fallen
@@ -250,6 +254,13 @@ function M.process_line(record, line)
     -- ask and the wait is covered by a measurement; otherwise it declines here, which is the
     -- behaviour every unmeasured backend keeps.
     if NativeApproval.handles(msg.method) then
+      local p, rpc = type(msg.params) == "table" and msg.params or {}, record._rpc
+      -- Requests can precede turn/start's reply just like item notifications. Wait
+      -- for the correlated turn id before deciding which chat owns the approval.
+      if rpc.starting_turn and p.turnId and (not p.threadId or p.threadId == rpc.thread_id) then
+        table.insert(rpc.queued, msg)
+        return
+      end
       if NativeApproval.handle(record, msg) then
         return
       end

@@ -124,6 +124,12 @@ end
 function M.handle(record, msg)
   local rpc = record._rpc or {}
   local params = type(msg.params) == "table" and msg.params or {}
+  -- Server requests need the same ownership checks as notifications. A late request
+  -- from the previous turn or a child thread must not ask (or auto-approve) in this chat.
+  if (params.threadId and params.threadId ~= rpc.thread_id)
+    or (params.turnId and params.turnId ~= rpc.turn_id) then
+    return false
+  end
   local options = Decisions.options(params.availableDecisions)
   local changes = params.itemId and (rpc.file_changes or {})[params.itemId] or nil
 

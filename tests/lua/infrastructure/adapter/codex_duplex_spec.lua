@@ -435,6 +435,42 @@ describe("Codex duplex app-server", function()
       assert.equals("accept", last(call).result.decision)
     end)
 
+    it("declines foreign thread and stale turn requests without drawing a prompt", function()
+      local drawn, on_approval_required = asking()
+      send({ on_approval_required = on_approval_required })
+      local call = jobs.only_call()
+      ready(call)
+      for index, ids in ipairs({
+        { threadId = "child-thread", turnId = "turn-1" },
+        { threadId = "thread-1", turnId = "previous-turn" },
+      }) do
+        emit(call, { id = index, method = "item/commandExecution/requestApproval", params = ids })
+        local response = last(call).result or {}
+        assert.same({ index, "decline", 0, 0 }, {
+          last(call).id, response.decision, #drawn, Native.count(),
+        })
+      end
+    end)
+
+    it("queues an early approval until turn/start identifies its owner", function()
+      local drawn, on_approval_required = asking()
+      send({ on_approval_required = on_approval_required })
+      local call = jobs.only_call()
+      reply(call, {})
+      trusted_hook(call)
+      reply(call, { thread = { id = "thread-1" } })
+      local start_id, before = last(call).id, #call.stdin
+      emit(call, { id = 88, method = "item/commandExecution/requestApproval",
+        params = { threadId = "thread-1", turnId = "turn-1" } })
+      assert.same({ before, 0 }, { #call.stdin, #drawn })
+      emit(call, { id = start_id, result = { turn = { id = "turn-1" } } })
+      assert.same({ before, 1, true }, {
+        #call.stdin, #drawn, (drawn[1] and Native.get(drawn[1].request_id)) ~= nil,
+      })
+      Native.resolve(drawn[1].request_id, "cancel")
+      assert.same({ id = 88, result = { decision = "cancel" } }, last(call))
+    end)
+
     it("names the request by process as well as by Codex's id, which restarts at 0 per process", function()
       local drawn, on_approval_required = asking()
       local result = send({ on_approval_required = on_approval_required })
@@ -463,9 +499,9 @@ describe("Codex duplex app-server", function()
       assert.equals("/tmp/note.txt", drawn[1].input.file_path)
       assert.is_true(vim.tbl_contains(drawn[1].input.details, "update /tmp/note.txt"))
       assert.is_true(vim.tbl_contains(drawn[1].input.details, "+goodbye"))
-      -- Its params list no decisions at all, so the implied pair has to be offered.
+      -- Its params list no decisions at all, so the fallback decisions have to be offered.
       assert.same(
-        { "accept", "decline" },
+        { "accept", "decline", "cancel" },
         vim.tbl_map(function(option)
           return option.value
         end, drawn[1].options)
