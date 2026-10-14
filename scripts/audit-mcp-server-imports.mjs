@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 /**
- * Fails when claude-plugin/mcp-server's source imports a package its own package.json does not
+ * Fails when agent-plugin/mcp-server's source imports a package its own package.json does not
  * declare (#792).
  *
  * `zod` was exactly this: four files imported it as a value, nothing in
- * claude-plugin/mcp-server/package.json named it, and every path that ran the suite happened to
+ * agent-plugin/mcp-server/package.json named it, and every path that ran the suite happened to
  * install the repository root first, which resolves it from there by Node's own directory walk.
- * `claude-plugin/` is distributed on its own, so a tree with no such upstream `node_modules` is
+ * `agent-plugin/` is distributed on its own, so a tree with no such upstream `node_modules` is
  * the case this script stands in for.
  *
  * This reads source text with a regular expression rather than the TypeScript compiler's module
@@ -23,7 +23,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { builtinModules } from 'node:module';
 import { extname, join, relative } from 'node:path';
 
-const serverDir = process.argv[2] ?? join(process.cwd(), 'claude-plugin', 'mcp-server');
+const serverDir = process.argv[2] ?? join(process.cwd(), 'agent-plugin', 'mcp-server');
 
 // Comments are stripped before any pattern below runs. The body between "import"/"export" and
 // "from" excludes `;` and quotes but not `\n`, so a multi-line named import

@@ -4,7 +4,7 @@ local Tools = require("vibing.core.constants.tools")
 ---@return table
 local function plugin_manifest()
   local root = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":h:h:h:h:h")
-  local path = root .. "/claude-plugin/.claude-plugin/plugin.json"
+  local path = root .. "/agent-plugin/.claude-plugin/plugin.json"
   assert.equals(1, vim.fn.filereadable(path), "plugin.json not found at " .. path)
   return vim.json.decode(table.concat(vim.fn.readfile(path), "\n"))
 end

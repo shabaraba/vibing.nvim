@@ -78,7 +78,7 @@ Pi normalizes server names to underscores in tool names. Such calls are still su
 vibing.nvim permission extension; there is no special automatic grant for this spelling.
 
 For the bundled server, configure an explicit server command pointing at the checkout's
-`claude-plugin/mcp-server/bin/run.sh`. The spawned process inherits `VIBING_NVIM_RPC_PORT` from
+`agent-plugin/mcp-server/bin/run.sh`. The spawned process inherits `VIBING_NVIM_RPC_PORT` from
 vibing.nvim; avoid hard-coding a port. `pi mcp list` checks connection and tool discovery.
 This backend does not send prompts claiming `nvim_*` tools exist when no server was configured.
 Plan, lightweight, and degraded runs disable MCP with `--no-mcp`.

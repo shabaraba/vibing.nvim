@@ -99,7 +99,7 @@ From the repository root (one level above this plugin root, where `build.sh` liv
 **Option 2: Manual build**
 
 ```bash
-cd claude-plugin/mcp-server
+cd agent-plugin/mcp-server
 npm install
 npm run build
 ```
@@ -121,7 +121,7 @@ Add to `~/.claude.json`:
   "mcpServers": {
     "vibing-nvim": {
       "command": "node",
-      "args": ["/path/to/vibing.nvim/claude-plugin/mcp-server/dist/index.js"],
+      "args": ["/path/to/vibing.nvim/agent-plugin/mcp-server/dist/index.js"],
       "env": {
         "VIBING_NVIM_RPC_PORT": "9876",
         "VIBING_RPC_TIMEOUT": "30000"

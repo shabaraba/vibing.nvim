@@ -5,12 +5,12 @@ set -e
 # Builds the chat parser and MCP server on plugin installation
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# Everything shipped to Claude Code lives under claude-plugin/, which is what
+# Everything shipped to Claude Code lives under agent-plugin/, which is what
 # .claude-plugin/marketplace.json points `source` at. The repository root is the
 # *marketplace* root; the plugin root is one level down.
-PLUGIN_SRC_DIR="${SCRIPT_DIR}/claude-plugin"
+PLUGIN_SRC_DIR="${SCRIPT_DIR}/agent-plugin"
 MCP_DIR="${PLUGIN_SRC_DIR}/mcp-server"
-# Not under claude-plugin/: that tree is what Claude Code loads as a plugin, and this is loaded by
+# Not under agent-plugin/: that tree is what Claude Code loads as a plugin, and this is loaded by
 # a different CLI entirely (`pi --extension`). It carries the permission gate for the Pi backend,
 # which has none of its own, and the two web tools Pi does not ship — see pi-extension/src/index.ts.
 PI_EXTENSION_DIR="${SCRIPT_DIR}/pi-extension"
@@ -192,13 +192,13 @@ if [ ! -d "$MCP_DIR" ]; then
 fi
 
 # Record the exact node binary resolved above so the Claude Code plugin's MCP
-# server launcher (claude-plugin/mcp-server/bin/run.sh) can invoke it directly by absolute
+# server launcher (agent-plugin/mcp-server/bin/run.sh) can invoke it directly by absolute
 # path instead of relying on `node` being on PATH. Claude Code spawns
 # plugin-declared MCP server commands with a minimal PATH that doesn't
 # include version-manager shims (mise, nvm, volta, asdf, ...), so a bare
 # `command: "node"` fails with "Executable not found in $PATH" on any machine
 # where node is only installed through one of those. Written after the
-# directory check above so a missing claude-plugin/mcp-server/ checkout fails with that
+# directory check above so a missing agent-plugin/mcp-server/ checkout fails with that
 # clear error instead of a raw redirect failure here. `command -v` is
 # guaranteed to succeed here (the checks above already proved $NODE_EXECUTABLE
 # is either an executable absolute path or resolvable on PATH), so no extra
@@ -207,12 +207,12 @@ echo "$(command -v "$NODE_EXECUTABLE")" > "${MCP_DIR}/bin/.node-path"
 
 # npm's audit and funding requests are pure registry round-trips that say nothing about whether
 # the install succeeded, and against a warm cache they are most of what `npm install` spends here.
-# claude-plugin/mcp-server/bin/run.mjs turns them off for the same reason, where it matters far
+# agent-plugin/mcp-server/bin/run.mjs turns them off for the same reason, where it matters far
 # more: that path runs under Claude Code's 30s MCP startup deadline.
 readonly NPM_QUIET_FLAGS=(--no-audit --no-fund --silent)
 
 # Install root dependencies. Nothing at the root is bundled any more -- the only build left is
-# the MCP server's, below, and claude-plugin/mcp-server/package.json declares its own runtime
+# the MCP server's, below, and agent-plugin/mcp-server/package.json declares its own runtime
 # dependencies (#792) rather than relying on this install to hoist them.
 echo "[vibing.nvim] Installing root dependencies..."
 cd "$SCRIPT_DIR"
@@ -265,7 +265,7 @@ if [ -f "dist/index.js" ]; then
     echo "[vibing.nvim] ✓ MCP server built successfully"
 
     # vibing.nvim is NOT installed into Claude Code's global state. Its plugin
-    # (claude-plugin/) is handed to the CLI per session with `--plugin-dir`,
+    # (agent-plugin/) is handed to the CLI per session with `--plugin-dir`,
     # assembled in lua/vibing/infrastructure/plugins/plugin_dirs.lua. The MCP
     # tool names are identical either way — the prefix comes from plugin.json's
     # `name`, not from how the plugin was loaded (measured on claude 2.1.231).
@@ -322,7 +322,7 @@ if [ -f "dist/index.js" ]; then
     # and a hand-edited config must never be clobbered.
     #
     # No port is baked into the registration: the MCP server takes `rpc_port` as an explicit
-    # argument on every tool call (claude-plugin/mcp-server/src/rpc.ts throws without it) and reads no port
+    # argument on every tool call (agent-plugin/mcp-server/src/rpc.ts throws without it) and reads no port
     # from its environment, so persisting one via `--env` would only enshrine a value nothing
     # reads and mislead anyone running Neovim on a non-default port.
     register_mcp_server() {

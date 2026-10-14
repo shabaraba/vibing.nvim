@@ -145,7 +145,7 @@ M.INTERNAL_TOOLS_MAP = to_map(M.INTERNAL_TOOLS)
 ---`name`で決まるため。
 ---
 ---**この列挙は手で追従させるしかない。** --allowedToolsは具体的なプレフィックスしか受け付けない。
----tools_spec.luaがclaude-plugin/.claude-plugin/plugin.jsonの`name`とmcpServersのキーを読んで
+---tools_spec.luaがagent-plugin/.claude-plugin/plugin.jsonの`name`とmcpServersのキーを読んで
 ---対応する要素の存在を検証するので、次に改名する人はテストで気づく。
 ---
 ---**ただしここがずれても通常のチャットは止まらない。** PreToolUseフックが

@@ -13,10 +13,10 @@ describe("plugin_contents", function()
     end
   end
 
-  ---The repo's own claude-plugin/.
+  ---The repo's own agent-plugin/.
   local function own_plugin_dir()
     local root = vim.fs.root(debug.getinfo(1, "S").source:sub(2), "package.json")
-    return root .. "/claude-plugin"
+    return root .. "/agent-plugin"
   end
 
   before_each(function()

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Runs claude-plugin/mcp-server's vitest suite as part of `npm test` (#790).
+ * Runs agent-plugin/mcp-server's vitest suite as part of `npm test` (#790).
  *
  * The suite sat outside every gate for its whole life: `test:node` sweeps the repository root's
  * `tests/` for `*.test.mjs` only, and CI checked that the mcp-server *directory* existed without
@@ -26,7 +26,7 @@ import { fileURLToPath } from 'node:url';
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 const serverDir = process.env.VIBING_MCP_SERVER_DIR
   ? resolve(process.env.VIBING_MCP_SERVER_DIR)
-  : join(repoRoot, 'claude-plugin', 'mcp-server');
+  : join(repoRoot, 'agent-plugin', 'mcp-server');
 
 const vitest = join(serverDir, 'node_modules', '.bin', 'vitest');
 
@@ -37,9 +37,9 @@ if (!existsSync(vitest)) {
       '',
       'Install the dependencies and re-run. With pnpm, from the repository root:',
       '',
-      '    pnpm install --ignore-workspace --dir claude-plugin/mcp-server',
+      '    pnpm install --ignore-workspace --dir agent-plugin/mcp-server',
       '',
-      '--ignore-workspace is required. claude-plugin/mcp-server has its own package.json but is',
+      '--ignore-workspace is required. agent-plugin/mcp-server has its own package.json but is',
       'not a member of the root pnpm-workspace.yaml, so a plain `pnpm install` there exits 0 and',
       'installs nothing. With npm the equivalent is `npm ci` in each directory; ./build.sh already',
       'installs both as part of a normal build.',

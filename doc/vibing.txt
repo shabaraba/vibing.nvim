@@ -80,9 +80,16 @@ Using packer.nvim: >lua
     }
 <
 `build.sh` builds the bundled MCP server. There is no plugin to install:
-vibing.nvim hands the `claude` CLI its own `claude-plugin/` directory per
+vibing.nvim hands the `claude` CLI its own `agent-plugin/` directory per
 session with `--plugin-dir`, so the MCP server, the bundled skills and the
 `nvim-navigator` subagent always come from the checkout that is running.
+
+UPDATING FROM claude-plugin/
+The bundled directory is now `agent-plugin/`. Update old paths in manually
+configured MCP `args`, `integrations.plugins.extra`, `VIBING_MCP_SERVER_DIR`,
+and lazy.nvim watch commands. Run `./build.sh` from the updated checkout to
+rebuild, then restart Neovim and any resident CLI processes. Plugin and MCP
+tool names, and the `.claude-plugin/` manifest directory, are unchanged.
 
 Anything you put in `.vibing/plugins/<name>/` (carrying a
 `.claude-plugin/plugin.json`) is loaded the same way, for that project only;

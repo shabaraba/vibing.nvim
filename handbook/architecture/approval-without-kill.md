@@ -853,7 +853,7 @@ hypothesis and not evidence** (the same shape as the binary string in "How this 
 twice"). None of it was tried, and two of the three could not be reached from here anyway:
 `cli_mcp_config.spec()` carries `command` / `args` / `env` only, it emits nothing at all unless
 `ai.agents.claude.mcp.inherit_cli_servers = false`, and on the normal path vibing's server arrives through
-`--plugin-dir` reading `claude-plugin/.claude-plugin/plugin.json`. Raising the ceiling would mean
+`--plugin-dir` reading `agent-plugin/.claude-plugin/plugin.json`. Raising the ceiling would mean
 writing a `timeout` into two places and trusting a claim.
 
 It does not need raising. `approval_wait_sec` plus its margins is **990s against a measured 1800**,

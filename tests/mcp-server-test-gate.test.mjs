@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * claude-plugin/mcp-server's 193 vitest tests were in no gate at all: `test:node` sweeps the
+ * agent-plugin/mcp-server's 193 vitest tests were in no gate at all: `test:node` sweeps the
  * repository root's `tests/` for `*.test.mjs`, and CI only checked that the directory existed
  * (#790). This file pins the gate that now runs them -- `npm run test:mcp` -- the way
  * lua-syntax-gate.test.mjs pins `npm run check`.
@@ -27,7 +27,7 @@ import { tmpdir } from 'os';
 import { fileURLToPath } from 'url';
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
-const serverDir = join(repoRoot, 'claude-plugin', 'mcp-server');
+const serverDir = join(repoRoot, 'agent-plugin', 'mcp-server');
 
 const scripts = JSON.parse(await readFile(join(repoRoot, 'package.json'), 'utf8')).scripts;
 
@@ -178,7 +178,7 @@ test('(d) missing dependencies fail, and the message names the command that fixe
     // exotic one, and the correct command is not guessable: a plain `pnpm install` in that
     // directory exits 0 and installs nothing.
     assert.match(result.stderr, /--ignore-workspace/);
-    assert.match(result.stderr, /claude-plugin\/mcp-server/);
+    assert.match(result.stderr, /agent-plugin\/mcp-server/);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

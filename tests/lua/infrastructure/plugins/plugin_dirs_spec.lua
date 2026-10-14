@@ -15,10 +15,10 @@ describe("plugin_dirs", function()
     vim.fn.writefile({ vim.json.encode({ name = name }) }, dir .. "/.claude-plugin/plugin.json")
   end
 
-  ---The repo's own claude-plugin/, which `self` resolves to.
+  ---The repo's own agent-plugin/, which `self` resolves to.
   local function own_plugin_dir()
     local root = vim.fs.root(debug.getinfo(1, "S").source:sub(2), "package.json")
-    return root .. "/claude-plugin"
+    return root .. "/agent-plugin"
   end
 
   before_each(function()
@@ -44,7 +44,7 @@ describe("plugin_dirs", function()
   end)
 
   describe("self", function()
-    it("resolves vibing.nvim's own claude-plugin/ by default", function()
+    it("resolves vibing.nvim's own agent-plugin/ by default", function()
       local dirs = PluginDirs.resolve(nil, {})
       assert.same({ own_plugin_dir() }, dirs)
     end)

@@ -875,12 +875,12 @@ describe("cli_command_builder", function()
 
     -- This is what makes the nvim_* MCP tools and the bundled skills exist at all, now that the
     -- plugin is no longer installed into Claude Code's user scope.
-    it("passes vibing.nvim's own claude-plugin/ on an ordinary request", function()
+    it("passes vibing.nvim's own agent-plugin/ on an ordinary request", function()
       local cmd = cli_command_builder.build("hello", {}, nil, {}, nil)
       local dirs = plugin_dirs(cmd)
 
       assert.equals(1, #dirs)
-      assert.is_true(dirs[1]:find("/claude-plugin", 1, true) ~= nil)
+      assert.is_true(dirs[1]:find("/agent-plugin", 1, true) ~= nil)
       assert.equals(1, vim.fn.filereadable(dirs[1] .. "/.claude-plugin/plugin.json"))
     end)
 

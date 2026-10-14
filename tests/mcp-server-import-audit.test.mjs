@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 /**
  * Pins scripts/audit-mcp-server-imports.mjs (#792): `zod` was imported as a value by four files
- * under claude-plugin/mcp-server/src while nothing in claude-plugin/mcp-server/package.json
+ * under agent-plugin/mcp-server/src while nothing in agent-plugin/mcp-server/package.json
  * declared it, and every path that ran the suite happened to install the repository root first,
  * which resolves it from there by Node's own upward directory walk. A tree with no such upstream
- * `node_modules` -- the shape claude-plugin/ is actually distributed as -- crashes at runtime
+ * `node_modules` -- the shape agent-plugin/ is actually distributed as -- crashes at runtime
  * instead.
  *
  * These tests run the real script against throwaway trees rather than asserting on its source, so

@@ -291,7 +291,7 @@ cwd for picking up a project's `.claude/commands/` anyway.
 ### The MCP server's own startup budget is 30 seconds, and the launcher no longer spends it
 
 That is a different clock from `setup()`: it starts when the CLI spawns
-`claude-plugin/mcp-server/bin/run.sh` for a turn, and it runs out before the server has said
+`agent-plugin/mcp-server/bin/run.sh` for a turn, and it runs out before the server has said
 anything. `run.mjs` sits inside it.
 
 Overrunning it does not look like a failure. The server simply never connects, so

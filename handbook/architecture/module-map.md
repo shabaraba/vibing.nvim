@@ -133,8 +133,8 @@ Lua Plugin:
 Node.js side (no agent wrapper — only these):
 - bin/hooks/pre-tool-use.sh    - PreToolUse hook → RPC
 - bin/hooks/stop-failure.sh    - StopFailure hook → RPC
-- claude-plugin/mcp-server/src/index.ts      - MCP server entry point
-- claude-plugin/mcp-server/src/tools/        - MCP tool implementations (buffer, lsp, window, chat)
+- agent-plugin/mcp-server/src/index.ts      - MCP server entry point
+- agent-plugin/mcp-server/src/tools/        - MCP tool implementations (buffer, lsp, window, chat)
 
 Tests:
 - tests/lua/**/*_spec.lua      - Lua tests (plenary.nvim)
