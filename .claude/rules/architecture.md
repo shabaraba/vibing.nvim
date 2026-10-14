@@ -312,7 +312,7 @@ Each chat buffer maintains its own session ID; processes and turns are keyed by 
 
 One chat can create and drive others: `nvim_chat_create` (MCP) → `rpc/handlers/chat.lua` →
 `application/chat/use_cases/create_chat.lua`. The workflow is the bundled
-`claude-plugin/skills/vibing-orchestrate/SKILL.md`; there is no command and no scheduler.
+`agent-plugin/skills/vibing-orchestrate/SKILL.md`; there is no command and no scheduler.
 
 - **The chat file path is the identifier; a bufnr is a per-session resolution of it.**
   `nvim_chat_send_message` and `nvim_get_buffer` take `file_path` or `bufnr` and **refuse a call
@@ -334,7 +334,7 @@ One chat can create and drive others: `nvim_chat_create` (MCP) → `rpc/handlers
 - **The report protocol is injected, not left to the brief or to skill auto-trigger** (#706). A
   chat with `orchestrated_by` gets the orchestrator's `file_path` and the report protocol appended
   to its system prompt on every turn (`cli_command_builder.lua`), pointing at the
-  `claude-plugin/skills/vibing-worker/SKILL.md` skill for the rest. Skill discovery by description
+  `agent-plugin/skills/vibing-worker/SKILL.md` skill for the rest. Skill discovery by description
   match is probabilistic, so this line — not the orchestrator's brief text — is the one place a
   worker is guaranteed to be told where and how to report. **It is repeated at the end of every
   delivered `## Request` body** (`delivery_message.reply_instructions`): claude replays the system
@@ -354,4 +354,4 @@ Worktrees are plain `git worktree add -b <branch> .vibing/worktrees/<branch>/`, 
 `git worktree remove`; a worktree's existence on disk is its entire state. There is no lifecycle
 script and no metadata file. The chat's `working_dir` frontmatter keeps a conversation attached to
 its worktree across turns. The workflow is the bundled `vibing-worktree-*` skills
-(`claude-plugin/skills/`), driven by natural language.
+(`agent-plugin/skills/`), driven by natural language.

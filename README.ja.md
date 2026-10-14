@@ -190,10 +190,16 @@ vibing.nvim は [Claude Code プラグイン](https://code.claude.com/docs/en/pl
 が含まれます。
 
 **インストール作業はありません。** このプラグインは Claude Code のグローバル状態には一切
-登録されません。vibing.nvim が自分の `claude-plugin/` ディレクトリをセッションごとに
+登録されません。vibing.nvim が自分の `agent-plugin/` ディレクトリをセッションごとに
 `--plugin-dir` で CLI に渡すため、いま動いている checkout がそのまま使われます(worktree を
 含む)。`build.sh` は MCP サーバーに加え、チャット境界を扱う小さな Tree-sitter パーサーを
 ビルドします。また、旧バージョンのインストールが残っている場合は一度だけ後片付けします。
+
+**`claude-plugin/` からの移行。** 同梱ディレクトリは `agent-plugin/` に変わりました。
+旧パスを手書きした MCP の `args`、`integrations.plugins.extra`、`VIBING_MCP_SERVER_DIR`、
+lazy.nvim の watch コマンドを更新してください。更新した checkout で `./build.sh` を実行して
+再ビルドし、Neovim と常駐 CLI プロセスを再起動してください。プラグイン名、MCP ツール名、
+マニフェストの `.claude-plugin/` ディレクトリ名は変わりません。
 
 これにより `mcp__plugin_vibing-nvim_vibing-nvim__*` ツール(実行中の Neovim へのバッファ/
 ウィンドウ/カーソルアクセス・Ex コマンド・LSP クエリ)、同梱スキル(`nvim-context`、

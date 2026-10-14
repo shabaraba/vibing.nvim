@@ -2,13 +2,13 @@
 
 Moved out of `.claude/rules/mcp-integration.md`. The tool descriptions shipped by the MCP server
 are the authority for arguments; this file is the catalogue plus the behaviour that is not visible
-from a description. Setup lives in `claude-plugin/mcp-server/README.md` and
+from a description. Setup lives in `agent-plugin/mcp-server/README.md` and
 `handbook/lazy-setup-example.lua`.
 
 ## How the Server Is Reached
 
 An async RPC server (`lua/vibing/infrastructure/rpc/server.lua`, `vim.loop` TCP, `vim.schedule()`
-for safe API calls) is queried by the Node MCP server (`claude-plugin/mcp-server/`) acting as a TCP
+for safe API calls) is queried by the Node MCP server (`agent-plugin/mcp-server/`) acting as a TCP
 client, so both buffer reads and writes are possible without deadlocks. Nothing is installed:
 `build.sh` builds the server, and the plugin that carries it is handed to the CLI per session with
 `--plugin-dir` (`.claude/rules/architecture.md` → "Plugin Loading, Command Discovery and Startup
@@ -28,7 +28,7 @@ turn down to the servers vibing.nvim's own plugins declare. What it saves and wh
 ## Naming the Tool and the Instance
 
 Two facts decide whether a call reaches the editor the user is looking at, and both have one home
-in the distributed plugin: `claude-plugin/skills/nvim-context/SKILL.md` → "Calling the tools". The
+in the distributed plugin: `agent-plugin/skills/nvim-context/SKILL.md` → "Calling the tools". The
 other skills and the `nvim-navigator` agent state the rule in a line each and point there, rather
 than restating the reasoning — a skill is loaded on its own, so a bare cross-reference would leave
 the rule unstated.
@@ -38,7 +38,7 @@ user-level entry, `mcp__plugin_vibing-nvim_vibing-nvim__<tool>` when it arrives 
 — which is the normal case, since vibing.nvim self-hosts that plugin with `--plugin-dir`.
 
 Note what builds that second form: the **plugin** name and the MCP server name, both from
-`claude-plugin/.claude-plugin/plugin.json`. The marketplace name never appears in it. This rule
+`agent-plugin/.claude-plugin/plugin.json`. The marketplace name never appears in it. This rule
 used to be written down as `mcp__plugin_<marketplace>_…`, and
 `tests/lua/core/constants/tools_spec.lua` read `marketplace.json` to enforce it — so after the
 marketplace was renamed to `vibing`, the list carried an `mcp__plugin_vibing_vibing-nvim__*` entry

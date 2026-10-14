@@ -189,10 +189,16 @@ vibing.nvim ships a [Claude Code plugin](https://code.claude.com/docs/en/plugins
 `vibing-nvim` MCP server together with Neovim-aware skills and a read-only navigation subagent.
 
 **Nothing to install.** The plugin is not registered into Claude Code's global state at all —
-vibing.nvim hands the CLI its own `claude-plugin/` directory per session with `--plugin-dir`, so
+vibing.nvim hands the CLI its own `agent-plugin/` directory per session with `--plugin-dir`, so
 whichever checkout is running is the one that serves you. `build.sh` builds the MCP server and the
 small Tree-sitter parser used for chat boundaries (and, once, cleans up an install from an older
 version of vibing.nvim).
+
+**Updating from `claude-plugin/`.** The bundled directory is now `agent-plugin/`.
+Update any manually configured MCP `args`, `integrations.plugins.extra`,
+`VIBING_MCP_SERVER_DIR`, and lazy.nvim watch commands that point at the old directory.
+Rebuild from the updated checkout with `./build.sh`, then restart Neovim and any resident CLI
+processes. The plugin name, MCP tool names, and `.claude-plugin/` manifest directory are unchanged.
 
 That gives you `mcp__plugin_vibing-nvim_vibing-nvim__*` tools (buffer/window/cursor access, Ex
 commands, and LSP queries against the running Neovim instance), the bundled skills

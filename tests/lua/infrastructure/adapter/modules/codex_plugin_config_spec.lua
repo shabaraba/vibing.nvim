@@ -55,7 +55,7 @@ describe("codex_plugin_config", function()
 
   local function own_plugin_dir()
     local root = vim.fs.root(debug.getinfo(1, "S").source:sub(2), "package.json")
-    return root .. "/claude-plugin"
+    return root .. "/agent-plugin"
   end
 
   before_each(function()

@@ -503,7 +503,7 @@ chat = {
 integrations = {
   plugins = { -- Claude Code plugins loaded for the session with --plugin-dir
     -- (claude) or as -c overrides (codex). See "Plugin Directories".
-    self = true, -- vibing.nvim's own claude-plugin/ — the nvim_* MCP tools and
+    self = true, -- vibing.nvim's own agent-plugin/ — the nvim_* MCP tools and
     -- every bundled skill. Turning this off removes all of them;
     -- it is a debugging escape hatch, not a normal setting.
     project_dir = ".vibing/plugins",
@@ -517,7 +517,7 @@ integrations = {
 
 ### Plugin Directories
 
-vibing.nvim does not install anything into Claude Code's global state. Its own `claude-plugin/`
+vibing.nvim does not install anything into Claude Code's global state. Its own `agent-plugin/`
 — the `vibing-nvim` MCP server, the bundled skills, the `nvim-navigator` subagent — is handed to
 the CLI per request with `--plugin-dir`, which loads a plugin for that session only. So the MCP
 server is always the one belonging to the checkout that spawned it, worktrees included, and there

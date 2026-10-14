@@ -5,7 +5,7 @@
  * Usage:
  *   node scripts/audit-dependencies.mjs [repo-root]
  *
- * The repository has two independent npm trees -- the root one and claude-plugin/mcp-server/ --
+ * The repository has two independent npm trees -- the root one and agent-plugin/mcp-server/ --
  * and until #691 nothing looked at either. `npm audit` runs on request only, and both build paths
  * pass `--silent`, which suppresses the summary npm prints after an install; the seven advisories
  * open at the time had therefore never been shown to anyone.

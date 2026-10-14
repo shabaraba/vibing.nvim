@@ -12,10 +12,10 @@ local function get_plugin_root()
 end
 
 ---MCP server directory. Everything shipped to Claude Code lives under
----claude-plugin/ — see CLAUDE.md → "Repository Layout".
+---agent-plugin/ — see CLAUDE.md → "Repository Layout".
 ---@return string
 local function get_mcp_dir()
-  return get_plugin_root() .. "/claude-plugin/mcp-server"
+  return get_plugin_root() .. "/agent-plugin/mcp-server"
 end
 
 ---The build artefact whose presence means "the MCP server is built"
@@ -34,7 +34,7 @@ end
 
 ---What to tell the user once the MCP server is built.
 ---
----There is nothing left for them to run: since #618 vibing.nvim hands its own `claude-plugin/`
+---There is nothing left for them to run: since #618 vibing.nvim hands its own `agent-plugin/`
 ---to the CLI per session with `--plugin-dir` rather than installing it into Claude Code's user
 ---scope, so the MCP tools and the bundled skills are available as soon as the build lands. This
 ---used to print a `claude plugin marketplace add ... && claude plugin install ...` hint.

@@ -5,7 +5,7 @@
  *
  * The failure it exists to prevent is not "a vulnerable package is installed" -- it is "a package
  * tree nobody looks at" (#691). The repository has two independent npm trees, and for the whole
- * time claude-plugin/mcp-server carried four high advisories, every path that could have printed
+ * time agent-plugin/mcp-server carried four high advisories, every path that could have printed
  * them ran under `--silent`. So the property under test is coverage: the gate audits *every*
  * committed package-lock.json, fails when any one of them reports, and fails rather than passes
  * when it finds none.
@@ -94,7 +94,7 @@ async function runAudit(lockfileDirs, { failingDirs = [] } = {}) {
 }
 
 test('every committed lockfile is audited, not just the root one', async () => {
-  const { status, calls } = await runAudit(['.', 'claude-plugin/mcp-server']);
+  const { status, calls } = await runAudit(['.', 'agent-plugin/mcp-server']);
   assert.equal(status, 0);
   assert.equal(calls.length, 2, `expected one npm run per tree, got ${JSON.stringify(calls)}`);
   assert.ok(
@@ -104,7 +104,7 @@ test('every committed lockfile is audited, not just the root one', async () => {
 });
 
 test('a tree npm reports on fails the run even when the others are clean', async () => {
-  const { status } = await runAudit(['.', 'claude-plugin/mcp-server'], {
+  const { status } = await runAudit(['.', 'agent-plugin/mcp-server'], {
     failingDirs: ['mcp-server'],
   });
   assert.notEqual(status, 0, 'npm audit reported but the gate exited 0');
@@ -113,7 +113,7 @@ test('a tree npm reports on fails the run even when the others are clean', async
 test('a report in the first tree is not cleared by a clean later one', async () => {
   // The loop keeps going after a failure so every tree gets reported in one run, which is why the
   // status has to accumulate; exiting with the last npm's code would lose this case entirely.
-  const { status, calls } = await runAudit(['.', 'claude-plugin/mcp-server'], {
+  const { status, calls } = await runAudit(['.', 'agent-plugin/mcp-server'], {
     failingDirs: ['repo'],
   });
   assert.notEqual(status, 0);

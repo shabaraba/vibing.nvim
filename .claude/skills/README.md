@@ -1,7 +1,7 @@
 # Claude Code Skills (development-only)
 
 Skills in this directory are for **developing this repository**. They are not distributed —
-the ones users get are `claude-plugin/skills/`. Each is read on demand, so put procedures and
+the ones users get are `agent-plugin/skills/`. Each is read on demand, so put procedures and
 long-form reasoning here rather than in `.claude/rules/`, which is loaded into every request.
 
 | Skill                           | Invoke when                                                                     |
@@ -29,7 +29,7 @@ The `description` is the only part loaded up front, so it has to say **when** to
 skill, not just what it contains. Support files (`reference.md`, `scripts/`) sit beside `SKILL.md`
 and are read only if the skill says to.
 
-When adding one, decide first which reader it is for: `claude-plugin/skills/` reaches users via
+When adding one, decide first which reader it is for: `agent-plugin/skills/` reaches users via
 `--plugin-dir`, `.claude/skills/` does not leave this repository. Then add a row above.
 
 See [Agent Skills](https://docs.claude.com/ja/docs/agents-and-tools/agent-skills).

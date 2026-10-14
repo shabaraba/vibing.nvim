@@ -1,6 +1,6 @@
 --- Show a message from a process that has no other way to reach the user.
 ---
---- The one caller is the MCP server's launcher (`claude-plugin/mcp-server/bin/notify-nvim.mjs`),
+--- The one caller is the MCP server's launcher (`agent-plugin/mcp-server/bin/notify-nvim.mjs`),
 --- which runs before the server exists and so cannot report through a tool result. Its `stderr`
 --- reaches neither the CLI's own streams nor anything the user reads -- measured; the reasoning is
 --- in that file -- so a message about the launcher missing Claude Code's 30s startup deadline had

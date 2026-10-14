@@ -14,7 +14,7 @@ One chat can create and drive other chats: `nvim_chat_create` (MCP) →
 `infrastructure/rpc/handlers/chat.lua` → `application/chat/use_cases/create_chat.lua` →
 `view.render`. The orchestrator briefs each worker with `nvim_chat_send_message` and polls it with
 `nvim_get_buffer`. The workflow is the bundled
-`claude-plugin/skills/vibing-orchestrate/SKILL.md`; there is no command and no scheduler.
+`agent-plugin/skills/vibing-orchestrate/SKILL.md`; there is no command and no scheduler.
 
 Nothing new was needed to keep the workers apart. Each chat buffer already owns its own session
 id, CLI process and turn (see `handbook/architecture/chat-lineage.md`), so parallel workers are the
@@ -94,7 +94,7 @@ read as evidence about reuse-vs-new cost that this data does not actually suppor
 These are not two independent policies: a complete brief is what makes "start a new chat by
 default" cheap, and reuse is only worth it when a task's remaining requests are too few for
 the floor to matter — one without the other does not hold.
-`claude-plugin/skills/vibing-orchestrate/SKILL.md` → "Reuse a worker chat or start a new
+`agent-plugin/skills/vibing-orchestrate/SKILL.md` → "Reuse a worker chat or start a new
 one?" carries the operating rule; this section is the reasoning and the measurement behind it.
 
 ## What the floor is made of, and profiles

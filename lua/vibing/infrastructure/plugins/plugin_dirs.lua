@@ -1,6 +1,6 @@
 --- Claude Code plugin directories loaded for the session via `--plugin-dir`.
 ---
---- vibing.nvim hosts its own bundled plugin (`claude-plugin/`) this way rather than installing
+--- vibing.nvim hosts its own bundled plugin (`agent-plugin/`) this way rather than installing
 --- it into Claude Code's user scope, so the MCP server and the bundled skills always come from
 --- the checkout that is running -- a worktree included. The same mechanism doubles as a
 --- project-local personal plugin drop (`.vibing/plugins/*/`).
@@ -29,7 +29,7 @@ local M = {}
 --- @type table<string, Vibing.PluginDirEntry[]>
 local cache = {}
 
---- vibing.nvim's own bundled plugin: `<repo>/claude-plugin`.
+--- vibing.nvim's own bundled plugin: `<repo>/agent-plugin`.
 ---
 --- Resolved by walking up from this file to the `package.json` that marks the repo root, the
 --- same way `completion/providers/skills.lua` finds `dist/`. The alternative in this codebase --
@@ -42,7 +42,7 @@ local function self_plugin_dir()
   if not repo_root then
     return nil
   end
-  return repo_root .. "/claude-plugin"
+  return repo_root .. "/agent-plugin"
 end
 
 --- Read a candidate's plugin manifest.

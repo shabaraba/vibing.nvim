@@ -20,7 +20,7 @@ routine and `bin/hooks/*.sh`). It is machine-wide shared state keyed by port, so
 escape hatches: `$VIBING_HOOK_COMM_DIR` overrides it outright (tests use this), and without a
 listening port it falls back to a PID-suffixed path rather than a single shared `vibing-hook-0`.
 The instance registry has the same treatment via `$VIBING_INSTANCES_DIR` (honoured by both
-`rpc/registry.lua` and `claude-plugin/mcp-server/src/handlers/instances.ts`).
+`rpc/registry.lua` and `agent-plugin/mcp-server/src/handlers/instances.ts`).
 
 The `.res` file carries **three** decisions, not two, and the difference is the whole permission
 contract with the CLI:
@@ -38,7 +38,7 @@ Granting everything would override the user's `settings.json` deny rules, which
 
 Those MCP tools are the exception because `--allowedTools` cannot express them reliably: it takes
 literal prefixes, and the plugin-scoped one is `mcp__plugin_<plugin>_<server>__`, built from
-`claude-plugin/.claude-plugin/plugin.json`. `can_use_tool.is_vibing_nvim_mcp_tool` matches on the
+`agent-plugin/.claude-plugin/plugin.json`. `can_use_tool.is_vibing_nvim_mcp_tool` matches on the
 suffix instead, so the grant survives a rename that `VIBING_NVIM_MCP_TOOL_PATTERNS` would not.
 Before #564 every allowed call took the silent path, so under any mode but `bypassPermissions` the
 CLI refused those tools while vibing.nvim's own log said "allow".

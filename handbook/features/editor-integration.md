@@ -4,7 +4,7 @@ Moved out of `.claude/rules/features.md`.
 
 ## Code Tour
 
-`claude-plugin/skills/vibing-code-tour/SKILL.md` turns "explain how X works" into a walkthrough
+`agent-plugin/skills/vibing-code-tour/SKILL.md` turns "explain how X works" into a walkthrough
 the editor performs: each stop is a real file opened at a real line (`nvim_win_open_file` +
 `nvim_set_cursor`), and the whole route is left in the quickfix list so the user can replay it
 with `:cnext`/`:cprev` afterwards.
@@ -15,7 +15,7 @@ restores focus before returning, so the window showing the file is never the cur
 looks like it is working while the code window never moves.
 
 The quickfix half is the MCP tool `nvim_set_qflist`
-(`claude-plugin/mcp-server/src/tools/qflist.ts` → `infrastructure/rpc/handlers/qflist.lua`). It
+(`agent-plugin/mcp-server/src/tools/qflist.ts` → `infrastructure/rpc/handlers/qflist.lua`). It
 always pushes a **new** list
 (`vim.fn.setqflist({}, " ", ...)`), so whatever the user had in quickfix stays reachable under
 `:colder` — which is also why the skill must call it exactly once per tour, or `:cnext` walks a
@@ -69,4 +69,4 @@ breakpoints — a breakpoint is something the user placed on purpose, and spendi
 every time one is hit gets in the way. The whole feature is off until `dap.enabled` is set.
 
 **Implementation:** `application/debug/analyze.lua` (commands + stopped-event listener),
-`infrastructure/rpc/handlers/dap.lua`, `claude-plugin/mcp-server/src/{tools,handlers}/dap.ts`.
+`infrastructure/rpc/handlers/dap.lua`, `agent-plugin/mcp-server/src/{tools,handlers}/dap.ts`.

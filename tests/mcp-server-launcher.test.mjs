@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * claude-plugin/mcp-server/bin/run.mjs runs before the MCP server exists, inside the 30s Claude
+ * agent-plugin/mcp-server/bin/run.mjs runs before the MCP server exists, inside the 30s Claude
  * Code allows a plugin's server to start. Everything it spends there comes out of that budget, and
  * overrunning it is silent: the server never connects, so the whole vibing-nvim tool set vanishes
  * from the session while the skills from the same `--plugin-dir` load normally. Nothing else in the
@@ -28,7 +28,7 @@ import { tmpdir } from 'os';
 import { fileURLToPath, pathToFileURL } from 'url';
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
-const launcherDir = join(repoRoot, 'claude-plugin/mcp-server/bin');
+const launcherDir = join(repoRoot, 'agent-plugin/mcp-server/bin');
 const LAUNCHER_FILES = ['run.mjs', 'rebuild.mjs', 'build-fingerprint.mjs', 'notify-nvim.mjs'];
 
 /**
@@ -59,7 +59,7 @@ exit 0
 const markerServer = (path) =>
   `require('fs').writeFileSync(${JSON.stringify(path)}, 'launched');\nprocess.exit(0);\n`;
 
-/** Build a throwaway tree shaped like claude-plugin/mcp-server/, with the real launcher in it. */
+/** Build a throwaway tree shaped like agent-plugin/mcp-server/, with the real launcher in it. */
 async function makeTree() {
   const dir = await mkdtemp(join(tmpdir(), 'vibing-launcher-'));
   await mkdir(join(dir, 'mcp/bin'), { recursive: true });
