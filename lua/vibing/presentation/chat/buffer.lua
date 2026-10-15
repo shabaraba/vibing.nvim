@@ -1480,12 +1480,20 @@ function ChatBuffer:take_question_block()
 
   local header = self._assistant_header_line
   local lines = vim.api.nvim_buf_get_lines(self.buf, header, -1, false)
-  local questions, first, last = QuestionBlock.find_trailing(lines)
+  local questions, first = QuestionBlock.find_trailing(lines)
   if not questions then
     return false
   end
 
-  vim.api.nvim_buf_set_lines(self.buf, header + first - 1, header + last, false, {})
+  vim.api.nvim_buf_set_lines(self.buf, header + first - 1, -1, false, {})
+  -- ブロックの前の空行を残すと、続く `### Tokens` の追記で `flush_chunks` が「末尾が空行なら
+  -- 先頭の改行を全部落とす」ため、見出しが本文に空行なしで続く
+  local end_line = vim.api.nvim_buf_line_count(self.buf)
+  local keep = end_line
+  while keep > header and vim.trim(vim.api.nvim_buf_get_lines(self.buf, keep - 1, keep, false)[1]) == "" do
+    keep = keep - 1
+  end
+  vim.api.nvim_buf_set_lines(self.buf, keep, end_line, false, {})
   self:insert_choices(questions)
   return true
 end

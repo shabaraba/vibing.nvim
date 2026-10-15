@@ -57,6 +57,17 @@ describe("ChatBuffer:take_question_block", function()
     assert.is_nil(buffer:find('"questions"', 1, true), buffer)
   end)
 
+  it("keeps a blank line between the reply and the Tokens section written after it", function()
+    local chat_buf = chat_whose_turn_wrote({ "Two ways to do it.", "", "```vibing-question", JSON, "```", "" })
+
+    chat_buf:take_question_block()
+    chat_buf:append_chunk("\n\n### Tokens <!-- context=1 -->\n")
+    chat_buf:_flush_chunks()
+
+    local buffer = text(chat_buf)
+    assert.is_truthy(buffer:find("Two ways to do it.\n\n### Tokens", 1, true), buffer)
+  end)
+
   it("reports the chat as having asked a question", function()
     local chat_buf = chat_whose_turn_wrote({ "```vibing-question", JSON, "```" })
 
