@@ -1,0 +1,20 @@
+version: 1
+repo: shabaraba/vibing.nvim
+labels:
+  claude:impl:
+    agent: claude
+    kind: impl
+    prompt: Implement what this issue asks for, keeping the change minimal and consistent with the existing code style.
+  claude:research:
+    agent: claude
+    kind: research
+    prompt: Investigate this issue against the current codebase and summarize findings with file paths and lines.
+  claude:review:
+    agent: claude
+    prompt: Review for bugs, regressions and unnecessary complexity. Explain user-facing impact and cite file paths and lines. Report only actionable findings.
+  codex:review:
+    agent: codex
+    prompt: Review for bugs, regressions and unnecessary complexity. Explain user-facing impact and cite file paths and lines. Report only actionable findings.
+  copilot:review:
+    agent: copilot
+    prompt: Review for bugs, regressions and unnecessary complexity. Explain user-facing impact and cite file paths and lines. Report only actionable findings.
