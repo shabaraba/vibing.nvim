@@ -50,6 +50,7 @@
 ---@field cwd string? Effective working directory used for project-local configuration
 ---@field on_tool_use fun(tool: string, file_path: string?)?
 ---@field on_tool_use_full fun(tool: string, input: table)? 表示用に間引かない生のツール入力（eval用）
+---@field on_stop_blocked fun()? Stop hook がターンの終了を止めた。ここまでの本文は、モデルが止まろうとした返答
 ---@field on_subagents_orphaned fun(unreported: Vibing.BackgroundTask[], recovered: Vibing.RecoveredSubagent[])? 常駐プロセス（duplex）が回収され、まだ報告していないbackground subagentを連れていった（#840）。**ターンではなくプロセスの寿命に属する唯一のコールバック** — 呼ばれるのはこれを渡したターンの中ではなく、そのプロセスの最後のターンより後
 ---@field _session_id string?
 ---@field _session_id_explicit boolean?

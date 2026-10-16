@@ -35,6 +35,52 @@ describe("decoders.claude_stream_json", function()
     end, events)
   end
 
+  describe("a Stop hook blocking the end of the turn", function()
+    -- The shape captured from claude 2.1.x with a hook returning `{"decision":"block"}`.
+    local function feedback(overrides)
+      return vim.tbl_extend("force", {
+        type = "user",
+        isSynthetic = true,
+        parent_tool_use_id = vim.NIL,
+        message = {
+          role = "user",
+          content = { { type = "text", text = "Stop hook feedback:\nBefore stopping, add one sentence." } },
+        },
+      }, overrides or {})
+    end
+
+    it("is reported as stop_blocked", function()
+      assert.are.same({ "stop_blocked" }, kinds(decode({}, feedback())))
+    end)
+
+    it("is not inferred from the text alone", function()
+      assert.are.same({}, kinds(decode({}, feedback({ isSynthetic = vim.NIL }))))
+    end)
+
+    it("reaches the chat after the text the model tried to stop on", function()
+      local processor = require("vibing.infrastructure.adapter.modules.cli_event_processor")
+      local order = {}
+      local context = {
+        output = {},
+        onChunk = function(text)
+          table.insert(order, text)
+        end,
+        opts = {
+          on_stop_blocked = function()
+            table.insert(order, "<stop>")
+          end,
+        },
+      }
+      local delta = { type = "content_block_delta", delta = { type = "text_delta", text = "Pick one." } }
+      processor.processLine(vim.json.encode({ type = "stream_event", event = delta }), context)
+      processor.processLine(vim.json.encode(feedback()), context)
+      vim.wait(100, function()
+        return #order == 2
+      end)
+      assert.are.same({ "Pick one.", "<stop>" }, order)
+    end)
+  end)
+
   it("reports the session once, not on every line that carries it", function()
     local state = {}
     local first = decode(state, { type = "system", subtype = "init", session_id = "s1" })

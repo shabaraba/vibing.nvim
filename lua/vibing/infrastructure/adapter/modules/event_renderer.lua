@@ -34,6 +34,7 @@ local DuplexTurn = require("vibing.infrastructure.adapter.modules.duplex_turn")
 ---| { kind: "rate_limit", info: Vibing.RateLimitInfo }
 ---| { kind: "error", message: string, fatal: boolean?, prompt_uuid: string? } # fatal: the CLI declared the turn failed
 ---| { kind: "hook_blocked", reason: string, unavailable: boolean?, name: string?, input: table? }
+---| { kind: "stop_blocked" }                                         # a Stop hook refused to let the turn end here
 ---| { kind: "turn_end", subtype: string?, prompt_uuid: string? }     # a turn is over; whose, and the process may not be
 ---| { kind: "structured_output", value: table, prompt_uuid: string? }
 ---| { kind: "prompt_ack", prompt_uuid: string, state: string? }      # the CLI named back a prompt written to its stdin
@@ -397,6 +398,15 @@ end
 handlers.turn_end = function(event, context)
   if context.onTurnEnd then
     context.onTurnEnd(event)
+  end
+end
+
+-- Scheduled like `emit`, so the chat sees it after the text the model tried to stop on and before
+-- anything the hook made it write next.
+handlers.stop_blocked = function(_, context)
+  local opts = context.opts or {}
+  if opts.on_stop_blocked then
+    vim.schedule(opts.on_stop_blocked)
   end
 end
 

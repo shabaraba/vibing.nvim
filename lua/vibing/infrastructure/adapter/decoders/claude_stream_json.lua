@@ -166,8 +166,16 @@ end
 
 --- A subagent's `user` events belong to its transcript, not the parent's: the prompt echo the
 --- parent already showed in the tool header, and its own nested tool results.
+---
+--- A Stop hook that blocks the end of a turn arrives as a synthetic `user` event whose text starts
+--- `Stop hook feedback:`, between the reply the model tried to stop on and the one it writes next.
+--- Captured from claude 2.1.x with a hook returning `{"decision":"block"}`.
 by_type.user = function(msg, events)
   if parent_tool_use_id(msg) or not msg.message then
+    return
+  end
+  if msg.isSynthetic == true and text_blocks(msg.message):find("^Stop hook feedback:") then
+    table.insert(events, { kind = "stop_blocked" })
     return
   end
   tool_blocks(events, msg.message)
