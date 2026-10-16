@@ -68,6 +68,44 @@ describe("ChatBuffer:take_question_block", function()
     assert.is_truthy(buffer:find("Two ways to do it.\n\n### Tokens", 1, true), buffer)
   end)
 
+  describe("after a Stop hook made the turn write on", function()
+    ---@param chat_buf Vibing.ChatBuffer
+    ---@param more string
+    local function hook_then(chat_buf, more)
+      chat_buf:mark_stop_attempt()
+      chat_buf:append_chunk(more)
+      chat_buf:_flush_chunks()
+    end
+
+    it("takes the block the turn tried to stop on and keeps what it wrote after", function()
+      local chat_buf = chat_whose_turn_wrote({ "Two ways to do it.", "", "```vibing-question", JSON, "```" })
+      hook_then(chat_buf, "The plan file was not updated.")
+
+      assert.is_true(chat_buf:take_question_block())
+
+      local buffer = text(chat_buf)
+      assert.is_nil(buffer:find('"questions"', 1, true), buffer)
+      assert.is_truthy(buffer:find("Two ways to do it.\n\nThe plan file was not updated.", 1, true), buffer)
+    end)
+
+    it("keeps the next text off the closing fence when the turn stopped mid-line", function()
+      local chat_buf = view.render({ session_id = "question" }, "back")
+      chat_buf:start_response()
+      chat_buf:append_chunk("Pick.\n\n```vibing-question\n" .. JSON .. "\n```")
+      hook_then(chat_buf, "The plan file was not updated.")
+
+      assert.is_true(chat_buf:take_question_block())
+      assert.is_truthy(text(chat_buf):find("Pick.\n\nThe plan file was not updated.", 1, true), text(chat_buf))
+    end)
+
+    it("does not take a block that came before the turn's final stop", function()
+      local chat_buf = chat_whose_turn_wrote({ "```vibing-question", JSON, "```", "", "More work." })
+      hook_then(chat_buf, "Done.")
+
+      assert.is_false(chat_buf:take_question_block())
+    end)
+  end)
+
   it("reports the chat as having asked a question", function()
     local chat_buf = chat_whose_turn_wrote({ "```vibing-question", JSON, "```" })
 

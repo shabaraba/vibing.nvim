@@ -19,6 +19,7 @@ local Fs = require("vibing.core.utils.fs")
 ---@field add_user_section fun() ユーザーセクションを追加
 ---@field get_bufnr fun(): number バッファ番号を取得
 ---@field take_question_block fun(): boolean ターン本文の末尾の質問ブロックを選択肢に変える（`question_block.lua`）
+---@field mark_stop_attempt fun() Stop hook に止められた地点を覚える（`take_question_block` が読む）
 ---@field insert_choices fun(questions: table) 質問の選択肢を挿入
 ---@field set_pending_user_text fun(text: string) 次のユーザーセクションに差し込む本文を保存
 ---@field insert_approval_request fun(tool: string, input: table, options: table) ツール承認要求UIを挿入
@@ -204,6 +205,11 @@ function M.execute(adapter, callbacks, message, config)
     on_tool_use = function(tool, file_path, _command)
       if (tool == "Write" or tool == "Edit" or tool == "MultiEdit" or tool == "NotebookEdit") and file_path then
         modified_file_paths[file_path] = true
+      end
+    end,
+    on_stop_blocked = function()
+      if callbacks.mark_stop_attempt then
+        callbacks.mark_stop_attempt()
       end
     end,
     -- 常駐プロセス（duplex）が回収され、まだ報告していない background subagent を連れていった

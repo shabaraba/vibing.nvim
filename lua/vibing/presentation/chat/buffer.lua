@@ -1230,6 +1230,9 @@ function ChatBuffer:send_message()
     take_question_block = function()
       return self:take_question_block()
     end,
+    mark_stop_attempt = function()
+      return self:mark_stop_attempt()
+    end,
     set_pending_user_text = function(text)
       return self:set_pending_user_text(text)
     end,
@@ -1316,6 +1319,7 @@ function ChatBuffer:start_response()
   -- 書いたヘッダーの行番号を覚えておく。ターン完了時に終了時刻を入れるのはこの行で、
   -- 探し直すと本文中の `## Assistant` を拾う（`streaming_handler.stamp_response_end`）
   self._assistant_header_line = StreamingHandler.start_response(self.buf)
+  self._stop_attempt_line = nil
 end
 
 ---バッファリングされたチャンクをフラッシュ
@@ -1467,6 +1471,10 @@ end
 ---
 ---探す範囲は `start_response` が返したヘッダ行から末尾まで。末尾から「ヘッダに見える行」を
 ---探し直さないのは `stamp_response_end` と同じ理由（本文中の `## Assistant` を拾う）
+---
+---末尾に無くても、Stop hook に止められた地点（`mark_stop_attempt`）の直前で終わっていれば
+---質問として拾う。モデルはそこで止まろうとしたのであって、後ろの文は hook に書かされたもの。
+---本文中に引用されたブロックは止まろうとした地点には来ないので、取り違えない。後ろの文は残す
 ---@return boolean taken
 function ChatBuffer:take_question_block()
   if not (self.buf and vim.api.nvim_buf_is_valid(self.buf)) or type(self._assistant_header_line) ~= "number" then
@@ -1480,12 +1488,27 @@ function ChatBuffer:take_question_block()
 
   local header = self._assistant_header_line
   local lines = vim.api.nvim_buf_get_lines(self.buf, header, -1, false)
-  local questions, first = QuestionBlock.find_trailing(lines)
+  local questions, first, last = QuestionBlock.find_trailing(lines)
+  local stop_line = self._stop_attempt_line
+  if not questions and stop_line and stop_line > header then
+    questions, first, last = QuestionBlock.find_trailing(vim.list_slice(lines, 1, stop_line - header))
+  end
   if not questions then
     return false
   end
 
-  vim.api.nvim_buf_set_lines(self.buf, header + first - 1, -1, false, {})
+  local function blank(row)
+    return vim.trim(vim.api.nvim_buf_get_lines(self.buf, row, row + 1, false)[1] or "") == ""
+  end
+  local from, to = header + first - 1, header + last
+  while from > header and blank(from - 1) do
+    from = from - 1
+  end
+  local count = vim.api.nvim_buf_line_count(self.buf)
+  while to < count and blank(to) do
+    to = to + 1
+  end
+  vim.api.nvim_buf_set_lines(self.buf, from, to, false, (from > header and to < count) and { "" } or {})
   -- ブロックの前の空行を残すと、続く `### Tokens` の追記で `flush_chunks` が「末尾が空行なら
   -- 先頭の改行を全部落とす」ため、見出しが本文に空行なしで続く
   local end_line = vim.api.nvim_buf_line_count(self.buf)
@@ -1496,6 +1519,22 @@ function ChatBuffer:take_question_block()
   vim.api.nvim_buf_set_lines(self.buf, keep, end_line, false, {})
   self:insert_choices(questions)
   return true
+end
+
+---Stop hook がターンの終了を止めた地点を、ここまでの行数として覚える
+---
+---承認のプロンプトが立っている間は流せないので覚えない。hook がブロックしているあいだは
+---ターンが終わろうとしていないので、その間に届くことは無い
+function ChatBuffer:mark_stop_attempt()
+  if not (self.buf and vim.api.nvim_buf_is_valid(self.buf)) or self:_has_blocked_prompts() then
+    return
+  end
+  self:_flush_chunks()
+  -- 続きは最後の行に追記される。空行ならそこが続きの1行目になるので、その手前までを覚える。
+  -- 閉じフェンスの行に付いた続きは `flush_chunks` の `MarkdownFence.normalize` が次の行へ割る
+  local count = vim.api.nvim_buf_line_count(self.buf)
+  local last = vim.api.nvim_buf_get_lines(self.buf, count - 1, count, false)[1]
+  self._stop_attempt_line = last == "" and count - 1 or count
 end
 
 ---質問の選択肢を、次の `add_user_section` で描くために保存する

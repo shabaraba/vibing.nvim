@@ -113,7 +113,9 @@ the next unsent section, and the answer is the next turn's message.
 
 - **Only the last thing a turn wrote is a question.** `find_trailing` accepts nothing but blank
   lines after the closing fence, and refuses when a later fence closes the reply. Looking further
-  back draws a live prompt out of a quoted example.
+  back draws a live prompt out of a quoted example. The one other place a turn ended is where a
+  Stop hook refused to let it (`stop_blocked`, recorded by `ChatBuffer:mark_stop_attempt`), so a
+  block followed only by what the hook made the model write is still taken, and that text stays.
 - **The block is looked for before anything is appended under the reply** — `send_message.lua`
   calls `take_question_block` ahead of `### Tokens` and `### Modified Files`, which would otherwise
   make the block no longer the last thing written.
