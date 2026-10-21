@@ -29,6 +29,8 @@ local Fs = require("vibing.core.utils.fs")
 ---  ターン途中で描けるようになった（#778）ぶん、ターンの終わりが同じものを描き直して二重に
 ---  ならないための印
 ---@field _pending_user_text string? 次のadd_user_section()で本文として差し込むテキスト
+---@field _pending_user_section Vibing.Application.DeliveryMessage.Section? その本文の見出し。nil なら素の `## User`
+---@field _parked_on_limit boolean 直前のターンが使用量リミットで弾かれ、自分で再開する予約が張られた
 ---@field _current_turn_id string? 待っているターンのID（chunk / response の staleness 判定）
 ---@field _current_process_id string? そのターンを走らせているCLIプロセスのID（kill対象）。
 ---  ターンIDとは別に持つ必要がある: `cancel_request` はターンが終わった後にもゾンビ回収として
@@ -72,6 +74,7 @@ function ChatBuffer:new(config)
   instance._abandoned_turn_id = nil
   instance._is_sending = false
   instance._stop_reason = nil
+  instance._parked_on_limit = false
   instance._cancelled = false
   instance._session_allow = {}
   instance._session_deny = {}
@@ -519,6 +522,19 @@ end
 ---@return "waiting_approval"|"asked_question"|"error"|nil
 function ChatBuffer:get_stop_reason()
   return self._stop_reason
+end
+
+---直前のターンが使用量リミットで弾かれ、リセット後に自分で再開する予約が張られたことを記録する
+---
+---停止理由（`_stop_reason`）とは別に持つ。`chat_status` の語彙としては `idle` のままで、
+---これを読むのは完了通知が「この停止は中間停止か」を判断するときだけ
+function ChatBuffer:mark_parked_on_limit()
+  self._parked_on_limit = true
+end
+
+---@return boolean
+function ChatBuffer:is_parked_on_limit()
+  return self._parked_on_limit == true
 end
 
 ---バッファを作成
@@ -1233,8 +1249,14 @@ function ChatBuffer:send_message()
     mark_stop_attempt = function()
       return self:mark_stop_attempt()
     end,
-    set_pending_user_text = function(text)
-      return self:set_pending_user_text(text)
+    set_pending_user_text = function(text, section)
+      return self:set_pending_user_text(text, section)
+    end,
+    get_sent_header = function()
+      return ConversationExtractor.last_sent_header(self.buf)
+    end,
+    mark_parked_on_limit = function()
+      return self:mark_parked_on_limit()
     end,
     -- **全部そのまま渡す。** `kind` はどのチャネルの承認かを決める値で（#861）、ここで落ちても
     -- 何もエラーにならない — プロンプトは描かれ、ユーザーは答えられ、その答えだけが別のレイヤの
@@ -1288,6 +1310,7 @@ function ChatBuffer:send_message()
   -- 途中 return する経路がいくつもあり、そこで消すと「まだ承認を待っている」チャットの理由が
   -- 消えて idle に化ける
   self._stop_reason = nil
+  self._parked_on_limit = false
   self._cancelled = false
 
   -- リクエストを送信（turn_idはコールバックで設定される）
@@ -1395,12 +1418,22 @@ function ChatBuffer:add_user_section()
   end
   self:_flush_chunks()
 
-  Renderer.addUserSection(self.buf, self.win, self._pending_choices, self._pending_approvals, self._pending_user_text)
+  local section = self._pending_user_section
+  local header = section and require("vibing.core.utils.timestamp").unsent_header_for(section)
+  Renderer.addUserSection(
+    self.buf,
+    self.win,
+    self._pending_choices,
+    self._pending_approvals,
+    self._pending_user_text,
+    header
+  )
 
   -- 質問の選択肢は1回描いたら捨てる。答えは次のターンの本文なので、描いたものを覚えておく
   -- 理由が無い（`question_block.lua`）
   self:_clear_pending_choices()
   self._pending_user_text = nil
+  self._pending_user_section = nil
   -- 「いま末尾の未送信セクションにプロンプトが描いてある」。ターンの途中で描けるように
   -- なった以上（#778、#788）、ターンの終わりがもう一度描くと**同じものが2つ**出る。どちらの
   -- プロンプトに答えられるのかは見た目では区別がつかない
@@ -1581,8 +1614,10 @@ end
 ---次のユーザーセクションに差し込む本文を保存
 ---リミットで弾かれたメッセージを予約として書き戻すために使う
 ---@param text string
-function ChatBuffer:set_pending_user_text(text)
+---@param section Vibing.Application.DeliveryMessage.Section? 素の `## User` の代わりに使う見出し
+function ChatBuffer:set_pending_user_text(text, section)
   self._pending_user_text = text
+  self._pending_user_section = section
 end
 
 ---ツール承認要求UIを保存

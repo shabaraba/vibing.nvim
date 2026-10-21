@@ -136,6 +136,13 @@ function M.create_header(kind, stamp, from, question_answer)
   return string.format("## %s <!-- %s -->", kind, meta)
 end
 
+---セクションの種別・送信元・回答欄の印から、未送信の見出しを作る
+---@param section {kind: string, from: string?, question_answer: boolean?}
+---@return string header
+function M.unsent_header_for(section)
+  return M.create_header(section.kind, nil, section.from, section.question_answer)
+end
+
 ---未送信ユーザーヘッダーを作成
 ---送信前の一時的なマーカーとして使用され、送信時にタイムスタンプ付きヘッダーに置き換えられる
 ---@return string header 未送信ユーザーヘッダー（例: "## User <!-- unsent -->"）

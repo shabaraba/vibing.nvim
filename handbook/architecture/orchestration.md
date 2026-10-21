@@ -346,6 +346,24 @@ that is really still _waiting_ must stay out of it.
 A parked turn is therefore `idle`, which is the pre-#640 behaviour: distinguishing "waiting on a
 reset" would be a fourth stop reason, and that was deliberately left out of this change.
 
+**A parked stop does not consume the subscription.** With no stop reason, branch 3 used to read the
+limit stop as the chat finishing and use the edge up, so when the resumed turn really did finish
+there was nobody left to tell — the orchestrator lost the worker for good. The limit branch of
+`send_message.lua` marks the chat (`ChatBuffer:mark_parked_on_limit`) when it actually armed a
+restart — a scheduled re-send, or `auto_resume.on_rate_limited` returning true — and the next
+send clears it. `is_parked_on_limit` reads that mark and holds the stop as branch 2 does, with the
+same exception for a stop the chat cannot leave on its own. It is marked at the event rather than
+inferred from `pending-resume.json` afterwards: a `waiting` entry also exists for a request the
+user scheduled by hand, which says nothing about this turn.
+
+**The resumed turn keeps the request's provenance.** A continuation written as a bare `## User`
+names no sender, and the orchestrator line tells a worker that such a turn was typed by the user,
+which releases it from reporting. `delivery_message.resumption` therefore writes the continuation
+of an interrupted `## Request` under the same header, names the requester in the body and repeats
+the report instructions — on both routes, `_reschedule_rejected_message` and `auto_resume`'s
+`fire`. A body re-sent because the limit rejected it at the door keeps its original header too;
+that body already names its sender.
+
 A status the MCP server has no wording for is **named rather than dropped**. `CHAT_STATUS_TEXT` is
 a lookup table, and rendering nothing for `error` or `waiting_approval` would read as a healthy
 chat — the same silent-ignore failure `plugin_dirs`' manifest check exists to prevent — so a miss

@@ -399,9 +399,14 @@ local function fire(chat_file_path, entry)
   local bufnr = chat_buf:get_buffer()
   trim_empty_trailing_user_section(bufnr)
 
-  local prompt = opts.prompt or "Continue from where you left off."
+  local interrupted = require("vibing.presentation.chat.modules.conversation_extractor").last_sent_header(bufnr)
+  local prompt, section = require("vibing.application.chat.delivery_message").resumption(
+    opts.prompt or "Continue from where you left off.",
+    interrupted,
+    bufnr
+  )
   local ProgrammaticSender = require("vibing.presentation.chat.modules.programmatic_sender")
-  local ok, send_err = pcall(ProgrammaticSender.send, bufnr, prompt)
+  local ok, send_err = pcall(ProgrammaticSender.send, bufnr, prompt, nil, section)
   if not ok then
     PendingResume.remove(chat_file_path)
     vim.notify("[vibing] Auto-resume failed: " .. tostring(send_err), vim.log.levels.WARN)
@@ -423,6 +428,7 @@ M._fire = fire
 --- back a full quota, and vibing.nvim already runs concurrent chats during normal use.
 --- @param entry Vibing.PendingResume
 --- @param opts table
+--- @return boolean armed
 local function schedule(entry, opts)
   local path = entry.chat_file_path
   stop_timer(path)
@@ -435,14 +441,14 @@ local function schedule(entry, opts)
   if not delay_sec then
     PendingResume.remove(path)
     vim.notify(string.format("[vibing] %s: %s", label, tostring(reason)), vim.log.levels.WARN)
-    return
+    return false
   end
 
   local delay_ms = delay_sec * 1000
   local timer = vim.loop.new_timer()
   if not timer then
     vim.notify(string.format("[vibing] %s: no timer available", label), vim.log.levels.WARN)
-    return
+    return false
   end
   timers[path] = timer
   timer:start(
@@ -473,6 +479,7 @@ local function schedule(entry, opts)
       vim.log.levels.INFO
     )
   end
+  return true
 end
 
 M._compute_delay = compute_delay
@@ -555,16 +562,17 @@ end
 --- Called when a response comes back rejected by a usage limit.
 --- @param chat_file_path string|nil
 --- @param info Vibing.RateLimitInfo
+--- @return boolean armed Whether a resume is now waiting to send the chat's next turn by itself
 function M.on_rate_limited(chat_file_path, info)
   local opts = get_options()
 
   if not chat_file_path or chat_file_path == "" then
-    return
+    return false
   end
 
   if not opts.enabled then
     vim.notify("[vibing] Usage limit reached (" .. RateLimit.describe(info) .. ")", vim.log.levels.WARN)
-    return
+    return false
   end
 
   local existing = PendingResume.get(chat_file_path)
@@ -582,7 +590,7 @@ function M.on_rate_limited(chat_file_path, info)
       vim.log.levels.WARN
     )
     announce_gave_up(chat_file_path, max_retries)
-    return
+    return false
   end
 
   local entry = {
@@ -594,7 +602,7 @@ function M.on_rate_limited(chat_file_path, info)
     state = "waiting",
   }
   PendingResume.put(entry)
-  schedule(entry, opts)
+  return schedule(entry, opts)
 end
 
 --- Called when a chat completes without hitting a limit, clearing its retry budget.

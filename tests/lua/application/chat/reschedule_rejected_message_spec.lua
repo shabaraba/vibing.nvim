@@ -6,11 +6,19 @@ describe("send_message._reschedule_rejected_message", function()
   local chat_path
 
   ---@param captured table filled with the text passed to set_pending_user_text (if any)
+  ---@param sent_header table? what the rejected turn's own section header said
   ---@return table callbacks
-  local function make_callbacks(captured)
+  local function make_callbacks(captured, sent_header)
     return {
-      set_pending_user_text = function(text)
+      set_pending_user_text = function(text, section)
         captured.text = text
+        captured.section = section
+      end,
+      get_sent_header = function()
+        return sent_header
+      end,
+      get_bufnr = function()
+        return 7
       end,
     }
   end
@@ -202,6 +210,55 @@ describe("send_message._reschedule_rejected_message", function()
 
     assert.is_true(ok)
     assert.equals("Continue from where you left off.", captured.text)
+  end)
+
+  it("resumes an interrupted request as a request that still says where to report", function()
+    -- A bare `## User` continuation names no sender, so the worker reads it as the user typing
+    -- and is released from reporting — the orchestrator then never hears the work finished.
+    local captured = {}
+    local ok = SendMessage._reschedule_rejected_message(
+      make_callbacks(captured, { kind = "Request", from = ".vibing/chat/lead.md" }),
+      chat_path,
+      { resets_at = os.time() + 3600, limit_type = "five_hour" },
+      "the brief",
+      make_config(true, 3),
+      true
+    )
+
+    assert.is_true(ok)
+    assert.is_truthy(captured.text:find("^Continue from where you left off%."), captured.text)
+    assert.is_truthy(captured.text:find('file_path ".vibing/chat/lead.md"', 1, true), captured.text)
+    assert.same({ kind = "Request", from = ".vibing/chat/lead.md" }, captured.section)
+  end)
+
+  it("keeps the delivered header when it re-sends the rejected body itself", function()
+    local captured = {}
+    local sent = { kind = "Report", from = ".vibing/chat/worker.md", timestamp = "2026-10-01 10:00:00" }
+    local ok = SendMessage._reschedule_rejected_message(
+      make_callbacks(captured, sent),
+      chat_path,
+      { resets_at = os.time() + 3600, limit_type = "five_hour" },
+      "the report",
+      make_config(true, 3)
+    )
+
+    assert.is_true(ok)
+    assert.equals("the report", captured.text)
+    assert.equals("Report", captured.section.kind)
+    assert.equals(".vibing/chat/worker.md", captured.section.from)
+  end)
+
+  it("writes a plain user section back as a plain user section", function()
+    local captured = {}
+    SendMessage._reschedule_rejected_message(
+      make_callbacks(captured, { kind = "User", timestamp = "2026-10-01 10:00:00" }),
+      chat_path,
+      { resets_at = os.time() + 3600, limit_type = "five_hour" },
+      "hello",
+      make_config(true, 3)
+    )
+
+    assert.is_nil(captured.section)
   end)
 
   it("still re-schedules a scheduled request that was rejected again", function()

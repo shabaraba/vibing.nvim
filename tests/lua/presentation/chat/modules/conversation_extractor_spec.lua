@@ -55,3 +55,47 @@ describe("ConversationExtractor.commit_user_message", function()
     assert.equals("the report", ConversationExtractor.extract_user_message(bufnr))
   end)
 end)
+
+describe("ConversationExtractor.last_sent_header", function()
+  local bufnr
+
+  before_each(function()
+    bufnr = vim.api.nvim_create_buf(false, true)
+  end)
+
+  after_each(function()
+    if vim.api.nvim_buf_is_valid(bufnr) then
+      vim.api.nvim_buf_delete(bufnr, { force = true })
+    end
+  end)
+
+  it("skips the assistant reply and an unsent section to find what the turn sent", function()
+    vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, {
+      "## User <!-- 2026-10-01 09:00:00 -->",
+      "",
+      "earlier",
+      "",
+      "## Request <!-- 2026-10-01 10:00:00 from .vibing/chat/lead.md -->",
+      "",
+      "do it",
+      "",
+      "## Assistant <!-- 2026-10-01 10:00:01 -->",
+      "",
+      "working",
+      "",
+      "## User <!-- unsent -->",
+      "",
+    })
+
+    local header = ConversationExtractor.last_sent_header(bufnr)
+
+    assert.equals("Request", header.kind)
+    assert.equals(".vibing/chat/lead.md", header.from)
+  end)
+
+  it("is nil when nothing has been sent", function()
+    vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "## User <!-- unsent -->", "", "draft" })
+
+    assert.is_nil(ConversationExtractor.last_sent_header(bufnr))
+  end)
+end)

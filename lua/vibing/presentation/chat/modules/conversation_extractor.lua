@@ -86,19 +86,38 @@ function M.user_message_lines(buf)
   return message_lines
 end
 
+---末尾から見て最初のユーザー側セクションの見出し
+---@param buf number
+---@param sent_only boolean 未送信の見出しを飛ばす
+---@return Vibing.Utils.Timestamp.Header?
+local function last_user_header(buf, sent_only)
+  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  for i = #lines, 1, -1 do
+    local header = Timestamp.parse_header(lines[i])
+    if header and header.kind ~= "Assistant" and not (sent_only and header.unsent) then
+      return header
+    end
+  end
+  return nil
+end
+
 ---最後のユーザーセクションが、生成された質問への回答欄か。
 ---バッファ内のヘッダーで識別するので、再読込や予約送信でも由来を失わない。
 ---@param buf number
 ---@return boolean
 function M.is_question_answer(buf)
-  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-  for i = #lines, 1, -1 do
-    local header = Timestamp.parse_header(lines[i])
-    if header and Timestamp.extract_role(lines[i]) == "user" then
-      return header.question_answer == true
-    end
-  end
-  return false
+  local header = last_user_header(buf, false)
+  return header ~= nil and header.question_answer == true
+end
+
+---最後に送信されたユーザー側セクションの見出し
+---
+---未送信の見出しは飛ばす。ターンの途中で描かれた承認プロンプトや、ターン後に置かれる空の
+---入力欄は送られたものではない
+---@param buf number
+---@return Vibing.Utils.Timestamp.Header?
+function M.last_sent_header(buf)
+  return last_user_header(buf, true)
 end
 
 ---ユーザーメッセージを抽出（最後の## Userセクション）

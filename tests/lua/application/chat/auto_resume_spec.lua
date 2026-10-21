@@ -148,8 +148,10 @@ describe("auto_resume", function()
     it("does not park a chat while the feature is disabled", function()
       stub_config({ enabled = false })
 
-      AutoResume.on_rate_limited(chat_path, { rejected = true, resets_at = os.time() + 60, source = "test" })
+      local armed =
+        AutoResume.on_rate_limited(chat_path, { rejected = true, resets_at = os.time() + 60, source = "test" })
 
+      assert.is_false(armed)
       assert.is_nil(PendingResume.get(chat_path))
     end)
 
@@ -157,13 +159,14 @@ describe("auto_resume", function()
       stub_config({ enabled = true, max_retries = 1 })
       local resets_at = os.time() + 3600
 
-      AutoResume.on_rate_limited(chat_path, {
+      local armed = AutoResume.on_rate_limited(chat_path, {
         rejected = true,
         resets_at = resets_at,
         limit_type = "five_hour",
         source = "test",
       })
 
+      assert.is_true(armed, "the caller marks the chat parked on this answer")
       local entry = PendingResume.get(chat_path)
       assert.is_not_nil(entry)
       assert.equals("waiting", entry.state)
@@ -183,9 +186,11 @@ describe("auto_resume", function()
         state = "in_flight",
       })
 
-      AutoResume.on_rate_limited(chat_path, { rejected = true, resets_at = os.time() + 3600, source = "test" })
+      local armed =
+        AutoResume.on_rate_limited(chat_path, { rejected = true, resets_at = os.time() + 3600, source = "test" })
 
       -- The entry is dropped, not refreshed: a second auto-resume would exceed max_retries.
+      assert.is_false(armed)
       assert.is_nil(PendingResume.get(chat_path))
     end)
 

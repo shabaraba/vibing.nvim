@@ -14,6 +14,7 @@ describe("CompletionNotifier", function()
   local responding = {}
   local drafts = {}
   local stop_reasons = {}
+  local parked = {}
   local sends = {}
   local warnings = {}
   local send_result = { success = true }
@@ -63,6 +64,7 @@ describe("CompletionNotifier", function()
 
     buffers, responding, drafts, sends, warnings = {}, {}, {}, {}, {}
     stop_reasons = {}
+    parked = {}
     directions = {}
     send_result = { success = true }
 
@@ -86,6 +88,9 @@ describe("CompletionNotifier", function()
         -- 分類漏れで黙って「対応不要」になるのを避けるため
         get_stop_reason = function()
           return stop_reasons[bufnr]
+        end,
+        is_parked_on_limit = function()
+          return parked[bufnr] == true
         end,
       }
     end
@@ -204,6 +209,39 @@ describe("CompletionNotifier", function()
     Notifier.on_response_done(b)
 
     assert.equals(1, #sends)
+  end)
+
+  describe("a chat parked on a usage limit", function()
+    ---@param bufnr number
+    local function park(bufnr)
+      parked[bufnr] = true
+    end
+
+    it("keeps the subscription for the turn that resumes after the reset", function()
+      local a, b = make_chat(), make_chat()
+      park(b)
+
+      Notifier.subscribe(a, b)
+      Notifier.on_response_done(b)
+      assert.equals(0, #sends, "a parked stop is not a finished one")
+
+      parked[b] = nil
+      Notifier.on_response_done(b)
+
+      assert.equals(1, #sends)
+      assert.equals(a, sends[1].bufnr)
+    end)
+
+    it("still delivers a stop the chat cannot leave on its own", function()
+      local a, b = make_chat(), make_chat()
+      park(b)
+      stop_reasons[b] = "error"
+
+      Notifier.subscribe(a, b)
+      Notifier.on_response_done(b)
+
+      assert.equals(1, #sends)
+    end)
   end)
 
   it("notifies once even when the sender messaged the same chat repeatedly", function()
