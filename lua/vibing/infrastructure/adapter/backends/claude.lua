@@ -127,6 +127,12 @@ local M = {
         env.CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS = tostring(math.floor(sec * 1000))
       end
     end
+
+    -- 呼び出し単位の要求なので、ユーザーの export より優先する。`--effort low` でも Haiku の思考は
+    -- 同じ呼び出しで 8〜26 秒ぶれ、無効にすると 4 秒前後に収まった
+    if opts.thinking == false then
+      env.MAX_THINKING_TOKENS = "0"
+    end
   end,
 
   -- Created empty rather than on the `init` event: `compact_boundary` arrives mid-stream and must

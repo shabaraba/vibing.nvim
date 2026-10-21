@@ -54,9 +54,13 @@ local function prompt_and_search(spec, args)
 end
 
 ---@param opts table `nvim_create_user_command` のコマンド引数
----@param config table チャット設定（`config.chat`）
-function M.handle_search_command(opts, config)
-  local save_dir = require("vibing.presentation.chat.modules.file_manager").get_save_directory(config or {})
+function M.handle_search_command(opts)
+  local storage = require("vibing").get_config().chat.storage
+  local save_dir = require("vibing.application.chat.search.chat_directory").resolve(storage)
+  if not save_dir then
+    notify.warn("No chat history found: the chat directory does not exist yet", "Chat Search")
+    return
+  end
   local SearchChats = require("vibing.application.chat.use_cases.search_chats")
 
   prompt_and_search({

@@ -385,7 +385,7 @@ function M._register_commands()
   })
 
   vim.api.nvim_create_user_command("VibingChatSearch", function(opts)
-    require("vibing.presentation.chat.search_controller").handle_search_command(opts, M.config.chat)
+    require("vibing.presentation.chat.search_controller").handle_search_command(opts)
   end, {
     nargs = "*",
     desc = "Search past chats by topic and open the matches (prompts when given no query)",

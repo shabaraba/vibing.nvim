@@ -11,6 +11,9 @@ build/
 # Data directories
 .vibing/
 
+# Chat logs used as a search corpus; their exact text is what the search eval scores against
+tests/fixtures/chat_search/corpus/
+
 # Git
 .git/
 

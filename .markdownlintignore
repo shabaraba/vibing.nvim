@@ -10,3 +10,6 @@ prompts/daily_summary.md
 
 # Worktrees and per-instance state; a worktree under .vibing/worktrees/ is a second copy of the repo
 .vibing/
+
+# Chat logs used as a search corpus, written in the shape vibing.nvim saves chats, not documentation
+tests/fixtures/chat_search/corpus/
