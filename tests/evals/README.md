@@ -73,3 +73,25 @@ Append to `tasks.lua`. The bar for a new task:
 
 `eval_harness_spec.lua` covers the harness itself with a scripted fake adapter, so it runs in the
 ordinary suite and costs nothing.
+
+## Chat search accuracy
+
+```bash
+pnpm run test:eval:chat-search
+VIBING_EVAL_MODEL=opus VIBING_EVAL_ATTEMPTS=3 VIBING_EVAL_OUT=/tmp/opus.json pnpm run test:eval:chat-search
+```
+
+A separate suite with a different question: not "was a contract kept" but "how many of the right
+chats did `:VibingChatSearch` find", so models can be compared on the same queries. It runs the
+real use case against `tests/fixtures/chat_search/corpus/` (thirty chats about a fictional app),
+staged into a temporary git repository that ignores `.vibing/` as a real project does, and scores
+only the file names that come back. It prints recall, precision and exact matches, and always
+exits with 0. Each miss is marked `never a candidate` (the search terms or the ranking lost it) or
+`dropped at judgement` (the model was shown it and left it out); the JSON written to
+`VIBING_EVAL_OUT` carries each search's terms and candidates for the same reason.
+
+`chat_search/cases.lua` holds the queries. The corpus is written so that a query's own words are
+often absent from the chat it should find (`論理削除` against a chat that only says `soft delete`),
+and so that some chats share a query's words without being about it — those are listed as
+`distractors`, so a wrong answer reads as "returned the distractor" rather than as a bare miss.
+`VIBING_EVAL_MODEL` sets `ai.helpers.model`, which is what the search runs on.

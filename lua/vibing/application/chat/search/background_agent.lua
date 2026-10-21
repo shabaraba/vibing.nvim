@@ -3,7 +3,9 @@
 ---
 ---スキルと同じく grep しては読み、外れたら言い換えて探し直す仕事なのでツールが要り、軽量呼び出しに
 ---はできない。承認プロンプトを出す先が無いので、`exclusive_tools` に渡したツールの外は vibing の
----フックが、`dontAsk` で CLI 側の関門が、どちらも尋ねずに拒否する。
+---フックが、`dontAsk` で CLI 側の関門が、どちらも尋ねずに拒否する。ツールを1つも渡さなければ
+---軽量呼び出しになり、道具もプロジェクト設定も持たないターンで構造化出力だけを返させる。
+---空のリストは「ツールを1つも許さない通常のターン」で、軽量呼び出しとは別物。
 local M = {}
 
 ---進捗の1行に収める長さ。`gh` や `rg` のコマンドはそのままだと枠を押し広げる
@@ -26,7 +28,7 @@ function M.tool_label(tool, input)
   return string.format("%s(%s)", tool, detail)
 end
 
----複数行の値を1行に畳む。エージェントの答え（`chat_answer.lua` / `session_answer.lua`）が
+---複数行の値を1行に畳む。エージェントの答え（`chat_judgement.lua` / `session_answer.lua`）が
 ---ラベルや要約に使う、文字列以外やnilは空文字として扱う
 ---@param value any
 ---@return string
@@ -42,72 +44,26 @@ function M.language_name()
   return code and language_utils.language_names[code]
 end
 
-local function close_containers(block)
-  local stack, quoted, escaped = {}, false, false
-  for index = 1, #block do
-    local char = block:sub(index, index)
-    if quoted then
-      if escaped then
-        escaped = false
-      elseif char == "\\" then
-        escaped = true
-      elseif char == '"' then
-        quoted = false
-      end
-    elseif char == '"' then
-      quoted = true
-    elseif char == "{" or char == "[" then
-      stack[#stack + 1] = char == "{" and "}" or "]"
-    elseif char == "}" or char == "]" then
-      if stack[#stack] ~= char then
-        return nil
-      end
-      stack[#stack] = nil
-    end
+---@param language string? 要約と分類名に使う言語（"Japanese" 等）
+---@return string
+function M.language_line(language)
+  if not language then
+    return "Write each summary and group label in the language of the query."
   end
-  if quoted or #stack == 0 then
-    return nil
-  end
-  local suffix = {}
-  for index = #stack, 1, -1 do
-    suffix[#suffix + 1] = stack[index]
-  end
-  return block .. table.concat(suffix)
+  return string.format("Write each summary and group label in %s.", language)
 end
 
----応答の末尾の JSON ブロックを読む。本文の途中にも例が出うるので、最後のブロックを採る
----@param text string?
----@return table? decoded
----@return string? error
-function M.last_json(text)
-  local block
-  for found in (text or ""):gmatch("```json%s*\n(.-)\n%s*```") do
-    block = found
-  end
-  block = block or (text or ""):match("(%b{})%s*$")
-  if not block then
-    return nil, "the search agent returned no JSON result"
-  end
-
-  local ok, decoded = pcall(vim.json.decode, block)
-  if not ok then
-    local closed = close_containers(block)
-    if closed then
-      ok, decoded = pcall(vim.json.decode, closed)
-    end
-  end
-  if not ok or type(decoded) ~= "table" then
-    return nil, "the search agent returned a malformed result"
-  end
-  return decoded, nil
-end
+M.last_json = require("vibing.application.chat.search.json_answer").last
 
 ---@param agent table Resolved helper selection
 ---@param cwd string
----@param tools string[] このターンが使えるツールの全部
+---@param tools string[]? このターンが使えるツールの全部。nil なら道具を持たない軽量呼び出しにする
 ---@param on_tool fun(label: string) ツール呼び出しのたびに呼ばれる（進捗表示用）
 ---@return Vibing.AdapterOpts
 function M.opts(agent, cwd, tools, on_tool)
+  if tools == nil then
+    return { lightweight = true, _ai_purpose = "helpers", model = agent.model, effort = agent.effort, cwd = cwd }
+  end
   return {
     _ai_purpose = "helpers",
     model = agent.model,
@@ -135,11 +91,12 @@ local function release_turn(turn_id)
 end
 
 ---@param prompt string
----@param tools string[]
+---@param tools string[]? nil なら軽量呼び出し（`M.opts`）
 ---@param on_tool fun(label: string)
 ---@param callback fun(text: string?, error: string?)
 ---@param schema table? JSON Schema used when the backend supports structured output
-function M.run(prompt, tools, on_tool, callback, schema)
+---@param overrides Vibing.AdapterOpts? この呼び出しだけの上書き（`thinking = false` 等）
+function M.run(prompt, tools, on_tool, callback, schema, overrides)
   local vibing = require("vibing")
   local adapter = vibing.get_helper_adapter()
   if not adapter then
@@ -156,6 +113,7 @@ function M.run(prompt, tools, on_tool, callback, schema)
     tools,
     on_tool
   )
+  opts = vim.tbl_extend("force", opts, overrides or {})
   local use_schema = schema and adapter.supports and adapter:supports("structured_output")
   if use_schema then
     opts.output_schema = schema
@@ -172,8 +130,10 @@ function M.run(prompt, tools, on_tool, callback, schema)
       end
     end
     if adapter:supports("structured_output_tool") then
-      opts.exclusive_tools[#opts.exclusive_tools + 1] = "StructuredOutput"
-      opts.permissions_allow[#opts.permissions_allow + 1] = "StructuredOutput"
+      if opts.exclusive_tools then
+        opts.exclusive_tools[#opts.exclusive_tools + 1] = "StructuredOutput"
+        opts.permissions_allow[#opts.permissions_allow + 1] = "StructuredOutput"
+      end
       prompt = prompt .. "\nSubmit the final result with StructuredOutput instead of a JSON code block."
     else
       prompt = prompt

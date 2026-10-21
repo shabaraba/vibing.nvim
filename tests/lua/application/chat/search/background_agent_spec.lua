@@ -85,6 +85,15 @@ describe("background agent", function()
       assert.is_nil(opts.lightweight)
     end)
 
+    it("makes a turn with no tool list a lightweight call on the helper model", function()
+      local opts = BackgroundAgent.opts({ model = "haiku", effort = "low" }, "/repo", nil, function() end)
+
+      assert.are.same(
+        { lightweight = true, _ai_purpose = "helpers", model = "haiku", effort = "low", cwd = "/repo" },
+        opts
+      )
+    end)
+
     it("reports each tool call as a label", function()
       local labels = {}
       local opts = BackgroundAgent.opts({}, "/repo", {}, function(label)
@@ -207,6 +216,49 @@ describe("background agent", function()
         return text ~= nil
       end)
       assert.are.same({ groups = {} }, vim.json.decode(text))
+    end)
+
+    it("asks a lightweight call for structured output without adding a tool list", function()
+      local adapter = package.loaded["vibing"].get_helper_adapter()
+      adapter.supports = function(_, feature)
+        return feature == "structured_output" or feature == "structured_output_tool"
+      end
+      local stream = adapter.stream
+      adapter.stream = function(self, prompt, opts, on_chunk, on_done)
+        assert.is_true(opts.lightweight)
+        assert.is_nil(opts.exclusive_tools)
+        opts.on_structured_output({ concepts = {} })
+        return stream(self, prompt, opts, on_chunk, on_done)
+      end
+      package.loaded["vibing"].get_helper_adapter = function()
+        return adapter
+      end
+      local text
+      BackgroundAgent.run("prompt", nil, function() end, function(t)
+        text = t
+      end, { type = "object" })
+      vim.wait(1000, function()
+        return text ~= nil
+      end)
+      assert.are.same({ concepts = {} }, vim.json.decode(text))
+    end)
+
+    it("hands the caller's per-call overrides to the adapter", function()
+      local adapter = package.loaded["vibing"].get_helper_adapter()
+      local seen
+      local stream = adapter.stream
+      adapter.stream = function(self, prompt, opts, on_chunk, on_done)
+        seen = opts
+        return stream(self, prompt, opts, on_chunk, on_done)
+      end
+      package.loaded["vibing"].get_helper_adapter = function()
+        return adapter
+      end
+
+      BackgroundAgent.run("prompt", nil, function() end, function() end, nil, { thinking = false })
+
+      assert.are.equal(false, seen.thinking)
+      assert.is_true(seen.lightweight)
     end)
 
     it("reports missing structured output instead of accepting prose", function()

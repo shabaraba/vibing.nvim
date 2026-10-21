@@ -28,7 +28,10 @@ describe("session search prompt", function()
 
     assert.is_true(vim.startswith(prompt, SessionPrompt.OPENING))
     assert.is_truthy(prompt:find('starts with "Find the past"', 1, true))
-    assert.is_true(vim.startswith(require("vibing.application.chat.search.chat_prompt").build("x", "/d"), "Find the past"))
+    assert.is_true(vim.startswith(require("vibing.application.chat.search.query_terms").build("x", {}), "Find the past"))
+    assert.is_true(
+      vim.startswith(require("vibing.application.chat.search.chat_judgement").build("x", {}, ""), "Find the past")
+    )
     assert.is_truthy(prompt:find("oauth", 1, true))
   end)
 end)

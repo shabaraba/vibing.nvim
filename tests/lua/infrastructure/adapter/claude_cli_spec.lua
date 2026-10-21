@@ -82,6 +82,27 @@ describe("claude_cli environment", function()
     end)
   end)
 
+  describe("thinking", function()
+    local exported
+
+    before_each(function()
+      exported = vim.env.MAX_THINKING_TOKENS
+      vim.env.MAX_THINKING_TOKENS = "4000"
+    end)
+
+    after_each(function()
+      vim.env.MAX_THINKING_TOKENS = exported
+    end)
+
+    it("turns extended thinking off for a call that asks for none, over an exported budget", function()
+      assert.equals("0", env_for(nil, { lightweight = true, thinking = false }).MAX_THINKING_TOKENS)
+    end)
+
+    it("leaves the exported budget alone otherwise", function()
+      assert.equals("4000", env_for(nil, { lightweight = true }).MAX_THINKING_TOKENS)
+    end)
+  end)
+
   describe("ai.agents.claude.env", function()
     before_each(function()
       -- Module-level and therefore process-wide: another spec file having already warned about a

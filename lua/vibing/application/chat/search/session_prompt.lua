@@ -3,7 +3,7 @@
 ---`nvim_session_search` / `nvim_session_read` で探させ、結果を JSON で返させる。
 local M = {}
 
-local ChatPrompt = require("vibing.application.chat.search.chat_prompt")
+local BackgroundAgent = require("vibing.application.chat.search.background_agent")
 local tools_constants = require("vibing.core.constants.tools")
 
 ---依頼文の書き出し。検索のターン自身もセッションログに残るので、これで始まるセッションは
@@ -51,7 +51,7 @@ function M.build(query, cwd, language)
     "   earlier searches like this one, including this session itself.",
     "4. Group the survivors by how they relate to the query. Use as few groups as fit.",
     "",
-    ChatPrompt.language_line(language),
+    BackgroundAgent.language_line(language),
     "",
     "End your answer with exactly one JSON code block in this shape and nothing after it:",
     "```json",

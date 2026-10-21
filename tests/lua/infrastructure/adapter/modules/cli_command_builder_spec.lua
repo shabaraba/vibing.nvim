@@ -35,7 +35,7 @@ describe("cli_command_builder", function()
 
   describe("system prompt", function()
     it("encodes the requested output schema as a CLI argument", function()
-      local schema = require("vibing.application.chat.search.chat_schema")
+      local schema = require("vibing.application.chat.search.chat_judgement").SCHEMA
       local cmd = cli_command_builder.build("search", { output_schema = schema }, nil, {}, nil)
       assert.are.same(schema, vim.json.decode(cmd[find_flag(cmd, "--json-schema") + 1]))
       assert.is_nil(find_flag(cli_command_builder.build("chat", {}, nil, {}, nil), "--json-schema"))

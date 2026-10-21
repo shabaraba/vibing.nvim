@@ -314,16 +314,19 @@ The chat frontmatter permissions remain tool-based and unchanged.
     Find past chats about {query} and open the ones you pick. With no
     argument, prompts for the query.
 
-    The search is one agent turn in the background, on `ai.helpers.model`,
-    with no chat buffer and no chat file. The agent greps the chat files,
-    rephrases and searches again when that finds nothing, and reads the
-    candidates to decide which ones are actually about the query. Given a
-    GitHub PR or issue URL, it looks up the title with `gh` and searches for
-    that too. The tool calls are shown in a small float while it works.
+    It searches `.vibing/chat/` at the root of the git repository, or the
+    one in the current directory when the root has none. `chat.storage` is
+    not consulted. When neither exists it says so and starts no search.
 
-    The agent may only use Grep, Glob, Read, `rg`, `gh pr view` and
-    `gh issue view`. Anything else is refused without asking, since there is
-    no chat to show an approval in.
+    The search runs in the background in three steps, with no chat buffer
+    and no chat file. First `ai.helpers.model` turns the query into search
+    terms, including rephrasings and the technical names a chat would use.
+    Then `rg` (required) searches the chat files for those terms and keeps
+    the best-matching chats. Last, the model reads short excerpts of those
+    chats and keeps the ones actually about the query. Given a GitHub PR or
+    issue number or URL, the title is looked up with `gh` first. The model
+    is given no tools in either step. The current step is shown in a small
+    float while it works.
 
     Each match is listed with how it relates to the query (for example,
     handled it directly or followed up on it), its date and a one or two line
