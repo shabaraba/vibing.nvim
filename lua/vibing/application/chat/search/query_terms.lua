@@ -28,7 +28,8 @@ M.SCHEMA = {
 
 ---語を挙げるだけなら思考は要らない。Haiku で 8〜26 秒が 4 秒前後になり、取りこぼしも増えなかった。
 ---判定（`chat_judgement.lua`）は思考を外すと取りこぼしと混入が増えたので、こちらだけに付ける
-M.ADAPTER_OPTS = { thinking = false }
+---@type Vibing.Chat.Search.HelperCall
+M.CALL = { thinking = false }
 
 ---@param query string
 ---@param context string[] クエリから引けた補足（PR のタイトル等）

@@ -1,5 +1,6 @@
 local USE_CASE = "vibing.application.chat.use_cases.search_chats"
 local AGENT = "vibing.application.chat.search.background_agent"
+local HELPER = "vibing.application.chat.search.helper_answer"
 
 describe("search chats", function()
   local chat_dir
@@ -19,12 +20,6 @@ describe("search chats", function()
     return outcome
   end
 
-  ---@param value table
-  ---@return string
-  local function json(value)
-    return "```json\n" .. vim.json.encode(value) .. "\n```"
-  end
-
   before_each(function()
     chat_dir = vim.fn.tempname() .. "_search_chats"
     vim.fn.mkdir(chat_dir, "p")
@@ -38,25 +33,28 @@ describe("search chats", function()
       language_name = function()
         return nil
       end,
-      run = function(prompt, tools, _, callback, _, overrides)
-        asked[#asked + 1] = { prompt = prompt, tools = tools, overrides = overrides or {} }
-        local reply = table.remove(replies, 1) or {}
-        callback(reply.text, reply.error)
-      end,
     })
+    package.loaded[HELPER] = {
+      ask = function(prompt, schema, callback, call)
+        asked[#asked + 1] = { prompt = prompt, schema = schema, call = call or {} }
+        local reply = table.remove(replies, 1) or {}
+        callback(reply.value, reply.error)
+      end,
+    }
     package.loaded[USE_CASE] = nil
   end)
 
   after_each(function()
     package.loaded[AGENT] = nil
+    package.loaded[HELPER] = nil
     package.loaded[USE_CASE] = nil
     vim.fn.delete(chat_dir, "rf")
   end)
 
   it("searches the terms the model chose and keeps the chats it picked", function()
     replies = {
-      { text = json({ concepts = { { terms = { "論理削除", "soft delete" } } } }) },
-      { text = json({ groups = { { label = "direct", chats = { { id = "C1", summary = "s" } } } } }) },
+      { value = { concepts = { { terms = { "論理削除", "soft delete" } } } } },
+      { value = { groups = { { label = "direct", chats = { { id = "C1", summary = "s" } } } } } },
     }
 
     local outcome = run("論理削除")
@@ -69,33 +67,33 @@ describe("search chats", function()
     assert.is_falsy(asked[2].prompt:find("prefers-color-scheme", 1, true))
   end)
 
-  it("gives the model no tools in either step", function()
+  it("asks for terms, then for a judgement, each in its own schema", function()
     replies = {
-      { text = json({ concepts = { { terms = { "soft delete" } } } }) },
-      { text = json({ groups = {} }) },
+      { value = { concepts = { { terms = { "soft delete" } } } } },
+      { value = { groups = {} } },
     }
 
     run("x")
 
     assert.are.equal(2, #asked)
-    assert.is_nil(asked[1].tools)
-    assert.is_nil(asked[2].tools)
+    assert.are.equal(require("vibing.application.chat.search.query_terms").SCHEMA, asked[1].schema)
+    assert.are.equal(require("vibing.application.chat.search.chat_judgement").SCHEMA, asked[2].schema)
   end)
 
   it("lets only the term step skip thinking, since judging without it missed chats", function()
     replies = {
-      { text = json({ concepts = { { terms = { "soft delete" } } } }) },
-      { text = json({ groups = {} }) },
+      { value = { concepts = { { terms = { "soft delete" } } } } },
+      { value = { groups = {} } },
     }
 
     run("x")
 
-    assert.are.equal(false, asked[1].overrides.thinking)
-    assert.is_nil(asked[2].overrides.thinking)
+    assert.are.equal(false, asked[1].call.thinking)
+    assert.is_nil(asked[2].call.thinking)
   end)
 
   it("asks nothing more when no chat contains a term", function()
-    replies = { { text = json({ concepts = { { terms = { "kubernetes" } } } }) } }
+    replies = { { value = { concepts = { { terms = { "kubernetes" } } } } } }
 
     local outcome = run("x")
 

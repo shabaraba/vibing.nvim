@@ -73,10 +73,7 @@ function M.run(dir, concepts, callback)
     return
   end
 
-  local terms = {}
-  for _, concept in ipairs(concepts) do
-    vim.list_extend(terms, concept)
-  end
+  local terms = vim.fn.uniq(vim.fn.sort(vim.iter(concepts):flatten():totable()))
   local total = #vim.fn.globpath(dir, "*.md", false, true)
   local hits, pending, failure = {}, #terms, nil
 

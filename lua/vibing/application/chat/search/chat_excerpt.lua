@@ -5,8 +5,12 @@
 ---語が当たった箇所の前後だけを渡す。
 local M = {}
 
+local Timestamp = require("vibing.core.utils.timestamp")
+local YamlFrontmatter = require("vibing.core.utils.yaml_frontmatter")
+
 M.MAX_CHARS = 1200
 local CONTEXT_LINES = 2
+---表示ではなくモデルに渡す量の上限なので、表示幅（`core/utils/text.lua`）ではなく文字数で数える
 local MAX_LINE_CHARS = 200
 
 ---@class Vibing.Chat.Search.Excerpt
@@ -30,12 +34,13 @@ end
 local function title_of(lines)
   local after_summary, after_user = false, false
   for _, line in ipairs(lines) do
+    local role = Timestamp.extract_role(line)
     if line:match("^### .*一行要約") then
       after_summary = true
     elseif after_summary and vim.trim(line) ~= "" then
       return clip(line)
-    elseif line:match("^## User") then
-      after_user = true
+    elseif role then
+      after_user = role == "user"
     elseif after_user and vim.trim(line) ~= "" and not line:match("^#") then
       return clip(line)
     end
@@ -47,11 +52,9 @@ end
 ---@param path string
 ---@return string
 local function date_of(lines, path)
-  for _, line in ipairs(lines) do
-    local date = line:match("^created_at:%s*(%d%d%d%d%-%d%d%-%d%d)")
-    if date then
-      return date
-    end
+  local date = (YamlFrontmatter.read(lines, "created_at") or ""):match("^%d%d%d%d%-%d%d%-%d%d")
+  if date then
+    return date
   end
   local y, m, d = vim.fn.fnamemodify(path, ":t"):match("(%d%d%d%d)(%d%d)(%d%d)")
   return y and string.format("%s-%s-%s", y, m, d) or ""
@@ -78,6 +81,12 @@ local function windows_of(lines, terms)
     return a.distinct == b.distinct and a.index < b.index or a.distinct > b.distinct
   end)
 
+  local clipped = setmetatable({}, {
+    __index = function(cache, index)
+      cache[index] = clip(lines[index])
+      return cache[index]
+    end,
+  })
   local taken, used = {}, 0
   for _, match in ipairs(matches) do
     local first, last = math.max(1, match.index - CONTEXT_LINES), math.min(#lines, match.index + CONTEXT_LINES)
@@ -89,7 +98,7 @@ local function windows_of(lines, terms)
     end
     local size = 0
     for _, index in ipairs(chunk) do
-      size = size + #clip(lines[index]) + 1
+      size = size + #clipped[index] + 1
     end
     if used + size > M.MAX_CHARS then
       break
@@ -106,7 +115,7 @@ local function windows_of(lines, terms)
       if previous and index > previous + 1 then
         out[#out + 1] = "…"
       end
-      out[#out + 1] = clip(lines[index])
+      out[#out + 1] = clipped[index]
       previous = index
     end
   end

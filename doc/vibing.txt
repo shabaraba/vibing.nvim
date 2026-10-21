@@ -314,9 +314,11 @@ The chat frontmatter permissions remain tool-based and unchanged.
     Find past chats about {query} and open the ones you pick. With no
     argument, prompts for the query.
 
-    It searches `.vibing/chat/` at the root of the git repository, or the
-    one in the current directory when the root has none. `chat.storage` is
-    not consulted. When neither exists it says so and starts no search.
+    With `chat.storage.location = "project"` (the default) it searches
+    `.vibing/chat/` at the root of the git repository, or the one in the
+    current directory when the root has none. With `"user"` or `"custom"`
+    it searches the directory chats are saved to. When the directory does
+    not exist it says so and starts no search.
 
     The search runs in the background in three steps, with no chat buffer
     and no chat file. First `ai.helpers.model` turns the query into search

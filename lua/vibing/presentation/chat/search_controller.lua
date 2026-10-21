@@ -55,9 +55,10 @@ end
 
 ---@param opts table `nvim_create_user_command` のコマンド引数
 function M.handle_search_command(opts)
-  local save_dir = require("vibing.application.chat.search.chat_directory").resolve()
+  local storage = require("vibing").get_config().chat.storage
+  local save_dir = require("vibing.application.chat.search.chat_directory").resolve(storage)
   if not save_dir then
-    notify.warn("No chat history found: .vibing/chat/ does not exist here", "Chat Search")
+    notify.warn("No chat history found: the chat directory does not exist yet", "Chat Search")
     return
   end
   local SearchChats = require("vibing.application.chat.use_cases.search_chats")

@@ -30,47 +30,6 @@ describe("background agent", function()
     end)
   end)
 
-  describe("last_json", function()
-    it("reads the last JSON block, not an example earlier in the text", function()
-      local decoded = BackgroundAgent.last_json('```json\n{"n": 1}\n```\nthen\n```json\n{"n": 2}\n```\n')
-
-      assert.are.equal(2, decoded.n)
-    end)
-
-    it("takes a bare object at the very end", function()
-      assert.are.equal(3, BackgroundAgent.last_json('done: {"n": 3}').n)
-    end)
-
-    it("recovers omitted closing containers in a fenced result", function()
-      local decoded = BackgroundAgent.last_json('```json\n{"groups": [{"label": "g", "chats": []}]\n```')
-      assert.are.equal("g", decoded.groups[1].label)
-      local nested = BackgroundAgent.last_json('```json\n{"groups": [{"label": "g", "chats": []\n```')
-      assert.are.same({}, nested.groups[1].chats)
-    end)
-
-    it("ignores brackets and escaped quotes inside strings when closing containers", function()
-      local text = vim.json.encode({ summary = 'a } [ "quoted" text' }):sub(1, -2)
-      local decoded = BackgroundAgent.last_json("```json\n" .. text .. "\n```")
-      assert.are.equal('a } [ "quoted" text', decoded.summary)
-    end)
-
-    it("rejects incomplete values, unterminated strings and mismatched containers", function()
-      for _, block in ipairs({ '{"groups":', '{"groups": ["unfinished', '{"groups": [}', '{"groups": [],' }) do
-        local decoded, err = BackgroundAgent.last_json("```json\n" .. block .. "\n```")
-        assert.is_nil(decoded)
-        assert.is_not_nil(err)
-      end
-    end)
-
-    it("reports an answer with no JSON, or a malformed one", function()
-      local _, missing = BackgroundAgent.last_json("nothing here")
-      local _, malformed = BackgroundAgent.last_json("```json\n{oops\n```")
-
-      assert.is_not_nil(missing)
-      assert.is_not_nil(malformed)
-    end)
-  end)
-
   describe("opts", function()
     it("runs on the utility model, with exactly the tools it was given", function()
       local tools = { "Grep" }
@@ -83,15 +42,6 @@ describe("background agent", function()
       assert.are.same(tools, opts.exclusive_tools)
       assert.are.same(tools, opts.permissions_allow)
       assert.is_nil(opts.lightweight)
-    end)
-
-    it("makes a turn with no tool list a lightweight call on the helper model", function()
-      local opts = BackgroundAgent.opts({ model = "haiku", effort = "low" }, "/repo", nil, function() end)
-
-      assert.are.same(
-        { lightweight = true, _ai_purpose = "helpers", model = "haiku", effort = "low", cwd = "/repo" },
-        opts
-      )
     end)
 
     it("reports each tool call as a label", function()
@@ -128,13 +78,7 @@ describe("background agent", function()
 
       package.loaded["vibing"] = {
         get_config = function()
-          return {
-            ai = {
-              helpers = {
-                model = "haiku",
-              },
-            },
-          }
+          return { ai = { helpers = { model = "haiku" } } }
         end,
         get_helper_adapter = function()
           return {
@@ -190,123 +134,6 @@ describe("background agent", function()
 
       assert.is_nil(text)
       assert.are.equal("rate limited", err)
-    end)
-
-    it("uses the structured payload instead of streamed prose", function()
-      local adapter = package.loaded["vibing"].get_helper_adapter()
-      adapter.supports = function(_, feature)
-        return feature == "structured_output" or feature == "structured_output_tool"
-      end
-      local stream = adapter.stream
-      adapter.stream = function(self, prompt, opts, on_chunk, on_done)
-        assert.are.same({ type = "object" }, opts.output_schema)
-        assert.is_true(vim.tbl_contains(opts.exclusive_tools, "StructuredOutput"))
-        opts.on_structured_output({ groups = {} })
-        return stream(self, prompt, opts, on_chunk, on_done)
-      end
-      package.loaded["vibing"].get_helper_adapter = function()
-        return adapter
-      end
-      reply.chunks = { "not JSON" }
-      local text
-      BackgroundAgent.run("prompt", {}, function() end, function(t)
-        text = t
-      end, { type = "object" })
-      vim.wait(1000, function()
-        return text ~= nil
-      end)
-      assert.are.same({ groups = {} }, vim.json.decode(text))
-    end)
-
-    it("asks a lightweight call for structured output without adding a tool list", function()
-      local adapter = package.loaded["vibing"].get_helper_adapter()
-      adapter.supports = function(_, feature)
-        return feature == "structured_output" or feature == "structured_output_tool"
-      end
-      local stream = adapter.stream
-      adapter.stream = function(self, prompt, opts, on_chunk, on_done)
-        assert.is_true(opts.lightweight)
-        assert.is_nil(opts.exclusive_tools)
-        opts.on_structured_output({ concepts = {} })
-        return stream(self, prompt, opts, on_chunk, on_done)
-      end
-      package.loaded["vibing"].get_helper_adapter = function()
-        return adapter
-      end
-      local text
-      BackgroundAgent.run("prompt", nil, function() end, function(t)
-        text = t
-      end, { type = "object" })
-      vim.wait(1000, function()
-        return text ~= nil
-      end)
-      assert.are.same({ concepts = {} }, vim.json.decode(text))
-    end)
-
-    it("hands the caller's per-call overrides to the adapter", function()
-      local adapter = package.loaded["vibing"].get_helper_adapter()
-      local seen
-      local stream = adapter.stream
-      adapter.stream = function(self, prompt, opts, on_chunk, on_done)
-        seen = opts
-        return stream(self, prompt, opts, on_chunk, on_done)
-      end
-      package.loaded["vibing"].get_helper_adapter = function()
-        return adapter
-      end
-
-      BackgroundAgent.run("prompt", nil, function() end, function() end, nil, { thinking = false })
-
-      assert.are.equal(false, seen.thinking)
-      assert.is_true(seen.lightweight)
-    end)
-
-    it("reports missing structured output instead of accepting prose", function()
-      local adapter = package.loaded["vibing"].get_helper_adapter()
-      adapter.supports = function()
-        return true
-      end
-      package.loaded["vibing"].get_helper_adapter = function()
-        return adapter
-      end
-      reply.chunks = { '{"groups": []}' }
-      local err
-      BackgroundAgent.run("prompt", {}, function() end, function(_, e)
-        err = e
-      end, { type = "object" })
-      vim.wait(1000, function()
-        return err ~= nil
-      end)
-      assert.are.equal("the search agent returned no structured result", err)
-    end)
-
-    it("writes a file schema for Codex and removes it when the turn ends", function()
-      local adapter = package.loaded["vibing"].get_helper_adapter()
-      adapter.supports = function(_, feature)
-        return feature == "structured_output" or feature == "structured_output_file"
-      end
-      local schema_path
-      local stream = adapter.stream
-      adapter.stream = function(self, prompt, opts, on_chunk, on_done)
-        schema_path = opts.output_schema_path
-        assert.are.same({ type = "object" }, vim.json.decode(table.concat(vim.fn.readfile(schema_path), "\n")))
-        assert.is_false(vim.tbl_contains(opts.exclusive_tools, "StructuredOutput"))
-        assert.is_nil(prompt:find("with StructuredOutput", 1, true))
-        opts.on_structured_output({ groups = {} })
-        return stream(self, prompt, opts, on_chunk, on_done)
-      end
-      package.loaded["vibing"].get_helper_adapter = function()
-        return adapter
-      end
-      local text
-      BackgroundAgent.run("prompt", {}, function() end, function(t)
-        text = t
-      end, { type = "object" })
-      vim.wait(1000, function()
-        return text ~= nil
-      end)
-      assert.are.same({ groups = {} }, vim.json.decode(text))
-      assert.are.equal(0, vim.fn.filereadable(schema_path))
     end)
 
     it("reports a missing adapter", function()

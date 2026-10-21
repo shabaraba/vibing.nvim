@@ -25,23 +25,42 @@ describe("chat search directory", function()
     vim.fn.mkdir(base .. "/.vibing/chat", "p")
     vim.fn.mkdir(base .. "/sub/.vibing/chat", "p")
 
-    assert.are.equal(real(base .. "/.vibing/chat"), real(ChatDirectory.resolve(base .. "/sub")))
+    assert.are.equal(real(base .. "/.vibing/chat"), real(ChatDirectory.resolve(nil, base .. "/sub")))
   end)
 
   it("falls back to the current directory when the git root has none", function()
     git_init()
     vim.fn.mkdir(base .. "/sub/.vibing/chat", "p")
 
-    assert.are.equal(real(base .. "/sub/.vibing/chat"), real(ChatDirectory.resolve(base .. "/sub")))
+    assert.are.equal(real(base .. "/sub/.vibing/chat"), real(ChatDirectory.resolve(nil, base .. "/sub")))
   end)
 
   it("uses the current directory outside a git repository", function()
     vim.fn.mkdir(base .. "/sub/.vibing/chat", "p")
 
-    assert.are.equal(real(base .. "/sub/.vibing/chat"), real(ChatDirectory.resolve(base .. "/sub")))
+    assert.are.equal(
+      real(base .. "/sub/.vibing/chat"),
+      real(ChatDirectory.resolve({ location = "project" }, base .. "/sub"))
+    )
   end)
 
   it("returns nil when neither exists", function()
-    assert.is_nil(ChatDirectory.resolve(base .. "/sub"))
+    assert.is_nil(ChatDirectory.resolve(nil, base .. "/sub"))
+  end)
+
+  it("searches the custom save directory instead of .vibing/chat", function()
+    vim.fn.mkdir(base .. "/sub/.vibing/chat", "p")
+    vim.fn.mkdir(base .. "/saved", "p")
+
+    assert.are.equal(
+      real(base .. "/saved"),
+      real(ChatDirectory.resolve({ location = "custom", path = base .. "/saved/" }, base .. "/sub"))
+    )
+  end)
+
+  it("returns nil when the custom save directory does not exist yet", function()
+    vim.fn.mkdir(base .. "/sub/.vibing/chat", "p")
+
+    assert.is_nil(ChatDirectory.resolve({ location = "custom", path = base .. "/missing" }, base .. "/sub"))
   end)
 end)

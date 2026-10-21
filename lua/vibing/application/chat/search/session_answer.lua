@@ -45,7 +45,7 @@ end
 ---@return Vibing.Session.Search.Result[]? results
 ---@return string? error
 function M.parse(text)
-  local decoded, err = BackgroundAgent.last_json(text)
+  local decoded, err = require("vibing.application.chat.search.json_answer").last(text)
   if not decoded then
     return nil, err
   end
