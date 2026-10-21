@@ -51,6 +51,10 @@ jobs:
           git clone --depth 1 https://github.com/nvim-lua/plenary.nvim \
             ~/.local/share/nvim/site/pack/vendor/start/plenary.nvim
 
+      # :VibingChatSearch searches with rg, and its specs run the real binary on a temp directory
+      - name: Install ripgrep
+        run: sudo apt-get install -y --no-install-recommends ripgrep
+
       - name: Run Lua syntax check
         run: npm run check
 
