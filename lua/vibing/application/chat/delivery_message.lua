@@ -187,6 +187,7 @@ end
 ---@class Vibing.Application.DeliveryMessage.Section
 ---@field kind "Request"|"Report"|"Notice" 配達セクションの種別
 ---@field from string? 送信元の表示パス（1つに定まらない配達では nil）
+---@field question_answer boolean? 質問への回答欄の印（送り直す本文の見出しを引き継ぐときだけ）
 
 ---この配達をどのセクションとして書くかを決める
 ---
@@ -284,16 +285,27 @@ function M.reply_instructions(queue, to_bufnr, cache)
       local path = resolve_path(item.bufnr, cache)
       if path and not seen[path] then
         seen[path] = true
-        table.insert(paths, string.format('"%s"', path))
+        table.insert(paths, path)
       end
     end
   end
+  return M.report_instructions(paths, to_bufnr)
+end
+
+---報告先のパスから「どこへ、どう報告するか」を組み立てる
+---@param paths string[] 報告先チャットの表示パス
+---@param to_bufnr number 報告する側（このチャット）のバッファ番号
+---@return string? 付ける文。パスが1つも無ければ nil
+function M.report_instructions(paths, to_bufnr)
   if #paths == 0 then
     return nil
   end
 
-  local target = #paths == 1 and ("file_path " .. paths[1])
-    or ("each of these file_paths in its own call: " .. table.concat(paths, ", "))
+  local quoted = vim.tbl_map(function(path)
+    return string.format('"%s"', path)
+  end, paths)
+  local target = #quoted == 1 and ("file_path " .. quoted[1])
+    or ("each of these file_paths in its own call: " .. table.concat(quoted, ", "))
   return table.concat({
     "Report back through vibing.nvim, not only in this chat: when this is done, the moment you",
     string.format(
@@ -306,6 +318,43 @@ function M.reply_instructions(queue, to_bufnr, cache)
     ),
     "An answer written only in your own chat is never read. The vibing-worker skill has the rest.",
   }, "\n")
+end
+
+---リミットで中断したターンを再開する本文と、その見出し
+---
+---継続文言だけを素の `## User` で送ると、本文が送り手を名乗らないのでモデルは「ユーザーの直接
+---入力」と読み、依頼された作業の報告義務（`cli_command_builder` の orchestrator 行）から外れる。
+---依頼の見出しも消えるので、中断していたのが依頼だったことがバッファからも分からなくなる。
+---だから依頼の続きなら見出しを引き継ぎ、送り手を名乗り直したうえで報告指示も付け直す。
+---本文を送り直す経路（入口で弾かれたターン）は元の本文が送り手も指示も持っているので要らない
+---@param prompt string 継続文言
+---@param interrupted Vibing.Utils.Timestamp.Header? 中断したターンが送ったセクションの見出し
+---@param bufnr number 再開するチャット
+---@return string text
+---@return Vibing.Application.DeliveryMessage.Section? section 依頼の続きなら引き継ぐ見出し
+function M.resumption(prompt, interrupted, bufnr)
+  if not interrupted or interrupted.kind ~= "Request" then
+    return prompt, nil
+  end
+
+  local paths = { interrupted.from }
+  if not interrupted.from then
+    local chat_buf = require("vibing.presentation.chat.view").get_chat_buffer(bufnr)
+    paths = chat_buf and chat_buf:get_frontmatter_list("orchestrated_by") or {}
+  end
+
+  local lines = { prompt }
+  if #paths > 0 then
+    table.insert(
+      lines,
+      string.format(
+        "This resumes the request from %s, which a usage limit interrupted.",
+        table.concat(paths, ", ")
+      )
+    )
+    table.insert(lines, M.report_instructions(paths, bufnr))
+  end
+  return table.concat(lines, "\n\n"), { kind = "Request", from = interrupted.from }
 end
 
 ---1通にまとめて、宛先のチャットに新しいターンとして配達する

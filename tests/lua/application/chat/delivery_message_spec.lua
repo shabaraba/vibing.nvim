@@ -302,3 +302,57 @@ describe("DeliveryMessage.deliver (report instructions)", function()
     assert.is_nil(sent[1].text:find("Report back", 1, true))
   end)
 end)
+
+describe("DeliveryMessage.resumption", function()
+  local DeliveryMessage = require("vibing.application.chat.delivery_message")
+  local view = require("vibing.presentation.chat.view")
+  local original_get_chat_buffer
+
+  before_each(function()
+    original_get_chat_buffer = view.get_chat_buffer
+  end)
+
+  after_each(function()
+    view.get_chat_buffer = original_get_chat_buffer
+  end)
+
+  it("names the requester and repeats the report instructions when a request was interrupted", function()
+    local text, section =
+      DeliveryMessage.resumption("Keep going.", { kind = "Request", from = ".vibing/chat/lead.md" }, 7)
+
+    assert.is_truthy(text:find("^Keep going%."), text)
+    assert.is_truthy(text:find("resumes the request from .vibing/chat/lead.md", 1, true), text)
+    assert.is_truthy(text:find('nvim_chat_send_message with file_path ".vibing/chat/lead.md"', 1, true), text)
+    assert.is_truthy(text:find("from_bufnr 7", 1, true), text)
+    assert.same({ kind = "Request", from = ".vibing/chat/lead.md" }, section)
+  end)
+
+  it("falls back to orchestrated_by when the request header named no single sender", function()
+    view.get_chat_buffer = function()
+      return {
+        get_frontmatter_list = function(_, key)
+          return key == "orchestrated_by" and { ".vibing/chat/a.md", ".vibing/chat/b.md" } or {}
+        end,
+      }
+    end
+
+    local text, section = DeliveryMessage.resumption("Keep going.", { kind = "Request" }, 7)
+
+    assert.is_truthy(text:find('"%.vibing/chat/a%.md", "%.vibing/chat/b%.md"'), text)
+    assert.same({ kind = "Request" }, section)
+  end)
+
+  it("leaves a turn the user typed as the bare prompt", function()
+    local text, section = DeliveryMessage.resumption("Keep going.", { kind = "User" }, 7)
+
+    assert.equals("Keep going.", text)
+    assert.is_nil(section)
+  end)
+
+  it("leaves the bare prompt when nothing was sent", function()
+    local text, section = DeliveryMessage.resumption("Keep going.", nil, 7)
+
+    assert.equals("Keep going.", text)
+    assert.is_nil(section)
+  end)
+end)

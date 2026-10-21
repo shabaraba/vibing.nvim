@@ -68,6 +68,9 @@ describe("rpc handlers.message.send_message", function()
         get_stop_reason = function()
           return chat.stop_reason
         end,
+        is_parked_on_limit = function()
+          return false
+        end,
         send_message = function()
           chat.sends = chat.sends + 1
           return chat.accepts

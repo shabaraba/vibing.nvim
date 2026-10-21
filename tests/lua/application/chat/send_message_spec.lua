@@ -128,6 +128,7 @@ describe("send_message", function()
     ---@return string chat_path The buffer's name, which is the key both stores use.
     ---@return string[] appended chunks written to the chat buffer
     ---@return boolean marked_error whether the turn was recorded as having ended in an error
+    ---@return boolean marked_parked whether the turn was recorded as parked to resume by itself
     local function handle_turn(response, opts)
       opts = opts or {}
       local buf = vim.api.nvim_create_buf(false, true)
@@ -141,9 +142,13 @@ describe("send_message", function()
 
       local appended = {}
       local marked_error = false
+      local marked_parked = false
       local callbacks = {
         mark_turn_error = function()
           marked_error = true
+        end,
+        mark_parked_on_limit = function()
+          marked_parked = true
         end,
         take_question_block = function()
           table.insert(appended, "<question block taken>")
@@ -171,7 +176,7 @@ describe("send_message", function()
       SendMessage._handle_response(response, callbacks, adapter, {}, {}, "do the thing")
 
       vim.api.nvim_buf_delete(buf, { force = true })
-      return chat_path, appended, marked_error
+      return chat_path, appended, marked_error, marked_parked
     end
 
     describe("recording why the turn stopped", function()
@@ -201,6 +206,58 @@ describe("send_message", function()
         local _, _, marked_error = handle_turn({ error = "Cancelled", _cancelled = true })
 
         assert.is_false(marked_error)
+      end)
+
+      describe("parked on a usage limit", function()
+        -- `completion_notifier` holds a parked stop instead of consuming the parent's
+        -- subscription, so the mark must mean "a restart is armed", not merely "a limit was hit".
+        local Config = require("vibing.config")
+        local AutoResume = require("vibing.application.chat.auto_resume")
+        local original_get
+        local limited = {
+          error = "Claude AI usage limit reached",
+          _rate_limit_info = { rejected = true, resets_at = os.time() + 3600 },
+        }
+
+        ---@param resume_enabled boolean
+        local function stub_config(resume_enabled)
+          Config.get = function()
+            return { automation = { limits = { resume = { enabled = resume_enabled, max_retries = 1 } } } }
+          end
+        end
+
+        before_each(function()
+          original_get = Config.get
+        end)
+
+        after_each(function()
+          Config.get = original_get
+        end)
+
+        it("is marked when auto-resume armed a restart", function()
+          stub_config(true)
+
+          local chat_path, _, _, marked_parked = handle_turn(limited)
+          AutoResume.cancel(chat_path)
+
+          assert.is_true(marked_parked)
+        end)
+
+        it("is not marked when nothing will restart the chat", function()
+          stub_config(false)
+
+          local _, _, _, marked_parked = handle_turn(limited)
+
+          assert.is_false(marked_parked)
+        end)
+
+        it("is not marked for an ordinary error", function()
+          stub_config(true)
+
+          local _, _, _, marked_parked = handle_turn({ error = "boom" })
+
+          assert.is_false(marked_parked)
+        end)
       end)
     end)
 

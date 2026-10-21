@@ -223,6 +223,15 @@ local function stop_reason_of(bufnr)
   return chat_buf:get_stop_reason()
 end
 
+---使用量リミットで止まり、リセット後に自分で次のターンを始めるチャットか。理由は
+---handbook/architecture/orchestration.md → "A parked stop does not consume the subscription"
+---@param bufnr number
+---@return boolean
+local function is_parked_on_limit(bufnr)
+  local chat_buf = require("vibing.presentation.chat.view").get_chat_buffer(bufnr)
+  return chat_buf ~= nil and chat_buf:is_parked_on_limit()
+end
+
 ---並列度上限のせいで積まれた本文を、枠が空いたときの配り直し対象にする
 ---
 ---`drain` が自分で見送った分は自分で覚えるが、`queue_if_busy` は配達を試す前に積むので
@@ -382,13 +391,14 @@ local function process_done(bufnr)
   -- ないので、2度読んで食い違う心配はない
   local stop_reason = stop_reason_of(bufnr)
 
-  -- 分岐2。まだ待ち合わせ中で、この完了は中間停止でしかない。理由は2つあるが帰結は同じなので
+  -- 分岐2。まだ待ち合わせ中で、この完了は中間停止でしかない。理由は3つあるが帰結は同じなので
   -- 1つの述語にまとめてある:
   --
   -- - 並列度上限で配達を見送った（`held`）— このチャットはまだ用件を抱えていて、枠が空いた
   --   完了イベントで配り直され、そのとき再稼働する
   -- - 自分が送った相手がまだ完了を返していない（`is_waiting_on_others`）— エッジテーブルは
   --   親子を区別しないので、判定の意味は「誰かの返事を待っている」
+  -- - 使用量リミットで止まり、リセット後に自分で再開する（`is_parked_on_limit`）
   --
   -- 例外も共通で、自力では抜けられない止まり方をしていたら保留しない。承認待ちも質問も未送信の
   -- `## User` セクションとして残るので、枠が空いて配り直しても `flush` は「下書きあり」として
@@ -398,7 +408,7 @@ local function process_done(bufnr)
   -- 抑止マーク（`reported`）はここでは**使い切らない**。マークが黙らせるのは停止そのものでは
   -- なく watchdog の配達1回ぶんで、保留した停止は誰にも配達していない。ここで捨てると、
   -- 本当に止まったときの配達で「もう自分から報告した相手」を二度起こすことになる
-  if not stop_reason and (held or is_waiting_on_others(bufnr)) then
+  if not stop_reason and (held or is_waiting_on_others(bufnr) or is_parked_on_limit(bufnr)) then
     return
   end
 
@@ -569,8 +579,8 @@ end
 ---
 ---発火判定は3分岐（#639 / #640）:
 ---  1. 自分宛キューを流せた → この tick で自分が再稼働する → 配達もエッジ消費もしない
----  2. 並列度上限で配達を見送った、または自分が張った未消費のエッジが残っている → まだ
----     待ち合わせ中の停止 → 親への配達を保留
+---  2. 並列度上限で配達を見送った、自分が張った未消費のエッジが残っている、または使用量
+---     リミットで駐車中 → まだ待ち合わせ中の停止 → 親への配達を保留
 ---  3. どちらでもない → 本当に止まった → 購読者へ配達
 ---2 の例外は `stop_reason_of` が非nilのとき（自力では抜けられない止まり方）で、上限による
 ---保留にも同じ例外がかかる。3 で `chat_notifications.enabled` を見るのも同じ例外つきで、

@@ -21,7 +21,9 @@ local Fs = require("vibing.core.utils.fs")
 ---@field take_question_block fun(): boolean ターン本文の末尾の質問ブロックを選択肢に変える（`question_block.lua`）
 ---@field mark_stop_attempt fun() Stop hook に止められた地点を覚える（`take_question_block` が読む）
 ---@field insert_choices fun(questions: table) 質問の選択肢を挿入
----@field set_pending_user_text fun(text: string) 次のユーザーセクションに差し込む本文を保存
+---@field set_pending_user_text fun(text: string, section: table?) 次のユーザーセクションに差し込む本文と見出しを保存
+---@field get_sent_header fun(): Vibing.Utils.Timestamp.Header? このターンが送ったセクションの見出し
+---@field mark_parked_on_limit fun()? リミットで弾かれ、自分で再開する予約が張られたことを記録
 ---@field insert_approval_request fun(tool: string, input: table, options: table) ツール承認要求UIを挿入
 ---@field show_pending_prompts fun() 走っているターンの途中で溜まっている承認プロンプトを描く
 ---@field get_session_allow fun(): table セッションレベルの許可リストを取得
@@ -388,8 +390,14 @@ function M._handle_response(response, callbacks, adapter, config, modified_file_
     if ok then
       rescheduled = result
     end
+    local parked = rescheduled
     if not rescheduled then
-      pcall(AutoResume.on_rate_limited, chat_file_path, response._rate_limit_info)
+      local resumed_ok, armed = pcall(AutoResume.on_rate_limited, chat_file_path, response._rate_limit_info)
+      parked = resumed_ok and armed == true
+    end
+    -- 自分で再開するターンは、購読者から見れば中間停止（`completion_notifier` の分岐2）
+    if parked and callbacks.mark_parked_on_limit then
+      callbacks.mark_parked_on_limit()
     end
   elseif not response.error then
     pcall(AutoResume.on_success, chat_file_path)
@@ -798,7 +806,20 @@ function M._reschedule_rejected_message(callbacks, chat_file_path, info, message
     return false
   end
 
-  callbacks.set_pending_user_text(progressed and M._continuation_prompt(config) or message)
+  local sent = callbacks.get_sent_header()
+  if progressed then
+    local text, section = require("vibing.application.chat.delivery_message").resumption(
+      M._continuation_prompt(config),
+      sent,
+      callbacks.get_bufnr()
+    )
+    callbacks.set_pending_user_text(text, section)
+  else
+    -- 送り直すのは同じ本文なので、見出し（配達の種別と送信元、質問への回答欄の印）もそのまま
+    -- 引き継ぐ。素の `## User` に書き戻すと、誰から届いた依頼だったかがバッファから消える
+    local keeps_header = sent and (sent.kind ~= "User" or sent.question_answer)
+    callbacks.set_pending_user_text(message, keeps_header and sent or nil)
+  end
   return true
 end
 

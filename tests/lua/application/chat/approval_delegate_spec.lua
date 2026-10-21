@@ -93,6 +93,9 @@ describe("ApprovalDelegate", function()
         get_stop_reason = function()
           return stop_reason
         end,
+        is_parked_on_limit = function()
+          return false
+        end,
         get_frontmatter_list = function(_, key)
           if key == "delegated_scope" then
             return worker_scope

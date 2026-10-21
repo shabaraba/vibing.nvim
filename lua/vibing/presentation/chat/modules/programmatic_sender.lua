@@ -122,7 +122,7 @@ function M.send(bufnr, message, sender, delivery, opts)
       or nil
 
     -- Add user section and send
-    local header = delivery and Timestamp.create_header(delivery.kind, nil, delivery.from) or nil
+    local header = delivery and Timestamp.unsent_header_for(delivery) or nil
     ConversationExtractor.drop_trailing_unsent_section(bufnr, opts.replace_unsent)
     Renderer.addUserSection(bufnr, nil, nil, nil, message, header)
     sent = chat_buf:send_message()
