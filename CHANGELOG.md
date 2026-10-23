@@ -103,6 +103,23 @@
   defaults to `true`: it spends no tokens, and a warning about a change you cannot otherwise see is
   useless if it is off until you ask for it. Set it to `false` to stop the warning and its probe.
 
+## 6.1.0 (2026-10-23)
+
+## What's Changed
+* chore(main): release 6.0.0 by @github-actions[bot] in https://github.com/shabaraba/vibing.nvim/pull/904
+* fix(chat): keep a blank line before Tokens after taking a question block by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/905
+* chore: add gh-relay label configuration by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/909
+* chore(deps): bump the minor-and-patch group in /agent-plugin/mcp-server with 2 updates by @dependabot[bot] in https://github.com/shabaraba/vibing.nvim/pull/908
+* fix(chat): take a question block the turn tried to stop on before a Stop hook by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/910
+* feat(chat): search past chats with a Lua pipeline that a small model keeps up with by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/911
+* chore(deps): bump zod from 4.6.5 to 4.6.6 in the minor-and-patch group by @dependabot[bot] in https://github.com/shabaraba/vibing.nvim/pull/907
+* fix(orchestration): keep the parent informed when a worker resumes after a usage limit by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/912
+* ci: bump Node.js to 26 by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/913
+* fix(grok): drop session/load catch-up from the new Assistant by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/916
+
+
+**Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v6.0.0...v6.1.0
+
 ## 6.0.0 (2026-10-14)
 
 ## What's Changed
