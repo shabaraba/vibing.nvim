@@ -497,6 +497,16 @@ through its members, sorted. The same MCP frame also sends `"content": null`, wh
 `vim.json.decode` makes `vim.NIL` — truthy in Lua and not iterable — so the decoder's object
 reads go through one `obj()` guard rather than `x or {}` (`features.md`).
 
+### Resume catch-up stays off the new Assistant
+
+A respawn — approval kill-and-retry is the usual one — opens the turn, then
+`session/load`s the existing session. grok re-emits stored `session/update`s as catch-up
+while that turn is already open. `grok_acp` drops those frames until
+`grok_duplex_protocol` writes `session/prompt` and synthesises `vibing/promptStarted`.
+The decoder state is per process, so a later turn on the same agent stays open. This
+does not filter the model's own recap of earlier work; only the CLI's replay of stored
+chunks.
+
 ### Whose turn just ended
 
 Nobody has to ask. A turn ends on the JSON-RPC **reply** to its own `session/prompt`,

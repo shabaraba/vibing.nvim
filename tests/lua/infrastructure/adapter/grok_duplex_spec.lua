@@ -177,6 +177,44 @@ describe("Grok duplex ACP agent", function()
     assert.equals("session/prompt", last(call).method)
   end)
 
+  it("does not paint session/load catch-up into the new turn", function()
+    -- Approval kill-and-retry (and any other respawn) loads the existing session while the new
+    -- turn is already open. Those stored updates reprint the prior conversation if rendered.
+    local result = send({ _session_id = "sess-old" })
+    local call = jobs.only_call()
+    reply(call, { protocolVersion = 1 })
+    emit(call, {
+      method = "session/update",
+      params = {
+        sessionId = "sess-old",
+        update = { sessionUpdate = "agent_message_chunk", content = { type = "text", text = "old reply" } },
+      },
+    })
+    emit(call, {
+      method = "session/update",
+      params = {
+        sessionId = "sess-old",
+        update = { sessionUpdate = "agent_thought_chunk", content = { type = "text", text = "old thought" } },
+      },
+    })
+    reply(call, vim.empty_dict())
+    assert.equals("session/prompt", last(call).method)
+
+    emit(call, {
+      method = "session/update",
+      params = {
+        sessionId = "sess-old",
+        update = { sessionUpdate = "agent_message_chunk", content = { type = "text", text = "new answer" } },
+      },
+    })
+    reply(call, { stopReason = "end_turn" })
+
+    local content = result.responses[1].content
+    assert.is_not_nil(content:find("new answer", 1, true), content)
+    assert.is_nil(content:find("old reply", 1, true), content)
+    assert.is_nil(content:find("old thought", 1, true), content)
+  end)
+
   it("streams assistant text out of ACP session updates", function()
     local result = send()
     local call = jobs.only_call()
