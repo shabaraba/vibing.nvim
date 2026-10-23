@@ -68,6 +68,8 @@ end
 local function send_prompt_now(record, prompt)
   local rpc = record._rpc
   rpc.interrupted = false
+  -- Opens `grok_acp` to session updates. Catch-up from `session/load` is dropped until this.
+  render(record, { method = "vibing/promptStarted" })
   return request(record, "session/prompt", {
     sessionId = rpc.session_id,
     prompt = { { type = "text", text = prompt } },

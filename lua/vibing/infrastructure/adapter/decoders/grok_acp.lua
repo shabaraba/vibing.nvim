@@ -240,6 +240,15 @@ function M.decode(msg, state)
   local events = {}
   local params = obj(msg.params)
 
+  -- Synthesised by `grok_duplex_protocol` as it writes `session/prompt`. Until then, `session/load`
+  -- re-emits stored updates into an already-open turn, which would reprint the prior conversation
+  -- into the new Assistant. `decoder_state` is per process, so a later turn on the same agent
+  -- keeps this open.
+  if msg.method == "vibing/promptStarted" then
+    state.prompt_open = true
+    return events
+  end
+
   -- Synthesised by `grok_duplex_protocol` once the session is named, because the id arrives in a
   -- `session/new` / `session/load` *reply* rather than in any notification.
   if msg.method == "vibing/sessionStarted" then
@@ -254,6 +263,9 @@ function M.decode(msg, state)
     return events
   end
   if not UPDATE_METHODS[msg.method] then
+    return events
+  end
+  if not state.prompt_open then
     return events
   end
 

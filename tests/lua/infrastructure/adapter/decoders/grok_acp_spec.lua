@@ -8,6 +8,7 @@ describe("decoders.grok_acp", function()
   --- @param update_json string the `params.update` object, verbatim
   --- @return Vibing.CanonicalEvent[]
   local function decode(state, update_json)
+    Decoder.decode({ method = "vibing/promptStarted" }, state)
     local frame = string.format(
       '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"01a1","update":%s}}',
       update_json
@@ -44,12 +45,14 @@ describe("decoders.grok_acp", function()
   -- `session/update` left the usage, the model and the hook's refusal notice unreachable -- a turn
   -- rendered its prose and its tool calls and reported no tokens at all.
   it("reads an update off the vendor notification method too", function()
+    local state = {}
+    Decoder.decode({ method = "vibing/promptStarted" }, state)
     local events = Decoder.decode(
       vim.json.decode(
         '{"jsonrpc":"2.0","method":"_x.ai/session_notification","params":{"sessionId":"s",'
           .. '"update":{"sessionUpdate":"response_completed","usage":{"input_tokens":7}}}}'
       ),
-      {}
+      state
     )
     assert.same({ { kind = "usage", record = { input_tokens = 7 } } }, events)
   end)
@@ -278,5 +281,56 @@ describe("decoders.grok_acp", function()
       { { kind = "error", message = "no" } },
       Decoder.decode({ method = "vibing/requestDenied", params = { message = "no" } }, {})
     )
+  end)
+
+  -- `session/load` re-emits stored `session/update`s while the new turn is already open. Painting
+  -- them reprints the prior conversation into the new Assistant. The prompt this process is
+  -- answering starts at `vibing/promptStarted`.
+  describe("resume catch-up", function()
+    local OLD = '{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"old reply"}}'
+    local THOUGHT = '{"sessionUpdate":"agent_thought_chunk","content":{"type":"text","text":"old thought"}}'
+    local TOOL = '{"sessionUpdate":"tool_call","toolCallId":"call-old","title":"write",'
+      .. '"rawInput":{},"_meta":{"x.ai/tool":{"name":"write"}}}'
+
+    local function raw(state, update_json)
+      local frame = string.format(
+        '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"01a1","update":%s}}',
+        update_json
+      )
+      return Decoder.decode(vim.json.decode(frame), state)
+    end
+
+    it("drops text, thinking and tool calls until the prompt is written", function()
+      local state = {}
+      assert.same({}, raw(state, OLD))
+      assert.same({}, raw(state, THOUGHT))
+      assert.same({}, raw(state, TOOL))
+    end)
+
+    it("still reports the session id during load", function()
+      local state = {}
+      assert.same(
+        { { kind = "session", session_id = "x" } },
+        Decoder.decode({ method = "vibing/sessionStarted", params = { session_id = "x" } }, state)
+      )
+      assert.same({}, raw(state, OLD))
+    end)
+
+    it("renders live updates after the prompt is written", function()
+      local state = {}
+      assert.same({}, raw(state, OLD))
+      Decoder.decode({ method = "vibing/promptStarted" }, state)
+      assert.same({ { kind = "first_response" }, { kind = "text", delta = "old reply" } }, raw(state, OLD))
+    end)
+
+    it("keeps the prompt open for later turns on the same process", function()
+      local state = {}
+      Decoder.decode({ method = "vibing/promptStarted" }, state)
+      Decoder.decode({ method = "vibing/promptStarted" }, state)
+      assert.same({ { kind = "first_response" }, { kind = "text", delta = "hi" } }, raw(
+        state,
+        '{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"hi"}}'
+      ))
+    end)
   end)
 end)
