@@ -68,6 +68,9 @@ function M.line_router(chat_key, descriptor)
       return
     end
     local turn = M.turn_of(record)
+    if turn and turn.touch then
+      turn.touch()
+    end
     local context = turn and turn.context or record._idle_context
     if context then
       -- A protocol can render from deferred callbacks too, so it resolves its context itself.
@@ -89,6 +92,9 @@ function M.stderr_router(chat_key)
   return function(text, record)
     local turn = is_current(chat_key, record) and M.turn_of(record) or nil
     if turn then
+      if turn.touch then
+        turn.touch()
+      end
       table.insert(turn.context.errorOutput, text)
       return
     end
