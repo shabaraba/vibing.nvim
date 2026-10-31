@@ -144,7 +144,7 @@ vibing.nvim は Codex バックエンドの軽量呼び出し(チャットタイ
 向きます**(通常のチャットは指定どおりのプロバイダを使います)。該当する場合は Neovim セッション
 ごとに一度だけ警告します。プロバイダの判定は Codex 自身(`codex doctor --json`)に問い合わせて
 おり、Codex が答えられなかったときは何も表示しません。
-`agent.codex_provider_notice.enabled = false` で警告と probe をまとめて止められます。
+`ai.agents.codex.extensions.provider_notice = false` で警告と probe をまとめて止められます。
 
 </details>
 

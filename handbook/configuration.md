@@ -667,7 +667,7 @@ the background to ask Codex which provider is actually configured, and warns onc
 `openai`. Nothing waits for the probe, and if Codex cannot answer, nothing is said — a warning that
 cannot be trusted is worse than none, because its silence reads as "you are fine".
 
-**Why this one defaults to on** while `automation.limits.resume` and `integrations.dap` default to off: those
+**Why this one defaults to on** while `ui.subagents.show_output` and `automation.limits.resume` default to off: those
 two spend tokens unattended, so the safe default is silence. This one spends none and exists to
 stop a change happening behind your back — off by default, it would fail at exactly the job it has.
 
