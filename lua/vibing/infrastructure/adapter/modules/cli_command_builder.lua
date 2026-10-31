@@ -220,8 +220,9 @@ function M.system_prompt_args(ctx)
       "When starting a development server, watcher, long-running script, or any process intended "
         .. "to outlive the current model turn, you MUST use the vibing-nvim nvim_job_start MCP tool. "
         .. "Do not use shell backgrounding such as &, nohup, or setsid for these processes. Use "
-        .. "nvim_job_status, nvim_job_wait, and nvim_job_stop to manage them. If nvim_job_start is "
-        .. "unavailable, say so instead of silently substituting shell backgrounding."
+        .. "nvim_job_status, nvim_job_wait, and nvim_job_stop to manage them. nvim_job_start follows "
+        .. "the same permission rules as Bash. If nvim_job_start is unavailable, say so instead of "
+        .. "silently substituting shell backgrounding."
     )
     vim.list_extend(system_prompt_lines, AskUserQuestionInstructions.lines())
     vim.list_extend(system_prompt_lines, AskUserQuestionInstructions.chat_buffer_lines(opts.chat_bufnr))

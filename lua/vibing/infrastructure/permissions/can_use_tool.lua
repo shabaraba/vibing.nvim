@@ -11,6 +11,9 @@
 --- 5.5. Deny rules (path/command/pattern/domain based) — before any mode shortcut or session
 ---      grant, so the bundled destructive-command rules hold under `auto` mode, for
 ---      always-allowed tools, and after an "allow_for_session" approval
+--- 5.6. Embedded shell (`nvim_execute` of a shell Ex command, and every `nvim_job_start`)
+---      judged as Bash: the Bash deny list, session deny, and deny rules. This is before a
+---      session grant of the MCP tool name or `auto` mode can allow the call.
 --- 6. Session-level allow list (auto-approve)
 --- 7. Always-allowed tools (bypass allow list; deny/ask still respected)
 --- 8. Permission modes (auto, acceptEdits, default; dontAsk changes ask→deny below)
@@ -22,6 +25,7 @@
 
 local matchers = require("vibing.infrastructure.permissions.matchers")
 local rule_checker = require("vibing.infrastructure.permissions.rule_checker")
+local shell_command = require("vibing.infrastructure.permissions.shell_command")
 local tools_constants = require("vibing.core.constants.tools")
 
 local M = {}
@@ -31,6 +35,9 @@ local ONCE_SUFFIX = ":once"
 local BACKGROUND_JOB_MESSAGE = "Shell backgrounding is disabled in vibing.nvim because the process "
   .. "can be killed when this CLI turn exits. Use nvim_job_start instead, then manage it with "
   .. "nvim_job_status, nvim_job_wait, or nvim_job_stop."
+
+local JOB_DETACH_MESSAGE = "This nvim_job_start command detaches a child (a shell '&' or a "
+  .. "nohup/setsid/disown wrapper). Start the program directly so Neovim can stop the process group."
 
 --- @class CanUseToolResult
 --- @field behavior "allow"|"deny"|"ask"
@@ -276,6 +283,84 @@ local function build_not_allowed_message(tool_name, input, allowed_tools)
   return string.format("Tool %s is not in the allowed list", tool_name)
 end
 
+--- A shell reached through nvim_execute or nvim_job_start, or nil when this call is not one.
+--- `command` is the text the Bash matchers see. `kind` is "job" for an argv array (backgrounding
+--- is decided from the argv, not from that joined line) and "ex" for an Ex command.
+--- @param tool_name string
+--- @param input table<string, any>
+--- @return { kind: "job"|"ex", command: string }|nil
+local function embedded_shell(tool_name, input)
+  if M.is_vibing_nvim_mcp_tool(tool_name, "nvim_job_start") then
+    return { kind = "job", command = shell_command.from_job(input) }
+  end
+  if M.is_vibing_nvim_mcp_tool(tool_name, "nvim_execute") then
+    local command = shell_command.from_ex(type(input) == "table" and input.command or nil)
+    if command then
+      return { kind = "ex", command = command }
+    end
+  end
+  return nil
+end
+
+--- @param tool_name string
+--- @param shell string
+--- @param result CanUseToolResult
+--- @return CanUseToolResult
+local function annotate_shell_decision(tool_name, shell, result)
+  if result.behavior ~= "deny" then
+    return { behavior = result.behavior }
+  end
+  local label = tool_name:match("(nvim_job_start)$") or tool_name:match("(nvim_execute)$") or tool_name
+  local preview = shell:gsub("%s+", " ")
+  if #preview > 120 then
+    preview = preview:sub(1, 117) .. "..."
+  end
+  local message = result.message
+  if message and not message:find(label, 1, true) then
+    message = string.format(
+      "%s runs a shell command (%s) and follows the Bash permission rules. %s",
+      label,
+      preview,
+      message
+    )
+  end
+  return { behavior = "deny", message = message }
+end
+
+--- Bash deny list, session deny, and deny rules for an embedded shell command. Runs before a
+--- session grant of the MCP tool name and before `auto` mode, which is where those checks run
+--- for a real Bash call.
+--- @param tool_name string
+--- @param shell string
+--- @param config PermissionConfig
+--- @return CanUseToolResult|nil
+local function deny_embedded_shell(tool_name, shell, config)
+  local bash_input = { command = shell }
+  local session_deny = check_session_list("Bash", bash_input, config.session_denied_tools, "deny")
+  if session_deny then
+    return annotate_shell_decision(tool_name, shell, session_deny)
+  end
+  if config.denied_tools and #config.denied_tools > 0 then
+    for _, pattern in ipairs(config.denied_tools) do
+      if matchers.matches_permission("Bash", bash_input, pattern) then
+        return annotate_shell_decision(tool_name, shell, deny("Tool Bash is in the denied list"))
+      end
+    end
+  end
+  if config.permission_rules and #config.permission_rules > 0 then
+    for _, rule in ipairs(config.permission_rules) do
+      if rule.action == "deny" and rule_checker.check_rule(rule, "Bash", bash_input) == "deny" then
+        return annotate_shell_decision(
+          tool_name,
+          shell,
+          deny(rule.message or "Tool Bash is denied by permission rule")
+        )
+      end
+    end
+  end
+  return nil
+end
+
 --- Evaluate tool permission
 --- @param tool_name string
 --- @param input table<string, any>
@@ -283,11 +368,30 @@ end
 --- @return CanUseToolResult
 function M.can_use_tool(tool_name, input, config)
   local ok, result = pcall(function()
+    input = input or {}
+    local shell = embedded_shell(tool_name, input)
+
     -- 1. This is a lifecycle invariant, not a configurable permission preference. Keep it ahead
     -- of bypassPermissions so even unattended turns cannot accidentally create a process Neovim
     -- does not own. It applies only when the replacement MCP tool is actually enabled.
-    if tool_name == "Bash" and config.mcp_enabled and M.uses_shell_backgrounding(input) then
+    if
+      tool_name == "Bash"
+      and config.mcp_enabled
+      and not config._skip_background_job_policy
+      and M.uses_shell_backgrounding(input)
+    then
       return deny(BACKGROUND_JOB_MESSAGE)
+    end
+    if shell and config.mcp_enabled and not config._skip_background_job_policy then
+      if shell.kind == "job" then
+        for _, script in ipairs(shell_command.job_background_commands(input)) do
+          if M.uses_shell_backgrounding({ command = script }) then
+            return deny(JOB_DETACH_MESSAGE)
+          end
+        end
+      elseif M.uses_shell_backgrounding({ command = shell.command }) then
+        return deny(BACKGROUND_JOB_MESSAGE)
+      end
     end
 
     -- 2. Session-level deny list (highest configurable priority)
@@ -338,6 +442,16 @@ function M.can_use_tool(tool_name, input, config)
         if rule.action == "deny" and rule_checker.check_rule(rule, tool_name, input) == "deny" then
           return deny(rule.message or string.format("Tool %s is denied by permission rule", tool_name))
         end
+      end
+    end
+
+    -- 5.6. An embedded shell is a Bash call. Its deny list and deny rules have to run before the
+    -- session grant below: allow_for_session on nvim_execute records the MCP tool name, and
+    -- evaluating that first would let one approved `:!ls` whitelist `:!rm -rf /`.
+    if shell then
+      local shell_deny = deny_embedded_shell(tool_name, shell.command, config)
+      if shell_deny then
+        return shell_deny
       end
     end
 
@@ -392,6 +506,18 @@ function M.can_use_tool(tool_name, input, config)
     -- unprefixed as grok's `server__tool`. is_vibing_nvim_mcp_tool anchors on the server name so
     -- all three are recognized identically, whatever the plugin is called.
     if M.is_vibing_nvim_mcp_tool(tool_name) then
+      -- A shell command does not take the MCP auto-allow. The deny side already ran at step 5.6;
+      -- what remains is the Bash allow list, ask list, and mode (ask vs dontAsk). exclusive_tools
+      -- was already applied to this MCP tool, so the Bash re-entry must not deny the call merely
+      -- because the set did not also name Bash. Backgrounding was already decided above.
+      if shell then
+        local bash_config = vim.tbl_extend("force", {}, config, { _skip_background_job_policy = true })
+        bash_config.exclusive_tools = nil
+        local bash = M.can_use_tool("Bash", { command = shell.command }, bash_config)
+        if bash.behavior ~= "allow" then
+          return annotate_shell_decision(tool_name, shell.command, bash)
+        end
+      end
       if config.mcp_enabled then
         return allow(input)
       end

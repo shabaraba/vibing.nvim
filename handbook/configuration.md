@@ -1643,6 +1643,11 @@ Two built-in behaviors to be aware of:
 - `Read`, `Skill`, and `StructuredOutput` are **always allowed** regardless of the allow list
   (they can still be blocked via `deny`).
 - `Skill` is automatically appended to `allow` unless you put it in `deny` or `ask`.
+- `nvim_job_start`, and `nvim_execute` when the Ex command runs a shell (`:!`, `:read !`,
+  `:write !`, `:terminal`, `:[range]!`, `:make`, `:grep`, and `system()` / `jobstart()` /
+  `os.execute()` / `vim.system()` / `vim.uv.spawn()`), are judged as `Bash`. The default
+  `deny = { "Bash" }` denies them. Allow a command with the same `Bash(prefix:*)` pattern you
+  would use for the Bash tool. Ordinary Ex commands such as `:write` and `:edit` are unchanged.
 
 ### Project-local Codex permission profiles
 

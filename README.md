@@ -266,6 +266,13 @@ require("vibing").setup({
 The permissions above are a **template** for new chat files; each chat's frontmatter carries its
 own permissions, and those are what is enforced at runtime.
 
+`nvim_job_start` and a shell Ex command run through `nvim_execute` follow those same rules.
+With `deny = { "Bash" }` (the default), `:!ls`, `:read !`, `:write !`, `:terminal`, a `:[range]!`
+filter, `:make`, `:grep`, and `system()` / `jobstart()` / `os.execute()` / `vim.system()` /
+`vim.uv.spawn()` from `:lua` or `:call` are denied, and so is every `nvim_job_start`. Allow one
+the way you allow Bash (`Bash(npm:*)`, or take `Bash` out of `deny`). `:write`, `:edit`, and
+`:split` are unchanged.
+
 Old setup keys are rejected with migration hints. Objects merge recursively and lists replace
 (including empty lists). See [the migration guide](./handbook/configuration-redesign.md).
 

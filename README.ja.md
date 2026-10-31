@@ -265,6 +265,13 @@ require("vibing").setup({
 上記のデフォルト権限は、新規チャットファイル作成時の**テンプレート**として使われます。実行時に
 適用されるのは各チャットファイルの frontmatter に記録された権限です。
 
+`nvim_job_start` と、シェルを実行する `nvim_execute` の Ex コマンドは、同じルールで判定されます。
+既定の `deny = { "Bash" }` では `:!ls`、`:read !`、`:write !`、`:terminal`、`:[range]!`、`:make`、
+`:grep`、および `:lua` / `:call` からの `system()` / `jobstart()` / `os.execute()` / `vim.system()` /
+`vim.uv.spawn()` は拒否され、`nvim_job_start` も同様です。許可するときは Bash と同じ指定
+（`Bash(npm:*)`、または `deny` から `Bash` を外す）を使います。`:write`、`:edit`、`:split` は
+これまで通りです。
+
 **完全なリファレンス:** すべてのオプション(ウィンドウ詳細、UI/グラデーション/ツールマーカー、
 diff バックエンド、粒度の細かい権限ルール、MCP、Node.js 実行ファイル、日報など)は
 [handbook/configuration.md](./handbook/configuration.md)(英語)を参照してください。
