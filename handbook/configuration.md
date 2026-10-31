@@ -452,6 +452,7 @@ ui = {
   },
 },
 automation = {
+  stall = { timeout_sec = 600 }, -- Resident CLI inactivity; 0 disables recovery.
   limits = {
     resume = {
       enabled = false,

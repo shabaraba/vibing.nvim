@@ -375,6 +375,15 @@ The chat frontmatter permissions remain tool-based and unchanged.
 :VibingCancel
     Cancel the request in flight.
 
+    Resident CLI turns also recover automatically after 600 seconds without
+    CLI activity, once a first response has arrived. Running tools and pending
+    approvals hold this timer, and it starts over once they finish. Recovery
+    stops the CLI and writes an error.
+    It keeps the conversation ID and does not resend the interrupted request.
+    Review any changes before sending a message to continue. Configure with
+    automation.stall.timeout_sec (0 disables this recovery). This applies to
+    process = "duplex" only; it does not impose a tool execution timeout.
+
                                                              *:VibingReserve*
 :VibingReserve [{text}]
     Reserve {text} for this chat, to be sent when its current response

@@ -432,7 +432,7 @@ function M._handle_response(response, callbacks, adapter, config, modified_file_
     end
     callbacks.append_chunk("\n\n**Error:** " .. response.error)
 
-    if is_session_error(tostring(response.error)) and callbacks.get_session_id() then
+    if not response._stalled and is_session_error(tostring(response.error)) and callbacks.get_session_id() then
       callbacks.update_session_id(nil)
       callbacks.append_chunk("\n\n*Session has been reset. Your next message will start a new session.*")
       vim.notify("[vibing] Session error detected - session has been automatically reset", vim.log.levels.WARN)

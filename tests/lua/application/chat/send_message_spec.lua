@@ -1077,5 +1077,44 @@ describe("send_message", function()
 
       vim.api.nvim_buf_delete(buf, { force = true })
     end)
+
+    it("keeps the session of a stalled turn even when its error reads like a session error", function()
+      local buf = chat_buffer()
+      local updates = {}
+      local callbacks = {
+        get_bufnr = function()
+          return buf
+        end,
+        get_session_id = function()
+          return "kept-session"
+        end,
+        get_cwd = function()
+          return nil
+        end,
+        update_session_id = function(id)
+          table.insert(updates, id == nil and "reset" or id)
+        end,
+        append_chunk = function(_) end,
+        add_user_section = function() end,
+      }
+      local adapter = {
+        supports = function()
+          return false
+        end,
+      }
+
+      SendMessage._handle_response(
+        { content = "", error = "session went silent", _stalled = true, _turn_id = "turn-1" },
+        callbacks,
+        adapter,
+        {},
+        {},
+        "msg"
+      )
+
+      assert.same({}, updates)
+
+      vim.api.nvim_buf_delete(buf, { force = true })
+    end)
   end)
 end)

@@ -112,7 +112,14 @@ function M.open(params, record, chat_key)
   -- The first-response watchdog is the one timer that is disarmed *before* the turn ends, so it is
   -- held apart from the list above. Folding it in would mean `onFirstResponse` also disarmed an
   -- interrupt's kill fallback — which by construction is armed after the first response arrived.
+  -- The inactivity watchdog repeats until the turn ends, which `watch` cannot express.
   local first_response_timer = nil
+  local inactivity_timer = nil
+  local received_response = false
+  local function now_ms()
+    return vim.uv.hrtime() / 1000000
+  end
+  local last_activity = now_ms()
   local function stop_first_response_timer()
     if first_response_timer then
       vim.fn.timer_stop(first_response_timer)
@@ -127,6 +134,10 @@ function M.open(params, record, chat_key)
     completed = true
     stop_timers()
     stop_first_response_timer()
+    if inactivity_timer then
+      vim.fn.timer_stop(inactivity_timer)
+      inactivity_timer = nil
+    end
     hand_back(params, record, chat_key, response)
   end
 
@@ -134,6 +145,9 @@ function M.open(params, record, chat_key)
     turn_id = ids.turn_id,
     context = context,
     complete = complete,
+    touch = function()
+      last_activity = now_ms()
+    end,
     --- Arm a timer that cannot outlive this turn. Returns nothing: the turn owns it.
     --- @param delay_ms number
     --- @param on_expire fun()
@@ -158,6 +172,7 @@ function M.open(params, record, chat_key)
   -- still runs on the oneshot path for the same stream.
   local previous = context.onFirstResponse
   context.onFirstResponse = function()
+    received_response = true
     stop_first_response_timer()
     if previous then
       previous()
@@ -168,6 +183,34 @@ function M.open(params, record, chat_key)
   -- process is not the id this turn was minted with. `duplex_stream` has already written it back
   -- onto `ids`; naming `record` here says so without depending on that order.
   local turn_ids = Routing.ids_of(record, record._turn)
+
+  local timeout_sec = vim.tbl_get(params.config or {}, "automation", "stall", "timeout_sec")
+  if timeout_sec == nil then
+    timeout_sec = require("vibing.config").defaults.automation.stall.timeout_sec
+  end
+  if type(timeout_sec) == "number" and timeout_sec > 0 then
+    local timeout_ms = timeout_sec * 1000
+    inactivity_timer = vim.fn.timer_start(math.max(1, math.min(1000, timeout_ms)), function()
+      vim.schedule(function()
+        if completed or not received_response then
+          return
+        end
+        local bufnr = params.opts.chat_bufnr
+        local awaiting_approval = bufnr and require("vibing.infrastructure.rpc.pending_prompts").has_for_chat(bufnr)
+        -- Silence during a tool or human approval is expected; give the model a fresh budget afterwards.
+        if next(context._tools or {}) or awaiting_approval then
+          last_activity = now_ms()
+          return
+        end
+        if now_ms() - last_activity < timeout_ms then
+          return
+        end
+        -- Reported before the kill, for the reason `turn_outcome.first_response_timeout` states.
+        complete(TurnOutcome.stalled(turn_ids, table.concat(context.output, ""), timeout_sec))
+        Pool.stop(chat_key, "unresponsive")
+      end)
+    end, { ["repeat"] = -1 })
+  end
 
   context.onTurnEnd = function(event)
     if not M.ends_this_turn(context, event) then
@@ -191,7 +234,10 @@ function M.open(params, record, chat_key)
       if completed then
         return
       end
-      vim.notify(string.format("%s The resident CLI process did not answer; restarting it.", params.tag), vim.log.levels.WARN)
+      vim.notify(
+        string.format("%s The resident CLI process did not answer; restarting it.", params.tag),
+        vim.log.levels.WARN
+      )
       -- Reported before the kill, for the reason `turn_outcome.first_response_timeout` states.
       complete(TurnOutcome.first_response_timeout(turn_ids))
       Pool.stop(chat_key, "unresponsive")

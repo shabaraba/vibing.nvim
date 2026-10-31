@@ -173,6 +173,7 @@ describe("the first-response watchdog", function()
         TurnOutcome.ended(IDS, "", "boom"),
         TurnOutcome.cancelled(IDS, ""),
         TurnOutcome.first_response_timeout(IDS),
+        TurnOutcome.stalled(IDS, "", 600),
       }) do
         assert.equals("turn-1", response._turn_id)
         assert.equals("proc-1", response._process_id)
@@ -184,6 +185,7 @@ describe("the first-response watchdog", function()
       assert.equals("partial", TurnOutcome.cancelled(IDS, "partial").content)
       assert.is_nil(TurnOutcome.ended(IDS, "out", "boom")._cancelled)
       assert.is_nil(TurnOutcome.first_response_timeout(IDS)._cancelled)
+      assert.is_nil(TurnOutcome.stalled(IDS, "partial", 600)._cancelled)
     end)
 
     it("leaves error nil for a turn that simply finished", function()
