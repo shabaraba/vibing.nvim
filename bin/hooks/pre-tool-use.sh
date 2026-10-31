@@ -12,6 +12,10 @@
 # with code 2" to the model.
 FORMAT="${1:-claude}"
 
+# Files this script creates (.req) must not be world-readable, and a comm directory left over
+# from an older session must not stay searchable by every account on the host.
+umask 077
+
 debug_log() {
   [ -n "$VIBING_DEBUG" ] && echo "$(date) $1" >> "/tmp/vibing-hook-debug.log"
 }
@@ -31,7 +35,14 @@ fi
 
 REQUEST_ID="$(date +%s)-$$-$RANDOM"
 COMM_DIR="${VIBING_HOOK_COMM_DIR:-/tmp/vibing-hook-${PORT}}"
-mkdir -p "$COMM_DIR" 2>/dev/null
+mkdir -m 0700 -p "$COMM_DIR" 2>/dev/null
+# /tmp is shared: a path another account created, or a symlink, is not ours to write requests into.
+if [ -L "$COMM_DIR" ] || [ ! -d "$COMM_DIR" ] || [ ! -O "$COMM_DIR" ]; then
+  debug_log "comm dir not private to this user: $COMM_DIR"
+  echo "vibing.nvim comm directory is not owned by this user: $COMM_DIR" >&2
+  exit 2
+fi
+chmod 700 "$COMM_DIR" 2>/dev/null
 
 REQ_FILE="$COMM_DIR/${REQUEST_ID}.req"
 RES_FILE="$COMM_DIR/${REQUEST_ID}.res"
@@ -49,9 +60,13 @@ mv "${REQ_FILE}.tmp" "$REQ_FILE"
 # on either side fails the build instead of silently losing attribution.
 PROCESS_ID="${VIBING_PROCESS_ID//[^A-Za-z0-9_]/}"
 
-# Notify Neovim RPC server (fire-and-forget)
-printf '{"method":"check_tool_permission","id":1,"params":{"request_id":"%s","process_id":"%s"}}\n' "$REQUEST_ID" "$PROCESS_ID" \
-  | nc -w 1 127.0.0.1 "$PORT" >/dev/null 2>&1
+# Notify Neovim RPC server (fire-and-forget). `token` is the session credential in $COMM_DIR;
+# the server rejects the request before running a handler when it does not match. Read inline,
+# not from a sourced file: codex runs a copy of this script staged alone under <cwd>/.vibing/.
+# Only [0-9a-f] survives, which is what makes the value safe to interpolate into the JSON below.
+TOKEN="$(tr -cd '0-9a-f' < "$COMM_DIR/token" 2>/dev/null | head -c 128)"
+RPC_LINE="$(printf '{"method":"check_tool_permission","id":1,"params":{"request_id":"%s","process_id":"%s"},"token":"%s"}\n' "$REQUEST_ID" "$PROCESS_ID" "$TOKEN" \
+  | nc -w 1 127.0.0.1 "$PORT" 2>/dev/null)"
 NC_STATUS=$?
 debug_log "nc status=$NC_STATUS, waiting for $RES_FILE"
 
@@ -62,6 +77,18 @@ if [ "$NC_STATUS" -ne 0 ]; then
   rm -f "$REQ_FILE" 2>/dev/null
   exit 2
 fi
+
+# A rejected token never writes the .res file. Waiting out the approval budget here would turn
+# one missing credential into a multi-minute stall on every tool call, and the result is a deny
+# either way.
+case "$RPC_LINE" in
+  *'"error":"unauthorized"'*)
+    debug_log "RPC unauthorized"
+    echo "Failed to authenticate to vibing.nvim RPC server" >&2
+    rm -f "$REQ_FILE" 2>/dev/null
+    exit 2
+    ;;
+esac
 
 # Poll for the response file, in 0.1s ticks.
 #

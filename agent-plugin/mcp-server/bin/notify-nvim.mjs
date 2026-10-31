@@ -23,10 +23,25 @@
  */
 import * as net from 'node:net';
 import { spawn } from 'node:child_process';
-import { realpathSync } from 'node:fs';
+import { readFileSync, realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const RPC_PORT_ENV = 'VIBING_NVIM_RPC_PORT';
+
+/** Same file and path rule as `lua/vibing/infrastructure/rpc/comm_dir.lua` and `src/rpc.ts`. */
+const SESSION_TOKEN_FILE = 'token';
+const COMM_DIR_ENV = 'VIBING_HOOK_COMM_DIR';
+
+function readSessionToken(port) {
+  const override = process.env[COMM_DIR_ENV];
+  const dir = override || `/tmp/vibing-hook-${port}`;
+  try {
+    const token = readFileSync(`${dir}/${SESSION_TOKEN_FILE}`, 'utf8').trim();
+    return /^[0-9a-f]+$/.test(token) ? token : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 /** Short: a notification nobody is listening for must not outlive the thing it describes. */
 const DELIVERY_TIMEOUT_MS = 3000;
@@ -48,13 +63,14 @@ function deliver(level, message) {
   // failure: nothing here is worth an exit code.
   socket.on('error', () => {});
   socket.on('connect', () => {
-    socket.end(
-      JSON.stringify({
-        id: 1,
-        method: 'notify',
-        params: { level, message, title: 'MCP Server' },
-      }) + '\n'
-    );
+    const token = readSessionToken(port);
+    const request = {
+      id: 1,
+      method: 'notify',
+      params: { level, message, title: 'MCP Server' },
+    };
+    if (token) request.token = token;
+    socket.end(JSON.stringify(request) + '\n');
   });
 }
 

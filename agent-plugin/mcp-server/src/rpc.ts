@@ -1,9 +1,35 @@
+import { readFileSync } from 'node:fs';
 import * as net from 'net';
 import { listLiveInstances } from './instance-registry.js';
 import { READ_ONLY_METHODS } from './read-only-methods.js';
 
 const NVIM_RPC_TIMEOUT = parseInt(process.env.VIBING_RPC_TIMEOUT || '30000', 10); // Default 30 seconds
 export const RPC_PORT_ENV = 'VIBING_NVIM_RPC_PORT';
+
+/**
+ * Session credential written by `lua/vibing/infrastructure/rpc/comm_dir.lua`.
+ * Same path rule as `CommDir.path`: `$VIBING_HOOK_COMM_DIR`, otherwise `/tmp/vibing-hook-<port>`.
+ */
+const SESSION_TOKEN_FILE = 'token';
+const COMM_DIR_ENV = 'VIBING_HOOK_COMM_DIR';
+
+function commDirForPort(port: number): string {
+  const override = process.env[COMM_DIR_ENV];
+  if (override) {
+    return override;
+  }
+  return `/tmp/vibing-hook-${port}`;
+}
+
+/** Hex token from the comm directory, or undefined when this process cannot read one. */
+export function readSessionToken(port: number): string | undefined {
+  try {
+    const token = readFileSync(`${commDirForPort(port)}/${SESSION_TOKEN_FILE}`, 'utf8').trim();
+    return /^[0-9a-f]+$/.test(token) ? token : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 let requestId = 0;
 
@@ -198,7 +224,11 @@ export async function callNeovim(
   return new Promise((resolve, reject) => {
     portPending.set(id, { resolve, reject });
 
-    const request = JSON.stringify({ id, method, params }) + '\n';
+    // Top-level field, not a param: handlers never see it, and the server compares it before
+    // scheduling one. Absent when this process has no token file — the server then rejects.
+    const token = readSessionToken(resolvedPort);
+    const request =
+      JSON.stringify(token ? { id, method, params, token } : { id, method, params }) + '\n';
     sock.write(request);
 
     // Timeout after configured duration (default 30 seconds), or whatever this call asked for.

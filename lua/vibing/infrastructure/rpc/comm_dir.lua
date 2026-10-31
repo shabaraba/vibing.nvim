@@ -17,6 +17,10 @@ M.ROOT = "/tmp"
 --- Prefix of a comm directory's basename.
 M.PREFIX = "vibing-hook-"
 
+--- Basename of the session credential inside a comm directory (`rpc/session_token.lua`).
+--- `bin/hooks/*.sh` and the MCP server read the same name.
+M.TOKEN_NAME = "token"
+
 --- Path of the comm directory a given RPC port would use.
 --- @param port number|string
 --- @return string

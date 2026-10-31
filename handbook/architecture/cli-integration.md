@@ -19,6 +19,15 @@ directory path comes from
 routine and `bin/hooks/*.sh`). It is machine-wide shared state keyed by port, so it has two
 escape hatches: `$VIBING_HOOK_COMM_DIR` overrides it outright (tests use this), and without a
 listening port it falls back to a PID-suffixed path rather than a single shared `vibing-hook-0`.
+The directory is created mode 0700 and the files in it are mode 0600. When the RPC server binds,
+it writes a session token (32 bytes from `/dev/urandom`, hex) to `token` in that directory. Every
+JSON-RPC request — the hook's `nc` line and the MCP server's TCP client — carries it as a
+top-level `token` field, and a request that does not match is rejected before a handler is
+scheduled. The token is a file rather than an environment variable: Codex and Grok forward
+environment by an explicit list, Grok copies those values into the ACP session request, and
+`/proc/<pid>/cmdline` is world-readable, so an argv secret would be too. A same-user client that
+already knows the port can read the file. Another account on the host can open `127.0.0.1` and
+cannot read it. The instance registry does not contain it.
 The instance registry has the same treatment via `$VIBING_INSTANCES_DIR` (honoured by both
 `rpc/registry.lua` and `agent-plugin/mcp-server/src/handlers/instances.ts`).
 

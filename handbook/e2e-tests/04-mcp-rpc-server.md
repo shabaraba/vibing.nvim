@@ -600,9 +600,11 @@ invalid json {{{
 **操作:**
 
 ```bash
-# 100個のリクエストを連続で送信
+# 100個のリクエストを連続で送信。token は /tmp/vibing-hook-<port>/token（mode 0600）。
+TOKEN=$(tr -cd '0-9a-f' < /tmp/vibing-hook-9876/token)
 for i in {1..100}; do
-  echo '{"jsonrpc":"2.0","id":'$i',"method":"list_buffers","params":{}}' | nc localhost 9876
+  echo '{"jsonrpc":"2.0","id":'$i',"method":"list_buffers","params":{},"token":"'"$TOKEN"'"}' \
+    | nc localhost 9876
 done
 ```
 

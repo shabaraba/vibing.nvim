@@ -61,6 +61,7 @@ describe("cli_command_builder", function()
       local prompt_text = cmd[find_flag(cmd, "--append-system-prompt") + 1]
       assert.is_truthy(prompt_text:find("MUST use the vibing-nvim nvim_job_start", 1, true))
       assert.is_truthy(prompt_text:find("Do not use shell backgrounding", 1, true))
+      assert.is_truthy(prompt_text:find("same permission rules as Bash", 1, true))
       assert.is_truthy(prompt_text:find("nohup", 1, true))
     end)
 

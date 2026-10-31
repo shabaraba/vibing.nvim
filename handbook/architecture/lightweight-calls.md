@@ -43,9 +43,20 @@ the process runs **outside** the read-only sandbox. No narrower switch exists (`
 `tools.mcp`, `features.mcp`, `mcp_enabled`, `disable_mcp` are all unknown fields; `mcp_servers=false`
 is a type error), and per-server `mcp_servers.<name>.enabled=false` works but needs a name list
 that goes stale the moment a server is added — silently, which is the failure mode being fixed.
-`--ignore-user-config` is therefore accepted along with its known cost: it also drops
-`model_provider`, so a user on a custom provider gets utility calls against the default OpenAI
-endpoint. Auth is unaffected; codex reads it from `CODEX_HOME` either way.
+`--ignore-user-config` is therefore still how the MCP servers stay out, and it still drops
+`model_provider` and `model`. `codex_lightweight_provider.lua` copies them back onto the same
+argv as `-c` overrides: the top-level `model_provider`, the selected `[model_providers.<id>]`
+table (so a custom provider has a `base_url`, not just a name), and `model` when the call is
+not already passing `-m`. `ai.helpers.model`, when it is a model Codex accepts, still wins via
+`-m` and runs on that same provider. `openai_base_url` is copied too, because that is the
+supported way to point the built-in OpenAI provider at a proxy. MCP servers, profiles and every
+other key are not copied. Auth is unaffected; codex reads it from `CODEX_HOME` either way.
+The copied keys are overrides, so `--strict-config` validates them: a provider table holding a
+field this codex does not know, which an ordinary chat tolerates, fails the utility call with
+`unknown configuration field` (measured on 0.163.0).
+Project `.codex/config.toml` cannot set `model_provider` (Codex denies that key there), and
+vibing.nvim does not pass `--profile`, so the top-level user file is the same source an ordinary
+chat resolves.
 
 `--ignore-user-config` does **not** cover `project_doc_max_bytes`. `AGENTS.md` is discovered from
 the cwd, not from `config.toml`, so dropping the user config only restores the key's 32768-byte
@@ -73,7 +84,8 @@ Three details there are not interchangeable. The restrictions are `-c` overrides
 restriction ignores `permission_mode` entirely, `bypassPermissions` included: the user put the
 _chat_ in that mode, and a title generated behind their back is not the call they made. And
 `ai.helpers.model` still goes through the Claude-name filter, so its `haiku` default becomes no
-`-m` at all rather than a model codex would reject.
+`-m` at all rather than a model codex would reject. With no `-m`, the `model` key from
+`config.toml` is passed back, which is the default an ordinary call uses in that same case.
 
 **Copilot can remove the tools outright, and does it in one flag.** `--available-tools` is the
 filter deciding "which tools the model can see" (`copilot help permissions`), so a list naming
@@ -204,27 +216,29 @@ tools with `--tools ""`, codex can only fence them, and no shared vocabulary spa
 `core/types.lua` states the obligation each adapter owes for `lightweight` — no tools, no project
 config, no hooks, `ai.helpers.model` — rather than the mechanism any one of them uses.
 
-**The `model_provider` that `--ignore-user-config` drops is announced rather than left to be
-discovered** (#587). `codex_provider_notice.lua` warns once per Neovim session when the configured
-provider is not codex's own `openai` default. `codex_cli.lua` triggers it on `--ignore-user-config`
-actually being in the argv it just built, not on `opts.lightweight` alone: the builder documents
-that flag as a stand-in for a narrower switch codex does not have yet, so reading the built command
-is what makes the warning disarm itself the day the flag stops being used, rather than going on
-describing a loss that no longer happens. `lightweight` still guards the scan because the prompt is
-the last element of the argv, and a message consisting of exactly that flag would otherwise match.
+**When that copy cannot be made, the drop is announced rather than left to be discovered**
+(#587). `codex_provider_notice.lua` warns once per Neovim session when the configured provider is
+not codex's own `openai` default. The copy (#925) reads the user file directly because nothing
+Codex prints includes the `[model_providers.<name>]` table — not `doctor`, and not the app-server
+protocol, whose `ConfigReadResponse.Config` carries `model_provider` as a bare string and no
+provider map. The copy is all or nothing, because half a provider table is a call that fails
+for a reason nobody is told: it is skipped for an unreadable file, a provider id or key that is
+not a bare `-c` key, a value spanning lines (`core/utils/toml_assignments.lua` locates values and
+does not parse them), an `experimental_bearer_token` (the argv is readable through `ps`), and a
+legacy `profile` key (codex 0.163 rejects it outright; older releases layered it over the
+top-level keys). The warning remains for exactly those calls. `codex_cli.lua` triggers it on `--ignore-user-config`
+actually being in the argv it just built and on that argv _not_ already carrying
+`model_provider=`, not on `opts.lightweight` alone: the builder documents the flag as a stand-in
+for a narrower switch codex does not have yet, so reading the built command is what makes the
+warning disarm itself the day the flag stops being used, or the day the provider is on the
+command. `lightweight` still guards the scan because the prompt is the last element of the argv,
+and a message consisting of exactly that flag would otherwise match.
 
-It warns and does not repair, because codex will hand over the provider's _name_ and not its
-_definition_: `codex doctor --json` reports the resolved provider at
-`checks["config.load"].details["model provider"]`, but nothing reports the
-`[model_providers.<name>]` table — not `doctor`, and not the app-server protocol, whose
-`ConfigReadResponse.Config` carries `model_provider` as a bare string and no provider map at all
-(`codex app-server generate-json-schema --experimental`). Re-injecting the provider would still
-mean hand-parsing `config.toml`, which is why #587's option 2 was not taken.
-
-Asking codex is the whole point: the name comes back **resolved**, by codex's own config loader,
-so there is no TOML parsing and none of the false positives (an inactive profile section) or false
-negatives (a profile) that kept the warning out of #582. Three properties of the probe are
-load-bearing:
+Asking codex is the whole point of the warning: the name comes back **resolved**, by codex's own
+config loader, so the warning does no TOML parsing and none of the false positives (an inactive
+profile section) or false negatives (a profile) that kept it out of #582. The copy above is a
+separate, narrower read of the same file, limited to the keys it re-sends. Three properties of
+the probe are load-bearing:
 
 - **The exit status says nothing.** `codex doctor --json` exits 1 whenever any check fails, and a
   missing login alone is enough — it exits 1 even on a config that loaded cleanly. Only
@@ -234,12 +248,12 @@ load-bearing:
 - **Unreadable means silent.** Every parse failure returns nil and nothing is said, because an
   unreliable warning is worse than none — its silence gets read as "you are fine".
 
-It runs on the first lightweight call rather than at `setup()` because `doctor` makes one
-reachability request to the active provider's endpoint; it is asynchronous and nothing waits for
-it. `ai.agents.codex.extensions.provider_notice` turns the whole thing off, probe included, and is the
-one toggle of this shape that **defaults to `true`** — `ui.subagents.show_output`,
-`automation.limits.resume` and `integrations.dap` all default to `false` because they spend tokens
-or run unattended, and this spends none. A
+It runs on the first lightweight call that did not copy the provider back, rather than at
+`setup()`, because `doctor` makes one reachability request to the active provider's endpoint; it
+is asynchronous and nothing waits for it. `ai.agents.codex.extensions.provider_notice` turns the
+whole thing off, probe included, and is the one toggle of this shape that **defaults to `true`**
+— `ui.subagents.show_output`, `automation.limits.resume` and
+`integrations.dap` all default to `false` because they spend tokens or run unattended, and this spends none. A
 warning about a change the user cannot otherwise see fails at its only job if it is off until
 asked for. Absent config reads as enabled, so a hand-built config table does not silently lose it.
 

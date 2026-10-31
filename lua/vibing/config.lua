@@ -133,6 +133,7 @@ M.defaults = {
     delegated_approval = false,
   },
   automation = {
+    stall = { timeout_sec = 600 },
     limits = {
       continue_prompt = "Continue from where you left off.",
       fallback_delay_sec = 300,
@@ -254,6 +255,7 @@ schema.ui.gradient.interval_ms = number(1)
 schema.ui.gradient.colors = list(color)
 schema.ui.gradient.waiting_color = color
 schema.automation.limits.resume.max_retries = number(0, true)
+schema.automation.stall.timeout_sec = number(0)
 schema.automation.limits.queue.max_retries = number(0, true)
 schema.permissions.approval_wait_sec = number(0)
 for _, key in ipairs({ "warn_tokens", "cache_ttl_sec" }) do

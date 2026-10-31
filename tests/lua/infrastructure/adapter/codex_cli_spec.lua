@@ -8,6 +8,7 @@
 local helper = require("tests.helpers.adapter_stream")
 local codex = require("vibing.infrastructure.adapter.codex_cli")
 local notice = require("vibing.infrastructure.adapter.modules.codex_provider_notice")
+local lightweight_provider = require("vibing.infrastructure.adapter.modules.codex_lightweight_provider")
 local TurnRegistry = require("vibing.infrastructure.adapter.modules.turn_registry")
 
 local CONFIG = {
@@ -43,11 +44,13 @@ describe("codex_cli hook registration", function()
     system = helper.stub_system("/usr/local/bin/codex")
     adapter = codex:new(CONFIG)
     notice._reset()
+    lightweight_provider._set_config_path(false)
   end)
 
   after_each(function()
     system.restore()
     notice._reset()
+    lightweight_provider._reset()
   end)
 
   it("registers the PreToolUse hook for an ordinary call", function()
@@ -97,6 +100,28 @@ describe("codex_cli hook registration", function()
     helper.run_stream(adapter, { permission_mode = "default", lightweight = true })
     assert.are.equal(2, #system.calls)
     assert.are.same({ "/usr/local/bin/codex", "doctor", "--json" }, system.calls[2].cmd)
+  end)
+
+  it("does not probe when the lightweight call reapplies the custom provider", function()
+    local dir = vim.fn.tempname()
+    vim.fn.mkdir(dir, "p")
+    local path = dir .. "/config.toml"
+    vim.fn.writefile({
+      'model_provider = "myprov"',
+      "",
+      "[model_providers.myprov]",
+      'name = "Local"',
+      'base_url = "http://127.0.0.1:11434/v1"',
+      'wire_api = "chat"',
+    }, path)
+    lightweight_provider._set_config_path(path)
+
+    helper.run_stream(adapter, { permission_mode = "default", lightweight = true })
+    assert.are.equal(1, #system.calls)
+    local cmd = system.cli_call().cmd
+    assert.is_true(vim.tbl_contains(cmd, 'model_provider="myprov"'))
+    assert.is_true(vim.tbl_contains(cmd, 'model_providers.myprov.base_url="http://127.0.0.1:11434/v1"'))
+    vim.fn.delete(dir, "rf")
   end)
 
   it("does not probe for an ordinary call, which keeps the user's provider", function()
