@@ -117,6 +117,7 @@ describe("duplex transport", function()
       protocol[name] = fn
     end
     Routing.INTERRUPT_GRACE_MS = original_grace
+    Pool.stop_all()
     Pool._reset()
     jobs.restore()
     vim.fn.exepath = original_exepath
@@ -189,6 +190,104 @@ describe("duplex transport", function()
   end)
 
   describe("a turn", function()
+    it("fails a silent turn after its first response, preserves its session and retires the process", function()
+      config.automation = { stall = { timeout_sec = 0.05 } }
+      local turn = send("hi")
+      local call = jobs.only_call()
+      jobs.emit(call, { init_line("sess-1"), text_line("sess-1", "partial") })
+      assert.is_true(vim.wait(500, function()
+        return #turn.responses > 0
+      end, 5))
+      assert.equals(1, #turn.responses)
+      assert.is_true(turn.responses[1]._stalled, vim.inspect(turn.responses[1]))
+      assert.is_nil(turn.responses[1]._cancelled)
+      assert.is_nil(turn.responses[1]._session_corrupted)
+      assert.equals("partial", turn.responses[1].content)
+      assert.equals("sess-1", adapter:get_session_id(turn.process_id))
+      assert.is_true(call.stopped)
+      assert.is_nil(Pool.get(CHAT_BUFNR))
+      assert.is_nil(TurnRegistry.get(turn.turn_id))
+      assert.is_nil(Permission._get_active_opts(turn.turn_id))
+      local second = send("continue", { _session_id = "sess-1" })
+      assert.equals(2, #jobs.calls)
+      assert.is_true(vim.tbl_contains(jobs.calls[2].argv, "sess-1"))
+      jobs.emit(jobs.calls[2], { init_line("sess-1"), result_line("sess-1") })
+      assert.is_nil(second.responses[1].error)
+    end)
+
+    it("renews inactivity on CLI events and does not let a finished turn's timer stop its successor", function()
+      config.automation = { stall = { timeout_sec = 0.1 } }
+      local first = send("hi")
+      local call = jobs.only_call()
+      jobs.emit(call, { init_line("sess-1") })
+      for _ = 1, 4 do
+        vim.wait(40, function()
+          return false
+        end, 5)
+        jobs.emit(call, { text_line("sess-1", "progress") })
+        assert.equals(0, #first.responses)
+      end
+      jobs.emit(call, { result_line("sess-1") })
+      config.automation.stall.timeout_sec = 0
+      local second = send("next", { _session_id = "sess-1" })
+      jobs.emit(call, { init_line("sess-1") })
+      vim.wait(220, function()
+        return false
+      end, 5)
+      assert.equals(0, #second.responses)
+      assert.is_false(call.stopped)
+      jobs.emit(call, { result_line("sess-1") })
+    end)
+
+    it("excludes running tools and grants a fresh budget when they finish", function()
+      config.automation = { stall = { timeout_sec = 0.05 } }
+      local turn = send("hi")
+      local call = jobs.only_call()
+      jobs.emit(call, { init_line("sess-1") })
+      local context = Pool.get(CHAT_BUFNR)._turn.context
+      context._tools = { slow = { name = "Bash", input = {} } }
+      vim.wait(180, function()
+        return false
+      end, 5)
+      assert.equals(0, #turn.responses)
+      context._tools = {}
+      Pool.get(CHAT_BUFNR)._turn.touch()
+      assert.is_true(vim.wait(500, function()
+        return #turn.responses > 0
+      end, 5))
+      assert.is_true(turn.responses[1]._stalled)
+    end)
+
+    it("excludes hook and native approval waits", function()
+      config.automation = { stall = { timeout_sec = 0.05 } }
+      local approvals = require("vibing.infrastructure.rpc.pending_approvals")
+      local native = require("vibing.infrastructure.rpc.pending_native_approvals")
+      local hook_has, native_has = approvals.has_for_chat, native.has_for_chat
+      local turn = send("hi")
+      local call = jobs.only_call()
+      jobs.emit(call, { init_line("sess-1") })
+      local ok, err = pcall(function()
+        approvals.has_for_chat = function(bufnr)
+          return bufnr == CHAT_BUFNR
+        end
+        vim.wait(160, function()
+          return false
+        end, 5)
+        assert.equals(0, #turn.responses)
+        approvals.has_for_chat = hook_has
+        native.has_for_chat = function(bufnr)
+          return bufnr == CHAT_BUFNR
+        end
+        vim.wait(160, function()
+          return false
+        end, 5)
+        assert.equals(0, #turn.responses)
+      end)
+      approvals.has_for_chat, native.has_for_chat = hook_has, native_has
+      jobs.emit(call, { result_line("sess-1") })
+      assert.is_true(ok, err)
+    end)
+
     it("ends on the result line, with the process still alive and registered", function()
       local turn = send("hi")
       local call = jobs.only_call()

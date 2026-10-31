@@ -143,12 +143,14 @@ vibing.nvim は Codex バックエンドの軽量呼び出し(チャットタイ
 フラグが無い場合は通常のチャットには影響しませんが、軽量呼び出しが unknown argument エラーで
 失敗します。その場合は Codex を更新してください。
 
-`--ignore-user-config` は `model_provider` も落とします。`config.toml` でカスタムプロバイダや
-ローカルプロバイダを指定している場合、**軽量呼び出しだけが既定の OpenAI エンドポイントに
-向きます**(通常のチャットは指定どおりのプロバイダを使います)。該当する場合は Neovim セッション
-ごとに一度だけ警告します。プロバイダの判定は Codex 自身(`codex doctor --json`)に問い合わせて
-おり、Codex が答えられなかったときは何も表示しません。
-`agent.codex_provider_notice.enabled = false` で警告と probe をまとめて止められます。
+`--ignore-user-config` は `model_provider` も落とします。軽量呼び出しはそれを `config.toml`
+から戻します(プロバイダ名、その `[model_providers.<id>]` 定義、および `-m` を渡さないときの
+`model`)。カスタムプロバイダやローカルプロバイダは軽量呼び出しでも使われます。ヘルパーモデル
+(`ai.helpers.model`)を設定している場合は、同じプロバイダ上でそのモデルを使います。MCP
+サーバーは戻しません。プロバイダを argv に戻せなかったときだけ、Neovim セッションごとに一度
+警告します。判定は Codex 自身(`codex doctor --json`)に問い合わせ、Codex が答えられなかった
+ときは何も表示しません。`ai.agents.codex.extensions.provider_notice = false` で警告と probe
+をまとめて止められます。
 
 </details>
 
@@ -197,7 +199,8 @@ vibing.nvim は [Claude Code プラグイン](https://code.claude.com/docs/en/pl
 登録されません。vibing.nvim が自分の `agent-plugin/` ディレクトリをセッションごとに
 `--plugin-dir` で CLI に渡すため、いま動いている checkout がそのまま使われます(worktree を
 含む)。`build.sh` は MCP サーバーに加え、チャット境界を扱う小さな Tree-sitter パーサーを
-ビルドします。また、旧バージョンのインストールが残っている場合は一度だけ後片付けします。
+ビルドします。デフォルトではこの checkout の中だけを書き換えます。詳細は
+[build.sh がこのマシンで変更するもの](#buildsh-がこのマシンで変更するもの)を参照してください。
 
 **`claude-plugin/` からの移行。** 同梱ディレクトリは `agent-plugin/` に変わりました。
 旧パスを手書きした MCP の `args`、`integrations.plugins.extra`、`VIBING_MCP_SERVER_DIR`、
@@ -228,15 +231,50 @@ Codex バックエンドは `--plugin-dir` を使わず同じものを読み込�
 `agent.plugins.project_dir = false` にします。`agent.plugins` の詳細は
 [handbook/configuration.md](handbook/configuration.md) を参照。
 
-**旧バージョンからの移行:** `build.sh` が user scope のインストールとマーケットプレイス
-登録を削除します。手動でやる場合:
+**旧バージョンからの移行:** user scope のインストールは、デフォルトの `./build.sh` では残ります。
+`./build.sh --register-global` がそれを削除し、変更のたびにその内容を表示します。同じ実行で、
+`copilot` が `PATH` にあれば Copilot への MCP サーバー追加も行います。Claude Code の中で手動で
+行う場合:
 
 ```text
 /plugin uninstall vibing-nvim@vibing
 /plugin marketplace remove vibing
 ```
 
+`claude plugin list` に改名前の `vibing-nvim@vibing-nvim` が出る場合は、同じ手順でそれも削除します。
+
 </details>
+
+## build.sh がこのマシンで変更するもの
+
+デフォルトの `./build.sh` がビルド成果物を書き込むのはこの checkout の中だけです。例外は
+npm 自身のキャッシュとログです(npm の既定設定では `~/.npm`)。終了時に
+`No global or user CLI config was changed.` と表示します。
+
+- `parser/vibing.so`(チャット境界用の Tree-sitter パーサー)
+- リポジトリ直下と `agent-plugin/mcp-server/` の `node_modules/`
+- `agent-plugin/mcp-server/dist/` と `agent-plugin/mcp-server/bin/.node-path`
+- `pi-extension/` がある場合の `pi-extension/dist/`
+- 残っていれば `bin/mote-*` バイナリ(削除)
+
+グローバルおよびユーザーの CLI 設定は別のオプトインです。`./build.sh --register-global` か
+`VIBING_REGISTER_GLOBAL=1 ./build.sh` を実行します。適用した変更ごとに `Global change:` 行を出します。
+
+- **Copilot への MCP 追加。** `copilot mcp add vibing-nvim -- <node> <checkout>/agent-plugin/mcp-server/dist/index.js`
+  は Copilot のユーザー MCP 設定を書き込みます。Copilot はこのサーバーをセッション単位では読まないため、
+  Copilot のチャットが Neovim に届くのはこの登録経由です。既に登録済みのエントリは書き換えず、その旨を表示します。
+- **Claude の user scope MCP の削除。** `claude mcp remove vibing-nvim --scope user` は、RPC ポートを
+  一つに固定していた古い user scope サーバーを外します。
+- **Claude の user scope プラグインの削除。** `claude plugin list` に `vibing-nvim@vibing` または
+  `vibing-nvim@vibing-nvim` が残っているときだけ、`claude plugin uninstall` と
+  `claude plugin marketplace remove` を実行します。
+
+デフォルト実行でも同じコマンドを表示するので、自分で適用できます。Codex にはセッションごとに
+`-c mcp_servers.vibing-nvim.*` を渡します。`--register-global` は既存のグローバルな Codex MCP
+エントリを残し、`codex mcp list` に `vibing-nvim` が出るときは `codex mcp remove vibing-nvim` を表示します。
+
+`~/.grok/trusted_folders.toml` は Grok のチャット開始時に
+`lua/vibing/infrastructure/hooks/grok_settings_generator.lua` が書き込みます。
 
 ## 🚀 クイックスタート
 
@@ -268,6 +306,20 @@ require("vibing").setup({
 
 上記のデフォルト権限は、新規チャットファイル作成時の**テンプレート**として使われます。実行時に
 適用されるのは各チャットファイルの frontmatter に記録された権限です。
+
+`nvim_job_start` と、シェルを実行する `nvim_execute` の Ex コマンドは、同じルールで判定されます。
+既定の `deny = { "Bash" }` では `nvim_job_start` は常に拒否されます。`nvim_execute` では
+`:!ls`、`:[range]!`、`:read !`、`:write !`、`:terminal`、`term://`、`:make`、`:grep`、
+`system()` / `jobstart()` / `os.execute()` / `vim.system()` などの呼び出しが拒否されます。
+`|` や改行で続くコマンド、`:execute`、`:windo`、`:global`、`:autocmd` の中身も対象です。
+許可するときは Bash と同じ指定（`Bash(npm:*)`、または `deny` から `Bash` を外す）を使います。
+ただし `;`、`|`、`&`、`%` などを含む行は、`Bash` 全体を許可していない限り承認を求めます。
+`:write`、`:edit`、`:split` はこれまで通りです。
+
+この判定は字面で書かれた形を認識するもので、サンドボックスではありません。`:source` /
+`:luafile` で読み込むファイルの中身、プラグインが定義したユーザーコマンド、実行時に組み立てた
+コードは認識しません。`nvim_execute` を許可することは Neovim 内での任意コードの実行を許可する
+ことと同じです。
 
 **完全なリファレンス:** すべてのオプション(ウィンドウ詳細、UI/グラデーション/ツールマーカー、
 diff バックエンド、粒度の細かい権限ルール、MCP、Node.js 実行ファイル、日報など)は
@@ -454,9 +506,12 @@ frontmatter に `agent: claude` / `agent: codex` / `agent: copilot` / `agent: gr
 既定値を使います。既存チャットでフィールドを省略した場合も実行時の挙動は同じです。
 
 > **注意:** Copilot バックエンドでは、`permissions.mode`・`permissions.ask`・チャット内のツール
-> 承認 UI を、vibing.nvim が生成する Copilot プラグイン(`.vibing/copilot-plugin/`)経由で適用
-> します。これは実行ごとに `copilot --plugin-dir` で読み込まれるもので、ユーザーの
-> `~/.copilot/` の設定・ログイン情報には一切触れません。Copilot の静的な `--deny-tool` フラグも
+> 承認 UI を、vibing.nvim が生成する Copilot プラグイン(`.vibing/copilot-plugin-<instance>/`)経由で
+> 適用します。これは実行ごとに `copilot --plugin-dir` で
+> 読み込むもので、チャット中の `~/.copilot/` のログインと設定はそのままです。Neovim MCP サーバーを
+> Copilot のユーザー設定へ追加するのはオプトインです(`./build.sh --register-global`。
+> [build.sh がこのマシンで変更するもの](#buildsh-がこのマシンで変更するもの)を参照)。
+> Copilot の静的な `--deny-tool` フラグも
 > 引き続きバックストップとして渡します。対応するのは `Bash`(`Bash(cmd:*)` 形式を含む)・
 > `Write`・`Edit`・`WebFetch`・`WebSearch` で、Copilot 側に権限パターンが無いツール名を落とす
 > 際は一度だけ警告を出します。

@@ -119,6 +119,21 @@ describe("Codex duplex app-server", function()
     })
   end
 
+  it("recovers silence after turn/started without resetting the thread", function()
+    adapter.config.automation = { stall = { timeout_sec = 0.05 } }
+    local turn = send()
+    local call = jobs.only_call()
+    ready(call)
+    note(call, "turn/started", { turn = { id = "turn-1" } })
+    assert.is_true(vim.wait(500, function()
+      return #turn.responses > 0
+    end, 5))
+    assert.is_true(turn.responses[1]._stalled)
+    assert.is_nil(turn.responses[1]._cancelled)
+    assert.is_true(call.stopped)
+    assert.equals("thread-1", adapter:get_session_id(turn.process))
+  end)
+
   it("starts app-server with hook overrides and never puts the prompt or exec flags in argv", function()
     send()
     local call = jobs.only_call()

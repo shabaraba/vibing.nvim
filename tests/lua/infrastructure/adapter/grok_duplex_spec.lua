@@ -88,6 +88,30 @@ describe("Grok duplex ACP agent", function()
     return last(call).id
   end
 
+  it("recovers a partial answer whose session/prompt never finishes", function()
+    adapter.config.automation = { stall = { timeout_sec = 0.05 } }
+    local turn = send()
+    local call = jobs.only_call()
+    ready(call)
+    emit(call, {
+      method = "session/update",
+      params = {
+        sessionId = "sess-1",
+        update = {
+          sessionUpdate = "agent_message_chunk",
+          content = { type = "text", text = "partial" },
+        },
+      },
+    })
+    assert.is_true(vim.wait(500, function()
+      return #turn.responses > 0
+    end, 5))
+    assert.is_true(turn.responses[1]._stalled)
+    assert.equals("partial", turn.responses[1].content)
+    assert.is_true(call.stopped)
+    assert.equals("sess-1", adapter:get_session_id(turn.process))
+  end)
+
   it("handshakes initialize then session/new then session/prompt", function()
     send()
     local call = jobs.only_call()

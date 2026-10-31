@@ -3,6 +3,7 @@
 
 local CodexCommandBuilder = require("vibing.infrastructure.adapter.modules.codex_command_builder")
 local CodexEventProcessor = require("vibing.infrastructure.adapter.modules.codex_event_processor")
+local CodexLightweightProvider = require("vibing.infrastructure.adapter.modules.codex_lightweight_provider")
 local CodexProviderNotice = require("vibing.infrastructure.adapter.modules.codex_provider_notice")
 local ToolVocabulary = require("vibing.infrastructure.adapter.modules.codex_tool_vocabulary")
 local ProjectCodexPermissions = require("vibing.core.utils.project_codex_permissions")
@@ -59,6 +60,9 @@ local M = {
       -- setting after --ignore-user-config.
       { kind = "extra", fn = CodexCommandBuilder.auto_compact_args, unless = "lightweight" },
       vim.tbl_extend("force", { kind = "args", when = "lightweight" }, CodexCommandBuilder.LIGHTWEIGHT_ARGS),
+      -- `--ignore-user-config` drops model_provider along with the MCP servers. Put the user's
+      -- provider, its definition and (when this call passes no -m) their model back.
+      { kind = "extra", fn = CodexLightweightProvider.args, when = "lightweight" },
       -- One mapping per transport, chosen here rather than inside the builder: app-server has no
       -- `-s` and no native approval dialog, so its permission argv is a different shape, not a
       -- variation on this one.
@@ -125,19 +129,28 @@ local M = {
     return (data:gsub("Reading additional input from stdin%.%.%.%s*", ""))
   end,
 
-  -- `--ignore-user-config` drops the user's model_provider along with their MCP servers (#587),
-  -- so say once where these calls are actually going. The argv is what decides, not
-  -- `opts.lightweight` alone: the builder documents that flag as a stand-in for a narrower switch
-  -- codex does not have yet, so reading the built command is what makes the warning disarm itself
-  -- the day the flag stops being used. `lightweight` still guards it because the prompt is the
-  -- last element of `cmd`, and a message consisting of exactly that flag would otherwise match.
+  -- `--ignore-user-config` drops the user's model_provider along with their MCP servers (#587).
+  -- The lightweight argv copies it back when it can (#925); this warning is the case where it
+  -- could not. The argv is what decides, not `opts.lightweight` alone: the builder documents that
+  -- flag as a stand-in for a narrower switch codex does not have yet, so reading the built
+  -- command is what makes the warning disarm itself the day the flag stops being used, and a
+  -- `model_provider=` override already on that command means the call is not going to the
+  -- default endpoint. `lightweight` still guards the scan because the prompt is the last element
+  -- of `cmd`, and a message consisting of exactly that flag would otherwise match.
   -- Fired after the spawn, since the probe exists to describe that call and must not delay it.
   --
   -- Absent config reads as enabled, not disabled: the default is on (`config_fields` in
   -- core/constants/agents.lua).
   after_spawn = function(cmd, cwd, opts, config)
     local notice_enabled = vim.tbl_get(config or {}, "ai", "agents", "codex", "extensions", "provider_notice") ~= false
-    if notice_enabled and opts.lightweight and vim.tbl_contains(cmd, "--ignore-user-config") then
+    local restored = false
+    for _, arg in ipairs(cmd) do
+      if type(arg) == "string" and arg:match("^model_provider=") then
+        restored = true
+        break
+      end
+    end
+    if notice_enabled and opts.lightweight and vim.tbl_contains(cmd, "--ignore-user-config") and not restored then
       CodexProviderNotice.check(cmd[1], cwd)
     end
   end,

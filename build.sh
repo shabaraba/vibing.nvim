@@ -20,6 +20,26 @@ VIBING_PARSER_OUTPUT_DIR="${SCRIPT_DIR}/parser"
 # Use VIBING_NODE_EXECUTABLE env var if set, otherwise default to "node"
 NODE_EXECUTABLE="${VIBING_NODE_EXECUTABLE:-node}"
 
+# Global and user CLI config (Copilot `mcp add`, Claude user-scope cleanup) stays
+# untouched unless this build is explicitly opted in. lazy.nvim runs the script
+# with no arguments, so that has to be the default (#922).
+REGISTER_GLOBAL=0
+if [ "${VIBING_REGISTER_GLOBAL:-}" = "1" ]; then
+    REGISTER_GLOBAL=1
+fi
+for _vibing_arg in "$@"; do
+    case "$_vibing_arg" in
+        --register-global)
+            REGISTER_GLOBAL=1
+            ;;
+        *)
+            echo "[vibing.nvim] Error: unknown argument '${_vibing_arg}' (the only flag is --register-global)" >&2
+            exit 1
+            ;;
+    esac
+done
+unset _vibing_arg
+
 # Delete every parser artifact except the one Neovim is meant to load.
 #
 # `vim.treesitter.language.add('vibing')` globs `parser/vibing.*` and loads *the first match*, so a
@@ -95,12 +115,11 @@ build_vibing_parser() {
     fi
 }
 
-# Timeouts (seconds) for the `claude plugin ...` cleanup calls below. Kept even
-# though vibing.nvim no longer installs itself as a plugin: uninstalling one is
-# the same subcommand family that hangs (#480/#482), and the cleanup runs on
-# every build until the user's machine is clean. `claude plugin list --json`
-# only reads local state, so it gets a shorter budget than the subcommands that
-# may hit the network.
+# Timeouts (seconds) for the `claude plugin ...` cleanup calls below. Those calls
+# run only with --register-global / VIBING_REGISTER_GLOBAL=1. Uninstalling a
+# plugin is the same subcommand family that hangs (#480/#482). `claude plugin
+# list --json` only reads local state, so it gets a shorter budget than the
+# subcommands that may hit the network.
 readonly CLAUDE_CLI_LIST_TIMEOUT=30
 readonly CLAUDE_CLI_TIMEOUT=60
 
@@ -276,25 +295,49 @@ if [ -f "dist/index.js" ]; then
     # an MCP server that updated independently of the Neovim plugin it serves —
     # so a worktree edited its own copy while a different one actually ran.
     #
-    # What remains here is one-shot cleanup for machines that already have the
-    # old user-scope install. It is best-effort: an inline `--plugin-dir` plugin
-    # wins over an installed one of the same name (measured), so a leftover is
-    # inert rather than a conflict.
+    # Machines that already have the old user-scope install can still clean it up,
+    # but only when asked (--register-global or VIBING_REGISTER_GLOBAL=1). An
+    # inline `--plugin-dir` plugin wins over an installed one of the same name
+    # (measured), so a leftover is inert rather than a conflict, and a default
+    # build must not rewrite ~/.claude or ~/.copilot to remove it (#922).
     cd "$SCRIPT_DIR"
+
+    MCP_SERVER_PATH="${MCP_DIR}/dist/index.js"
+    # Quoted so paths containing spaces stay a single argument when the user copy-pastes the hint
+    MANUAL_MCP_ARGS="$(printf '%q %q' "$NODE_EXECUTABLE" "$MCP_SERVER_PATH")"
+
+    if [ "$REGISTER_GLOBAL" -ne 1 ]; then
+        echo "[vibing.nvim] No global or user CLI config was changed."
+        echo "[vibing.nvim] Opt in with: ./build.sh --register-global"
+        echo "[vibing.nvim] or: VIBING_REGISTER_GLOBAL=1 ./build.sh"
+        echo "[vibing.nvim] That adds the Copilot MCP server and removes a legacy Claude user-scope install."
+        echo "[vibing.nvim] To do it yourself:"
+        echo "[vibing.nvim]   copilot mcp add vibing-nvim -- $MANUAL_MCP_ARGS"
+        echo "[vibing.nvim]   claude mcp remove vibing-nvim --scope user"
+        echo "[vibing.nvim]   claude plugin uninstall vibing-nvim@vibing"
+        echo "[vibing.nvim]   claude plugin marketplace remove vibing"
+        echo "[vibing.nvim]   claude plugin uninstall vibing-nvim@vibing-nvim"
+        echo "[vibing.nvim]   claude plugin marketplace remove vibing-nvim"
+        exit 0
+    fi
+
+    echo "[vibing.nvim] Updating global CLI config (--register-global)."
     if command -v claude &> /dev/null; then
         # Legacy direct "vibing-nvim" mcpServers registration (e.g. from `claude
         # mcp add`, predating the plugin install). That path hardcodes a single
         # RPC port and silently targets the wrong Neovim instance whenever more
-        # than one is running. No-op when no such entry exists.
-        claude mcp remove vibing-nvim --scope user &> /dev/null || true
+        # than one is running. It exits non-zero when no such entry exists, which
+        # is the common case, so only a success is reported as a change.
+        if claude mcp remove vibing-nvim --scope user &> /dev/null; then
+            echo "[vibing.nvim] Global change: claude mcp remove vibing-nvim --scope user"
+        fi
 
         # The user-scope plugin install and its marketplace, from before #618 —
         # under the current name and the pre-rename one. These are historical
         # identifiers to clean up, not configuration to follow, which is why they
         # appear nowhere else in the repository any more.
         #
-        # Gated on evidence rather than fired unconditionally: this runs on every
-        # build, forever, on machines that never had the install, and each
+        # Gated on evidence rather than fired unconditionally: each
         # `claude plugin ...` call is a process spawn under a 60s watchdog. One
         # `list` answers for all four.
         PLUGIN_LIST_JSON="$(run_with_timeout "$CLAUDE_CLI_LIST_TIMEOUT" claude plugin list --json 2>/dev/null)" || true
@@ -304,17 +347,18 @@ if [ -f "dist/index.js" ]; then
             # pre-rename install as the current one and print a misleading line.
             case "$PLUGIN_LIST_JSON" in
                 *"\"vibing-nvim@${legacy_marketplace}\""*)
-                    echo "[vibing.nvim] Removing the old user-scope plugin install (vibing-nvim@${legacy_marketplace})..."
-                    run_with_timeout "$CLAUDE_CLI_TIMEOUT" claude plugin uninstall "vibing-nvim@${legacy_marketplace}" &> /dev/null || true
-                    run_with_timeout "$CLAUDE_CLI_TIMEOUT" claude plugin marketplace remove "$legacy_marketplace" &> /dev/null || true
+                    for legacy_cmd in "uninstall vibing-nvim@${legacy_marketplace}" "marketplace remove ${legacy_marketplace}"; do
+                        # shellcheck disable=SC2086 # word-split on purpose: both are fixed, space-free tokens
+                        if run_with_timeout "$CLAUDE_CLI_TIMEOUT" claude plugin $legacy_cmd &> /dev/null; then
+                            echo "[vibing.nvim] Global change: claude plugin ${legacy_cmd}"
+                        else
+                            echo "[vibing.nvim] ⚠ claude plugin ${legacy_cmd} failed; run it by hand"
+                        fi
+                    done
                     ;;
             esac
         done
     fi
-
-    MCP_SERVER_PATH="${MCP_DIR}/dist/index.js"
-    # Quoted so paths containing spaces stay a single argument when the user copy-pastes the hint
-    MANUAL_MCP_ARGS="$(printf '%q %q' "$NODE_EXECUTABLE" "$MCP_SERVER_PATH")"
 
     # Register the built MCP server with a CLI that speaks `<cli> mcp add`.
     # Copilot exits 1 when the name already exists, so an existing entry is
@@ -344,7 +388,7 @@ if [ -f "dist/index.js" ]; then
             return 0
         fi
 
-        echo "[vibing.nvim] Registering MCP server with $cli..."
+        echo "[vibing.nvim] Global change: $cli mcp add vibing-nvim -- $MANUAL_MCP_ARGS"
         if "$cli" mcp add vibing-nvim -- "$NODE_EXECUTABLE" "$MCP_SERVER_PATH" 2>/dev/null; then
             echo "[vibing.nvim] ✓ Registered vibing-nvim MCP server with $cli"
         else

@@ -50,13 +50,18 @@ function M.write(request_id, decision, reason)
     hookSpecificOutput = output,
   })
 
-  local f, err = io.open(tmp_file, "w")
-  if f then
-    f:write(json)
-    f:close()
-    os.rename(tmp_file, res_file)
-    return
+  -- 0600, including when the process umask would have left the decision world-readable. The comm
+  -- directory is 0700; the file mode is what still holds if that directory is ever opened up.
+  local PrivateFile = require("vibing.infrastructure.rpc.private_file")
+  local wrote, err = PrivateFile.write(tmp_file, json)
+  if wrote then
+    local renamed, rename_err = os.rename(tmp_file, res_file)
+    if renamed then
+      return
+    end
+    err = rename_err
   end
+  pcall(os.remove, tmp_file)
 
   vim.schedule(function()
     vim.notify(
@@ -68,13 +73,11 @@ function M.write(request_id, decision, reason)
   -- The fallback is a deny and not a defer, deliberately: we could not write what we decided, and
   -- the hook is blocked until something lands here. Denying is the answer that cannot be wrong in
   -- a way that matters.
-  local fallback_f, fallback_err = io.open(res_file, "w")
-  if fallback_f then
-    local deny_json = vim.json.encode({
-      hookSpecificOutput = { hookEventName = "PreToolUse", permissionDecision = "deny" },
-    })
-    fallback_f:write(deny_json)
-    fallback_f:close()
+  local deny_json = vim.json.encode({
+    hookSpecificOutput = { hookEventName = "PreToolUse", permissionDecision = "deny" },
+  })
+  local fallback_ok, fallback_err = PrivateFile.write(res_file, deny_json)
+  if fallback_ok then
     return
   end
 

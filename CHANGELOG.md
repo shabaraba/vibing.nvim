@@ -9,10 +9,10 @@
   cannot reach the user's MCP servers and so that a renamed Codex config key fails the call instead
   of silently removing a restriction. Both flags were verified present in 0.140.0 and 0.147.0;
   older releases were not tested. Ordinary chat is unaffected — only lightweight calls would fail,
-  with an unknown-argument error. Note that `--ignore-user-config` also drops `model_provider`, so
-  on a custom provider these utility calls now go to the default OpenAI endpoint. vibing.nvim
-  warns about that once per Neovim session (see below) rather than letting it be discovered from a
-  bill or an unexplained 401.
+  with an unknown-argument error. `--ignore-user-config` also drops `model_provider`; lightweight
+  calls copy that provider back from `config.toml` (see Fixed). When the copy cannot be made,
+  vibing.nvim warns once per Neovim session rather than letting the default OpenAI endpoint be
+  discovered from a bill or an unexplained 401.
 
 - **Remove the inline code action feature.** The `:VibingInline` command, its
   action picker/preview UI, and the `language.inline` configuration option have
@@ -47,6 +47,16 @@
   a turn whose write window overlapped another chat's in the same worktree, where a shared tree
   cannot say whose change was whose. Patch files written by mote can still be viewed but no longer
   reverted; use git to undo those.
+
+### Fixed
+
+- **Codex lightweight calls keep the configured model provider (#925).** Title generation,
+  `/summarize` and the daily summary still run with `--ignore-user-config` so they cannot reach
+  MCP servers, but the user's `model_provider`, that provider's `[model_providers.<id>]`
+  definition, `openai_base_url`, and the configured `model` (when no helper model is passed with
+  `-m`) are copied back as `-c` overrides. A configured `ai.helpers.model` is still the model
+  those calls use, on that same provider. The one-time provider warning runs only when that copy
+  cannot be made.
 
 ### Added
 

@@ -15,6 +15,10 @@ allow list permits everything except denied tools.
   constraint — `allow_for_session` records only the bare tool name, so evaluating it first would
   let one approved `Bash` call whitelist every later one. Allow rules run after the tool-level
   lists.
+- **`nvim_execute` shell commands and `nvim_job_start` are judged as `Bash`, before the MCP
+  auto-allow.** Bash deny rules run before a session grant of the MCP tool name. The recognizer
+  covers `:!`, `:[range]!`, `:terminal`, `:read !` / `:write !`, `:make` / `:grep`, and direct
+  `system` / `jobstart` / `os.execute` / `io.popen` / `vim.system` / `vim.uv.spawn` calls.
 - **`patterns` are Lua patterns, not regex.** `-` is a quantifier, so a literal one is `%-`.
 - **An answer belongs to the chat that was asked, and to no other** (#667). The four decisions live
   on that `ChatBuffer` and reach the hook through `set_active_opts`, keyed by `turn_id`. A

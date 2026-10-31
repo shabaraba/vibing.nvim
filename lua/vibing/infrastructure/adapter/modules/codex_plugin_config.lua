@@ -158,8 +158,9 @@ local function developer_instructions(skills, self_server, chat_bufnr)
       "When starting a development server, watcher, long-running script, or any process intended "
         .. "to outlive the current model turn, you MUST use the vibing-nvim nvim_job_start MCP tool. "
         .. "Do not use shell backgrounding such as &, nohup, or setsid for these processes. Use "
-        .. "nvim_job_status, nvim_job_wait, and nvim_job_stop to manage them. If nvim_job_start is "
-        .. "unavailable, say so instead of silently substituting shell backgrounding."
+        .. "nvim_job_status, nvim_job_wait, and nvim_job_stop to manage them. nvim_job_start follows "
+        .. "the same permission rules as Bash. If nvim_job_start is unavailable, say so instead of "
+        .. "silently substituting shell backgrounding."
     )
   end
 

@@ -144,11 +144,13 @@ Both flags were verified present in **0.140.0 and 0.147.0**, on `codex exec` and
 unaffected but lightweight calls fail with an unknown-argument error. Upgrade Codex if you see
 that.
 
-`--ignore-user-config` also drops `model_provider`, so if your `config.toml` points Codex at a
-custom or local provider, **those lightweight calls go to the default OpenAI endpoint instead**.
-Ordinary chat still uses your provider. vibing.nvim warns once per Neovim session when this applies
-to you, asking Codex itself (`codex doctor --json`) which provider is configured; it says nothing
-if Codex cannot answer. Set `ai.agents.codex.extensions.provider_notice = false` to turn the warning and its
+`--ignore-user-config` also drops `model_provider`. Lightweight calls copy it back from
+`config.toml` — the provider id, its `[model_providers.<id>]` definition, and your configured
+`model` when the call is not already passing one — so a custom or local provider stays in
+effect. A helper model (`ai.helpers.model`) is still what that call uses, on the same provider.
+MCP servers are not copied. If the provider cannot be read back, vibing.nvim warns once per
+Neovim session, asking Codex itself (`codex doctor --json`); it says nothing if Codex cannot
+answer. Set `ai.agents.codex.extensions.provider_notice = false` to turn the warning and its
 probe off.
 
 </details>
@@ -196,8 +198,8 @@ vibing.nvim ships a [Claude Code plugin](https://code.claude.com/docs/en/plugins
 **Nothing to install.** The plugin is not registered into Claude Code's global state at all —
 vibing.nvim hands the CLI its own `agent-plugin/` directory per session with `--plugin-dir`, so
 whichever checkout is running is the one that serves you. `build.sh` builds the MCP server and the
-small Tree-sitter parser used for chat boundaries (and, once, cleans up an install from an older
-version of vibing.nvim).
+small Tree-sitter parser used for chat boundaries. A default run writes only inside this checkout;
+see [What build.sh changes on your machine](#what-buildsh-changes-on-your-machine).
 
 **Updating from `claude-plugin/`.** The bundled directory is now `agent-plugin/`.
 Update any manually configured MCP `args`, `integrations.plugins.extra`,
@@ -227,15 +229,52 @@ repository you cloned can start a process on your machine — set `integrations.
 for repositories you do not trust. See
 [handbook/configuration.md](handbook/configuration.md) for `integrations.plugins`.
 
-**Upgrading from an older vibing.nvim:** `build.sh` removes the user-scope install and its
-marketplace entry for you. To do it by hand:
+**Upgrading from an older vibing.nvim:** a user-scope install stays in place through a default
+`./build.sh`. `./build.sh --register-global` removes it and prints each change. The same run also
+adds the Copilot MCP server when `copilot` is on `PATH`. By hand, inside Claude Code:
 
 ```text
 /plugin uninstall vibing-nvim@vibing
 /plugin marketplace remove vibing
 ```
 
+Repeat that for `vibing-nvim@vibing-nvim` when `claude plugin list` still shows the pre-rename name.
+
 </details>
+
+## What build.sh changes on your machine
+
+A default `./build.sh` writes its build outputs only inside this checkout. The one exception is
+npm's own cache and logs (`~/.npm` with default npm settings). When it finishes it prints
+`No global or user CLI config was changed.`
+
+- `parser/vibing.so`, the chat-boundary Tree-sitter parser
+- `node_modules/` at the repository root and under `agent-plugin/mcp-server/`
+- `agent-plugin/mcp-server/dist/` and `agent-plugin/mcp-server/bin/.node-path`
+- `pi-extension/dist/` when that directory is present
+- leftover `bin/mote-*` binaries, removed when a checkout still has them
+
+Global and user CLI config is a separate opt-in. Run `./build.sh --register-global`, or
+`VIBING_REGISTER_GLOBAL=1 ./build.sh`. The script prints a `Global change:` line for each edit it
+applies:
+
+- **Copilot MCP add.** `copilot mcp add vibing-nvim -- <node> <checkout>/agent-plugin/mcp-server/dist/index.js`
+  writes Copilot's user MCP config. Copilot has no per-session load for this server, so that entry is
+  what a Copilot chat uses to reach Neovim. An entry that is already registered is left as it is, and
+  the script says so instead of writing again.
+- **Claude user-scope MCP removal.** `claude mcp remove vibing-nvim --scope user` drops a legacy
+  user-scope server that hardcoded one RPC port.
+- **Claude user-scope plugin removal.** When `claude plugin list` still shows `vibing-nvim@vibing` or
+  `vibing-nvim@vibing-nvim`, the script runs `claude plugin uninstall` and
+  `claude plugin marketplace remove` for that marketplace.
+
+A default run prints those commands so you can apply them yourself. Codex is passed per session
+(`-c mcp_servers.vibing-nvim.*`). `--register-global` leaves an existing global Codex MCP entry in
+place; when `codex mcp list` still shows `vibing-nvim`, the opt-in run prints
+`codex mcp remove vibing-nvim`.
+
+`~/.grok/trusted_folders.toml` is written when a Grok chat starts, by
+`lua/vibing/infrastructure/hooks/grok_settings_generator.lua`.
 
 ## 🚀 Quick Start
 
@@ -270,6 +309,19 @@ require("vibing").setup({
 
 The permissions above are a **template** for new chat files; each chat's frontmatter carries its
 own permissions, and those are what is enforced at runtime.
+
+`nvim_job_start` and a shell Ex command run through `nvim_execute` follow those same rules.
+With `deny = { "Bash" }` (the default), every `nvim_job_start` is denied, and so are `:!ls`, a
+`:[range]!` filter, `:read !`, `:write !`, `:terminal`, `term://`, `:make`, `:grep`, and calls
+to `system()` / `jobstart()` / `os.execute()` / `vim.system()` and the like — also when they
+follow a `|` or a newline, or sit inside `:execute`, `:windo`, `:global` or `:autocmd`. Allow
+one the way you allow Bash (`Bash(npm:*)`, or take `Bash` out of `deny`); a line containing `;`,
+`|`, `&`, `%` and similar still asks unless all of `Bash` is allowed. `:write`, `:edit`, and
+`:split` are unchanged.
+
+This recognizes the forms written out literally; it is not a sandbox. The contents of a file
+read by `:source` / `:luafile`, a plugin's user commands, and code assembled at runtime are not
+recognized, so allowing `nvim_execute` still means allowing arbitrary code inside Neovim.
 
 Old setup keys are rejected with migration hints. Objects merge recursively and lists replace
 (including empty lists). See [the migration guide](./handbook/configuration-redesign.md).
@@ -479,9 +531,12 @@ and therefore preserves the same CLI/model default used before effort was config
 the field has the same runtime behaviour for existing chats.
 
 > **Note:** on the Copilot backend, `permissions.mode`, `permissions.ask` and the in-chat Tool
-> Approval UI are enforced through a generated Copilot plugin (`.vibing/copilot-plugin/`) that
-> vibing.nvim loads per run with `copilot --plugin-dir`. Your own `~/.copilot/` configuration and
-> login are never touched. Copilot's static `--deny-tool` flags are still passed as a backstop;
+> Approval UI are enforced through a generated Copilot plugin (`.vibing/copilot-plugin-<instance>/`)
+> that vibing.nvim loads per run with `copilot --plugin-dir`, so chat turns keep your `~/.copilot/`
+> login and settings. Adding the Neovim MCP server to Copilot's user config is opt-in:
+> `./build.sh --register-global` (see
+> [What build.sh changes on your machine](#what-buildsh-changes-on-your-machine)).
+> Copilot's static `--deny-tool` flags are still passed as a backstop;
 > they cover `Bash` (including `Bash(cmd:*)` patterns), `Write`, `Edit`, `WebFetch` and
 > `WebSearch`, and vibing.nvim warns once when it drops a tool name Copilot cannot express.
 >

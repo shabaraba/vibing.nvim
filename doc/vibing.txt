@@ -82,10 +82,17 @@ Using packer.nvim: >lua
       end,
     }
 <
-`build.sh` builds the bundled MCP server. There is no plugin to install:
-vibing.nvim hands the `claude` CLI its own `agent-plugin/` directory per
-session with `--plugin-dir`, so the MCP server, the bundled skills and the
-`nvim-navigator` subagent always come from the checkout that is running.
+`build.sh` builds the bundled MCP server and, by default, writes its build
+outputs only inside this checkout (npm's own cache and logs aside). There is
+no plugin to install: vibing.nvim hands the `claude` CLI its own
+`agent-plugin/` directory per session with `--plugin-dir`, so the MCP server,
+the bundled skills and the `nvim-navigator` subagent always come from the
+checkout that is running. A default run prints the commands for a
+manual Copilot MCP registration and legacy Claude user-scope cleanup. >
+    ./build.sh --register-global
+<
+applies those edits and prints a "Global change:" line for each one. The same
+switch is `VIBING_REGISTER_GLOBAL=1`.
 
 UPDATING FROM claude-plugin/
 The bundled directory is now `agent-plugin/`. Update old paths in manually
@@ -114,8 +121,12 @@ server is passed as a `-c mcp_servers.<name>.*` override (tools appear as
 `mcp__vibing-nvim__*`) and each skill is listed for the model in
 `developer_instructions`. Subagents (`agents/`) do not carry over to codex.
 
-Upgrading from a version that installed itself into Claude Code's user scope:
-`build.sh` removes that install for you. By hand: >
+Upgrading from a version that installed itself into Claude Code's user
+scope: a default `./build.sh` keeps that install. Remove it with >
+    ./build.sh --register-global
+<
+which also adds the Copilot MCP server when `copilot` is on PATH, or inside
+Claude Code: >
     /plugin uninstall vibing-nvim@vibing
     /plugin marketplace remove vibing
 <
@@ -377,6 +388,15 @@ The chat frontmatter permissions remain tool-based and unchanged.
                                                               *:VibingCancel*
 :VibingCancel
     Cancel the request in flight.
+
+    Resident CLI turns also recover automatically after 600 seconds without
+    CLI activity, once a first response has arrived. Running tools and pending
+    approvals hold this timer, and it starts over once they finish. Recovery
+    stops the CLI and writes an error.
+    It keeps the conversation ID and does not resend the interrupted request.
+    Review any changes before sending a message to continue. Configure with
+    automation.stall.timeout_sec (0 disables this recovery). This applies to
+    process = "duplex" only; it does not impose a tool execution timeout.
 
                                                              *:VibingReserve*
 :VibingReserve [{text}]
@@ -1104,6 +1124,12 @@ A server or long script started by the agent disappears when its turn ends:~
     owns that process, keeps its log under `.vibing/jobs/`, and starts a fresh
     chat turn with a Notice when it exits. Use `nvim_job_status`,
     `nvim_job_list`, `nvim_job_stop`, or `nvim_job_wait` to manage it.
+    `nvim_job_start` follows the same rules as `Bash`, including the default
+    denial of `Bash`, so the command has to be allowed before a job starts.
+    Shell Ex commands through `nvim_execute` (`:!`, `:read !`, `:write !`,
+    `:terminal`, `term://`, and `system()`) follow those rules too. This
+    recognizes literal forms only: a file read by `:source` or `:luafile`
+    and code built at runtime are not judged, so it is not a sandbox.
 
 A chat resumes into the wrong directory:~
     The `working_dir` field in the chat's frontmatter wins over Neovim's

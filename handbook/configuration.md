@@ -452,6 +452,7 @@ ui = {
   },
 },
 automation = {
+  stall = { timeout_sec = 600 }, -- Resident CLI inactivity; 0 disables recovery.
   limits = {
     resume = {
       enabled = false,
@@ -650,22 +651,31 @@ Three consequences worth knowing before switching it on:
   so nothing has to be reconfigured — but a hand-written permission rule naming only the plugin
   form stops matching.
 - **Claude only.** Codex has no per-run switch narrower than `--ignore-user-config`, which also
-  drops `model_provider`; copilot and grok have none at all for ordinary turns. Lightweight calls
-  on every backend already load no MCP servers (`handbook/architecture/lightweight-calls.md`).
+  drops `model_provider` (lightweight calls copy that provider back; see below); copilot and grok
+  have none at all for ordinary turns. Lightweight calls on every backend already load no MCP
+  servers (`handbook/architecture/lightweight-calls.md`).
 
 ### Codex Provider Notice
 
 Only applies to the Codex backend. Codex's lightweight calls (chat title generation, `/summarize`,
-daily summary) run with `--ignore-user-config`, which is what keeps them out of your MCP servers —
-and which also drops `model_provider`. So if your `config.toml` points Codex at a custom or local
-provider, those calls go to the default OpenAI endpoint while ordinary chat still uses yours. That
-is unexpected billing for some and an unexplained 401 for anyone on a local provider, with nothing
-said either way.
+daily summary) run with `--ignore-user-config`, which is what keeps them out of your MCP servers.
+That flag also drops `model_provider`. The call copies your top-level provider, its
+`[model_providers.<id>]` definition, and your configured `model` (unless a helper model is
+already being passed) back onto the command, so a custom or local provider stays in effect.
 
-With this on, the first lightweight Codex call of a Neovim session runs `codex doctor --json` in
-the background to ask Codex which provider is actually configured, and warns once if it is not
-`openai`. Nothing waits for the probe, and if Codex cannot answer, nothing is said — a warning that
-cannot be trusted is worse than none, because its silence reads as "you are fine".
+The copy reads `$CODEX_HOME/config.toml` directly and takes the provider whole or not at all. It
+copies nothing when the file is unreadable, when the provider id or one of its keys cannot be
+written as a `-c` key, when one of its values spans several lines, when the provider carries
+`experimental_bearer_token` (a secret on the command line is readable through `ps`; use
+`env_key`), or when the file sets a legacy `profile`. Those calls would otherwise go to the default
+OpenAI endpoint while ordinary chat still uses yours. That is unexpected billing for some and an
+unexplained 401 for anyone on a local provider.
+
+With this on, that fallback is the first lightweight Codex call of a Neovim session that did not
+carry `model_provider=`. It runs `codex doctor --json` in the background to ask Codex which
+provider is actually configured, and warns once if it is not `openai`. Nothing waits for the
+probe, and if Codex cannot answer, nothing is said — a warning that cannot be trusted is worse
+than none, because its silence reads as "you are fine".
 
 **Why this one defaults to on** while `subagent` and `auto_resume_on_limit` default to off: those
 two spend tokens unattended, so the safe default is silence. This one spends none and exists to
@@ -1643,6 +1653,16 @@ Two built-in behaviors to be aware of:
 - `Read`, `Skill`, and `StructuredOutput` are **always allowed** regardless of the allow list
   (they can still be blocked via `deny`).
 - `Skill` is automatically appended to `allow` unless you put it in `deny` or `ask`.
+- `nvim_job_start`, and `nvim_execute` when the Ex command runs a shell, are judged as `Bash`.
+  The default `deny = { "Bash" }` denies them. Allow a command with the same `Bash(prefix:*)`
+  pattern you would use for the Bash tool. Because nothing checks an MCP tool after vibing.nvim,
+  a prefix rule does not cover an Ex line containing a shell operator or a Vim expansion (`;`,
+  `|`, `&`, `` ` ``, `$`, `<`, `>`, `%`, `#`, `!`); that line asks unless all of `Bash` is
+  allowed. A job's `env` is judged as `NAME=value` in front of the argv, so `Bash(npm:*)` does
+  not cover a job that sets `PATH`. Ordinary Ex commands such as `:write` and `:edit` are
+  unchanged. The recognized forms, and the ones that are not (`:source`, `:luafile`, plugin user
+  commands, code built at runtime), are listed in
+  `lua/vibing/infrastructure/permissions/shell_command.lua`. It is not a sandbox.
 
 ### Project-local Codex permission profiles
 

@@ -144,8 +144,8 @@ M.AGENTS = {
         kind = "boolean",
         default = false,
       },
-      -- codex の軽量呼び出しは --ignore-user-config で走るので、ユーザーの model_provider が落ちて
-      -- 既定の OpenAI エンドポイントに向く。それを 1 セッション 1 回だけ警告する。
+      -- codex の軽量呼び出しは --ignore-user-config で走る。model_provider は config.toml から
+      -- argv に戻すが、戻せなかったときだけ既定の OpenAI に向くことを 1 セッション 1 回警告する。
       --
       -- auto_resume_on_limit や dap と違って既定で有効なのは、これがトークンを使う機能ではなく、
       -- 黙って宛先が変わることを防ぐ通知だから。既定で無効なら、気づけないという当の問題が残る。

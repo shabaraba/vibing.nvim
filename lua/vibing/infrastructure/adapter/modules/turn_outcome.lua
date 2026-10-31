@@ -88,4 +88,27 @@ function M.first_response_timeout(ids)
   return out
 end
 
+--- The response for a resident CLI that went silent after its first response.
+---
+--- `_stalled` keeps `send_message` from resetting the session: the conversation is intact, only the
+--- process serving it stopped answering, so the next turn resumes it on a new process. Hand this back
+--- before the process is stopped, for the same reason as `first_response_timeout`.
+--- @param ids Vibing.RequestIds
+--- @param content string whatever arrived before the silence
+--- @param timeout_sec number the inactivity budget that ran out
+--- @return Vibing.Response
+function M.stalled(ids, content, timeout_sec)
+  local out = response(
+    ids,
+    content,
+    string.format(
+      "No CLI activity for %g seconds with no tool or approval pending. "
+        .. "The stalled process was stopped. Review any changes, then send a message to continue.",
+      timeout_sec
+    )
+  )
+  out._stalled = true
+  return out
+end
+
 return M
