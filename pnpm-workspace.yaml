@@ -1,2 +1,5 @@
 allowBuilds:
   esbuild: true
+
+overrides:
+  'markdownlint>re2js': ^2.9.1
