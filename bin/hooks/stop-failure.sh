@@ -8,6 +8,12 @@
 #
 # Always exits 0. A failure here must never look like a tool denial.
 
+# Files this script creates (.fail) must not be world-readable. See pre-tool-use.sh.
+umask 077
+
+# shellcheck source=rpc-auth.inc
+. "$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)/rpc-auth.inc"
+
 debug_log() {
   [ -n "$VIBING_DEBUG" ] && echo "$(date) [stop-failure] $1" >> "/tmp/vibing-hook-debug.log"
 }
@@ -24,7 +30,8 @@ fi
 
 REQUEST_ID="$(date +%s)-$$-$RANDOM"
 COMM_DIR="${VIBING_HOOK_COMM_DIR:-/tmp/vibing-hook-${PORT}}"
-mkdir -p "$COMM_DIR" 2>/dev/null
+mkdir -m 0700 -p "$COMM_DIR" 2>/dev/null
+chmod 700 "$COMM_DIR" 2>/dev/null
 
 REQ_FILE="$COMM_DIR/${REQUEST_ID}.fail"
 
@@ -37,7 +44,8 @@ mv "${REQ_FILE}.tmp" "$REQ_FILE"
 # Restricted to [A-Za-z0-9_] since it's interpolated directly into the JSON request below.
 PROCESS_ID="${VIBING_PROCESS_ID//[^A-Za-z0-9_]/}"
 
-printf '{"method":"stop_failure","id":1,"params":{"request_id":"%s","process_id":"%s"}}\n' "$REQUEST_ID" "$PROCESS_ID" \
+TOKEN="$(rpc_auth_token "$COMM_DIR")"
+printf '{"method":"stop_failure","id":1,"params":{"request_id":"%s","process_id":"%s"},"token":"%s"}\n' "$REQUEST_ID" "$PROCESS_ID" "$TOKEN" \
   | nc -w 1 127.0.0.1 "$PORT" >/dev/null 2>&1
 debug_log "notified nvim (status=$?), request_id=$REQUEST_ID"
 

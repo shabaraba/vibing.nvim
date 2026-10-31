@@ -49,6 +49,7 @@ describe("vibing.infrastructure.rpc.comm_dir", function()
     assert.equals("/tmp/vibing-hook-" .. tostring(port), CommDir.path())
 
     server.stop()
+    vim.fn.delete("/tmp/vibing-hook-" .. tostring(port), "rf")
   end)
 
   it("stays per-process when there is no port, instead of collapsing to a shared path", function()

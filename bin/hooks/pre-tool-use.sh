@@ -12,6 +12,13 @@
 # with code 2" to the model.
 FORMAT="${1:-claude}"
 
+# Files this script creates (.req) must not be world-readable, and a comm directory left over
+# from an older session must not stay searchable by every account on the host.
+umask 077
+
+# shellcheck source=rpc-auth.inc
+. "$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)/rpc-auth.inc"
+
 debug_log() {
   [ -n "$VIBING_DEBUG" ] && echo "$(date) $1" >> "/tmp/vibing-hook-debug.log"
 }
@@ -31,7 +38,8 @@ fi
 
 REQUEST_ID="$(date +%s)-$$-$RANDOM"
 COMM_DIR="${VIBING_HOOK_COMM_DIR:-/tmp/vibing-hook-${PORT}}"
-mkdir -p "$COMM_DIR" 2>/dev/null
+mkdir -m 0700 -p "$COMM_DIR" 2>/dev/null
+chmod 700 "$COMM_DIR" 2>/dev/null
 
 REQ_FILE="$COMM_DIR/${REQUEST_ID}.req"
 RES_FILE="$COMM_DIR/${REQUEST_ID}.res"
@@ -49,9 +57,11 @@ mv "${REQ_FILE}.tmp" "$REQ_FILE"
 # on either side fails the build instead of silently losing attribution.
 PROCESS_ID="${VIBING_PROCESS_ID//[^A-Za-z0-9_]/}"
 
-# Notify Neovim RPC server (fire-and-forget)
-printf '{"method":"check_tool_permission","id":1,"params":{"request_id":"%s","process_id":"%s"}}\n' "$REQUEST_ID" "$PROCESS_ID" \
-  | nc -w 1 127.0.0.1 "$PORT" >/dev/null 2>&1
+# Notify Neovim RPC server (fire-and-forget). `token` is the session credential in $COMM_DIR;
+# the server rejects the request before running a handler when it does not match.
+TOKEN="$(rpc_auth_token "$COMM_DIR")"
+RPC_LINE="$(printf '{"method":"check_tool_permission","id":1,"params":{"request_id":"%s","process_id":"%s"},"token":"%s"}\n' "$REQUEST_ID" "$PROCESS_ID" "$TOKEN" \
+  | nc -w 1 127.0.0.1 "$PORT" 2>/dev/null)"
 NC_STATUS=$?
 debug_log "nc status=$NC_STATUS, waiting for $RES_FILE"
 
@@ -62,6 +72,18 @@ if [ "$NC_STATUS" -ne 0 ]; then
   rm -f "$REQ_FILE" 2>/dev/null
   exit 2
 fi
+
+# A rejected token never writes the .res file. Waiting out the approval budget here would turn
+# one missing credential into a multi-minute stall on every tool call, and the result is a deny
+# either way.
+case "$RPC_LINE" in
+  *'"error":"unauthorized"'*)
+    debug_log "RPC unauthorized"
+    echo "Failed to authenticate to vibing.nvim RPC server" >&2
+    rm -f "$REQ_FILE" 2>/dev/null
+    exit 2
+    ;;
+esac
 
 # Poll for the response file, in 0.1s ticks.
 #

@@ -8,6 +8,7 @@ local uv = vim.loop
 local notify = require("vibing.core.utils.notify")
 local handlers = require("vibing.infrastructure.rpc.handlers")
 local registry = require("vibing.infrastructure.rpc.registry")
+local CommDir = require("vibing.infrastructure.rpc.comm_dir")
 
 ---@type uv_tcp_t?
 local server = nil
@@ -17,6 +18,33 @@ local clients = {}
 
 ---@type number?
 local current_port = nil
+
+--- Credential for this Neovim session. Compared against the top-level `token` of every request
+--- before a handler is scheduled. Nil while the server is stopped, which rejects every request.
+---@type string?
+local current_token = nil
+
+--- True when `provided` and `expected` are the same non-empty string.
+---
+--- Walks every byte of the longer input so a mismatch on the first character does not return
+--- early. This is a local socket, not a remote oracle; the loop is there because it is the whole
+--- check and it is easy to get wrong.
+---@param provided any
+---@param expected string|nil
+---@return boolean
+local function tokens_match(provided, expected)
+  if type(provided) ~= "string" or type(expected) ~= "string" or expected == "" then
+    return false
+  end
+  local n = math.max(#provided, #expected)
+  local mismatch = #provided == #expected and 0 or 1
+  for i = 1, n do
+    if (provided:byte(i) or 0) ~= (expected:byte(i) or 0) then
+      mismatch = 1
+    end
+  end
+  return mismatch == 0
+end
 
 ---A handler that returns this has taken responsibility for replying later, through the `respond`
 ---function it was handed. Nothing is written now.
@@ -51,10 +79,19 @@ end
 ---@param request string JSON-RPC request as a single-line JSON string.
 local function handle_request(client, request)
   local ok, req = pcall(vim.json.decode, request)
-  if not ok then
+  if not ok or type(req) ~= "table" then
     local error_response = vim.json.encode({ error = "Invalid JSON" })
     if client and not client:is_closing() then
       client:write(error_response .. "\n")
+    end
+    return
+  end
+
+  -- Before vim.schedule, so a request that does not carry this session's token never enters a
+  -- handler. `execute` is `nvim_exec2` on the caller's string; reaching it is the whole bug.
+  if not tokens_match(req.token, current_token) then
+    if client and not client:is_closing() then
+      client:write(vim.json.encode({ id = req.id, error = "unauthorized" }) .. "\n")
     end
     return
   end
@@ -186,6 +223,31 @@ function M.start(base_port)
       if listen_ok then
         successful_port = try_port
         current_port = try_port
+        local token, token_err = CommDir.random_token()
+        if not token then
+          pcall(function()
+            if server and not server:is_closing() then
+              server:close()
+            end
+          end)
+          server = nil
+          current_port = nil
+          current_token = nil
+          notify.error(
+            "Failed to start RPC server: could not generate an auth token (" .. tostring(token_err) .. ")"
+          )
+          return 0
+        end
+        current_token = token
+        -- Clients already know this path from the port (`comm_dir.path`). The file is how the
+        -- token reaches them; the environment is not, because Codex and Grok forward that by an
+        -- explicit list and a value there is copied into the session request.
+        local installed, install_err = CommDir.install_token(CommDir.path(), token)
+        if not installed then
+          notify.warn(
+            "RPC clients cannot authenticate: token file was not written (" .. tostring(install_err) .. ")"
+          )
+        end
         break
       else
         -- Listen failed, cleanup socket before trying next port
@@ -230,6 +292,8 @@ end
 
 ---Stop RPC server and unregister instance
 function M.stop()
+  current_token = nil
+
   -- Close all client connections
   for client, _ in pairs(clients) do
     pcall(function()

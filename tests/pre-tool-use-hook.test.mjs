@@ -13,13 +13,14 @@ import { strict as assert } from 'assert';
 import { test } from 'node:test';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
-import { mkdtemp, rm, writeFile } from 'fs/promises';
+import { chmod, mkdtemp, rm, stat, writeFile } from 'fs/promises';
 import { dirname, join } from 'path';
 import { tmpdir } from 'os';
 import { fileURLToPath } from 'url';
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 const HOOK = join(repoRoot, 'bin/hooks/pre-tool-use.sh');
+const STOP_FAILURE = join(repoRoot, 'bin/hooks/stop-failure.sh');
 
 /**
  * Run the hook against a fake RPC server that answers with `hookOutput`.
@@ -192,6 +193,115 @@ test('copilot deny falls back to exit 2 when the response cannot be unwrapped', 
 
     assert.equal(code, 2, 'an unrecognised response shape must still deny');
     assert.equal(stdout, '', 'and must not print an object copilot would ignore');
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    await rm(commDir, { recursive: true, force: true });
+  }
+});
+
+test('pre-tool-use sends the session token and keeps the comm files private', async () => {
+  const commDir = await mkdtemp(join(tmpdir(), 'vibing-hook-test-'));
+  // mkdtemp is already 0700. Loosen it so the assertion is about what the script does.
+  await chmod(commDir, 0o755);
+  const token = 'cd'.repeat(32);
+  await writeFile(join(commDir, 'token'), token, { mode: 0o600 });
+
+  let request;
+  let reqMode;
+  const server = createServer((socket) => {
+    socket.on('data', async (buf) => {
+      request = JSON.parse(buf.toString());
+      reqMode = (await stat(join(commDir, `${request.params.request_id}.req`))).mode & 0o777;
+      await writeFile(
+        join(commDir, `${request.params.request_id}.res`),
+        JSON.stringify({
+          hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'defer' },
+        })
+      );
+      socket.end();
+    });
+  });
+
+  try {
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const child = spawn(HOOK, [], {
+      env: {
+        ...process.env,
+        VIBING_NVIM_RPC_PORT: String(server.address().port),
+        VIBING_HOOK_COMM_DIR: commDir,
+      },
+    });
+    child.stdin.end(JSON.stringify({ tool_name: 'Read', tool_input: { file_path: '/tmp/x' } }));
+    const code = await new Promise((resolve) => child.on('close', resolve));
+
+    assert.equal(code, 0);
+    assert.equal(request.token, token);
+    assert.equal(request.method, 'check_tool_permission');
+    assert.equal(reqMode, 0o600);
+    assert.equal((await stat(commDir)).mode & 0o777, 0o700);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    await rm(commDir, { recursive: true, force: true });
+  }
+});
+
+test('unauthorized RPC fails closed without waiting out the approval budget', async () => {
+  const commDir = await mkdtemp(join(tmpdir(), 'vibing-hook-test-'));
+  const server = createServer((socket) => {
+    socket.on('data', () => {
+      socket.end(JSON.stringify({ id: 1, error: 'unauthorized' }) + '\n');
+    });
+  });
+
+  try {
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const started = Date.now();
+    const child = spawn(HOOK, [], {
+      env: {
+        ...process.env,
+        VIBING_NVIM_RPC_PORT: String(server.address().port),
+        VIBING_HOOK_COMM_DIR: commDir,
+        VIBING_HOOK_MAX_WAIT_SEC: '30',
+      },
+    });
+    child.stdin.end(JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'echo hi' } }));
+    const code = await new Promise((resolve) => child.on('close', resolve));
+
+    assert.equal(code, 2);
+    assert.ok(Date.now() - started < 5000, 'a rejected token must not sit for the approval wait');
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    await rm(commDir, { recursive: true, force: true });
+  }
+});
+
+test('stop-failure sends the session token', async () => {
+  const commDir = await mkdtemp(join(tmpdir(), 'vibing-hook-test-'));
+  const token = 'ef'.repeat(32);
+  await writeFile(join(commDir, 'token'), `${token}\n`, { mode: 0o600 });
+  let request;
+  const server = createServer((socket) => {
+    socket.on('data', (buf) => {
+      request = JSON.parse(buf.toString());
+      socket.end();
+    });
+  });
+
+  try {
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const child = spawn(STOP_FAILURE, [], {
+      env: {
+        ...process.env,
+        VIBING_NVIM_RPC_PORT: String(server.address().port),
+        VIBING_HOOK_COMM_DIR: commDir,
+      },
+    });
+    child.stdin.end(JSON.stringify({ hook_event_name: 'StopFailure' }));
+    const code = await new Promise((resolve) => child.on('close', resolve));
+
+    assert.equal(code, 0);
+    assert.equal(request.method, 'stop_failure');
+    assert.equal(request.token, token);
   } finally {
     await new Promise((resolve) => server.close(resolve));
     await rm(commDir, { recursive: true, force: true });

@@ -1,4 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import * as net from 'net';
 
 vi.mock('../instance-registry.js', () => ({
@@ -33,10 +36,12 @@ async function startFakeNeovim(result: unknown): Promise<{ port: number; close: 
 
 describe('callNeovim port resolution', () => {
   const originalRpcPort = process.env.VIBING_NVIM_RPC_PORT;
+  const originalCommDir = process.env.VIBING_HOOK_COMM_DIR;
 
   beforeEach(() => {
     vi.mocked(listLiveInstances).mockReset();
     delete process.env.VIBING_NVIM_RPC_PORT;
+    delete process.env.VIBING_HOOK_COMM_DIR;
   });
 
   afterEach(() => {
@@ -45,6 +50,11 @@ describe('callNeovim port resolution', () => {
       delete process.env.VIBING_NVIM_RPC_PORT;
     } else {
       process.env.VIBING_NVIM_RPC_PORT = originalRpcPort;
+    }
+    if (originalCommDir === undefined) {
+      delete process.env.VIBING_HOOK_COMM_DIR;
+    } else {
+      process.env.VIBING_HOOK_COMM_DIR = originalCommDir;
     }
   });
 
@@ -148,6 +158,36 @@ describe('callNeovim port resolution', () => {
     await expect(callNeovim('get_current_file', {})).rejects.toThrow(
       /no running vibing\.nvim Neovim instance found/
     );
+  });
+
+  it('sends the session token read from the comm directory', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'vibing-rpc-token-'));
+    const token = 'ab'.repeat(32);
+    await writeFile(join(dir, 'token'), `${token}\n`, { mode: 0o600 });
+    process.env.VIBING_HOOK_COMM_DIR = dir;
+
+    const seen: Array<{ token?: string }> = [];
+    const server = net.createServer((socket) => {
+      socket.on('data', (chunk) => {
+        for (const line of chunk.toString().split('\n')) {
+          if (!line.trim()) continue;
+          const request = JSON.parse(line) as { id: number; token?: string };
+          seen.push(request);
+          socket.write(JSON.stringify({ id: request.id, result: 'ok' }) + '\n');
+        }
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const port = (server.address() as net.AddressInfo).port;
+
+    try {
+      await expect(callNeovim('get_current_file', {}, port)).resolves.toBe('ok');
+      expect(seen).toHaveLength(1);
+      expect(seen[0].token).toBe(token);
+    } finally {
+      server.close();
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 
   it('rejects and names the candidates when several instances are running', async () => {
