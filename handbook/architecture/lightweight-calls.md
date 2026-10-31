@@ -252,8 +252,8 @@ It runs on the first lightweight call that did not copy the provider back, rathe
 `setup()`, because `doctor` makes one reachability request to the active provider's endpoint; it
 is asynchronous and nothing waits for it. `ai.agents.codex.extensions.provider_notice` turns the
 whole thing off, probe included, and is the one toggle of this shape that **defaults to `true`**
-— `subagent`, `auto_resume_on_limit` and
-`dap` all default to `false` because they spend tokens or run unattended, and this spends none. A
+— `ui.subagents.show_output`, `automation.limits.resume` and
+`integrations.dap` all default to `false` because they spend tokens or run unattended, and this spends none. A
 warning about a change the user cannot otherwise see fails at its only job if it is off until
 asked for. Absent config reads as enabled, so a hand-built config table does not silently lose it.
 

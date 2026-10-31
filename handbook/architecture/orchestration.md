@@ -503,7 +503,7 @@ splitting it out keeps prompt wording out of the queue's state machine.
 
 Four things about it are not incidental:
 
-- **`queue_if_busy` is not gated on `chat_notifications.enabled`, and the drain is not either.**
+- **`queue_if_busy` is not gated on `automation.orchestration.notifications.enabled`, and the drain is not either.**
   That flag decides whether vibing.nvim volunteers a watchdog wake-up; a queued message is a
   delivery the caller explicitly asked for. Gating it would mean a worker's report vanishing in
   silence on the default config. So `on_response_done` drains first and unconditionally, and the
@@ -810,7 +810,7 @@ the orchestrator's action. The working detail is deliberately left in the worker
 which already exists for free — a report that replays it is paid for twice, once written and once
 read, for context the orchestrator can fetch on the rare occasion it wants it. That is the path a
 healthy fan-out takes, and it needs
-nothing from `chat_notifications`: `queue_if_busy` and the drain are ungated, so a report is
+nothing from `automation.orchestration.notifications`: `queue_if_busy` and the drain are ungated, so a report is
 delivered whether or not the watchdog is switched on.
 
 Which is what lets the notice be worded as a warning rather than a status line. `on_sent`'s
@@ -836,7 +836,7 @@ stops on `asked_question` / `waiting_approval` / `error` — the same three exce
 already makes. Worth revisiting if a middle node forgetting turns out to cost anything in practice.
 
 A worker learns its orchestrator from a system-prompt line built out of its `orchestrated_by`
-frontmatter, on every turn regardless of `chat_notifications.enabled` (see above; the report
+frontmatter, on every turn regardless of `automation.orchestration.notifications.enabled` (see above; the report
 path that line describes was never gated). Only that direction is exposed: a worker's list
 is written once at creation and stays byte-stable across turns (#469), while an orchestrator's
 `orchestrated` grows with each dispatch and would move the cached prefix mid-conversation.

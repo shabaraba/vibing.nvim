@@ -213,7 +213,7 @@ commands, and LSP queries against the running Neovim instance), the bundled skil
 `vibing-worktree-{list,create,attach,run,finish}` worktree workflow), and the `nvim-navigator`
 subagent (read-only code navigation via `@vibing-nvim:nvim-navigator`).
 
-You still need Neovim running with `mcp = { enabled = true }` (the default) for the MCP tools to
+You still need Neovim running with `integrations.nvim = { enabled = true }` (the default) for the MCP tools to
 have anything to connect to. The one trade-off is that a plain `claude` session started outside
 Neovim no longer sees these tools; that was never a supported way to use them.
 
@@ -433,7 +433,7 @@ vibing.nvim: true
 session_id: <cli-session-id>
 created_at: 2024-01-01T12:00:00
 working_dir: .vibing/worktrees/feature-x # Optional: working directory (relative to git root)
-agent: claude # claude | codex | copilot | grok | pi (overrides global adapter setting for this chat)
+agent: claude # claude | codex | copilot | grok | pi (overrides ai.chat.agent for this chat)
 mode: code # code | plan | explore
 model: sonnet # Backend model id, e.g. sonnet or gpt-5.6-terra
 effort: default # CLI/model default | low | medium | high | xhigh | max

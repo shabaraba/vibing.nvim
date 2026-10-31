@@ -12,7 +12,7 @@ RPC サーバーの起動、通信、各種ハンドラーの動作
 
 - Neovimが起動している
 - vibing.nvimプラグインがインストールされている
-- `mcp.enabled = true` が設定されている
+- `integrations.nvim.enabled = true` が設定されている
 - Node.jsがインストールされている（MCPクライアント用）
 
 ## テスト手順
@@ -22,7 +22,7 @@ RPC サーバーの起動、通信、各種ハンドラーの動作
 **操作:**
 
 ```vim
-:lua require("vibing").setup({ mcp = { enabled = true, rpc_port = 9876 } })
+:lua require("vibing").setup({ integrations = { nvim = { enabled = true, port = 9876 } } })
 ```
 
 **期待される動作:**

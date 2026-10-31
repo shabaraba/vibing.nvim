@@ -84,7 +84,7 @@ M.close_test_nvim(term_chan)
 2. テストスクリプトを生成（Lua ファイル）
 3. `vim.fn.chansend()` で `nvim -c 'luafile test.lua'` を実行
 4. Nested nvim が起動し、以下を実行:
-   - `require("vibing").setup({ mcp = { rpc_port = 9877 } })`
+   - `require("vibing").setup({ integrations = { nvim = { port = 9877 } } })`
    - `:VibingChat` を開く
    - 基本的な動作確認
    - 結果を JSON ファイルに書き込み
@@ -291,7 +291,7 @@ end
 
 -- Test 1: Setup
 local ok, err = pcall(function()
-  require("vibing").setup({ mcp = { enabled = true, rpc_port = 9877 } })
+  require("vibing").setup({ integrations = { nvim = { enabled = true, port = 9877 } } })
 end)
 report("setup", ok, ok and "Setup OK" or tostring(err))
 

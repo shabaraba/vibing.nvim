@@ -215,7 +215,7 @@ lazy.nvim の watch コマンドを更新してください。更新した check
 サブエージェント(`@vibing-nvim:nvim-navigator` による読み取り専用コードナビゲーション)が
 利用できます。
 
-MCP ツールの接続先として、`mcp = { enabled = true }`(デフォルト)の Neovim が起動している
+MCP ツールの接続先として、`integrations.nvim = { enabled = true }`(デフォルト)の Neovim が起動している
 必要があります。引き換えに、Neovim の外で起動した素の `claude` セッションからはこれらの
 ツールが見えなくなります。もともと想定された使い方ではありません。
 
@@ -228,7 +228,7 @@ Codex バックエンドは `--plugin-dir` を使わず同じものを読み込�
 したら `:VibingReloadCommands` を実行してください。雛形は `:VibingCreatePlugin <name>` で
 作れます。なお、プラグインは `mcpServers` を宣言できるため、クローンしたリポジトリに仕込まれた
 プラグインが手元でプロセスを起動しうる点には注意してください。信用できないリポジトリでは
-`agent.plugins.project_dir = false` にします。`agent.plugins` の詳細は
+`integrations.plugins.project_dir = false` にします。`integrations.plugins` の詳細は
 [handbook/configuration.md](handbook/configuration.md) を参照。
 
 **旧バージョンからの移行:** user scope のインストールは、デフォルトの `./build.sh` では残ります。
@@ -409,7 +409,7 @@ vibing.nvim: true
 session_id: <cli-session-id>
 created_at: 2024-01-01T12:00:00
 working_dir: .vibing/worktrees/feature-x # オプション: 作業ディレクトリ(git ルートからの相対パス)
-agent: claude # claude | codex | copilot | grok | pi(チャット単位で adapter 設定を上書き)
+agent: claude # claude | codex | copilot | grok | pi(チャット単位で ai.chat.agent を上書き)
 mode: code # code | plan | explore
 model: sonnet # backend のモデルID。例: sonnet / gpt-5.6-terra
 effort: default # CLI・モデル既定値 | low | medium | high | xhigh | max
