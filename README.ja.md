@@ -118,6 +118,10 @@ https://github.com/user-attachments/assets/8182307e-83f6-428a-af11-1122b69f4483
 - [Node.js](https://nodejs.org) **18+** — 同梱の MCP サーバー用
 - C コンパイラ — 任意。無い場合はチャット用 Tree-sitter パーサーのビルドを省略し、従来の
   バッファ全体 Markdown 解析にフォールバックします
+- bash、netcat（`nc`）、書き込み可能な `/tmp`。権限フック（`bin/hooks/pre-tool-use.sh` と
+  `bin/hooks/stop-failure.sh`）は bash スクリプトで、各リクエストを `/tmp` に置き、`nc` で Neovim の
+  RPC サーバーに通知します。`nc` が無いと、権限フックを通るツール呼び出しはすべて拒否されます。
+- 対応 OS は Linux と macOS です。ネイティブ Windows は未検証です。
 - AI CLI バックエンドを最低1つ:
 
 | バックエンド                | インストール                                                  |

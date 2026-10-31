@@ -162,6 +162,23 @@ function M.can_wait_for_approval(descriptor)
   return floor > require("vibing.infrastructure.hooks.wait_budget").script_wait_sec()
 end
 
+--- The hook scripts reach Neovim with `nc` (`bin/hooks/pre-tool-use.sh`). When that binary is
+--- missing the script still fails closed, but the only text the chat used to show was "Failed to
+--- connect" — indistinguishable from a dead RPC server, and invisible until a tool was denied.
+--- This is the one seam every backend passes through before that script runs, so the warning
+--- lands on the turn that needs `nc` and not on a lightweight call, which never installs a hook.
+--- Required at call time: `warn_once` memoises for the life of the notify module, and specs reset
+--- it by dropping `package.loaded`.
+local function warn_if_nc_missing()
+  if vim.fn.executable("nc") == 1 then
+    return
+  end
+  require("vibing.core.utils.notify").warn_once(
+    "nc_missing",
+    "netcat (nc) was not found on PATH. Permission hooks deny every tool call without it. Install nc (netcat)."
+  )
+end
+
 --- Register the hook for one run.
 --- @param hook Vibing.HookSpec
 --- @param cwd string
@@ -175,6 +192,7 @@ function M.install(hook, cwd)
   if not M.DIALECTS[dialect] then
     error(string.format("unknown hook dialect %q", tostring(dialect)), 0)
   end
+  warn_if_nc_missing()
   return installer(cwd, dialect)
 end
 

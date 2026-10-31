@@ -33,6 +33,15 @@ if [ -z "$PORT" ]; then
   exit 0
 fi
 
+# `nc` is how this script wakes Neovim. The pipeline below fails the same way when the binary
+# is missing and when nothing is listening, and both used to deny with "Failed to connect".
+# Name a missing binary. Still fail closed: an exit 0 here would let the tool run.
+if ! command -v nc >/dev/null 2>&1; then
+  debug_log "nc not found on PATH, denying"
+  echo "netcat (nc) was not found on PATH. Install nc; without it every tool call is denied." >&2
+  exit 2
+fi
+
 REQUEST_ID="$(date +%s)-$$-$RANDOM"
 COMM_DIR="${VIBING_HOOK_COMM_DIR:-/tmp/vibing-hook-${PORT}}"
 mkdir -m 0700 -p "$COMM_DIR" 2>/dev/null
