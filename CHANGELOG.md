@@ -113,6 +113,38 @@
   defaults to `true`: it spends no tokens, and a warning about a change you cannot otherwise see is
   useless if it is off until you ask for it. Set it to `false` to stop the warning and its probe.
 
+## 6.1.0 (2026-10-31)
+
+## What's Changed
+* chore(main): release 6.0.0 by @github-actions[bot] in https://github.com/shabaraba/vibing.nvim/pull/904
+* fix(chat): keep a blank line before Tokens after taking a question block by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/905
+* chore: add gh-relay label configuration by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/909
+* chore(deps): bump the minor-and-patch group in /agent-plugin/mcp-server with 2 updates by @dependabot[bot] in https://github.com/shabaraba/vibing.nvim/pull/908
+* fix(chat): take a question block the turn tried to stop on before a Stop hook by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/910
+* feat(chat): search past chats with a Lua pipeline that a small model keeps up with by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/911
+* chore(deps): bump zod from 4.6.5 to 4.6.6 in the minor-and-patch group by @dependabot[bot] in https://github.com/shabaraba/vibing.nvim/pull/907
+* fix(orchestration): keep the parent informed when a worker resumes after a usage limit by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/912
+* ci: bump Node.js to 26 by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/913
+* fix(grok): drop session/load catch-up from the new Assistant by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/916
+* chore(deps): bump the minor-and-patch group with 2 updates by @dependabot[bot] in https://github.com/shabaraba/vibing.nvim/pull/914
+* chore(deps): bump the minor-and-patch group in /agent-plugin/mcp-server with 2 updates by @dependabot[bot] in https://github.com/shabaraba/vibing.nvim/pull/915
+* chore(deps): bump body-parser to 2.4.0 for GHSA-27r3-jxmh-p828 by @shaba-grok-bot in https://github.com/shabaraba/vibing.nvim/pull/933
+* chore(deps-dev): bump markdownlint-cli from 0.49.1 to 0.50.0 in the minor-and-patch group by @dependabot[bot] in https://github.com/shabaraba/vibing.nvim/pull/918
+* chore(deps): bump @modelcontextprotocol/sdk from 1.32.1 to 1.32.2 in /agent-plugin/mcp-server in the minor-and-patch group by @dependabot[bot] in https://github.com/shabaraba/vibing.nvim/pull/919
+* fix(rpc): require a session token on the local RPC server by @shaba-grok-bot in https://github.com/shabaraba/vibing.nvim/pull/932
+* fix: nvim_execute shell commands and nvim_job_start follow Bash permissions by @shaba-grok-bot in https://github.com/shabaraba/vibing.nvim/pull/931
+* fix(codex): keep a custom model_provider on lightweight calls by @shaba-grok-bot in https://github.com/shabaraba/vibing.nvim/pull/930
+* fix: recover stalled resident CLI turns by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/917
+* fix(build): leave global CLI config alone unless opted in by @shaba-grok-bot in https://github.com/shabaraba/vibing.nvim/pull/927
+* fix(hooks): document the netcat requirement and warn when nc is missing by @shaba-grok-bot in https://github.com/shabaraba/vibing.nvim/pull/929
+* fix(screenshot): use v6 Neovim integration configuration by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/934
+* docs: replace removed v5 setup keys with the v6 schema by @shaba-grok-bot in https://github.com/shabaraba/vibing.nvim/pull/928
+
+## New Contributors
+* @shaba-grok-bot made their first contribution in https://github.com/shabaraba/vibing.nvim/pull/933
+
+**Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v6.0.0...v6.1.0
+
 ## 6.0.0 (2026-10-14)
 
 ## What's Changed
