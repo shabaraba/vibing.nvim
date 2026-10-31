@@ -24,6 +24,6 @@ vim.opt.number = true
 vim.opt.laststatus = 3
 
 require("vibing").setup({
-  mcp = { enabled = true },
+  integrations = { nvim = { enabled = true } },
   permissions = { mode = "acceptEdits" },
 })
