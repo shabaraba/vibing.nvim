@@ -3,6 +3,7 @@
 
 local CodexCommandBuilder = require("vibing.infrastructure.adapter.modules.codex_command_builder")
 local CodexEventProcessor = require("vibing.infrastructure.adapter.modules.codex_event_processor")
+local CodexLightweightProvider = require("vibing.infrastructure.adapter.modules.codex_lightweight_provider")
 local CodexProviderNotice = require("vibing.infrastructure.adapter.modules.codex_provider_notice")
 local ToolVocabulary = require("vibing.infrastructure.adapter.modules.codex_tool_vocabulary")
 local ProjectCodexPermissions = require("vibing.core.utils.project_codex_permissions")
@@ -61,7 +62,7 @@ local M = {
       vim.tbl_extend("force", { kind = "args", when = "lightweight" }, CodexCommandBuilder.LIGHTWEIGHT_ARGS),
       -- `--ignore-user-config` drops model_provider along with the MCP servers. Put the user's
       -- provider, its definition and (when this call passes no -m) their model back.
-      { kind = "extra", fn = CodexCommandBuilder.lightweight_provider_args, when = "lightweight" },
+      { kind = "extra", fn = CodexLightweightProvider.args, when = "lightweight" },
       -- One mapping per transport, chosen here rather than inside the builder: app-server has no
       -- `-s` and no native approval dialog, so its permission argv is a different shape, not a
       -- variation on this one.

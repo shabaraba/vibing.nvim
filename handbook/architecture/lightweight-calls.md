@@ -51,6 +51,9 @@ not already passing `-m`. `ai.helpers.model`, when it is a model Codex accepts, 
 `-m` and runs on that same provider. `openai_base_url` is copied too, because that is the
 supported way to point the built-in OpenAI provider at a proxy. MCP servers, profiles and every
 other key are not copied. Auth is unaffected; codex reads it from `CODEX_HOME` either way.
+The copied keys are overrides, so `--strict-config` validates them: a provider table holding a
+field this codex does not know, which an ordinary chat tolerates, fails the utility call with
+`unknown configuration field` (measured on 0.163.0).
 Project `.codex/config.toml` cannot set `model_provider` (Codex denies that key there), and
 vibing.nvim does not pass `--profile`, so the top-level user file is the same source an ordinary
 chat resolves.
@@ -218,8 +221,12 @@ config, no hooks, `ai.helpers.model` — rather than the mechanism any one of th
 not codex's own `openai` default. The copy (#925) reads the user file directly because nothing
 Codex prints includes the `[model_providers.<name>]` table — not `doctor`, and not the app-server
 protocol, whose `ConfigReadResponse.Config` carries `model_provider` as a bare string and no
-provider map. The warning remains for the call the copy skipped: an unreadable file, or a
-provider id that is not a bare `-c` key. `codex_cli.lua` triggers it on `--ignore-user-config`
+provider map. The copy is all or nothing, because half a provider table is a call that fails
+for a reason nobody is told: it is skipped for an unreadable file, a provider id or key that is
+not a bare `-c` key, a value spanning lines (`core/utils/toml_assignments.lua` locates values and
+does not parse them), an `experimental_bearer_token` (the argv is readable through `ps`), and a
+legacy `profile` key (codex 0.163 rejects it outright; older releases layered it over the
+top-level keys). The warning remains for exactly those calls. `codex_cli.lua` triggers it on `--ignore-user-config`
 actually being in the argv it just built and on that argv _not_ already carrying
 `model_provider=`, not on `opts.lightweight` alone: the builder documents the flag as a stand-in
 for a narrower switch codex does not have yet, so reading the built command is what makes the

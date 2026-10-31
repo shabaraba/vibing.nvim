@@ -662,8 +662,11 @@ That flag also drops `model_provider`. The call copies your top-level provider, 
 `[model_providers.<id>]` definition, and your configured `model` (unless a helper model is
 already being passed) back onto the command, so a custom or local provider stays in effect.
 
-The copy reads `$CODEX_HOME/config.toml` directly. When it cannot — the file is unreadable, or
-the provider id cannot be written as a `-c` key — those calls would otherwise go to the default
+The copy reads `$CODEX_HOME/config.toml` directly and takes the provider whole or not at all. It
+copies nothing when the file is unreadable, when the provider id or one of its keys cannot be
+written as a `-c` key, when one of its values spans several lines, when the provider carries
+`experimental_bearer_token` (a secret on the command line is readable through `ps`; use
+`env_key`), or when the file sets a legacy `profile`. Those calls would otherwise go to the default
 OpenAI endpoint while ordinary chat still uses yours. That is unexpected billing for some and an
 unexplained 401 for anyone on a local provider.
 
