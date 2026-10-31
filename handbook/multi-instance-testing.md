@@ -208,21 +208,21 @@ Claude Code              Socket Pool              Neovim (port 9876)
 $ nvim test1.txt
 
 # In Neovim 1
-:lua require("vibing").setup({ mcp = { enabled = true } })
+:lua require("vibing").setup({ integrations = { nvim = { enabled = true } } })
 # Expected: "RPC server started on port 9876"
 
 # Terminal 2: Start second Neovim
 $ nvim test2.txt
 
 # In Neovim 2
-:lua require("vibing").setup({ mcp = { enabled = true } })
+:lua require("vibing").setup({ integrations = { nvim = { enabled = true } } })
 # Expected: "RPC server started on port 9877"
 
 # Terminal 3: Start third Neovim
 $ nvim test3.txt
 
 # In Neovim 3
-:lua require("vibing").setup({ mcp = { enabled = true } })
+:lua require("vibing").setup({ integrations = { nvim = { enabled = true } } })
 # Expected: "RPC server started on port 9878"
 ```
 
@@ -271,7 +271,7 @@ console.log('Default instance:', contentDefault);
 ```bash
 # Start 10 Neovim instances
 for i in {1..10}; do
-  nvim -c "lua require('vibing').setup({ mcp = { enabled = true } })" test$i.txt &
+  nvim -c "lua require('vibing').setup({ integrations = { nvim = { enabled = true } } })" test$i.txt &
 done
 
 # Expected: First 50 instances get ports 9876-9925

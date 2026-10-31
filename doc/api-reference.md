@@ -25,17 +25,20 @@ vibing.nvim が公開している API のリファレンス。設定項目その
 
 ```lua
 require("vibing").setup({
-  adapter = "claude",  -- "claude" | "codex" | "copilot"
-  agent = {
-    default_mode = "code",     -- "code" | "plan" | "explore"
-    default_model = "sonnet",  -- backend model id, e.g. "sonnet" or "gpt-5.6-terra"
+  ai = {
+    chat = {
+      agent = "claude", -- "claude" | "codex" | "copilot" | "grok" | "pi"
+      model = "sonnet", -- backend model id, e.g. "sonnet" or "gpt-5.6-terra"
+    },
+  },
+  ui = {
+    window = {
+      position = "right", -- "current" | "right" | "left" | "top" | "bottom" | "back" | "float"
+      width = 0.4, -- 画面幅に対する比率（0-1）。1以上は桁数
+    },
   },
   chat = {
-    window = {
-      position = "right",  -- "current" | "right" | "left" | "top" | "bottom" | "back" | "float"
-      width = 0.4,         -- 画面幅に対する比率（0-1）
-    },
-    save_location_type = "project",
+    storage = { location = "project" },
   },
 })
 ```
@@ -71,7 +74,7 @@ end
 
 ```lua
 local config = require("vibing").get_config()
-print(config.adapter)  -- "claude"
+print(config.ai.chat.agent) -- "claude"
 ```
 
 ## Adapter API
@@ -196,9 +199,11 @@ end
 
 ```lua
 {
-  adapter = "claude",
-  agent = {
-    default_model = "sonnet",  -- backend model id, e.g. "sonnet" or "gpt-5.6-terra"
+  ai = {
+    chat = {
+      agent = "claude",
+      model = "sonnet", -- backend model id, e.g. "sonnet" or "gpt-5.6-terra"
+    },
   },
 }
 ```
@@ -222,7 +227,7 @@ OpenAI の `codex` CLI（`codex exec --json`）を使用するアダプター。
 
 ```lua
 {
-  adapter = "codex",
+  ai = { chat = { agent = "codex" } },
 }
 ```
 

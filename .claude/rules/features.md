@@ -15,13 +15,13 @@ Read the linked file before changing that path.
   `.vibing/pending-resume.json`, so it stays editable and deleting it cancels the send.
 - **Every field of the three rate-limit signals is optional.** None of the payload shapes is
   documented, so a schema change must degrade the feature, not break the stream.
-- Both features spend tokens unattended, so `auto_resume_on_limit.enabled` defaults to `false`.
+- Both features spend tokens unattended, so `automation.limits.resume.enabled` defaults to `false`.
 - **Giving up on the retry budget writes one line into the chat's own buffer, and that write is
   not a send.** `auto_resume.announce_gave_up` edits the buffer directly and saves it; it must
   never route through `ProgrammaticSender.send` / `ChatBuffer:send_message()`, which would start a
   new CLI turn and spend tokens exactly where the budget exists to stop that. Forwarding the same
   line to `orchestrated_by` is the one exception, and deliberately unconditional on
-  `chat_notifications.enabled`: a chat auto-resume gave up on will never resume itself, the same
+  `automation.orchestration.notifications.enabled`: a chat auto-resume gave up on will never resume itself, the same
   "cannot leave this stop on its own" shape as `asked_question` / `waiting_approval` / `error`.
 
 ## Subagent Output Visibility

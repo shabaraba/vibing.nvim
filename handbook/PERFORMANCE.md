@@ -124,9 +124,11 @@ end
 
 ```lua
 require("vibing").setup({
-  daily_summary = {
-    search_dirs = { "~/workspace" },
-    file_finder_strategy = "auto",  -- "auto"|"fd"|"ripgrep"|"find"|"locate"
+  chat = {
+    daily_summary = {
+      search_dirs = { "~/workspace" },
+      file_finder_strategy = "auto", -- "auto"|"fd"|"find"|"locate"|"ripgrep"
+    },
   },
 })
 ```

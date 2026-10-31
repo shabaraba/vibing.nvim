@@ -629,7 +629,7 @@ servers (9 local stdio, 14 `claude.ai` connectors), one identical one-line promp
 | ----------------------------------------------- | ----: | -----------: | ------------: |
 | default                                         |   204 |          171 |        46,277 |
 | `--strict-mcp-config` alone (drops vibing-nvim) |    30 |            0 |        42,323 |
-| `user_servers = false`                          |    72 |           42 |        43,293 |
+| `inherit_cli_servers = false`                   |    72 |           42 |        43,293 |
 
 **~3k prompt tokens a turn, about 6%.** Small, because Tool Search (on by default from Claude
 4.5) defers the schemas: what survives in the prompt is a bare name per tool, roughly 23 tokens.
@@ -667,7 +667,7 @@ the background to ask Codex which provider is actually configured, and warns onc
 `openai`. Nothing waits for the probe, and if Codex cannot answer, nothing is said — a warning that
 cannot be trusted is worse than none, because its silence reads as "you are fine".
 
-**Why this one defaults to on** while `subagent` and `auto_resume_on_limit` default to off: those
+**Why this one defaults to on** while `automation.limits.resume` and `integrations.dap` default to off: those
 two spend tokens unattended, so the safe default is silence. This one spends none and exists to
 stop a change happening behind your back — off by default, it would fail at exactly the job it has.
 
@@ -913,7 +913,7 @@ The prompt appears only for a `<CR>` a person typed. A scheduled request firing,
 a message delivered from another chat, and an orchestrator's delegated approval all reach the same
 send path, and none of them can answer a picker — so the gate lives in the chat buffer's keymap
 rather than in `send_message()`. Slash commands and replies to a pending tool-approval prompt are
-excluded for the same reason `scheduled_requests` excludes them: neither has any reason to be
+excluded for the same reason `automation.limits.queue` excludes them: neither has any reason to be
 delayed. Anything that fails inside the check sends the message rather than blocking it.
 
 One more thing the numbers depend on: **a chat has a floor it can never go below**, made of the
@@ -1236,19 +1236,19 @@ request gets through.
 The record also names the backend that hit the limit, and only chats on that backend are parked
 by it. A usage limit belongs to one provider's plan, so a claude limit leaves a codex chat in the
 same project free to send — and a codex response getting through does not clear the claude record.
-Which backend a chat is on is its frontmatter `agent`, falling back to `adapter` in `setup()`.
+Which backend a chat is on is its frontmatter `agent`, falling back to `ai.chat.agent` in `setup()`.
 `:VibingCancelResume` clears it only when it is the current chat's backend; `:VibingCancelResume
 all` has no chat in hand and clears whatever is recorded.
 
 **Re-scheduling.** `max_retries` bounds how many times a scheduled request may be rescheduled
 after being rejected again. Because the check is applied to the already-incremented retry count,
 the default of `3` permits only **2** re-schedules. The next rejection falls through to
-`auto_resume_on_limit`'s own handling instead.
+`automation.limits.resume`'s own handling instead.
 
 That fallback re-checks the same stored `retry_count`, now `2`, against
-`auto_resume_on_limit.max_retries`. With both settings at their defaults that budget is already
+`automation.limits.resume.max_retries`. With both settings at their defaults that budget is already
 spent, so the request is simply dropped rather than falling back to the fixed continuation prompt.
-The prompt only fires if `auto_resume_on_limit.max_retries` has been raised above what the
+The prompt only fires if `automation.limits.resume.max_retries` has been raised above what the
 scheduled retries already consumed.
 
 **`:VibingCancelResume`** cancels either an auto-resume or a scheduled request, and also clears the
@@ -2095,7 +2095,7 @@ chat = {
 
     search_dirs = {}, -- Directories for :VibingDailySummaryAll
     -- {} (default): search the standard locations (project .vibing/chat,
-    --     user data dir, custom save_dir)
+    --     user data dir, chat.storage.path)
     -- { "~/workspaces" }: search ONLY the listed directories.
     --     Each entry is scanned for `.vibing` directories (max depth 5,
     --     skipping node_modules/.git/build/dist) and chat files are

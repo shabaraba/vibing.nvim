@@ -7,7 +7,7 @@ every request. The rule that stays always-loaded is the short list in that file.
 
 When a turn is rejected because the plan's usage limit is exhausted, vibing.nvim can park the chat
 and send a single continuation message once the limit resets. Opt-in via
-`agent.auto_resume_on_limit.enabled` (default `false` — it spends tokens unattended).
+`automation.limits.resume.enabled` (default `false` — it spends tokens unattended).
 
 Detection merges three signals in `lua/vibing/core/utils/rate_limit.lua`: the CLI's
 `rate_limit_event` stream line (the richest, and the primary source of `resetsAt`), the
@@ -151,7 +151,7 @@ for a stale entry that outlives a restart) now call `auto_resume.announce_gave_u
   deliberately: a chat that has given up on its own resume will never restart itself, which is the
   same "cannot leave this stop on its own" shape `completion_notifier` already delivers
   unconditionally for `asked_question` / `waiting_approval` / `error` — gating it behind
-  `chat_notifications.enabled` would leave an orchestrated worker parked forever with nothing
+  `automation.orchestration.notifications.enabled` would leave an orchestrated worker parked forever with nothing
   saying so. A chat with no `orchestrated_by` entries only gets its own buffer line.
 - Fails soft per orchestrator: an unreachable parent path warns rather than raising, so one bad
   entry does not stop the chat's own notice line from being written.
@@ -175,7 +175,7 @@ limit on record at all as long as `when` is given (the no-argument form is the o
 (excluding slash commands and a reply to a pending approval prompt, which always send
 immediately); and a turn the limit actually rejected, whose message is written back into a fresh
 unsent section instead of being discarded. The limit-aware `<CR>` and the rejected-turn
-re-schedule are both governed by `agent.scheduled_requests.enabled` (default `true`);
+re-schedule are both governed by `automation.limits.queue.enabled` (default `true`);
 `:VibingSchedule` is not, since the user armed it by hand.
 
 `:VibingSchedule` and the limit-aware `<CR>` both save the chat file before arming the timer, but
@@ -188,14 +188,14 @@ saved for an unrelated reason), rather than saving synchronously itself.
 
 ## The Retry Budget Is Shared, and Spent Before the Fixed Prompt Fires
 
-`agent.scheduled_requests.max_retries` (default 3) bounds the fire → rejected → re-schedule loop.
+`automation.limits.queue.max_retries` (default 3) bounds the fire → rejected → re-schedule loop.
 Because the budget check is applied to the already-incremented retry count, the default only
 permits **2** re-schedules after the first rejection. The next rejection falls through to
 `auto_resume.on_rate_limited`, which re-checks the _same_ stored `retry_count` (already at 2)
-against `auto_resume_on_limit.max_retries` — with both features at their defaults
-(`scheduled_requests.max_retries = 3`, `auto_resume_on_limit.max_retries = 1`) that budget is
+against `automation.limits.resume.max_retries` — with both features at their defaults
+(`automation.limits.queue.max_retries = 3`, `automation.limits.resume.max_retries = 1`) that budget is
 already spent, so the request is simply dropped. The fixed continuation prompt only fires if the
-user has raised `auto_resume_on_limit.max_retries` above what the scheduled retries already
+user has raised `automation.limits.resume.max_retries` above what the scheduled retries already
 consumed.
 
 ## The Project Limit Record
@@ -218,7 +218,7 @@ record — and clearing it on a successful turn — asks `factory.agent_id(adapt
 that actually ran, because "who was rejected" is a fact about the process, not about frontmatter a
 user can edit while the turn is in flight. **Reading** it before a request exists
 (`<CR>`, `:VibingSchedule`, `:VibingCancelResume`) has no adapter yet, so it predicts one with
-`Modes.resolve_agent` (frontmatter `agent` > `config.adapter` > claude) — the same precedence
+`Modes.resolve_agent` (frontmatter `agent` > `ai.chat.agent` > claude) — the same precedence
 `send_message._resolve_adapter` applies a moment later.
 
 A record with no `agent` field reads as claude's. Claude was the only backend detecting a limit

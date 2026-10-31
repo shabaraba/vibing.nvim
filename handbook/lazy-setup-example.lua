@@ -23,36 +23,40 @@ return {
 
     config = function()
       require("vibing").setup({
-        adapter = "claude",
+        ai = { chat = { agent = "claude" } },
 
-        -- MCP統合設定
-        mcp = {
-          enabled = true,   -- MCP統合を有効化
-          rpc_port = 9876,  -- RPCサーバーポート
+        -- Neovim RPC server the bundled MCP tools connect to
+        integrations = {
+          nvim = {
+            enabled = true, -- MCP統合を有効化
+            port = 9876, -- RPCサーバーポート
+          },
         },
 
-        agent = {
-          -- 各ターンの末尾に `### Tokens` を出し、コンテキストが育ったら章の中で警告する。
-          -- ターンのコストは「リクエスト数 × コンテキストサイズ」で決まるので、ツールを
-          -- 多く呼ぶターンほど、また会話が長いほど高くつく。
-          token_usage = {
-            enabled = true,
+        -- 各ターンの末尾に `### Tokens` を出し、コンテキストが育ったら章の中で警告する。
+        -- ターンのコストは「リクエスト数 × コンテキストサイズ」で決まるので、ツールを
+        -- 多く呼ぶターンほど、また会話が長いほど高くつく。
+        ui = {
+          usage = { enabled = true },
+        },
+        chat = {
+          context = {
             -- この値を超えている間、毎ターン警告が付く。
             --
             -- 上げる目安: チャットには下限があり、システムプロンプト・ツールスキーマ・
             -- プロジェクトの CLAUDE.md と .claude/rules で決まる。大きな CLAUDE.md を持つ
             -- リポジトリでは会話が空でも 110k 前後になるため、既定の 150000 だと会話が
             -- 40k 育っただけで警告が出る。うるさければ 250000 程度に上げる。
-            warn_context = 150000,
+            warn_tokens = 150000,
 
             -- Claudeでは閾値を超えた次の手動送信前に`/compact`を1ターン挟んでから本文を
             -- 送る。Codexでは同じ閾値をCLI自身の`model_auto_compact_token_limit`へ渡す。
             -- 既定で無効で、無効でも各CLI自身の既定の自動圧縮は止めない。
-            auto_compact = {
+            compaction = {
               enabled = false,
-              -- warn_context より上に置いてある。警告を見て `/compact` と
+              -- warn_tokens より上に置いてある。警告を見て `/compact` と
               -- `:VibingChatHandoff` のどちらを取るか自分で決める余地を先に残すため。
-              at = 200000,
+              threshold_tokens = 200000,
               -- Claudeでは`/compact <focus>`として渡す。何を残すかで次ターン以降の質が
               -- 変わるので、実際に使うなら書いたほうがよい。Codexでは未使用。既定は無し。
               -- focus = "未解決のタスクと、これまでに変更したファイルの一覧を残す",
@@ -92,9 +96,11 @@ return {
 
     config = function()
       require("vibing").setup({
-        mcp = {
-          enabled = true,
-          rpc_port = 9876,
+        integrations = {
+          nvim = {
+            enabled = true,
+            port = 9876,
+          },
         },
       })
     end,

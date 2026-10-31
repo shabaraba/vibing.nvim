@@ -141,9 +141,11 @@ Add to `~/.claude.json`:
 
 ```lua
 require("vibing").setup({
-  mcp = {
-    enabled = true,
-    rpc_port = 9876,
+  integrations = {
+    nvim = {
+      enabled = true,
+      port = 9876,
+    },
   },
 })
 ```
@@ -470,7 +472,7 @@ The server uses a simple JSON-RPC protocol over TCP:
 
 - Ensure Neovim is running with MCP enabled
 - Check that RPC server port (9876) is not in use
-- Verify `VIBING_NVIM_RPC_PORT` environment variable matches config
+- Verify `VIBING_NVIM_RPC_PORT` matches `integrations.nvim.port`
 
 ### Request Timeout
 

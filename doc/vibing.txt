@@ -1049,7 +1049,7 @@ require("vibing").setup({opts})                              *vibing.setup()*
     {opts} is optional.
 
 require("vibing").get_adapter()                        *vibing.get_adapter()*
-    The adapter instance currently selected by `config.adapter`, or nil
+    The adapter instance currently selected by `ai.chat.agent`, or nil
     before setup().
 
 require("vibing").get_config()                          *vibing.get_config()*

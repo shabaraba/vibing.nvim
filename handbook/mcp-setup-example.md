@@ -32,12 +32,14 @@ return {
     dir = "/path/to/vibing.nvim",
     config = function()
       require("vibing").setup({
-        adapter = "agent_sdk",
+        ai = { chat = { agent = "claude" } },
 
-        -- Enable MCP integration
-        mcp = {
-          enabled = true,
-          rpc_port = 9876,
+        -- Enable the Neovim RPC server the MCP tools connect to
+        integrations = {
+          nvim = {
+            enabled = true,
+            port = 9876,
+          },
         },
 
         -- Optional: Configure permissions
@@ -184,7 +186,7 @@ Claude uses `nvim_get_info` to get filename, filetype, etc.
 **Solutions:**
 
 1. Verify `~/.claude.json` has correct `VIBING_NVIM_RPC_PORT`
-2. Verify Neovim config has matching `mcp.rpc_port`
+2. Verify Neovim config has matching `integrations.nvim.port`
 3. Restart both Neovim and Claude Code
 
 ## Architecture Diagram
@@ -236,9 +238,11 @@ Claude uses `nvim_get_info` to get filename, filetype, etc.
 ```lua
 -- Neovim config
 require("vibing").setup({
-  mcp = {
-    enabled = true,
-    rpc_port = 8888,  -- Custom port
+  integrations = {
+    nvim = {
+      enabled = true,
+      port = 8888, -- Custom port
+    },
   },
 })
 ```
@@ -264,10 +268,10 @@ Run each Neovim instance on a different port:
 
 ```lua
 -- Instance 1 (port 9876)
-require("vibing").setup({ mcp = { enabled = true, rpc_port = 9876 } })
+require("vibing").setup({ integrations = { nvim = { enabled = true, port = 9876 } } })
 
 -- Instance 2 (port 9877)
-require("vibing").setup({ mcp = { enabled = true, rpc_port = 9877 } })
+require("vibing").setup({ integrations = { nvim = { enabled = true, port = 9877 } } })
 ```
 
 Configure separate MCP servers in `~/.claude.json`:

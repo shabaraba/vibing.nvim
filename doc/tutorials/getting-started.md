@@ -72,25 +72,26 @@ require("vibing").setup()
 
 ```lua
 require("vibing").setup({
-  adapter = "claude",  -- "claude" | "codex" | "copilot" | "grok"
-
-  -- エージェント設定
-  agent = {
-    default_model = "sonnet",  -- backend のモデルID。例: "sonnet" / "gpt-5.6-terra"
+  ai = {
+    chat = {
+      agent = "claude", -- "claude" | "codex" | "copilot" | "grok" | "pi"
+      model = "sonnet", -- backend のモデルID。例: "sonnet" / "gpt-5.6-terra"
+    },
   },
 
-  -- チャットウィンドウ設定
-  chat = {
+  ui = {
     window = {
-      position = "right",  -- 右側に分割表示
-      width = 0.4,         -- 画面幅の40%
+      position = "right", -- 右側に分割表示
+      width = 0.4, -- 画面幅の40%
     },
-    save_location_type = "project",  -- プロジェクトの .vibing/chat/ に保存
+  },
+  chat = {
+    storage = { location = "project" }, -- プロジェクトの .vibing/chat/ に保存
   },
 
   -- キーマップ設定
   keymaps = {
-    send = "<C-CR>",  -- Ctrl+Enterで送信（デフォルトは <CR>）
+    send = "<C-CR>", -- Ctrl+Enterで送信（デフォルトは <CR>）
     cancel = "<C-c>", -- Ctrl+Cでキャンセル
   },
 })
@@ -202,20 +203,22 @@ Luaでクイックソートを実装してください。
 
 ### Q: チャットファイルの保存場所を変更したい
 
-**A**: `save_location_type` を設定：
+**A**: `chat.storage` を設定：
 
 ```lua
 require("vibing").setup({
   chat = {
-    save_location_type = "custom",
-    save_dir = "~/my-chats/",
+    storage = {
+      location = "custom",
+      path = vim.fn.expand("~/my-chats"),
+    },
   },
 })
 ```
 
 ### Q: Codex を使いたい
 
-**A**: グローバルには `adapter = "codex"`、チャット単位では frontmatter に `agent: codex` を指定します。
+**A**: グローバルには `ai.chat.agent = "codex"`、チャット単位では frontmatter に `agent: codex` を指定します。
 
 ## 次のステップ
 

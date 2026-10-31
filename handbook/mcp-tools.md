@@ -245,7 +245,7 @@ comes back when the target is over its `chat.context.compaction.threshold_tokens
 turn on `/compact` first and takes the message on the turn after, whether or not the caller passed
 `queue_if_busy`. `task` is queued along with the body and applied at
 flush time, same as the immediate path; if several queued messages from the same sender carry a
-`task`, the last one wins. Why it is not gated on `chat_notifications`, why the frontmatter link is
+`task`, the last one wins. Why it is not gated on `automation.orchestration.notifications`, why the frontmatter link is
 written at delivery rather than when the message is queued, and why the queue is capped:
 `handbook/architecture/orchestration.md`.
 

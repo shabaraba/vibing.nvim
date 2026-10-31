@@ -124,7 +124,7 @@ instructions for contributing.
 ---@param config Vibing.Config
 ---@return boolean success
 local function validate_config(config)
-  if not config.adapter then
+  if not config.ai.chat.agent then
     return false
   end
   return true
