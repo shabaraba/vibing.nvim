@@ -119,8 +119,9 @@ https://github.com/user-attachments/assets/8182307e-83f6-428a-af11-1122b69f4483
 - A C compiler — optional; without one the chat Tree-sitter parser is skipped and the previous
   whole-buffer Markdown parser is used
 - bash, netcat (`nc`), and a writable `/tmp`. The permission hooks (`bin/hooks/pre-tool-use.sh`
-  and `bin/hooks/stop-failure.sh`) are bash scripts: they leave each request under `/tmp` and poke
-  Neovim's RPC server with `nc`. Without `nc`, every tool call is denied.
+  and `bin/hooks/stop-failure.sh`) are bash scripts: they leave each request under `/tmp` and notify
+  Neovim's RPC server with `nc`. Without `nc`, every tool call that goes through the permission
+  hook is denied.
 - Linux and macOS are supported. Native Windows is untested.
 - At least one AI CLI backend:
 

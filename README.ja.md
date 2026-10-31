@@ -120,7 +120,7 @@ https://github.com/user-attachments/assets/8182307e-83f6-428a-af11-1122b69f4483
   バッファ全体 Markdown 解析にフォールバックします
 - bash、netcat（`nc`）、書き込み可能な `/tmp`。権限フック（`bin/hooks/pre-tool-use.sh` と
   `bin/hooks/stop-failure.sh`）は bash スクリプトで、各リクエストを `/tmp` に置き、`nc` で Neovim の
-  RPC サーバーを叩きます。`nc` が無いとツール呼び出しはすべて拒否されます。
+  RPC サーバーに通知します。`nc` が無いと、権限フックを通るツール呼び出しはすべて拒否されます。
 - 対応 OS は Linux と macOS です。ネイティブ Windows は未検証です。
 - AI CLI バックエンドを最低1つ:
 
