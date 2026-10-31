@@ -82,10 +82,10 @@ end
 --- `mcp_servers.<name>.enabled=false` works but needs a name list that would go stale silently
 --- the moment the user added a server.
 ---
---- The cost is the one #571 named: this also drops model_provider, so a user on a custom
---- provider gets utility calls against the default OpenAI endpoint. Accepted now that the
---- alternative is known to be a hole rather than an equivalent. Auth is unaffected -- codex
---- reads it from CODEX_HOME either way.
+--- The cost #571 named still applies to the file as a whole: `model_provider` and `model` are
+--- dropped with the MCP servers. `codex_lightweight_provider.lua` copies those keys, and the
+--- selected provider's definition, back as `-c` overrides (#925). Auth is unaffected -- codex reads it
+--- from CODEX_HOME either way.
 --- `--strict-config` makes codex reject unknown config keys, so the day it renames or drops one
 --- of the overrides below, the utility call fails loudly instead of quietly running unfenced.
 --- Every restriction here is a safety boundary whose absence is otherwise unobservable, so this
@@ -94,6 +94,7 @@ end
 --- This is only safe in company with --ignore-user-config: on its own, --strict-config also
 --- strictifies the user's config.toml, and one unrecognised field of their own would break
 --- every title generation. With the user config unread, it validates our overrides and nothing
+--- else.
 ---
 --- @type string[]
 M.LIGHTWEIGHT_ARGS = {

@@ -1,10 +1,13 @@
 local codex_command_builder = require("vibing.infrastructure.adapter.modules.codex_command_builder")
+local lightweight_provider = require("vibing.infrastructure.adapter.modules.codex_lightweight_provider")
 
 describe("codex_command_builder", function()
   local original_exepath
 
   before_each(function()
     codex_command_builder._reset_path_cache()
+    -- A developer config.toml must not leak into these argv assertions.
+    lightweight_provider._set_config_path(false)
     original_exepath = vim.fn.exepath
     vim.fn.exepath = function(name)
       if name == "codex" then
@@ -17,6 +20,7 @@ describe("codex_command_builder", function()
   after_each(function()
     vim.fn.exepath = original_exepath
     codex_command_builder._reset_path_cache()
+    lightweight_provider._reset()
   end)
 
   local function find_flag(cmd, flag)
@@ -199,6 +203,185 @@ describe("codex_command_builder", function()
       }
       local cmd = codex_command_builder.build("hi", { lightweight = true }, nil, config, nil)
       assert.is_nil(find_flag(cmd, "-m"))
+    end)
+
+    it("sends a custom provider, its definition and the configured model", function()
+      local dir = vim.fn.tempname()
+      vim.fn.mkdir(dir, "p")
+      local path = dir .. "/config.toml"
+      local written = vim.fn.writefile(
+        vim.split(
+          table.concat({
+            'model = "local-large" # the chat default',
+            'model_provider = "myprov"',
+            'openai_base_url = "https://proxy.example/v1"',
+            "",
+            "[model_providers.myprov]",
+            'name = "Local"',
+            'base_url = "http://127.0.0.1:11434/v1"',
+            'wire_api = "chat"',
+            'env_key = "LOCAL#KEY"',
+            "requires_openai_auth = false",
+            'http_headers = { "X-Custom" = "yes" }',
+            "",
+            "[model_providers.myprov.auth]",
+            'command = "/usr/bin/token"',
+            'args = ["--audience", "codex"]',
+            "",
+            "[model_providers.other]",
+            'base_url = "http://127.0.0.1:9/v1"',
+            "",
+            "[mcp_servers.probe]",
+            'command = "touch"',
+            'args = ["/tmp/owned"]',
+            "",
+            "[profiles.work]",
+            'model_provider = "other"',
+            'model = "nope"',
+            "",
+          }, "\n"),
+          "\n",
+          { plain = true }
+        ),
+        path
+      )
+      assert.equals(0, written, "failed to write " .. path)
+      lightweight_provider._set_config_path(path)
+
+      local cmd = codex_command_builder.build("hi", { lightweight = true }, "thread-1", {}, nil)
+      local overrides = config_overrides(cmd)
+      assert.is_true(vim.tbl_contains(overrides, 'model_provider="myprov"'))
+      assert.is_true(vim.tbl_contains(overrides, 'model="local-large"'))
+      assert.is_true(vim.tbl_contains(overrides, 'openai_base_url="https://proxy.example/v1"'))
+      assert.is_true(vim.tbl_contains(overrides, 'model_providers.myprov.base_url="http://127.0.0.1:11434/v1"'))
+      assert.is_true(vim.tbl_contains(overrides, 'model_providers.myprov.wire_api="chat"'))
+      assert.is_true(vim.tbl_contains(overrides, 'model_providers.myprov.env_key="LOCAL#KEY"'))
+      assert.is_true(vim.tbl_contains(overrides, "model_providers.myprov.requires_openai_auth=false"))
+      assert.is_true(vim.tbl_contains(overrides, 'model_providers.myprov.name="Local"'))
+      assert.is_true(vim.tbl_contains(overrides, 'model_providers.myprov.http_headers={ "X-Custom" = "yes" }'))
+      assert.is_true(vim.tbl_contains(overrides, 'model_providers.myprov.auth.command="/usr/bin/token"'))
+      assert.is_true(vim.tbl_contains(overrides, 'model_providers.myprov.auth.args=["--audience", "codex"]'))
+      assert.is_false(vim.tbl_contains(overrides, 'model_providers.other.base_url="http://127.0.0.1:9/v1"'))
+      assert.is_false(vim.tbl_contains(overrides, 'model="nope"'))
+      for _, override in ipairs(overrides) do
+        assert.is_nil(override:find("mcp_servers", 1, true), override)
+        assert.is_nil(override:find("touch", 1, true), override)
+      end
+      -- The fence that keeps MCP servers out is still there.
+      assert.is_not_nil(find_flag(cmd, "--ignore-user-config"))
+      vim.fn.delete(dir, "rf")
+    end)
+
+    it("keeps a configured helper model and still uses the custom provider", function()
+      local dir = vim.fn.tempname()
+      vim.fn.mkdir(dir, "p")
+      local path = dir .. "/config.toml"
+      vim.fn.writefile({
+        'model = "local-large"',
+        'model_provider = "myprov"',
+        "",
+        "[model_providers.myprov]",
+        'name = "Local"',
+        'base_url = "http://127.0.0.1:11434/v1"',
+        'wire_api = "chat"',
+      }, path)
+      lightweight_provider._set_config_path(path)
+
+      local config = {
+        ai = {
+          chat = { agent = "codex", model = "gpt-5-codex" },
+          helpers = { model = "local-small" },
+        },
+      }
+      local cmd = codex_command_builder.build("hi", { lightweight = true }, nil, config, nil)
+      local overrides = config_overrides(cmd)
+      assert.equals("local-small", cmd[find_flag(cmd, "-m") + 1])
+      assert.is_true(vim.tbl_contains(overrides, 'model_provider="myprov"'))
+      assert.is_true(vim.tbl_contains(overrides, 'model_providers.myprov.base_url="http://127.0.0.1:11434/v1"'))
+      assert.is_false(vim.tbl_contains(overrides, 'model="local-large"'))
+      assert.is_false(vim.tbl_contains(cmd, "gpt-5-codex"))
+      vim.fn.delete(dir, "rf")
+    end)
+
+    it("leaves an ordinary call on Codex's own config", function()
+      local dir = vim.fn.tempname()
+      vim.fn.mkdir(dir, "p")
+      local path = dir .. "/config.toml"
+      vim.fn.writefile({
+        'model = "local-large"',
+        'model_provider = "myprov"',
+        "",
+        "[model_providers.myprov]",
+        'base_url = "http://127.0.0.1:11434/v1"',
+      }, path)
+      lightweight_provider._set_config_path(path)
+
+      local cmd = codex_command_builder.build("hi", {}, nil, {}, nil)
+      for _, override in ipairs(config_overrides(cmd)) do
+        assert.is_nil(override:find("model_provider=", 1, true), override)
+        assert.is_nil(override:find("model_providers.", 1, true), override)
+        assert.is_nil(override:find("model=", 1, true), override)
+      end
+      assert.is_nil(find_flag(cmd, "--ignore-user-config"))
+      vim.fn.delete(dir, "rf")
+    end)
+
+    it("does not retarget the default OpenAI provider", function()
+      local dir = vim.fn.tempname()
+      vim.fn.mkdir(dir, "p")
+      local path = dir .. "/config.toml"
+      vim.fn.writefile({
+        'model = "gpt-5.4"',
+        'model_provider = "openai"',
+        "",
+        "[model_providers.myprov]",
+        'base_url = "http://127.0.0.1:9/v1"',
+      }, path)
+      lightweight_provider._set_config_path(path)
+
+      local cmd = codex_command_builder.build("hi", { lightweight = true }, nil, {}, nil)
+      local overrides = config_overrides(cmd)
+      assert.is_true(vim.tbl_contains(overrides, 'model="gpt-5.4"'))
+      for _, override in ipairs(overrides) do
+        assert.is_nil(override:find("model_provider=", 1, true), override)
+        assert.is_nil(override:find("model_providers.", 1, true), override)
+      end
+      vim.fn.delete(dir, "rf")
+    end)
+
+    local whole_or_nothing = {
+      { "a multi-line value it cannot send", { "[model_providers.myprov]", "args = [", '  "a",', "]" } },
+      {
+        "a bearer token that would sit on the argv",
+        { "[model_providers.myprov]", 'experimental_bearer_token = "sk"' },
+      },
+      { "a key that is not bare", { "[model_providers.myprov]", 'http_headers."a b" = "c"' } },
+      { "a legacy profile codex would layer on top", { 'profile = "work"' } },
+    }
+    for _, case in ipairs(whole_or_nothing) do
+      it("copies nothing when the config has " .. case[1], function()
+        local path = vim.fn.tempname()
+        local lines = { 'model = "local-large"', 'model_provider = "myprov"', "" }
+        vim.fn.writefile(vim.list_extend(lines, case[2]), path)
+        lightweight_provider._set_config_path(path)
+
+        local cmd = codex_command_builder.build("hi", { lightweight = true }, nil, {}, nil)
+        for _, override in ipairs(config_overrides(cmd)) do
+          local key = override:match("^([^=]+)=")
+          assert.is_false(key == "model" or key == "model_provider" or key:find("^model_providers%.") ~= nil, override)
+        end
+        vim.fn.delete(path)
+      end)
+    end
+
+    it("names a built-in provider that has no table of its own", function()
+      local path = vim.fn.tempname()
+      vim.fn.writefile({ 'model_provider = "ollama"' }, path)
+      lightweight_provider._set_config_path(path)
+
+      local cmd = codex_command_builder.build("hi", { lightweight = true }, nil, {}, nil)
+      assert.is_true(vim.tbl_contains(config_overrides(cmd), 'model_provider="ollama"'))
+      vim.fn.delete(path)
     end)
 
     it("does not apply the chat's auto-compaction threshold", function()
