@@ -226,8 +226,9 @@ Codex バックエンドは `--plugin-dir` を使わず同じものを読み込�
 [handbook/configuration.md](handbook/configuration.md) を参照。
 
 **旧バージョンからの移行:** user scope のインストールは、デフォルトの `./build.sh` では残ります。
-`./build.sh --register-global` がそれを削除し、変更のたびにその内容を表示します。Claude Code の
-中で手動で行う場合:
+`./build.sh --register-global` がそれを削除し、変更のたびにその内容を表示します。同じ実行で、
+`copilot` が `PATH` にあれば Copilot への MCP サーバー追加も行います。Claude Code の中で手動で
+行う場合:
 
 ```text
 /plugin uninstall vibing-nvim@vibing
@@ -240,7 +241,8 @@ Codex バックエンドは `--plugin-dir` を使わず同じものを読み込�
 
 ## build.sh がこのマシンで変更するもの
 
-デフォルトの `./build.sh` が書き換えるのはこの checkout の中だけです。終了時に
+デフォルトの `./build.sh` がビルド成果物を書き込むのはこの checkout の中だけです。例外は
+npm 自身のキャッシュとログです(npm の既定設定では `~/.npm`)。終了時に
 `No global or user CLI config was changed.` と表示します。
 
 - `parser/vibing.so`(チャット境界用の Tree-sitter パーサー)

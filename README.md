@@ -223,8 +223,8 @@ for repositories you do not trust. See
 [handbook/configuration.md](handbook/configuration.md) for `integrations.plugins`.
 
 **Upgrading from an older vibing.nvim:** a user-scope install stays in place through a default
-`./build.sh`. `./build.sh --register-global` removes it and prints each change. By hand, inside
-Claude Code:
+`./build.sh`. `./build.sh --register-global` removes it and prints each change. The same run also
+adds the Copilot MCP server when `copilot` is on `PATH`. By hand, inside Claude Code:
 
 ```text
 /plugin uninstall vibing-nvim@vibing
@@ -237,7 +237,8 @@ Repeat that for `vibing-nvim@vibing-nvim` when `claude plugin list` still shows 
 
 ## What build.sh changes on your machine
 
-A default `./build.sh` writes only inside this checkout. When it finishes it prints
+A default `./build.sh` writes its build outputs only inside this checkout. The one exception is
+npm's own cache and logs (`~/.npm` with default npm settings). When it finishes it prints
 `No global or user CLI config was changed.`
 
 - `parser/vibing.so`, the chat-boundary Tree-sitter parser

@@ -46,15 +46,17 @@ The consequence worth knowing: a `claude` session started outside Neovim does no
 tools. Reaching a running Neovim was always the point of them, so there is no opt-in for it.
 
 The manual options below remain useful for development, for a non-default RPC port/timeout, or
-for Copilot. A default `../../build.sh` prints the `copilot mcp add` command and writes only inside
-the checkout. `../../build.sh --register-global` runs that add (Copilot has no per-session
-equivalent of Claude's `--plugin-dir` for this server) and prints a `Global change:` line for it.
+for Copilot. A default `../../build.sh` prints the `copilot mcp add` command and writes its build
+outputs only inside the checkout (npm's own cache and logs aside). `../../build.sh --register-global`
+runs that add (Copilot has no per-session equivalent of Claude's `--plugin-dir` for this server) and
+prints a `Global change:` line for it.
 Codex is handed the server per session too, as `-c mcp_servers.vibing-nvim.*` overrides, so a
 global `codex mcp add` entry is only needed for codex sessions started outside Neovim
 (`handbook/architecture/plugin-and-commands.md` → "Codex").
 
 **Upgrading:** an older user-scope plugin stays installed through a default `../../build.sh`.
-`../../build.sh --register-global` removes it and prints each change. By hand:
+`../../build.sh --register-global` removes it and prints each change; the same run also adds the
+Copilot MCP server when `copilot` is on `PATH`. By hand:
 
 ```text
 /plugin uninstall vibing-nvim@vibing

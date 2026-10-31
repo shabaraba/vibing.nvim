@@ -79,11 +79,12 @@ Using packer.nvim: >lua
       end,
     }
 <
-`build.sh` builds the bundled MCP server and, by default, writes only inside
-this checkout. There is no plugin to install: vibing.nvim hands the `claude`
-CLI its own `agent-plugin/` directory per session with `--plugin-dir`, so the
-MCP server, the bundled skills and the `nvim-navigator` subagent always come
-from the checkout that is running. A default run prints the commands for a
+`build.sh` builds the bundled MCP server and, by default, writes its build
+outputs only inside this checkout (npm's own cache and logs aside). There is
+no plugin to install: vibing.nvim hands the `claude` CLI its own
+`agent-plugin/` directory per session with `--plugin-dir`, so the MCP server,
+the bundled skills and the `nvim-navigator` subagent always come from the
+checkout that is running. A default run prints the commands for a
 manual Copilot MCP registration and legacy Claude user-scope cleanup. >
     ./build.sh --register-global
 <
@@ -121,7 +122,8 @@ Upgrading from a version that installed itself into Claude Code's user
 scope: a default `./build.sh` keeps that install. Remove it with >
     ./build.sh --register-global
 <
-or inside Claude Code: >
+which also adds the Copilot MCP server when `copilot` is on PATH, or inside
+Claude Code: >
     /plugin uninstall vibing-nvim@vibing
     /plugin marketplace remove vibing
 <

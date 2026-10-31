@@ -326,9 +326,11 @@ if [ -f "dist/index.js" ]; then
         # Legacy direct "vibing-nvim" mcpServers registration (e.g. from `claude
         # mcp add`, predating the plugin install). That path hardcodes a single
         # RPC port and silently targets the wrong Neovim instance whenever more
-        # than one is running. No-op when no such entry exists.
-        echo "[vibing.nvim] Global change: claude mcp remove vibing-nvim --scope user"
-        claude mcp remove vibing-nvim --scope user &> /dev/null || true
+        # than one is running. It exits non-zero when no such entry exists, which
+        # is the common case, so only a success is reported as a change.
+        if claude mcp remove vibing-nvim --scope user &> /dev/null; then
+            echo "[vibing.nvim] Global change: claude mcp remove vibing-nvim --scope user"
+        fi
 
         # The user-scope plugin install and its marketplace, from before #618 —
         # under the current name and the pre-rename one. These are historical
@@ -345,10 +347,14 @@ if [ -f "dist/index.js" ]; then
             # pre-rename install as the current one and print a misleading line.
             case "$PLUGIN_LIST_JSON" in
                 *"\"vibing-nvim@${legacy_marketplace}\""*)
-                    echo "[vibing.nvim] Global change: claude plugin uninstall vibing-nvim@${legacy_marketplace}"
-                    run_with_timeout "$CLAUDE_CLI_TIMEOUT" claude plugin uninstall "vibing-nvim@${legacy_marketplace}" &> /dev/null || true
-                    echo "[vibing.nvim] Global change: claude plugin marketplace remove ${legacy_marketplace}"
-                    run_with_timeout "$CLAUDE_CLI_TIMEOUT" claude plugin marketplace remove "$legacy_marketplace" &> /dev/null || true
+                    for legacy_cmd in "uninstall vibing-nvim@${legacy_marketplace}" "marketplace remove ${legacy_marketplace}"; do
+                        # shellcheck disable=SC2086 # word-split on purpose: both are fixed, space-free tokens
+                        if run_with_timeout "$CLAUDE_CLI_TIMEOUT" claude plugin $legacy_cmd &> /dev/null; then
+                            echo "[vibing.nvim] Global change: claude plugin ${legacy_cmd}"
+                        else
+                            echo "[vibing.nvim] ⚠ claude plugin ${legacy_cmd} failed; run it by hand"
+                        fi
+                    done
                     ;;
             esac
         done
