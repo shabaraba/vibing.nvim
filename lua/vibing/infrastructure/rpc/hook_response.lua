@@ -52,8 +52,8 @@ function M.write(request_id, decision, reason)
 
   -- 0600, including when the process umask would have left the decision world-readable. The comm
   -- directory is 0700; the file mode is what still holds if that directory is ever opened up.
-  local CommDir = require("vibing.infrastructure.rpc.comm_dir")
-  local wrote, err = CommDir.write_private(tmp_file, json)
+  local PrivateFile = require("vibing.infrastructure.rpc.private_file")
+  local wrote, err = PrivateFile.write(tmp_file, json)
   if wrote then
     local renamed, rename_err = os.rename(tmp_file, res_file)
     if renamed then
@@ -76,7 +76,7 @@ function M.write(request_id, decision, reason)
   local deny_json = vim.json.encode({
     hookSpecificOutput = { hookEventName = "PreToolUse", permissionDecision = "deny" },
   })
-  local fallback_ok, fallback_err = CommDir.write_private(res_file, deny_json)
+  local fallback_ok, fallback_err = PrivateFile.write(res_file, deny_json)
   if fallback_ok then
     return
   end

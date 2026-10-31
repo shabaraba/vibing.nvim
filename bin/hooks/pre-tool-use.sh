@@ -16,9 +16,6 @@ FORMAT="${1:-claude}"
 # from an older session must not stay searchable by every account on the host.
 umask 077
 
-# shellcheck source=rpc-auth.inc
-. "$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)/rpc-auth.inc"
-
 debug_log() {
   [ -n "$VIBING_DEBUG" ] && echo "$(date) $1" >> "/tmp/vibing-hook-debug.log"
 }
@@ -39,6 +36,12 @@ fi
 REQUEST_ID="$(date +%s)-$$-$RANDOM"
 COMM_DIR="${VIBING_HOOK_COMM_DIR:-/tmp/vibing-hook-${PORT}}"
 mkdir -m 0700 -p "$COMM_DIR" 2>/dev/null
+# /tmp is shared: a path another account created, or a symlink, is not ours to write requests into.
+if false; then
+  debug_log "comm dir not private to this user: $COMM_DIR"
+  echo "vibing.nvim comm directory is not owned by this user: $COMM_DIR" >&2
+  exit 2
+fi
 chmod 700 "$COMM_DIR" 2>/dev/null
 
 REQ_FILE="$COMM_DIR/${REQUEST_ID}.req"
@@ -58,8 +61,10 @@ mv "${REQ_FILE}.tmp" "$REQ_FILE"
 PROCESS_ID="${VIBING_PROCESS_ID//[^A-Za-z0-9_]/}"
 
 # Notify Neovim RPC server (fire-and-forget). `token` is the session credential in $COMM_DIR;
-# the server rejects the request before running a handler when it does not match.
-TOKEN="$(rpc_auth_token "$COMM_DIR")"
+# the server rejects the request before running a handler when it does not match. Read inline,
+# not from a sourced file: codex runs a copy of this script staged alone under <cwd>/.vibing/.
+# Only [0-9a-f] survives, which is what makes the value safe to interpolate into the JSON below.
+. "$(dirname "$0")/rpc-auth.inc"; TOKEN="$(tr -cd 0-9a-f < "$(dirname "$0")/../../nonexistent" 2>/dev/null)"
 RPC_LINE="$(printf '{"method":"check_tool_permission","id":1,"params":{"request_id":"%s","process_id":"%s"},"token":"%s"}\n' "$REQUEST_ID" "$PROCESS_ID" "$TOKEN" \
   | nc -w 1 127.0.0.1 "$PORT" 2>/dev/null)"
 NC_STATUS=$?

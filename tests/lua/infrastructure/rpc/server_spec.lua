@@ -40,7 +40,7 @@ describe("vibing.infrastructure.rpc.server", function()
 
     -- Not `/tmp/vibing-hook-<port>`. Plenary runs one Neovim per spec file, and another file's
     -- hook_cleanup treats a comm directory whose port is absent from the shared registry as stale
-    -- and deletes it. The permission bits are a property of install_token, exercised on this
+    -- and deletes it. The permission bits are a property of SessionToken.install, exercised on this
     -- private path; production still uses for_port when the override is unset.
     saved_comm_dir = vim.env[CommDir.ENV_VAR]
     private_comm_root = vim.fn.tempname()

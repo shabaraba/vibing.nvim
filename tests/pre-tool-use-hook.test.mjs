@@ -13,7 +13,17 @@ import { strict as assert } from 'assert';
 import { test } from 'node:test';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
-import { chmod, mkdtemp, rm, stat, writeFile } from 'fs/promises';
+import {
+  chmod,
+  copyFile,
+  mkdir,
+  mkdtemp,
+  readdir,
+  rm,
+  stat,
+  symlink,
+  writeFile,
+} from 'fs/promises';
 import { dirname, join } from 'path';
 import { tmpdir } from 'os';
 import { fileURLToPath } from 'url';
@@ -199,27 +209,76 @@ test('copilot deny falls back to exit 2 when the response cannot be unwrapped', 
   }
 });
 
-test('pre-tool-use sends the session token and keeps the comm files private', async () => {
-  const commDir = await mkdtemp(join(tmpdir(), 'vibing-hook-test-'));
-  // mkdtemp is already 0700. Loosen it so the assertion is about what the script does.
-  await chmod(commDir, 0o755);
-  const token = 'cd'.repeat(32);
-  await writeFile(join(commDir, 'token'), token, { mode: 0o600 });
+/** A copy alone in its own directory, the way codex_settings_generator stages it under .vibing/. */
+async function stageHookAlone() {
+  const stageDir = await mkdtemp(join(tmpdir(), 'vibing-hook-stage-'));
+  const staged = join(stageDir, 'codex-pre-tool-use.sh');
+  await copyFile(HOOK, staged);
+  await chmod(staged, 0o755);
+  return { staged, stageDir };
+}
 
-  let request;
-  let reqMode;
-  const server = createServer((socket) => {
-    socket.on('data', async (buf) => {
-      request = JSON.parse(buf.toString());
-      reqMode = (await stat(join(commDir, `${request.params.request_id}.req`))).mode & 0o777;
-      await writeFile(
-        join(commDir, `${request.params.request_id}.res`),
-        JSON.stringify({
-          hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'defer' },
-        })
-      );
-      socket.end();
+for (const where of ['in place', 'staged alone']) {
+  test(`pre-tool-use sends the session token and keeps the comm files private (${where})`, async () => {
+    const { staged, stageDir } =
+      where === 'in place' ? { staged: HOOK, stageDir: null } : await stageHookAlone();
+    const commDir = await mkdtemp(join(tmpdir(), 'vibing-hook-test-'));
+    // mkdtemp is already 0700. Loosen it so the assertion is about what the script does.
+    await chmod(commDir, 0o755);
+    const token = 'cd'.repeat(32);
+    await writeFile(join(commDir, 'token'), token, { mode: 0o600 });
+
+    let request;
+    let reqMode;
+    const server = createServer((socket) => {
+      socket.on('data', async (buf) => {
+        request = JSON.parse(buf.toString());
+        reqMode = (await stat(join(commDir, `${request.params.request_id}.req`))).mode & 0o777;
+        await writeFile(
+          join(commDir, `${request.params.request_id}.res`),
+          JSON.stringify({
+            hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'defer' },
+          })
+        );
+        socket.end();
+      });
     });
+
+    try {
+      await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+      const child = spawn(staged, [], {
+        env: {
+          ...process.env,
+          VIBING_NVIM_RPC_PORT: String(server.address().port),
+          VIBING_HOOK_COMM_DIR: commDir,
+        },
+      });
+      child.stdin.end(JSON.stringify({ tool_name: 'Read', tool_input: { file_path: '/tmp/x' } }));
+      const code = await new Promise((resolve) => child.on('close', resolve));
+
+      assert.equal(code, 0);
+      assert.equal(request.token, token);
+      assert.equal(request.method, 'check_tool_permission');
+      assert.equal(reqMode, 0o600);
+      assert.equal((await stat(commDir)).mode & 0o777, 0o700);
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+      await rm(commDir, { recursive: true, force: true });
+      if (stageDir) await rm(stageDir, { recursive: true, force: true });
+    }
+  });
+}
+
+test('pre-tool-use refuses a comm directory that is a symlink', async () => {
+  const parent = await mkdtemp(join(tmpdir(), 'vibing-hook-test-'));
+  const target = join(parent, 'target');
+  const link = join(parent, 'link');
+  await mkdir(target, { mode: 0o755 });
+  await symlink(target, link);
+  let contacted = false;
+  const server = createServer((socket) => {
+    contacted = true;
+    socket.end();
   });
 
   try {
@@ -228,20 +287,19 @@ test('pre-tool-use sends the session token and keeps the comm files private', as
       env: {
         ...process.env,
         VIBING_NVIM_RPC_PORT: String(server.address().port),
-        VIBING_HOOK_COMM_DIR: commDir,
+        VIBING_HOOK_COMM_DIR: link,
       },
     });
-    child.stdin.end(JSON.stringify({ tool_name: 'Read', tool_input: { file_path: '/tmp/x' } }));
+    child.stdin.end(JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'echo hi' } }));
     const code = await new Promise((resolve) => child.on('close', resolve));
 
-    assert.equal(code, 0);
-    assert.equal(request.token, token);
-    assert.equal(request.method, 'check_tool_permission');
-    assert.equal(reqMode, 0o600);
-    assert.equal((await stat(commDir)).mode & 0o777, 0o700);
+    assert.equal(code, 2);
+    assert.equal(contacted, false);
+    assert.deepEqual(await readdir(target), []);
+    assert.equal((await stat(target)).mode & 0o777, 0o755);
   } finally {
     await new Promise((resolve) => server.close(resolve));
-    await rm(commDir, { recursive: true, force: true });
+    await rm(parent, { recursive: true, force: true });
   }
 });
 
