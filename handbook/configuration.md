@@ -1643,6 +1643,16 @@ Two built-in behaviors to be aware of:
 - `Read`, `Skill`, and `StructuredOutput` are **always allowed** regardless of the allow list
   (they can still be blocked via `deny`).
 - `Skill` is automatically appended to `allow` unless you put it in `deny` or `ask`.
+- `nvim_job_start`, and `nvim_execute` when the Ex command runs a shell, are judged as `Bash`.
+  The default `deny = { "Bash" }` denies them. Allow a command with the same `Bash(prefix:*)`
+  pattern you would use for the Bash tool. Because nothing checks an MCP tool after vibing.nvim,
+  a prefix rule does not cover an Ex line containing a shell operator or a Vim expansion (`;`,
+  `|`, `&`, `` ` ``, `$`, `<`, `>`, `%`, `#`, `!`); that line asks unless all of `Bash` is
+  allowed. A job's `env` is judged as `NAME=value` in front of the argv, so `Bash(npm:*)` does
+  not cover a job that sets `PATH`. Ordinary Ex commands such as `:write` and `:edit` are
+  unchanged. The recognized forms, and the ones that are not (`:source`, `:luafile`, plugin user
+  commands, code built at runtime), are listed in
+  `lua/vibing/infrastructure/permissions/shell_command.lua`. It is not a sandbox.
 
 ### Project-local Codex permission profiles
 

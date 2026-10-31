@@ -155,6 +155,7 @@ describe("codex_plugin_config", function()
 
       assert.is_truthy(instructions:find("MUST use the vibing-nvim nvim_job_start", 1, true))
       assert.is_truthy(instructions:find("Do not use shell backgrounding", 1, true))
+      assert.is_truthy(instructions:find("same permission rules as Bash", 1, true))
       assert.is_truthy(instructions:find("nohup", 1, true))
     end)
 
