@@ -266,11 +266,18 @@ require("vibing").setup({
 適用されるのは各チャットファイルの frontmatter に記録された権限です。
 
 `nvim_job_start` と、シェルを実行する `nvim_execute` の Ex コマンドは、同じルールで判定されます。
-既定の `deny = { "Bash" }` では `:!ls`、`:read !`、`:write !`、`:terminal`、`:[range]!`、`:make`、
-`:grep`、および `:lua` / `:call` からの `system()` / `jobstart()` / `os.execute()` / `vim.system()` /
-`vim.uv.spawn()` は拒否され、`nvim_job_start` も同様です。許可するときは Bash と同じ指定
-（`Bash(npm:*)`、または `deny` から `Bash` を外す）を使います。`:write`、`:edit`、`:split` は
-これまで通りです。
+既定の `deny = { "Bash" }` では `nvim_job_start` は常に拒否されます。`nvim_execute` では
+`:!ls`、`:[range]!`、`:read !`、`:write !`、`:terminal`、`term://`、`:make`、`:grep`、
+`system()` / `jobstart()` / `os.execute()` / `vim.system()` などの呼び出しが拒否されます。
+`|` や改行で続くコマンド、`:execute`、`:windo`、`:global`、`:autocmd` の中身も対象です。
+許可するときは Bash と同じ指定（`Bash(npm:*)`、または `deny` から `Bash` を外す）を使います。
+ただし `;`、`|`、`&`、`%` などを含む行は、`Bash` 全体を許可していない限り承認を求めます。
+`:write`、`:edit`、`:split` はこれまで通りです。
+
+この判定は字面で書かれた形を認識するもので、サンドボックスではありません。`:source` /
+`:luafile` で読み込むファイルの中身、プラグインが定義したユーザーコマンド、実行時に組み立てた
+コードは認識しません。`nvim_execute` を許可することは Neovim 内での任意コードの実行を許可する
+ことと同じです。
 
 **完全なリファレンス:** すべてのオプション(ウィンドウ詳細、UI/グラデーション/ツールマーカー、
 diff バックエンド、粒度の細かい権限ルール、MCP、Node.js 実行ファイル、日報など)は
