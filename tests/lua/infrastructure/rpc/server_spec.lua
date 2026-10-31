@@ -15,9 +15,12 @@ local ENV_REGISTRY_DIR = require("vibing.infrastructure.rpc.registry").ENV_REGIS
 describe("vibing.infrastructure.rpc.server", function()
   local server
   local registry
+  local CommDir
   local base_port
   local registry_dir
   local saved_env
+  local saved_comm_dir
+  local private_comm_root
 
   before_each(function()
     -- Private registry directory: the default under stdpath("data") is shared machine-wide, so
@@ -29,9 +32,20 @@ describe("vibing.infrastructure.rpc.server", function()
     -- Reload modules before each test
     package.loaded["vibing.infrastructure.rpc.server"] = nil
     package.loaded["vibing.infrastructure.rpc.registry"] = nil
+    package.loaded["vibing.infrastructure.rpc.comm_dir"] = nil
     server = require("vibing.infrastructure.rpc.server")
     registry = require("vibing.infrastructure.rpc.registry")
+    CommDir = require("vibing.infrastructure.rpc.comm_dir")
     base_port = find_free_port()
+
+    -- Not `/tmp/vibing-hook-<port>`. Plenary runs one Neovim per spec file, and another file's
+    -- hook_cleanup treats a comm directory whose port is absent from the shared registry as stale
+    -- and deletes it. The permission bits are a property of SessionToken.install, exercised on this
+    -- private path; production still uses for_port when the override is unset.
+    saved_comm_dir = vim.env[CommDir.ENV_VAR]
+    private_comm_root = vim.fn.tempname()
+    vim.fn.mkdir(private_comm_root, "p")
+    vim.env[CommDir.ENV_VAR] = private_comm_root .. "/comm"
   end)
 
   after_each(function()
@@ -39,8 +53,10 @@ describe("vibing.infrastructure.rpc.server", function()
     if server.is_running() then
       server.stop()
     end
+    pcall(vim.fn.delete, private_comm_root, "rf")
     pcall(vim.fn.delete, registry_dir, "rf")
     vim.env[ENV_REGISTRY_DIR] = saved_env
+    vim.env[CommDir.ENV_VAR] = saved_comm_dir
   end)
 
   describe("start", function()
@@ -255,6 +271,195 @@ describe("vibing.infrastructure.rpc.server", function()
       assert.is_true(port >= base_port + 5, "Should skip all registered ports")
 
       server.stop()
+    end)
+  end)
+
+  describe("session token", function()
+    local handlers
+    local original_execute
+
+    local function settle()
+      local done = false
+      vim.schedule(function()
+        done = true
+      end)
+      assert.is_true(vim.wait(1000, function()
+        return done
+      end, 10), "event loop did not drain")
+    end
+
+    --- One newline-delimited request. Returns the decoded response line.
+    local function rpc(port, payload)
+      local client = assert(vim.loop.new_tcp())
+      local chunks = {}
+      local done = false
+      local connect_err
+      client:connect("127.0.0.1", port, function(err)
+        if err then
+          connect_err = err
+          done = true
+          return
+        end
+        client:read_start(function(read_err, data)
+          if read_err or not data then
+            done = true
+            if not client:is_closing() then
+              client:close()
+            end
+            return
+          end
+          table.insert(chunks, data)
+          if table.concat(chunks):find("\n", 1, true) then
+            client:read_stop()
+            if not client:is_closing() then
+              client:close()
+            end
+            done = true
+          end
+        end)
+        client:write(vim.json.encode(payload) .. "\n")
+      end)
+
+      local waited = vim.wait(2000, function()
+        return done
+      end, 10)
+      if not client:is_closing() then
+        client:close()
+      end
+      assert.is_true(waited, "timed out waiting for an RPC response")
+      assert.is_nil(connect_err)
+      local line = table.concat(chunks):match("([^\n]*)\n")
+      assert.is_not_nil(line, "response was not a single JSON line")
+      return vim.json.decode(line)
+    end
+
+    local function read_token()
+      local f = assert(io.open(CommDir.path() .. "/" .. CommDir.TOKEN_NAME, "r"))
+      local token = f:read("*a")
+      f:close()
+      return token
+    end
+
+    before_each(function()
+      handlers = require("vibing.infrastructure.rpc.handlers")
+      original_execute = handlers.execute
+    end)
+
+    after_each(function()
+      handlers.execute = original_execute
+    end)
+
+    it("rejects a request with no token before the handler runs", function()
+      local port = server.start(base_port)
+      local ran = false
+      handlers.execute = function()
+        ran = true
+        return { ok = true }
+      end
+
+      local res = rpc(port, { id = 1, method = "execute", params = { command = "echo pwned" } })
+      settle()
+
+      assert.is_false(ran)
+      assert.equals("unauthorized", res.error)
+      assert.is_nil(res.result)
+    end)
+
+    it("rejects a request with the wrong token before the handler runs", function()
+      local port = server.start(base_port)
+      local ran = false
+      handlers.execute = function()
+        ran = true
+        return { ok = true }
+      end
+
+      local res = rpc(port, {
+        id = 2,
+        method = "execute",
+        params = { command = "echo pwned" },
+        token = "deadbeef",
+      })
+      settle()
+
+      assert.is_false(ran)
+      assert.equals("unauthorized", res.error)
+      assert.is_nil(res.result)
+      assert.is_nil(tostring(res.error):find("deadbeef", 1, true))
+    end)
+
+    it("runs the handler when the request carries the session token", function()
+      local port = server.start(base_port)
+      local token = read_token()
+      local saw
+      handlers.execute = function(params)
+        saw = params
+        return { ok = true }
+      end
+
+      local res = rpc(port, {
+        id = 3,
+        method = "execute",
+        params = { command = "echo ok" },
+        token = token,
+      })
+
+      assert.same({ command = "echo ok" }, saw)
+      assert.is_nil(saw.token)
+      assert.same({ ok = true }, res.result)
+      assert.equals(3, res.id)
+    end)
+
+    it("creates the comm directory mode 0700 and private files even with umask 0", function()
+      local ffi = require("ffi")
+      pcall(ffi.cdef, "int umask(int mask);")
+      local previous = ffi.C.umask(0)
+      local ok, err = pcall(function()
+        local port = server.start(base_port)
+        assert.is_true(port > 0)
+        local dir = CommDir.path()
+        local dir_stat = assert(vim.loop.fs_lstat(dir))
+        assert.equals("directory", dir_stat.type)
+        assert.equals(tonumber("0700", 8), dir_stat.mode % 4096)
+
+        local token_stat = assert(vim.loop.fs_lstat(dir .. "/" .. CommDir.TOKEN_NAME))
+        assert.equals("file", token_stat.type)
+        assert.equals(tonumber("0600", 8), token_stat.mode % 4096)
+
+        local HookResponse = require("vibing.infrastructure.rpc.hook_response")
+        HookResponse.write("perm-1", "deny", "no")
+        local res_stat = assert(vim.loop.fs_lstat(dir .. "/perm-1.res"))
+        assert.equals(tonumber("0600", 8), res_stat.mode % 4096)
+
+        local token = read_token()
+        local registry_files = vim.fn.glob(registry_dir .. "/*.json", false, true)
+        assert.is_true(#registry_files > 0, "the running instance should be registered")
+        for _, file in ipairs(registry_files) do
+          local body = table.concat(vim.fn.readfile(file), "\n")
+          assert.is_nil(body:find(token, 1, true), "registry file contains the session token")
+        end
+      end)
+      ffi.C.umask(previous)
+      assert.is_true(ok, tostring(err))
+    end)
+
+    it("does not write the token through a symlink at the comm path", function()
+      local parent = vim.fn.tempname()
+      vim.fn.mkdir(parent, "p")
+      local target = parent .. "/target"
+      vim.fn.mkdir(target, "p")
+      local link = parent .. "/link"
+      assert.is_true(vim.loop.fs_symlink(target, link))
+      vim.env[CommDir.ENV_VAR] = link
+
+      local ok, err = pcall(function()
+        local port = server.start(base_port)
+        assert.is_true(port > 0)
+        assert.is_nil(vim.loop.fs_stat(target .. "/" .. CommDir.TOKEN_NAME))
+        assert.is_nil(vim.loop.fs_lstat(link .. "/" .. CommDir.TOKEN_NAME))
+      end)
+
+      vim.fn.delete(parent, "rf")
+      assert.is_true(ok, tostring(err))
     end)
   end)
 end)

@@ -78,6 +78,8 @@ function M._cleanup_files_in_dir(dir)
     end
     -- .fail is written by stop-failure.sh and consumed by the rate_limit handler; if that
     -- handler never ran (Neovim was already gone), the file would otherwise stay forever.
+    -- `token` is not in this list: it is the live session credential (`comm_dir.TOKEN_NAME`),
+    -- and deleting it here would make every later RPC call fail closed until Neovim restarts.
     if name:match("%.req$") or name:match("%.res$") or name:match("%.tmp$") or name:match("%.fail$") then
       os.remove(dir .. "/" .. name)
     end

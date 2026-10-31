@@ -112,12 +112,14 @@ describe("core.utils.identity", function()
         -- ever name a process. A stale key here would resolve every hook to nil.
         --
         -- The whole printf is matched, argument order included. Asserting only that the key appears
-        -- somewhere would stay green if the two `%s` arguments were swapped — which sends the
+        -- somewhere would stay green if the `%s` arguments were swapped — which sends the
         -- request id as the process id and breaks every attribution while looking untouched.
+        -- The session token is the third argument, after those two.
         local body = read("bin/hooks/" .. script)
-        local args = body:match('"request_id":"%%s","process_id":"%%s"}}\\n\'%s+("[^\n]+)')
+        local args =
+          body:match('"request_id":"%%s","process_id":"%%s"},"token":"%%s"}\\n\'%s+("[^\n]+)')
         assert.is_truthy(args, "no request_id/process_id printf found in " .. script)
-        assert.equals('"$REQUEST_ID" "$PROCESS_ID"', vim.trim(args:gsub("\\$", "")))
+        assert.equals('"$REQUEST_ID" "$PROCESS_ID" "$TOKEN"', vim.trim(args:gsub("\\$", "")))
         assert.is_nil(body:find("VIBING_HANDLE_ID", 1, true), "still reads the pre-#774 variable")
       end)
     end

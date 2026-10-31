@@ -18,7 +18,7 @@
 
 import { strict as assert } from 'assert';
 import { test } from 'node:test';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import * as net from 'node:net';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { mkdtemp, mkdir, copyFile, writeFile, chmod, rm } from 'fs/promises';
@@ -319,5 +319,46 @@ test('spending the deadline on a build is reported to Neovim', async () => {
   } finally {
     server.close();
     await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('notify-nvim sends the session token', async () => {
+  const commDir = await mkdtemp(join(tmpdir(), 'vibing-notify-token-'));
+  const token = 'ab'.repeat(32);
+  await writeFile(join(commDir, 'token'), token, { mode: 0o600 });
+  const received = [];
+  const server = net.createServer((socket) => {
+    socket.on('data', (chunk) => {
+      for (const line of chunk.toString().split('\n')) {
+        if (line.length > 0) received.push(JSON.parse(line));
+      }
+      socket.end();
+    });
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+
+  try {
+    // spawn, not spawnSync: the test server shares this event loop, and a synchronous wait
+    // would leave the client sitting on an unaccepted connection until its own timeout.
+    const child = spawn(
+      process.execPath,
+      [join(launcherDir, 'notify-nvim.mjs'), 'warn', 'token check'],
+      {
+        env: {
+          ...process.env,
+          VIBING_NVIM_RPC_PORT: String(server.address().port),
+          VIBING_HOOK_COMM_DIR: commDir,
+        },
+      }
+    );
+    const code = await new Promise((resolve) => child.on('close', resolve));
+    assert.equal(code, 0);
+    assert.equal(received.length, 1);
+    assert.equal(received[0].method, 'notify');
+    assert.equal(received[0].token, token);
+    assert.equal(received[0].params.message, 'token check');
+  } finally {
+    server.close();
+    await rm(commDir, { recursive: true, force: true });
   }
 });

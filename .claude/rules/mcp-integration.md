@@ -20,6 +20,10 @@ The tool catalogue, the orchestration tools, annotations and background LSP anal
 - **`VIBING_NVIM_MCP_TOOL_PATTERNS` (`core/constants/tools.lua`) is hand-maintained**, because
   `--allowedTools` accepts nothing but literals. A stale entry does not break chats — the hook's
   suffix match is what decides — which is why a dead one went unnoticed for so long.
+- **Every RPC request carries the session token.** `callNeovim` reads `token` from the comm
+  directory (`VIBING_HOOK_COMM_DIR`, or `/tmp/vibing-hook-<port>/token`) and sends it on the
+  request. The value stays out of tool schemas, prompts, and the env whitelist that forwards
+  `VIBING_NVIM_RPC_PORT`: the port is the address, the file is the credential.
 - **The instance is bound out-of-band, so `rpc_port` is omitted.** Both CLI adapters export
   `VIBING_NVIM_RPC_PORT` (`adapter/modules/rpc_environment.lua`); claude hands the launching
   environment to plugin MCP servers and codex is told to copy that one variable by name, so a

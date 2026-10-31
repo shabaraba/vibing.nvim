@@ -38,7 +38,13 @@ whenever this path is touched:
   `handbook/architecture/approval-without-kill.md`.
 
 The comm directory path has exactly one definition, `infrastructure/rpc/comm_dir.lua`, shared by
-the handlers, the cleanup routine and `bin/hooks/*.sh`.
+the handlers, the cleanup routine and `bin/hooks/*.sh`. It is created mode `0700`, and every file
+in it (the session `token`, `.req`, `.res`, `.fail`) is mode `0600`.
+
+- **Every RPC request carries that session token** as a top-level `token` field. The server
+  rejects a request that does not match, before any handler runs. Clients read the token from
+  the comm directory. It is not an environment variable, not an argv element, and not in the
+  instance registry.
 
 ## Backends and Their Seams
 
