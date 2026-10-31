@@ -198,6 +198,26 @@ test('copilot deny falls back to exit 2 when the response cannot be unwrapped', 
   }
 });
 
+test('a missing nc denies and names netcat instead of a dead server', async () => {
+  // `command -v nc` is a bash builtin, so a PATH that cannot contain nc is enough. "Failed to
+  // connect" stays the message for a present nc with nothing listening; this is the other failure.
+  const env = { ...process.env, PATH: '/vibing-nc-absent', VIBING_NVIM_RPC_PORT: '9' };
+  delete env.VIBING_DEBUG;
+
+  const child = spawn(HOOK, [], { env });
+  child.stdin.end('{}');
+
+  let stderr = '';
+  child.stderr.on('data', (chunk) => {
+    stderr += chunk;
+  });
+  const code = await new Promise((resolve) => child.on('close', resolve));
+
+  assert.equal(code, 2);
+  assert.match(stderr, /netcat \(nc\) was not found on PATH/);
+  assert.doesNotMatch(stderr, /Failed to connect/);
+});
+
 test('copilot fails closed when the RPC server is unreachable', async () => {
   // Non-zero exits deny on copilot as well; only a hook that outlives timeoutSec fails open,
   // which is why the generated hooks.json allows more time than this script waits.

@@ -46,6 +46,9 @@ Features:~
 
 • Neovim >= 0.10 (uses |vim.system()|)
 • Node.js >= 18 (for the MCP server)
+• bash, netcat (`nc`), and a writable /tmp. The permission hooks
+  deny every tool call when `nc` cannot reach Neovim
+• Linux and macOS are supported. Native Windows is untested
 • At least one CLI backend on your PATH:
     - Claude CLI: npm install -g @anthropic-ai/claude-code
     - Codex CLI:  npm install -g @openai/codex
