@@ -79,10 +79,16 @@ Using packer.nvim: >lua
       end,
     }
 <
-`build.sh` builds the bundled MCP server. There is no plugin to install:
-vibing.nvim hands the `claude` CLI its own `agent-plugin/` directory per
-session with `--plugin-dir`, so the MCP server, the bundled skills and the
-`nvim-navigator` subagent always come from the checkout that is running.
+`build.sh` builds the bundled MCP server and, by default, writes only inside
+this checkout. There is no plugin to install: vibing.nvim hands the `claude`
+CLI its own `agent-plugin/` directory per session with `--plugin-dir`, so the
+MCP server, the bundled skills and the `nvim-navigator` subagent always come
+from the checkout that is running. A default run prints the commands for a
+manual Copilot MCP registration and legacy Claude user-scope cleanup. >
+    ./build.sh --register-global
+<
+applies those edits and prints a "Global change:" line for each one. The same
+switch is `VIBING_REGISTER_GLOBAL=1`.
 
 UPDATING FROM claude-plugin/
 The bundled directory is now `agent-plugin/`. Update old paths in manually
@@ -111,8 +117,11 @@ server is passed as a `-c mcp_servers.<name>.*` override (tools appear as
 `mcp__vibing-nvim__*`) and each skill is listed for the model in
 `developer_instructions`. Subagents (`agents/`) do not carry over to codex.
 
-Upgrading from a version that installed itself into Claude Code's user scope:
-`build.sh` removes that install for you. By hand: >
+Upgrading from a version that installed itself into Claude Code's user
+scope: a default `./build.sh` keeps that install. Remove it with >
+    ./build.sh --register-global
+<
+or inside Claude Code: >
     /plugin uninstall vibing-nvim@vibing
     /plugin marketplace remove vibing
 <
