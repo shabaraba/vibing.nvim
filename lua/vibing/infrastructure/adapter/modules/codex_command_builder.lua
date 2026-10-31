@@ -9,6 +9,7 @@
 local CodexTurnSettings = require("vibing.infrastructure.adapter.modules.codex_turn_settings")
 local CodexPluginConfig = require("vibing.infrastructure.adapter.modules.codex_plugin_config")
 local CodexPermissionProfile = require("vibing.infrastructure.adapter.modules.codex_permission_profile")
+local CodexLightweightProvider = require("vibing.infrastructure.adapter.modules.codex_lightweight_provider")
 local TokenUsage = require("vibing.core.utils.token_usage")
 
 local M = {}
@@ -82,10 +83,10 @@ end
 --- `mcp_servers.<name>.enabled=false` works but needs a name list that would go stale silently
 --- the moment the user added a server.
 ---
---- The cost is the one #571 named: this also drops model_provider, so a user on a custom
---- provider gets utility calls against the default OpenAI endpoint. Accepted now that the
---- alternative is known to be a hole rather than an equivalent. Auth is unaffected -- codex
---- reads it from CODEX_HOME either way.
+--- The cost #571 named still applies to the file as a whole: `model_provider` and `model` are
+--- dropped with the MCP servers. `lightweight_provider_args` copies those keys, and the selected
+--- provider's definition, back as `-c` overrides (#925). Auth is unaffected -- codex reads it
+--- from CODEX_HOME either way.
 --- `--strict-config` makes codex reject unknown config keys, so the day it renames or drops one
 --- of the overrides below, the utility call fails loudly instead of quietly running unfenced.
 --- Every restriction here is a safety boundary whose absence is otherwise unobservable, so this
@@ -94,6 +95,7 @@ end
 --- This is only safe in company with --ignore-user-config: on its own, --strict-config also
 --- strictifies the user's config.toml, and one unrecognised field of their own would break
 --- every title generation. With the user config unread, it validates our overrides and nothing
+--- else.
 ---
 --- @type string[]
 M.LIGHTWEIGHT_ARGS = {
@@ -108,6 +110,13 @@ M.LIGHTWEIGHT_ARGS = {
   "-c",
   "project_doc_max_bytes=0",
 }
+
+--- The provider and model `--ignore-user-config` dropped, for a lightweight call only.
+--- @param ctx Vibing.RequestContext
+--- @return string[]
+function M.lightweight_provider_args(ctx)
+  return CodexLightweightProvider.args(ctx)
+end
 
 --- The user's `ai.agents.codex.extensions.approval_policy`, as the `-c` pair it becomes, or nothing.
 ---

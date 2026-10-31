@@ -3,15 +3,17 @@
 ---
 --- `codex_command_builder` runs lightweight calls (title generation, `/summarize`, daily summary)
 --- with `--ignore-user-config`, which is the only thing that actually keeps them out of the user's
---- MCP servers (#574). It also drops `model_provider`, so a user on a custom provider has those
---- calls silently retargeted at codex's default OpenAI endpoint -- unexpected billing for some, a
---- wordless 401 for anyone pointed at a local provider (#587).
+--- MCP servers (#574). That flag also drops `model_provider`. The lightweight argv copies a
+--- top-level provider back (#925); when it cannot, those calls are silently retargeted at
+--- codex's default OpenAI endpoint -- unexpected billing for some, a wordless 401 for anyone
+--- pointed at a local provider (#587).
 ---
 --- The warning is not derived from the config file: `codex doctor --json` resolves it for us. That
 --- is what makes it worth shipping at all -- a regex over `config.toml` misses a provider set
 --- through a profile and matches one in an inactive section, and a warning that is wrong in either
---- direction is worse than none, because its silence reads as "you are fine". The rest of the
---- reasoning, including why the provider is announced rather than restored, is in
+--- direction is worse than none, because its silence reads as "you are fine". The call itself
+--- copies a top-level provider back onto the argv (`codex_lightweight_provider.lua`); this probe
+--- runs only when that copy did not happen. The rest of the reasoning is in
 --- `handbook/architecture/lightweight-calls.md`.
 ---
 --- @module vibing.infrastructure.adapter.modules.codex_provider_notice

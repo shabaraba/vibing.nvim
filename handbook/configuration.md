@@ -650,22 +650,28 @@ Three consequences worth knowing before switching it on:
   so nothing has to be reconfigured — but a hand-written permission rule naming only the plugin
   form stops matching.
 - **Claude only.** Codex has no per-run switch narrower than `--ignore-user-config`, which also
-  drops `model_provider`; copilot and grok have none at all for ordinary turns. Lightweight calls
-  on every backend already load no MCP servers (`handbook/architecture/lightweight-calls.md`).
+  drops `model_provider` (lightweight calls copy that provider back; see below); copilot and grok
+  have none at all for ordinary turns. Lightweight calls on every backend already load no MCP
+  servers (`handbook/architecture/lightweight-calls.md`).
 
 ### Codex Provider Notice
 
 Only applies to the Codex backend. Codex's lightweight calls (chat title generation, `/summarize`,
-daily summary) run with `--ignore-user-config`, which is what keeps them out of your MCP servers —
-and which also drops `model_provider`. So if your `config.toml` points Codex at a custom or local
-provider, those calls go to the default OpenAI endpoint while ordinary chat still uses yours. That
-is unexpected billing for some and an unexplained 401 for anyone on a local provider, with nothing
-said either way.
+daily summary) run with `--ignore-user-config`, which is what keeps them out of your MCP servers.
+That flag also drops `model_provider`. The call copies your top-level provider, its
+`[model_providers.<id>]` definition, and your configured `model` (unless a helper model is
+already being passed) back onto the command, so a custom or local provider stays in effect.
 
-With this on, the first lightweight Codex call of a Neovim session runs `codex doctor --json` in
-the background to ask Codex which provider is actually configured, and warns once if it is not
-`openai`. Nothing waits for the probe, and if Codex cannot answer, nothing is said — a warning that
-cannot be trusted is worse than none, because its silence reads as "you are fine".
+The copy reads `$CODEX_HOME/config.toml` directly. When it cannot — the file is unreadable, or
+the provider id cannot be written as a `-c` key — those calls would otherwise go to the default
+OpenAI endpoint while ordinary chat still uses yours. That is unexpected billing for some and an
+unexplained 401 for anyone on a local provider.
+
+With this on, that fallback is the first lightweight Codex call of a Neovim session that did not
+carry `model_provider=`. It runs `codex doctor --json` in the background to ask Codex which
+provider is actually configured, and warns once if it is not `openai`. Nothing waits for the
+probe, and if Codex cannot answer, nothing is said — a warning that cannot be trusted is worse
+than none, because its silence reads as "you are fine".
 
 **Why this one defaults to on** while `subagent` and `auto_resume_on_limit` default to off: those
 two spend tokens unattended, so the safe default is silence. This one spends none and exists to

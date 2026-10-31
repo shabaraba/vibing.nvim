@@ -139,11 +139,13 @@ Both flags were verified present in **0.140.0 and 0.147.0**, on `codex exec` and
 unaffected but lightweight calls fail with an unknown-argument error. Upgrade Codex if you see
 that.
 
-`--ignore-user-config` also drops `model_provider`, so if your `config.toml` points Codex at a
-custom or local provider, **those lightweight calls go to the default OpenAI endpoint instead**.
-Ordinary chat still uses your provider. vibing.nvim warns once per Neovim session when this applies
-to you, asking Codex itself (`codex doctor --json`) which provider is configured; it says nothing
-if Codex cannot answer. Set `ai.agents.codex.extensions.provider_notice = false` to turn the warning and its
+`--ignore-user-config` also drops `model_provider`. Lightweight calls copy it back from
+`config.toml` — the provider id, its `[model_providers.<id>]` definition, and your configured
+`model` when the call is not already passing one — so a custom or local provider stays in
+effect. A helper model (`ai.helpers.model`) is still what that call uses, on the same provider.
+MCP servers are not copied. If the provider cannot be read back, vibing.nvim warns once per
+Neovim session, asking Codex itself (`codex doctor --json`); it says nothing if Codex cannot
+answer. Set `ai.agents.codex.extensions.provider_notice = false` to turn the warning and its
 probe off.
 
 </details>

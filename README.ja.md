@@ -139,12 +139,14 @@ vibing.nvim は Codex バックエンドの軽量呼び出し(チャットタイ
 フラグが無い場合は通常のチャットには影響しませんが、軽量呼び出しが unknown argument エラーで
 失敗します。その場合は Codex を更新してください。
 
-`--ignore-user-config` は `model_provider` も落とします。`config.toml` でカスタムプロバイダや
-ローカルプロバイダを指定している場合、**軽量呼び出しだけが既定の OpenAI エンドポイントに
-向きます**(通常のチャットは指定どおりのプロバイダを使います)。該当する場合は Neovim セッション
-ごとに一度だけ警告します。プロバイダの判定は Codex 自身(`codex doctor --json`)に問い合わせて
-おり、Codex が答えられなかったときは何も表示しません。
-`agent.codex_provider_notice.enabled = false` で警告と probe をまとめて止められます。
+`--ignore-user-config` は `model_provider` も落とします。軽量呼び出しはそれを `config.toml`
+から戻します(プロバイダ名、その `[model_providers.<id>]` 定義、および `-m` を渡さないときの
+`model`)。カスタムプロバイダやローカルプロバイダは軽量呼び出しでも使われます。ヘルパーモデル
+(`ai.helpers.model`)を設定している場合は、同じプロバイダ上でそのモデルを使います。MCP
+サーバーは戻しません。プロバイダを argv に戻せなかったときだけ、Neovim セッションごとに一度
+警告します。判定は Codex 自身(`codex doctor --json`)に問い合わせ、Codex が答えられなかった
+ときは何も表示しません。`ai.agents.codex.extensions.provider_notice = false` で警告と probe
+をまとめて止められます。
 
 </details>
 
