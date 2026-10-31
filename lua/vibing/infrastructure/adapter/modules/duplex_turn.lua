@@ -109,12 +109,15 @@ function M.open(params, record, chat_key)
     timers = {}
   end
 
-  -- First-response and inactivity timers have separate lifetimes from interrupt fallbacks.
+  -- The first-response watchdog is the one timer that is disarmed *before* the turn ends, so it is
+  -- held apart from the list above. Folding it in would mean `onFirstResponse` also disarmed an
+  -- interrupt's kill fallback — which by construction is armed after the first response arrived.
+  -- The inactivity watchdog repeats until the turn ends, which `watch` cannot express.
   local first_response_timer = nil
   local inactivity_timer = nil
   local received_response = false
   local function now_ms()
-    return vim.loop.hrtime() / 1000000
+    return vim.uv.hrtime() / 1000000
   end
   local last_activity = now_ms()
   local function stop_first_response_timer()
@@ -193,11 +196,7 @@ function M.open(params, record, chat_key)
           return
         end
         local bufnr = params.opts.chat_bufnr
-        local awaiting_approval = bufnr
-          and (
-            require("vibing.infrastructure.rpc.pending_approvals").has_for_chat(bufnr)
-            or require("vibing.infrastructure.rpc.pending_native_approvals").has_for_chat(bufnr)
-          )
+        local awaiting_approval = bufnr and require("vibing.infrastructure.rpc.pending_prompts").has_for_chat(bufnr)
         -- Silence during a tool or human approval is expected; give the model a fresh budget afterwards.
         if next(context._tools or {}) or awaiting_approval then
           last_activity = now_ms()
@@ -206,17 +205,8 @@ function M.open(params, record, chat_key)
         if now_ms() - last_activity < timeout_ms then
           return
         end
-        local response = TurnOutcome.ended(
-          turn_ids,
-          table.concat(context.output, ""),
-          string.format(
-            "No CLI activity for %g seconds with no tool or approval pending. "
-              .. "The stalled process was stopped. Review any changes, then send a message to continue.",
-            timeout_sec
-          )
-        )
-        response._stalled = true
-        complete(response)
+        -- Reported before the kill, for the reason `turn_outcome.first_response_timeout` states.
+        complete(TurnOutcome.stalled(turn_ids, table.concat(context.output, ""), timeout_sec))
         Pool.stop(chat_key, "unresponsive")
       end)
     end, { ["repeat"] = -1 })
