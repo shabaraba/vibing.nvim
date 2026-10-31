@@ -13,6 +13,7 @@ describe("shell_command.from_ex", function()
       ["write ++ff=unix !wc"] = "wc",
       ["terminal npm run dev"] = "npm run dev",
       ["tab terminal ls"] = "ls",
+      ["3tab terminal ls"] = "ls",
       ["debug !ls"] = "ls",
       ["write | !ls"] = "ls",
       ["execute '!ls'"] = "ls",
@@ -42,7 +43,6 @@ describe("shell_command.from_ex", function()
 
   it("judges the whole text when the command is not one literal", function()
     for _, command in ipairs({
-      "3tab terminal ls",
       "Nonexistent foo",
       "exe g:cmd",
       "exe \"!\" . \"ls\"",
