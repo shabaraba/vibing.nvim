@@ -211,6 +211,23 @@ function M.get(chat_key)
   return record and DuplexProcess.is_alive(record) and record or nil
 end
 
+--- The live, idle process serving a chat, taken for a turn without the reuse check `acquire` makes.
+---
+--- For adopting a turn the CLI is already running (`duplex_foreign_turn`): its flags are the ones it
+--- runs under whatever this turn's argv would be, so comparing argv keys could only kill that turn.
+--- @param chat_key number|string|nil
+--- @param accepts fun(record: Vibing.DuplexProcess): boolean the caller's own condition, checked before
+---   the idle timer is touched, so a refused claim leaves the process to be reclaimed as before
+--- @return Vibing.DuplexProcess|nil
+function M.claim(chat_key, accepts)
+  local record = M.get(chat_key)
+  if not record or record._turn or not accepts(record) then
+    return nil
+  end
+  cancel_idle_timer(record)
+  return record
+end
+
 --- The live process with this id, whichever chat it serves. `adapter:cancel()` and the interrupt
 --- path are both named by process, never by chat.
 --- @param process_id string|nil

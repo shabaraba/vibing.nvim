@@ -104,6 +104,9 @@ by_type.system = function(msg, events)
       tools = count_of(msg.tools),
       mcp_servers = count_of(msg.mcp_servers),
     })
+    -- `init` opens every turn, including the ones the CLI starts by itself after a
+    -- `task_notification`; the transport reads that as the cue to adopt one between turns.
+    table.insert(events, { kind = "turn_start" })
   elseif msg.subtype == "compact_boundary" then
     table.insert(events, { kind = "cli_info", compacted = true })
   elseif msg.subtype == "task_started" then

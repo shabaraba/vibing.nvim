@@ -171,6 +171,15 @@ function M.define(descriptor)
     local session_id = opts._session_id
     local tag = "[vibing:" .. descriptor.id .. "]"
 
+    -- Only a resident process can have started a turn by itself; on any other transport the notice
+    -- would be sent as a prompt and answered a second time.
+    if opts._adopt_cli_turn and not is_duplex then
+      vim.schedule(function()
+        on_done(TurnOutcome.ended(ids, "", "The turn the CLI started by itself is no longer running."))
+      end)
+      return ids.turn_id, ids.process_id
+    end
+
     if debug_mode then
       vim.notify(
         string.format(

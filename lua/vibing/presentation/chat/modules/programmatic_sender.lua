@@ -102,8 +102,9 @@ end
 ---@param sender string?
 ---@param delivery Vibing.Application.DeliveryMessage.Section? 他のチャットからの配達なら、
 ---  そのセクション見出しに使う種別と送信元。省略すると通常の `## User` セクションになる
----@param opts {replace_unsent: boolean?}? `replace_unsent` で、中身のある末尾の未送信
----  セクションも落としてから書く（承認プロンプトへの代理応答）
+---@param opts {replace_unsent: boolean?, adopt_cli_turn: boolean?}? `replace_unsent` で、中身のある末尾の未送信
+---  セクションも落としてから書く（承認プロンプトへの代理応答）。`adopt_cli_turn` で、本文をCLIへ
+---  送らず、CLIが自分で始めて保留中のターンを引き取る（`cli_initiated_turn.lua`）
 function M.send(bufnr, message, sender, delivery, opts)
   sender = sender or "User"
   opts = opts or {}
@@ -125,7 +126,7 @@ function M.send(bufnr, message, sender, delivery, opts)
     local header = delivery and Timestamp.unsent_header_for(delivery) or nil
     ConversationExtractor.drop_trailing_unsent_section(bufnr, opts.replace_unsent)
     Renderer.addUserSection(bufnr, nil, nil, nil, message, header)
-    sent = chat_buf:send_message()
+    sent = chat_buf:send_message({ adopt_cli_turn = opts.adopt_cli_turn })
 
     -- Restore cursor
     if saved_cursor and vim.api.nvim_win_is_valid(saved_win) then

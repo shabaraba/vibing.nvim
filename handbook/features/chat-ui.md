@@ -166,8 +166,10 @@ silently dropping the wake, which is the shape of the hole being closed. The ver
 is about turns, so the timer fires on a process that still has a background subagent in flight — and
 because a background subagent runs _inside_ the CLI, the reclaim is what makes its answer unreachable.
 Holding the process back instead was rejected: nothing else would ever release it (a notification
-arriving between turns does not reset the timer, and a CLI-initiated turn is not something this
-transport picks up yet), so it trades a woken chat for a resident 200MB process that never leaves. The
+arriving between turns does not reset the timer by itself), so it trades a woken chat for a resident
+200MB process that never leaves. A CLI-initiated turn that the chat adopts does reset it, because
+it is an ordinary turn on the pool (`handbook/architecture/duplex-transport.md` → "A foreign turn
+while no vibing turn is open is adopted"). The
 five minutes are not wasted either — they are the window in which the CLI's own notification can still
 arrive and take the entry off the ledger, and then there is nothing to report.
 

@@ -14,7 +14,8 @@
 ---   every turn's first line.
 ---
 --- The turn's own lifetime is `duplex_turn.lua`; where a process's stdout, stderr, death and kill
---- switch are wired is `duplex_routing.lua`.
+--- switch are wired is `duplex_routing.lua`. A turn the CLI started by itself is opened here too,
+--- with no prompt written (`duplex_foreign_turn.lua`).
 --- @module vibing.infrastructure.adapter.modules.duplex_stream
 
 -- Safe at load time: `cli_runtime` reaches back into the duplex modules only from inside its
@@ -22,6 +23,7 @@
 local BackgroundTasks = require("vibing.infrastructure.adapter.modules.background_tasks")
 local CliRuntime = require("vibing.infrastructure.adapter.modules.cli_runtime")
 local DuplexTurn = require("vibing.infrastructure.adapter.modules.duplex_turn")
+local ForeignTurn = require("vibing.infrastructure.adapter.modules.duplex_foreign_turn")
 local Pool = require("vibing.infrastructure.adapter.modules.duplex_pool")
 local RequestBuilder = require("vibing.infrastructure.adapter.modules.request_builder")
 local Routing = require("vibing.infrastructure.adapter.modules.duplex_routing")
@@ -100,28 +102,20 @@ function M.prompt_uuid(turn_id)
   return "vibing-" .. turn_id
 end
 
---- Start a turn on a resident process.
+--- The process for a turn of vibing's own: reused when its argv still matches, spawned otherwise.
 --- @param params Vibing.DuplexRunParams
---- @return string turn_id
---- @return string process_id
-function M.run(params)
+--- @param chat_key number|string
+--- @return Vibing.DuplexProcess|nil record
+--- @return string|nil err absent with no record when the failure was already handed to `finish`
+local function acquire(params, chat_key)
   local ids = params.ids
-  local chat_key = params.opts.chat_bufnr
   local descriptor = params.descriptor
-
-  local function fail(message)
-    vim.schedule(function()
-      params.finish(TurnOutcome.ended(ids, "", message))
-    end)
-    return ids.turn_id, ids.process_id
-  end
-
   local argv_key, key_err = reuse_key(params)
   if not argv_key then
-    -- The same helper the oneshot path calls twenty lines up, so a missing binary reads as a
-    -- message in both transports rather than as a `cli_command_builder.lua:214:` stack location.
+    -- The same helper the oneshot path calls, so a missing binary reads as a message in both
+    -- transports rather than as a `cli_command_builder.lua:214:` stack location.
     CliRuntime.report_build_failure(ids, key_err, params.finish)
-    return ids.turn_id, ids.process_id
+    return nil, nil
   end
 
   local record, err = Pool.acquire(chat_key, {
@@ -141,7 +135,49 @@ function M.run(params)
     on_exit = Routing.exit_handler(params.adapter),
   })
   if not record then
-    return fail(err)
+    return nil, err or "Could not start the resident CLI process."
+  end
+  -- A turn the CLI started by itself that the chat has not adopted yet goes where its lines went
+  -- before, ahead of this turn — replayed into it, its `result` would end this one.
+  ForeignTurn.flush(record)
+  return record
+end
+
+--- @param record Vibing.DuplexProcess
+--- @return boolean
+local function holds_cli_turn(record)
+  return record._foreign ~= nil
+end
+
+--- Start a turn on a resident process.
+---
+--- With `opts._adopt_cli_turn` the turn is one the CLI already started by itself: nothing is written
+--- to it, and the lines held since its `init` are replayed into the turn opened here.
+--- @param params Vibing.DuplexRunParams
+--- @return string turn_id
+--- @return string process_id
+function M.run(params)
+  local ids = params.ids
+  local chat_key = params.opts.chat_bufnr
+  local descriptor = params.descriptor
+  local adopting = params.opts._adopt_cli_turn == true
+
+  local record, err
+  if adopting then
+    -- `acquire`'s argv comparison is skipped on purpose: the turn is already running under the flags
+    -- the process was spawned with, and a mismatch could only restart the process and lose it.
+    record = Pool.claim(chat_key, holds_cli_turn)
+    err = "The turn the CLI started by itself is no longer running."
+  else
+    record, err = acquire(params, chat_key)
+  end
+  if not record then
+    if err then
+      vim.schedule(function()
+        params.finish(TurnOutcome.ended(ids, "", err))
+      end)
+    end
+    return ids.turn_id, ids.process_id
   end
 
   -- A reused process keeps the id it was spawned with, because that is the one its child
@@ -156,6 +192,17 @@ function M.run(params)
   Routing.idle_context(record, params.event_context.sessionManager)
   params.adapter._processes[record.process_id] = Routing.cancellable_handle(record, chat_key)
   plan_orphan_report(params, record)
+  -- Rewritten every turn like the orphan plan, so a chat that stops supplying it is never offered one.
+  record._on_cli_turn = params.opts.on_cli_turn
+
+  if adopting then
+    -- No `promptUuid`, so `duplex_turn.ends_this_turn` takes the first `result` — the CLI's own.
+    DuplexTurn.open(params, record, chat_key)
+    for _, line in ipairs(ForeignTurn.take(record)) do
+      record.on_line(line, record)
+    end
+    return ids.turn_id, record.process_id
+  end
 
   -- Set before the turn opens, because `duplex_turn` reads it off the context to decide which
   -- `result` is this turn's. Derived from the turn id rather than minted: the two name the same

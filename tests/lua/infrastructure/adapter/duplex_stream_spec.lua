@@ -932,4 +932,154 @@ describe("duplex transport", function()
       assert.equals(0, #reports)
     end)
   end)
+
+  --- The CLI answering a background completion by itself, `init` through `result`, while no turn of
+  --- vibing's is open. Before `duplex_foreign_turn` those lines reached only the idle context and
+  --- nothing of them reached the chat.
+  describe("a turn the CLI started by itself", function()
+    local offers
+
+    local function settle()
+      local drained = false
+      vim.schedule(function()
+        drained = true
+      end)
+      vim.wait(1000, function()
+        return drained
+      end)
+    end
+
+    local function send_offering(prompt, extra)
+      return send(
+        prompt,
+        vim.tbl_extend("force", {
+          on_cli_turn = function(notice, handle)
+            table.insert(offers, { notice = notice, handle = handle })
+          end,
+        }, extra or {})
+      )
+    end
+
+    --- One finished turn with a background launch, then the CLI's own turn in the same shape as the
+    --- capture in `handbook/features/chat-ui.md`.
+    local function cli_turn_after_completion()
+      local call = jobs.only_call()
+      jobs.emit(call, { init_line("sess-1"), task_started_line("sess-1", "task-a", "probe"), result_line("sess-1") })
+      jobs.emit(call, {
+        task_notification_line("sess-1", "task-a"),
+        init_line("sess-1"),
+        text_line("sess-1", "PONG came back"),
+        result_line("sess-1"),
+      })
+      settle()
+      return call
+    end
+
+    before_each(function()
+      offers = {}
+    end)
+
+    it("offers the turn to the chat with the completion drawn between turns as its notice", function()
+      send_offering("fan out")
+      cli_turn_after_completion()
+
+      assert.equals(1, #offers)
+      assert.matches("Subagent finished: probe", offers[1].notice)
+      assert.is_true(offers[1].handle.pending())
+    end)
+
+    it("replays the held turn into an adopted one, which ends on the CLI's result and writes nothing", function()
+      send_offering("fan out")
+      local call = cli_turn_after_completion()
+      local written = #call.stdin
+
+      local adopted = send_offering("notice", { _adopt_cli_turn = true, _session_id = "sess-1" })
+      settle()
+
+      assert.equals(1, #jobs.calls, "adopting spawned a process")
+      assert.equals(written, #call.stdin, "adopting wrote to the CLI")
+      assert.equals(1, #adopted.responses, "the adopted turn did not end on the CLI's result")
+      assert.matches("PONG came back", adopted.responses[1].content)
+      assert.is_nil(adopted.responses[1].error)
+      assert.equals("2.1.273", (adopted.responses[1]._cli_info or {}).version, "the turn's own init was not replayed")
+      assert.is_false(offers[1].handle.pending())
+    end)
+
+    it("adopts a turn whose lines are still arriving", function()
+      send_offering("fan out")
+      local call = jobs.only_call()
+      jobs.emit(call, { init_line("sess-1"), result_line("sess-1") })
+      jobs.emit(call, { init_line("sess-1"), text_line("sess-1", "first ") })
+      settle()
+
+      local adopted = send_offering("notice", { _adopt_cli_turn = true, _session_id = "sess-1" })
+      jobs.emit(call, { text_line("sess-1", "second"), result_line("sess-1") })
+      settle()
+
+      assert.equals(1, #adopted.responses)
+      assert.matches("first second", adopted.responses[1].content)
+    end)
+
+    it("asks once, and replays into the idle context when the chat declines", function()
+      send_offering("fan out")
+      cli_turn_after_completion()
+      offers[1].handle.discard()
+      settle()
+
+      assert.equals(1, #offers, "the declined turn was offered again")
+      assert.is_false(offers[1].handle.pending())
+    end)
+
+    it("does not carry a declined turn's report into the next turn's notice", function()
+      send_offering("fan out")
+      local call = jobs.only_call()
+      jobs.emit(call, { init_line("sess-1"), result_line("sess-1") })
+      jobs.emit(call, { init_line("sess-1"), text_line("sess-1", "declined report"), result_line("sess-1") })
+      settle()
+      offers[1].handle.discard()
+
+      jobs.emit(call, { task_notification_line("sess-1", "task-b"), init_line("sess-1") })
+      settle()
+
+      assert.equals(2, #offers)
+      assert.is_nil(offers[2].notice:find("declined report", 1, true), offers[2].notice)
+    end)
+
+    it("does not let a held result end a turn of vibing's own sent before the chat adopted", function()
+      send_offering("fan out")
+      local call = jobs.only_call()
+      jobs.emit(call, { init_line("sess-1"), result_line("sess-1") })
+      jobs.emit(call, { init_line("sess-1"), result_line("sess-1") })
+
+      local own = send_offering("next", { _session_id = "sess-1" })
+      settle()
+
+      assert.equals(0, #own.responses, "the held result ended the user's turn")
+      local uuid = DuplexStream.prompt_uuid(own.turn_id)
+      jobs.emit(call, { ack_line(uuid), result_line("sess-1", "success", uuid) })
+      assert.equals(1, #own.responses)
+      assert.equals(0, #offers, "a turn flushed before the offer ran was still offered")
+    end)
+
+    it("refuses to adopt when nothing is held", function()
+      send_offering("hi")
+      jobs.emit(jobs.only_call(), { init_line("sess-1"), result_line("sess-1") })
+
+      local adopted = send_offering("notice", { _adopt_cli_turn = true, _session_id = "sess-1" })
+      settle()
+
+      assert.equals(1, #adopted.responses)
+      assert.matches("no longer running", adopted.responses[1].error)
+    end)
+
+    it("holds nothing for a chat that supplied no callback", function()
+      send("hi")
+      local call = jobs.only_call()
+      jobs.emit(call, { init_line("sess-1"), result_line("sess-1") })
+      jobs.emit(call, { init_line("sess-1"), result_line("sess-1") })
+      settle()
+
+      assert.is_nil(Pool.get(CHAT_BUFNR)._foreign)
+    end)
+  end)
 end)
