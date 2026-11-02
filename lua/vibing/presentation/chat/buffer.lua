@@ -503,6 +503,17 @@ function ChatBuffer:is_responding()
   return TurnRegistry.get(self._current_turn_id) ~= nil
 end
 
+---前のターンの締めくくり（`_finish_turn`）がまだバッファに書かれていないか
+---
+---`_handle_response` は `_is_sending` を落としてから `_finish_turn` を `vim.schedule` 越しに走らせる
+---ので、その間は `is_responding()` が false でも新しいターンを始められない。始めると
+---`start_response` が `_assistant_header_line` を上書きし、前のターンの終了時刻が新しいターンの
+---見出しに入る
+---@return boolean
+function ChatBuffer:is_finishing_turn()
+  return self._assistant_header_line ~= nil
+end
+
 ---このターンがエラーで終わったことを記録する
 ---
 ---`send_message.lua` の `_handle_response` から呼ばれる。ターンが終わったこと自体は
@@ -1099,8 +1110,12 @@ function ChatBuffer:_answer_pending_approval()
 end
 
 ---`ProgrammaticSender` はこれを見て呼び出し元に成否を返す
+---@param opts {adopt_cli_turn: boolean?}? `adopt_cli_turn` で、本文をCLIへ送らず、CLIが自分で始めて
+---  保留中のターンを引き取る（`application/chat/cli_initiated_turn.lua`）
 ---@return boolean handled
-function ChatBuffer:send_message()
+function ChatBuffer:send_message(opts)
+  local adopting = opts ~= nil and opts.adopt_cli_turn == true
+
   -- 送信処理中はEnter連打による重複送信を無視する。**ブロック中の承認への答えだけは
   -- 例外**（#788）。`_is_sending` は「`<CR>` からCLI起動まで」ではなく**ターンが終わるまで**
   -- 真で（落とすのは `_handle_response` だけ）、承認はそのターンの**途中**で訊かれる。
@@ -1180,7 +1195,8 @@ function ChatBuffer:send_message()
   -- **その「バッファがそのまま本文になる」が、再試行文を予約できない理由でもある。** ここに
   -- 載っているのは承認の選択肢行で、`message` の差し替えはバッファに触らない。`can_defer_send`
   -- が再試行を断るので予約には入らず、この経路は通常送信のまま上限のハンドリングに落ちる
-  if self:_try_schedule_instead_of_send(message, is_approval_retry) then
+  -- 引き取るターンはCLIの中で既に走っているので、遅らせる対象にならない
+  if not adopting and self:_try_schedule_instead_of_send(message, is_approval_retry) then
     self._is_sending = false
     return true
   end
@@ -1303,6 +1319,7 @@ function ChatBuffer:send_message()
     clear_forked_from = function()
       self:update_frontmatter("forked_from", nil)
     end,
+    adopt_cli_turn = adopting,
   }
 
   -- 停止理由は「直前のターンがなぜ止まったか」なので、次のターンが実際に走り出すここで捨てる。

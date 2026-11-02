@@ -10,6 +10,7 @@
 --- @module vibing.infrastructure.adapter.modules.duplex_routing
 
 local BackgroundTasks = require("vibing.infrastructure.adapter.modules.background_tasks")
+local ForeignTurn = require("vibing.infrastructure.adapter.modules.duplex_foreign_turn")
 local Pool = require("vibing.infrastructure.adapter.modules.duplex_pool")
 local StreamHandler = require("vibing.infrastructure.adapter.modules.stream_handler")
 local TurnOutcome = require("vibing.infrastructure.adapter.modules.turn_outcome")
@@ -71,11 +72,15 @@ function M.line_router(chat_key, descriptor)
     if turn and turn.touch then
       turn.touch()
     end
+    if ForeignTurn.hold(record, line) then
+      return
+    end
     local context = turn and turn.context or record._idle_context
     if context then
       -- A protocol can render from deferred callbacks too, so it resolves its context itself.
       descriptor.duplex.process_line(record, line)
     end
+    ForeignTurn.after_decode(record, line)
   end
 end
 
@@ -211,6 +216,10 @@ function M.idle_context(record, session_manager)
     output = {},
     errorOutput = {},
     _decoder_state = record.decoder_state,
+    -- A turn opening here is one the CLI started by itself (`duplex_foreign_turn`).
+    onTurnStart = function()
+      ForeignTurn.begin(record)
+    end,
   }
   BackgroundTasks.share(record._idle_context, record)
 end

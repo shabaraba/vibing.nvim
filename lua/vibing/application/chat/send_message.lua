@@ -36,6 +36,7 @@ local Fs = require("vibing.core.utils.fs")
 ---@field clear_sending fun() 送信中フラグを解除
 ---@field mark_turn_error fun()? このターンがエラーで終わったことを記録（chat_statusのerror判定用）
 ---@field get_cwd fun(): string|nil worktreeのcwdを取得
+---@field adopt_cli_turn boolean? このターンはCLIが自分で始めたものを引き取るだけで、本文はCLIへ送らない
 
 ---綴り間違いの警告済み集合。executeは1メッセージごとに走るので、これがないと同じ誤字の
 ---チャットで送信のたびに同じ警告が出続ける
@@ -227,6 +228,12 @@ function M.execute(adapter, callbacks, message, config)
         process_killed
       )
     end,
+    -- 常駐プロセスのCLIがターンの合間に自分で始めたターン（background subagentの完了報告）を
+    -- このチャットに引き取らせる。`on_subagents_orphaned` と同じくプロセスの寿命に属する
+    on_cli_turn = function(notice, handle)
+      require("vibing.application.chat.cli_initiated_turn").adopt(bufnr, notice, handle)
+    end,
+    _adopt_cli_turn = callbacks.adopt_cli_turn == true or nil,
     on_approval_required = function(tool, input, options, hook_request_id, waiting, kind)
       -- permission.lua の vim.schedule 内から呼ばれるためすでにメインスレッド上
       -- 二重 vim.schedule を避けることで _pending_approval が add_user_section より確実に先に設定される

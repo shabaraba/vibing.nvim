@@ -35,6 +35,7 @@ local DuplexTurn = require("vibing.infrastructure.adapter.modules.duplex_turn")
 ---| { kind: "error", message: string, fatal: boolean?, prompt_uuid: string? } # fatal: the CLI declared the turn failed
 ---| { kind: "hook_blocked", reason: string, unavailable: boolean?, name: string?, input: table? }
 ---| { kind: "stop_blocked" }                                         # a Stop hook refused to let the turn end here
+---| { kind: "turn_start" }                                           # a turn opened, whoever asked for it
 ---| { kind: "turn_end", subtype: string?, prompt_uuid: string? }     # a turn is over; whose, and the process may not be
 ---| { kind: "structured_output", value: table, prompt_uuid: string? }
 ---| { kind: "prompt_ack", prompt_uuid: string, state: string? }      # the CLI named back a prompt written to its stdin
@@ -395,6 +396,14 @@ end
 -- `onTurnEnd` is never set, so the event is decoded and dropped. Delivered after the `error` arm
 -- above (the decoder emits them in that order), so a fatal result has already landed in
 -- `resultErrors` by the time the turn is completed on it.
+-- Only the idle context of a resident process sets `onTurnStart`: inside a turn vibing opened, the
+-- `init` is that turn's own and nothing needs adopting.
+handlers.turn_start = function(_, context)
+  if context.onTurnStart then
+    context.onTurnStart()
+  end
+end
+
 handlers.turn_end = function(event, context)
   if context.onTurnEnd then
     context.onTurnEnd(event)

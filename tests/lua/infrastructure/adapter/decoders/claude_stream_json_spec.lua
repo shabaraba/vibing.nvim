@@ -89,7 +89,8 @@ describe("decoders.claude_stream_json", function()
     assert.is_false(vim.tbl_contains(kinds(second), "session"))
   end)
 
-  it("carries init facts out as cli_info and proves the CLI alive", function()
+  -- `turn_start` is how a resident process notices a turn the CLI opened by itself.
+  it("carries init facts out as cli_info, marks a turn opening and proves the CLI alive", function()
     local events = decode({}, {
       type = "system",
       subtype = "init",
@@ -102,7 +103,8 @@ describe("decoders.claude_stream_json", function()
       { kind = "cli_info", version = "2.1.231", model = "claude-opus-5", tools = 2, mcp_servers = 1 },
       events[1]
     )
-    assert.equals("first_response", events[2].kind)
+    assert.equals("turn_start", events[2].kind)
+    assert.equals("first_response", events[3].kind)
   end)
 
   it("streams text deltas and nothing else from stream_event", function()

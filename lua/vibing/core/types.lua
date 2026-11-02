@@ -53,6 +53,8 @@
 ---@field on_tool_use_full fun(tool: string, input: table)? 表示用に間引かない生のツール入力（eval用）
 ---@field on_stop_blocked fun()? Stop hook がターンの終了を止めた。ここまでの本文は、モデルが止まろうとした返答
 ---@field on_subagents_orphaned fun(unreported: Vibing.BackgroundTask[], recovered: Vibing.RecoveredSubagent[])? 常駐プロセス（duplex）が回収され、まだ報告していないbackground subagentを連れていった（#840）。**ターンではなくプロセスの寿命に属する唯一のコールバック** — 呼ばれるのはこれを渡したターンの中ではなく、そのプロセスの最後のターンより後
+---@field on_cli_turn fun(notice: string, handle: Vibing.CliTurnHandle)? 常駐プロセスのCLIが、ターンの合間に自分で新しいターンを始めた（background subagentの完了など）。`notice` はその直前にアイドル中に描かれた完了行。チャットは `_adopt_cli_turn` 付きで送信してそのターンを引き取るか、`handle.discard()` で見送る。`on_subagents_orphaned` と同じくプロセスの寿命に属する
+---@field _adopt_cli_turn boolean? プロンプトを書かず、CLIが自分で始めて保留中のターンを引き取る（`duplex_foreign_turn.lua`）
 ---@field _session_id string?
 ---@field _session_id_explicit boolean?
 ---@field _ai_purpose "helpers"? Internal helper selection for restricted, tool-using requests.

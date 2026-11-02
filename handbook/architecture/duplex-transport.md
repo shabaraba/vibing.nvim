@@ -159,8 +159,41 @@ strings are echoed unchanged.
 
 Nothing is discarded. While a vibing turn is open, `line_router` feeds every line to that turn's
 context, so the CLI's own answer to a notification renders **inside the section the user is
-reading** — which is what #829 wanted in the first place. Only the `result` is refused. A foreign
-turn that runs while no vibing turn is open is a different hole, and still `#840`'s.
+reading** — which is what #829 wanted in the first place. Only the `result` is refused.
+
+#### A foreign turn while no vibing turn is open is adopted
+
+This is the common case, not the rare one: a background subagent usually finishes while the chat is
+idle. Those lines went to `_idle_context`, which has no `onChunk`, so the completion line and the
+model's report were decoded into a buffer nobody read. The chat stayed `idle`, and no orchestrator
+was told anything. Measured on claude 2.1.309, the sequence between turns is `task_notification`,
+`background_tasks_changed`, `init`, the answer, then a `result` that carries no `user_message_uuid`.
+
+The claude decoder emits `turn_start` on `init`. Only the idle context reacts to it, through
+`onTurnStart` → `duplex_foreign_turn.begin`. From that `init` on, the router **holds** the lines on
+the record instead of decoding them. The chat is offered the turn through `opts.on_cli_turn`; like
+`on_subagents_orphaned`, that callback lives for the process. The offer is scheduled, because
+adopting starts a turn that calls back into the pool. Whatever the idle context drew before the
+`init` — the `Subagent finished` line — becomes the offer's notice and is cleared off the idle
+context.
+
+Adopting goes through the ordinary send path with `_adopt_cli_turn`. `duplex_stream.run` then takes
+the process with `Pool.claim`, which skips the argv comparison: the turn is already running under the
+flags the process was spawned with. It opens a turn with no `promptUuid` and writes nothing. The
+held lines are replayed through `record.on_line`. With no prompt acknowledged,
+`ends_this_turn` takes the first `result` — the CLI's own.
+
+Two orderings are load-bearing:
+
+- **A turn of vibing's own flushes the held lines before it opens.** Replayed into that turn, the
+  held `result` would end it, since its prompt is not acknowledged yet.
+- **A flush must not start holding again.** The held `init` passes through the idle context once
+  more, and `_declining` keeps it from re-offering the turn every tick.
+
+The chat side is `application/chat/cli_initiated_turn.lua`. A chat still finishing its previous
+turn is waited for until `VibingResponseDone`, because the CLI opens its own turn milliseconds after
+the previous `result`. A chat with an unsent draft declines, with a warning. `tests/e2e/duplex_cli_initiated_turn_spec.lua`
+fails without this, timing out on the second turn.
 
 ### 2. The spawn primitive is different
 
