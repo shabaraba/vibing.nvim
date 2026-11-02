@@ -49,6 +49,10 @@ Read the linked file before changing that path.
 - **Under duplex the ledger belongs to the process, not the turn.** A `task_notification` arrives
   after the turn that launched the subagent — usually between turns, into `_idle_context` — so a
   per-turn ledger never sees the entry come off and reports a subagent that already reported.
+- **A turn the CLI starts by itself between turns is adopted, never answered.** Its lines are held
+  from its `init` (`duplex_foreign_turn.lua`) and replayed into a turn the chat opens with
+  `_adopt_cli_turn`, which writes nothing to stdin. A turn of vibing's own must flush the held lines
+  before it opens, or the held `result` ends it. `handbook/architecture/duplex-transport.md`.
 - **A reclaim route declares what it meant; nothing downstream infers it.** `duplex_pool` resolves
   the route into a `Vibing.DuplexReclaimVerdict` before announcing it, so no reason name appears in a
   signature outside that module. Two separate bits: `reports` (false only for `QUIET_RECLAIM`'s four
