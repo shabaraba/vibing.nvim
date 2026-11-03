@@ -8,7 +8,8 @@ local ToolVocabulary = require("vibing.infrastructure.adapter.modules.opencode_t
 ---@type Vibing.BackendDescriptor
 local M = {
   id = "opencode",
-  process = "oneshot",
+  process = "duplex",
+  duplex = require("vibing.infrastructure.adapter.modules.opencode_duplex_protocol"),
 
   features = {
     streaming = true,
@@ -24,13 +25,15 @@ local M = {
     agent_id = "opencode",
     binary = OpencodeCommandBuilder.BINARY,
     parts = {
+      { kind = "args", "run", unless = "duplex" },
+      { kind = "args", "acp", when = "duplex" },
       { kind = "args", "--standalone" },
-      { kind = "args", "--format", "json" },
-      { kind = "extra", fn = OpencodeCommandBuilder.agent_args },
-      { kind = "extra", fn = OpencodeCommandBuilder.auto_args },
-      { kind = "model", flag = "--model", names = "native" },
-      { kind = "resume", flag = "--session", fork = "--fork" },
-      { kind = "prompt", terminator = "--", language_prefix = true },
+      { kind = "args", "--format", "json", unless = "duplex" },
+      { kind = "extra", fn = OpencodeCommandBuilder.agent_args, unless = "duplex" },
+      { kind = "extra", fn = OpencodeCommandBuilder.auto_args, unless = "duplex" },
+      { kind = "model", flag = "--model", names = "native", unless = "duplex" },
+      { kind = "resume", flag = "--session", fork = "--fork", unless = "duplex" },
+      { kind = "prompt", terminator = "--", language_prefix = true, unless = "duplex" },
     },
   },
   build = OpencodeCommandBuilder.build,
