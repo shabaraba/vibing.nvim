@@ -205,6 +205,19 @@ M.AGENTS = {
       { value = "grok-4.5", description = "Grok 4.5" },
     },
   },
+  opencode = {
+    id = "opencode",
+    adapter_module = "vibing.infrastructure.adapter.opencode_cli",
+    descriptor_module = "vibing.infrastructure.adapter.backends.opencode",
+    command_builder_module = "vibing.infrastructure.adapter.modules.opencode_command_builder",
+    export_name = "OpenCodeCLIAdapter",
+    description = "OpenCode CLI",
+    config_fields = {},
+    discovery_module = "vibing.infrastructure.adapter.models.opencode",
+    models = {
+      { value = "opencode/big-pickle", description = "OpenCode Big Pickle" },
+    },
+  },
   pi = {
     id = "pi",
     process_default = "duplex",
@@ -248,7 +261,7 @@ M.AGENTS = {
 
 ---列挙順。`pairs()` の順序は不定なので、ユーザーに見える一覧はすべてこれを経由する。
 ---@type string[]
-M.ORDER = { "claude", "codex", "copilot", "grok", "pi" }
+M.ORDER = { "claude", "codex", "copilot", "grok", "opencode", "pi" }
 
 ---未知・未指定のエージェントのフォールバック先
 ---@type string

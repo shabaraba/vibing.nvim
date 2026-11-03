@@ -29,7 +29,7 @@ local M = {}
 
 --- Every transport, in the order the ADR lists them.
 --- @type string[]
-M.NAMES = { "settings_file", "config_override", "plugin_dir", "project_dir", "extension_file" }
+M.NAMES = { "settings_file", "config_override", "plugin_dir", "project_dir", "extension_file", "env_config" }
 
 --- Every dialect `bin/hooks/pre-tool-use.sh` knows how to speak. Adding one means adding a
 --- `case` branch to that script; the conformance spec checks the two agree.
@@ -54,6 +54,8 @@ local generators = {
   --- An in-process extension the CLI loads with `--extension`, which spawns the shared script
   --- itself. The only transport whose CLI offers no external-process hook at all.
   extension_file = "vibing.infrastructure.hooks.pi_settings_generator",
+  --- A plugin directory injected through an environment-provided config (OpenCode).
+  env_config = "vibing.infrastructure.hooks.opencode_settings_generator",
 }
 
 --- Required at call time rather than captured: specs stub a generator's `ensure` on the module
@@ -84,6 +86,10 @@ local installers = {
   --- gate of its own to fall back on.
   extension_file = function(cwd, dialect)
     return require(generators.extension_file).ensure(cwd, dialect)
+  end,
+  --- Returns the plugin directory, injected through OPENCODE_CONFIG_CONTENT.
+  env_config = function(cwd, dialect)
+    return require(generators.env_config).ensure(cwd, dialect)
   end,
 }
 

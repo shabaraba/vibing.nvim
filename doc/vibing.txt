@@ -796,7 +796,7 @@ with YAML frontmatter: >
       - .vibing/chat/orchestrator.md
     continued_from: .vibing/chat/long.md     # optional: handed off from
     working_dir: .vibing/worktrees/fix-auth   # optional, relative to git root
-    agent: claude                             # claude|codex|copilot|grok|pi
+    agent: claude                     # claude|codex|copilot|grok|opencode|pi
     mode: code                                # code | plan | explore
     model: sonnet
     effort: default                           # CLI/model default; or low..max

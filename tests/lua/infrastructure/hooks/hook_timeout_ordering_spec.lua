@@ -210,7 +210,7 @@ describe("hook timeout ordering", function()
       -- The floor stays in copilot's descriptor because it is a real measurement; what is asserted
       -- here is that the floor alone does not switch waiting on.
       -- Pi has no measured wait floor. Registering chat ownership alone must not enable waiting.
-      local expected = { claude = true, copilot = false, codex = false, grok = false, pi = false }
+      local expected = { claude = true, copilot = false, codex = false, grok = false, opencode = false, pi = false }
       for _, def in ipairs(Agents.list()) do
         local descriptor = require(def.descriptor_module)
         assert.equals(

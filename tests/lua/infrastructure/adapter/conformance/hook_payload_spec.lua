@@ -53,6 +53,11 @@ local PAYLOADS = {
     path = { toolName = "edit", input = { path = "lua/a.lua", oldText = "a", newText = "b" } },
     shell = { toolName = "bash", input = { command = "ls" } },
   },
+  -- OpenCode hook payload. The plugin forwards `tool`/`input` from execute.before.
+  opencode = {
+    path = { tool = "edit", input = { path = "lua/a.lua", oldText = "a", newText = "b" } },
+    shell = { tool = "shell", input = { command = "ls" } },
+  },
 }
 
 --- @param payload table one of the `path` entries above; its own `canonical` names the expectation
