@@ -2,7 +2,6 @@
 --- and timers; this module is only the wire.
 --- @module vibing.infrastructure.adapter.modules.grok_duplex_protocol
 
-local NativeApproval = require("vibing.infrastructure.adapter.modules.grok_native_approval")
 local Process = require("vibing.infrastructure.adapter.modules.duplex_process")
 local TurnOutcome = require("vibing.infrastructure.adapter.modules.turn_outcome")
 
@@ -142,6 +141,9 @@ function M.send_prompt(record, prompt, params)
       if opts.permission_mode == "plan" then
         request(record, "session/set_config_option", { sessionId = id, configId = "mode", value = "plan" }, function() end)
       end
+      if type(opts.effort) == "string" and opts.effort ~= "" and opts.effort ~= "default" then
+        request(record, "session/set_config_option", { sessionId = id, configId = "effort", value = opts.effort }, function() end)
+      end
       send_prompt_now(record, prompt)
     end)
   end)
@@ -167,15 +169,6 @@ function M.process_line(record, line)
   end
 
   if msg.id ~= nil then
-    if NativeApproval.handles(msg.method) then
-      local answered, notice = NativeApproval.handle(record, msg)
-      if not answered then
-        fail(record, "Could not answer a OpenCode permission request.")
-      elseif notice then
-        render(record, { method = "vibing/requestDenied", params = { message = notice } })
-      end
-      return
-    end
     if
       not Process.write(record, {
         jsonrpc = "2.0",
