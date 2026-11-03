@@ -27,7 +27,7 @@ local M = {
     parts = {
       { kind = "args", "run", unless = "duplex" },
       { kind = "args", "acp", when = "duplex" },
-      { kind = "args", "--standalone" },
+      { kind = "args", "--standalone", unless = "duplex" },
       { kind = "args", "--format", "json", unless = "duplex" },
       { kind = "extra", fn = OpencodeCommandBuilder.agent_args, unless = "duplex" },
       { kind = "extra", fn = OpencodeCommandBuilder.auto_args, unless = "duplex" },
