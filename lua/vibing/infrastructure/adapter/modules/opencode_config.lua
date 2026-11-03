@@ -5,6 +5,8 @@ local Notify = require("vibing.core.utils.notify")
 local PluginDirs = require("vibing.infrastructure.plugins.plugin_dirs")
 local PluginContents = require("vibing.infrastructure.plugins.plugin_contents")
 local SettingsGenerator = require("vibing.infrastructure.hooks.settings_generator")
+local AskUserQuestionInstructions = require("vibing.infrastructure.adapter.modules.ask_user_question_instructions")
+local InstanceKey = require("vibing.infrastructure.rpc.instance_key")
 local WaitBudget = require("vibing.infrastructure.hooks.wait_budget")
 
 local M = {}
@@ -130,6 +132,21 @@ function M.apply(env, opts, config)
   elseif plugin_dir then
     -- Deny Code Mode's execute tool.
     table.insert(cfg.permissions, { action = "execute", resource = "*", effect = "deny" })
+  end
+
+  -- Generate instruction file with AskUserQuestion instructions.
+  local vibing_dir = (opts.cwd or vim.fn.getcwd()) .. "/.vibing"
+  local instr_path = vibing_dir .. "/" .. InstanceKey.name("opencode-instructions-", ".md")
+  local Fs = require("vibing.core.utils.fs")
+  Fs.ensure_dir(vibing_dir)
+  local f = io.open(instr_path, "w")
+  if f then
+    f:write(table.concat(AskUserQuestionInstructions.lines(), "\n") .. "\n")
+    f:close()
+  end
+  cfg.instructions = cfg.instructions or {}
+  if not vim.tbl_contains(cfg.instructions, instr_path) then
+    table.insert(cfg.instructions, instr_path)
   end
 
   env.OPENCODE_CONFIG_CONTENT = vim.json.encode(cfg)

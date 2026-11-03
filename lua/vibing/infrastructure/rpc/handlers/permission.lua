@@ -486,9 +486,9 @@ function M.check_tool_permission(params)
   -- (`question_block.lua`), and ending the turn that way is a step the model can take itself, so
   -- there is nothing to rescue by tearing the process down.
   if tool_name == "AskUserQuestion" then
-    local reason = "AskUserQuestion is unavailable in vibing.nvim. To ask the user to choose, end "
-      .. "your reply with a ```" .. AskUserQuestionInstructions.FENCE .. " block as your system prompt "
-      .. "describes, and stop."
+    local reason = "The question tool (AskUserQuestion) is unavailable in vibing.nvim. To ask the user to "
+      .. "choose, end your reply with a ```" .. AskUserQuestionInstructions.FENCE .. " block as your "
+      .. "system prompt describes, and stop."
     write_hook_response(request_id, "deny", reason)
     return { status = "denied", reason = reason }
   end
