@@ -58,6 +58,15 @@ local PAYLOADS = {
     path = { tool = "edit", input = { path = "lua/a.lua", oldText = "a", newText = "b" } },
     shell = { tool = "shell", input = { command = "ls" } },
   },
+  -- Command Code 1.88.2, read off its own PreToolUse hook (a throwaway project with a dumping
+  -- hook in `.commandcode/settings.json`). Claude-shaped already — `tool_name` / `tool_input` —
+  -- because the CLI's hook wire is Claude's. The shell call is the shape worth keeping: the CLI
+  -- splits it across `command` and `args`, and `normalize_input` rebuilds the line the granular
+  -- rules match on (#564's `Bash(git push:*)` case).
+  commandcode = {
+    path = { tool_name = "edit_file", tool_input = { file_path = "lua/a.lua", old_string = "a", new_string = "b" } },
+    shell = { tool_name = "shell_command", tool_input = { command = "ls", args = {} } },
+  },
 }
 
 --- @param payload table one of the `path` entries above; its own `canonical` names the expectation

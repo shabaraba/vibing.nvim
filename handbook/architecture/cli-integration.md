@@ -366,24 +366,62 @@ and dialect from `hooks/transports.lua`; the five generators described below are
   so, because `can_use_tool.is_vibing_nvim_mcp_tool` matches the hyphenated spelling directly
   rather than going through `matchers.lua`.
 
+- **Command Code's bridge is a generated mod, and the CLI runs in bypass underneath it.**
+  Command Code reads Claude-shaped hooks from `.commandcode/settings.json` and
+  `settings.local.json`, but it has **no `--settings` flag, no config-content environment and no
+  plugin directory** — and both files it does read belong to the user. The one per-run extension
+  point is `--mod <path>` (`hooks/commandcode_settings_generator.lua`): a TypeScript file whose
+  `cmd.hooks({beforeToolCall})` may block a tool, generated into
+  `<cwd>/.vibing/commandcode-mod/` and spawned against the same `bin/hooks/pre-tool-use.sh` and the
+  same `claude` dialect as every other backend. It loads in **both** transports — under `-p` and
+  ahead of the `acp` subcommand (measured, 1.88.2) — which is what lets one bridge gate oneshot and
+  duplex alike.
+
+  Because a mod hook is in-process and its file is one Command Code will warn-and-continue past if
+  it fails to load, the gate is only as strong as the CLI's own fallback. Measured on 1.88.2, that
+  fallback is all-or-nothing: in `-p` mode file writes and shell commands are refused unless
+  `--yolo` (`--dangerously-skip-permissions`) is passed, and **neither `--permission-mode` —
+  including `yolo` and `accept-edits` — nor a `permissions.allow` entry in `.commandcode/settings.json`
+  opens it.** So `permission_args` passes `--yolo` _whenever the hook is installed_ and the bridge is
+  the real gate (Pi's shape, for the same reason: a CLI with no usable headless gate), while a turn
+  whose hook could not be installed is left as the CLI would have it — writes refused — rather than
+  opened with nothing behind it. `plan` maps to Command Code's own `--plan`.
+
+  Two shapes are the CLI's own. Its **PreToolUse wire payload is already Claude's**
+  (`tool_name` / `tool_input`, deny by exit 2 + stderr), read off a dumping hook in a throwaway
+  project. Its **shell call splits across `command` and `args`** rather than arriving as one command
+  line, so `commandcode_tool_vocabulary.normalize_input` rebuilds it — without that a
+  `Bash(git push:*)` rule would see only `git`.
+
+- **`commandcode acp` needs its session options awaited, not raced.** Command Code handles
+  `session/set_config_option` asynchronously: a `session/prompt` written in the same tick reaches the
+  agent while the option call is still in flight, the prompt marks the session busy, and **both**
+  calls then fail with `A prompt is already running for this session` (measured, 1.88.2). The
+  protocol therefore chains model → mode → prompt, each on the previous reply — and skips the model
+  call entirely when `session/new`'s own `configOptions` already names it. ACP also carries **no
+  native tool name** on a `tool_call` (only a prose `title` and a coarse `kind`), so the duplex
+  renderer names a call by its kind; the permission path never sees that, because the mod bridge
+  (above) forwards the CLI's real tool name.
+
 ## Asking a CLI Which Models It Has
 
 `agents.lua`'s per-backend `models` lists were hand-written, so they went stale on every CLI
 release — the pair that triggered this were two codex models that no longer existed alongside a
-missing `gpt-6-sol`, and a grok model that was gone. Two of the four CLIs can simply be asked, and
+missing `gpt-6-sol`, and a grok model that was gone. Three of the CLIs can simply be asked, and
 `infrastructure/adapter/models/` does, keeping the constants as the fallback.
 
 **What each CLI costs to ask, measured.**
 
-| Backend | Command              | Measured                                                                                                                                                                                                          |
-| ------- | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| codex   | `codex debug models` | codex-cli 0.157.1: 9 entries, 515,228 bytes of JSON, **20ms**. Read from the binary's own catalogue — no network round trip, no API call, and it answers logged out. `vim.json.decode` on that payload is 1.12ms. |
-| grok    | `grok models`        | grok 1.0.34: **660ms**, exit 0, all of it on **stdout** with stderr empty. Answers while logged out: "You are not authenticated." is printed above the list rather than instead of it.                            |
-| claude  | —                    | Nothing to ask. `--model` takes an alias (`opus` / `sonnet` / `fable` / `haiku`) that the CLI itself resolves to the latest model of that family, so the aliases are the whole answer and do not age.             |
-| copilot | —                    | No equivalent exists; the model list is reachable only from `/model` inside the TUI.                                                                                                                              |
+| Backend     | Command                     | Measured                                                                                                                                                                                                                                                                           |
+| ----------- | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| codex       | `codex debug models`        | codex-cli 0.157.1: 9 entries, 515,228 bytes of JSON, **20ms**. Read from the binary's own catalogue — no network round trip, no API call, and it answers logged out. `vim.json.decode` on that payload is 1.12ms.                                                                  |
+| grok        | `grok models`               | grok 1.0.34: **660ms**, exit 0, all of it on **stdout** with stderr empty. Answers while logged out: "You are not authenticated." is printed above the list rather than instead of it.                                                                                             |
+| commandcode | `commandcode --list-models` | commandcode 1.88.2: **~4.3s**, exit 0, one id per line grouped under bare section headings. Slower than the others, and the reason the probe's own timeout is 10s; the parse reads every id shape the catalogue uses (`vendor/model`, `family-name`, and the `:free` tier suffix). |
+| claude      | —                           | Nothing to ask. `--model` takes an alias (`opus` / `sonnet` / `fable` / `haiku`) that the CLI itself resolves to the latest model of that family, so the aliases are the whole answer and do not age.                                                                              |
+| copilot     | —                           | No equivalent exists; the model list is reachable only from `/model` inside the TUI.                                                                                                                                                                                               |
 
-Neither command spends a token: no inference request is made, which is what makes asking on the
-completion path acceptable at all.
+None of these commands spends a token: no inference request is made, which is what makes asking on
+the completion path acceptable at all.
 
 **Two things that are easy to get wrong here.**
 

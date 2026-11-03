@@ -1,0 +1,65 @@
+--- The Command Code CLI: `commandcode -p --output-format json` (oneshot) or `commandcode acp`
+--- (ACP over stdio, duplex).
+--- @module vibing.infrastructure.adapter.backends.commandcode
+
+local CommandBuilder = require("vibing.infrastructure.adapter.modules.commandcode_command_builder")
+local CommandCodeEventProcessor = require("vibing.infrastructure.adapter.modules.commandcode_event_processor")
+local ToolVocabulary = require("vibing.infrastructure.adapter.modules.commandcode_tool_vocabulary")
+
+---@type Vibing.BackendDescriptor
+local M = {
+  id = "commandcode",
+  -- A ceiling, not a default: `commandcode acp` is opt-in through `ai.agents.commandcode.process`
+  -- or a chat's own `process:` frontmatter, exactly as it is for opencode.
+  process = "duplex",
+  duplex = require("vibing.infrastructure.adapter.modules.commandcode_duplex_protocol"),
+
+  features = {
+    streaming = true,
+    tools = true,
+    model_selection = true,
+    context = true,
+    session = true,
+    dynamic_permissions = true,
+    structured_output = false,
+  },
+
+  request = {
+    agent_id = "commandcode",
+    binary = CommandBuilder.BINARY,
+    parts = {
+      -- Every global flag goes **before** the `acp` subcommand: `commandcode acp` takes no options
+      -- of its own (`acp --help` lists only `-h`), where the same flags ahead of it are accepted
+      -- (measured on 1.88.2).
+      { kind = "hook_arg", flag = "--mod", when = "hook_arg", unless = "lightweight" },
+      { kind = "extra", fn = CommandBuilder.permission_args, unless = "lightweight" },
+      { kind = "args", "--output-format", "json", unless = "duplex" },
+      { kind = "args", "--no-session", when = "lightweight" },
+      { kind = "model", flag = "--model", names = "native", unless = "duplex" },
+      { kind = "effort", flag = "--effort", unless = "duplex" },
+      { kind = "resume", flag = "--resume", fork = "--fork-session", unless = "duplex" },
+      { kind = "args", "acp", when = "duplex" },
+      -- `-p` takes the prompt as its value and reads stdin when it is absent; on duplex the prompt
+      -- travels in the ACP `session/prompt` request instead, so this part drops out.
+      { kind = "prompt", flag = "-p", language_prefix = true, unless = "duplex" },
+    },
+  },
+  build = CommandBuilder.build,
+  event_processor = CommandCodeEventProcessor,
+
+  -- A generated TypeScript mod, handed over with `--mod`; it spawns the shared hook script. Both
+  -- transports load it (`--mod` works with `-p` and with `acp`), and `keep_in_bypass` keeps the
+  -- git-snapshot baseline running in bypassPermissions — which matters more here than elsewhere,
+  -- because the CLI is always in bypass so that the bridge can be the gate.
+  hook = { transport = "mod_file", dialect = "claude", keep_in_bypass = true },
+
+  apply_env = CommandBuilder.apply_env,
+
+  vocabulary = ToolVocabulary,
+
+  register_chat_bufnr = true,
+
+  stdin = "",
+}
+
+return M

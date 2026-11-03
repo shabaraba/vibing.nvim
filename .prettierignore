@@ -32,6 +32,9 @@ pnpm-lock.yaml
 .grok/
 .codex/
 
+# Command Code's own per-project state, written when it runs in this checkout
+.commandcode/
+
 # Symlink to CLAUDE.md; prettier would check the same bytes twice
 AGENTS.md
 

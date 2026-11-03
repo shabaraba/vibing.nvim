@@ -15,6 +15,10 @@ package-lock.json.backup
 .grok/
 .codex/
 
+# Command Code's own per-project state (settings.json, taste), written when it runs here and not
+# part of this repository.
+.commandcode/
+
 # Serena MCP memory
 .serena/
 
