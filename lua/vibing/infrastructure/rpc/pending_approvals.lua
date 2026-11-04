@@ -63,6 +63,13 @@ function M.resolve(request_id, decision, reason)
   pending[request_id] = nil
   stop_timer(entry)
   HookResponse.write(request_id, decision, reason)
+
+  -- The orchestrator's notice window is per chat and is only meaningful while something is
+  -- pending. Dropping it once the last approval is gone is what lets the next round start from a
+  -- fresh count; `forget` on buffer deletion was the only other place that ever did.
+  if entry.chat_bufnr and not M.has_for_chat(entry.chat_bufnr) then
+    require("vibing.application.chat.completion_notifier").forget_approval_notices(entry.chat_bufnr)
+  end
   return true
 end
 

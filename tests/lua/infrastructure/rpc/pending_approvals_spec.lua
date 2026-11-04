@@ -58,6 +58,48 @@ describe("pending_approvals", function()
     assert.equals(0, Pending.count())
   end)
 
+  describe("the orchestrator's notice window", function()
+    -- `announced` is compared against the count of approvals seen, so a window kept past the last
+    -- approval makes the next round look like "no increase" on a notifier that never forgot.
+    local Notifier = require("vibing.application.chat.completion_notifier")
+    local original
+    local forgotten
+
+    before_each(function()
+      original = Notifier.forget_approval_notices
+      forgotten = {}
+      Notifier.forget_approval_notices = function(bufnr)
+        table.insert(forgotten, bufnr)
+      end
+    end)
+
+    after_each(function()
+      Notifier.forget_approval_notices = original
+    end)
+
+    it("is dropped when the last approval of the chat is answered", function()
+      Pending.open({ request_id = "r1", chat_bufnr = 7 })
+      Pending.resolve("r1", "defer")
+      assert.same({ 7 }, forgotten)
+    end)
+
+    it("is kept while another approval of the same chat is still waiting", function()
+      Pending.open({ request_id = "r1", chat_bufnr = 7 })
+      Pending.open({ request_id = "r2", chat_bufnr = 7 })
+      Pending.resolve("r1", "defer")
+      assert.same({}, forgotten)
+      Pending.resolve("r2", "defer")
+      assert.same({ 7 }, forgotten)
+    end)
+
+    it("is not touched by another chat's approval", function()
+      Pending.open({ request_id = "r1", chat_bufnr = 7 })
+      Pending.open({ request_id = "r2", chat_bufnr = 9 })
+      Pending.resolve("r2", "defer")
+      assert.same({ 9 }, forgotten)
+    end)
+  end)
+
   it("carries a deny's reason, which is the only way it reaches the model", function()
     Pending.open({ request_id = "r1", chat_bufnr = 7 })
     Pending.resolve("r1", "deny", "because")

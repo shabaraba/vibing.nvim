@@ -3,6 +3,7 @@ local view = require("vibing.presentation.chat.view")
 local ProgrammaticSender = require("vibing.presentation.chat.modules.programmatic_sender")
 local notify = require("vibing.core.utils.notify")
 local OrchestrationLink = require("vibing.application.chat.orchestration_link")
+local ChatLocator = require("vibing.application.chat.chat_locator")
 
 describe("CompletionNotifier", function()
   ---モジュールレベルの購読テーブルはspec間で共有されるので、毎回requireし直して捨てる。
@@ -22,6 +23,9 @@ describe("CompletionNotifier", function()
   ---既定は `Request`（＝関係が未記録の2チャット。実物の `direction` も名前のないバッファには
   ---これを返すので、この spec の既存ケースは全部そこに乗っている）
   local directions = {}
+  ---`recorded_orchestrators[worker] = { parent_bufnr, ... }` — frontmatter の `orchestrated_by` が
+  ---指す、いま開いているオーケストレーター。開いていないものは `nil` の bufnr として返る
+  local recorded_orchestrators = {}
 
   ---チャットバッファに見える実バッファを1つ作る
   ---@return number bufnr
@@ -61,8 +65,17 @@ describe("CompletionNotifier", function()
     originals.warn = notify.warn
     originals.list_chat_buffers = view.list_chat_buffers
     originals.direction = OrchestrationLink.direction
+    originals.resolve_all = ChatLocator.resolve_all
 
     buffers, responding, drafts, sends, warnings = {}, {}, {}, {}, {}
+    recorded_orchestrators = {}
+    ChatLocator.resolve_all = function(paths)
+      local entries = {}
+      for _, path in ipairs(paths or {}) do
+        table.insert(entries, { path = path, abs = path, bufnr = tonumber(path:match("^chat:(%d+)$")) })
+      end
+      return entries
+    end
     stop_reasons = {}
     parked = {}
     directions = {}
@@ -91,6 +104,12 @@ describe("CompletionNotifier", function()
         end,
         is_parked_on_limit = function()
           return parked[bufnr] == true
+        end,
+        get_frontmatter_list = function(_, key)
+          if key ~= "orchestrated_by" then
+            return {}
+          end
+          return recorded_orchestrators[bufnr] or {}
         end,
       }
     end
@@ -138,6 +157,7 @@ describe("CompletionNotifier", function()
     notify.warn = originals.warn
     view.list_chat_buffers = originals.list_chat_buffers
     OrchestrationLink.direction = originals.direction
+    ChatLocator.resolve_all = originals.resolve_all
 
     for _, bufnr in ipairs(buffers) do
       if vim.api.nvim_buf_is_valid(bufnr) then
@@ -727,6 +747,50 @@ describe("CompletionNotifier", function()
       Notifier._flush_approval_notice(b)
 
       assert.equals(0, #sends)
+    end)
+
+    describe("when the subscription was already spent", function()
+      -- Edges are one-shot: the first real stop consumes `edges[worker]`. A worker the user then
+      -- drives directly, or one auto-resume restarts, runs a turn nobody subscribed to, and the
+      -- approval it blocks on had no route to its orchestrator. `orchestrated_by` is the record
+      -- that survives; `auto_resume.announce_gave_up` already falls back to it for the same reason.
+
+      it("still tells the recorded orchestrator", function()
+        local a, b = make_chat(), make_chat()
+        recorded_orchestrators[b] = { "chat:" .. a }
+        Notifier.subscribe(a, b)
+        Notifier.on_response_done(b)
+        responding[a] = false
+        sends = {}
+
+        Notifier.on_approval_waiting(b, "req-1")
+        Notifier._flush_approval_notice(b)
+
+        assert.equals(1, #sends, "the orchestrator was never told the worker is blocked")
+        assert.equals(a, sends[1].bufnr)
+        assert.is_truthy(sends[1].message:find("waiting_approval", 1, true), sends[1].message)
+      end)
+
+      it("skips a recorded orchestrator that is not open and still tells the open one", function()
+        local a, b = make_chat(), make_chat()
+        recorded_orchestrators[b] = { "chat:not-open.md", "chat:" .. a }
+
+        Notifier.on_approval_waiting(b, "req-1")
+        Notifier._flush_approval_notice(b)
+
+        assert.equals(1, #sends)
+        assert.equals(a, sends[1].bufnr)
+      end)
+
+      it("never sends to the waiting chat itself", function()
+        local b = make_chat()
+        recorded_orchestrators[b] = { "chat:" .. b }
+
+        Notifier.on_approval_waiting(b, "req-1")
+        Notifier._flush_approval_notice(b)
+
+        assert.equals(0, #sends, "sending would cancel the very turn that is waiting")
+      end)
     end)
 
     it("drops a pending window when the chat is deleted", function()
