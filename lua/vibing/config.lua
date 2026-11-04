@@ -419,12 +419,48 @@ local function merge(base, opts, rule)
   return out
 end
 
+--- Drop agent entries this checkout does not register.
+---
+--- A config shared across checkouts (or written for a newer release) can name a backend that is
+--- not installed here. That entry is unused, so failing the whole setup over it is worse than
+--- warning once and ignoring it; a typo is still named by the warning.
+--- @param opts Vibing.Config
+--- @return Vibing.Config
+local function without_unknown_agents(opts)
+  local agents = vim.tbl_get(opts, "ai", "agents")
+  if type(agents) ~= "table" then
+    return opts
+  end
+
+  local unknown = {}
+  for id in pairs(agents) do
+    if not Agents.is_valid(id) then
+      table.insert(unknown, id)
+    end
+  end
+  if #unknown == 0 then
+    return opts
+  end
+
+  table.sort(unknown)
+  local copy = vim.deepcopy(opts)
+  for _, id in ipairs(unknown) do
+    copy.ai.agents[id] = nil
+    Notify.warn_once(
+      "config:unknown-agent:" .. id,
+      string.format("ai.agents.%s: this installation does not register that agent; ignoring it.", id)
+    )
+  end
+  return copy
+end
+
 ---@param opts? Vibing.Config
 function M.setup(opts)
   if opts == nil then
     opts = {}
   end
   local errors = {}
+  opts = without_unknown_agents(opts)
   validate(opts, schema, "", errors)
   if #errors > 0 then
     error("Invalid vibing configuration:\n" .. table.concat(errors, "\n"), 2)
@@ -442,25 +478,9 @@ function M.setup(opts)
       errors[#errors + 1] = "ai.agents." .. id .. ".process: duplex is unsupported by this agent"
     end
   end
-  -- Values a user names for `]v` / `[v` that completion never offers would be unreachable, so they
-  -- are reported rather than silently ignored. `model` and `profile` are left out: their candidates
-  -- depend on this chat's agent and on the user's own profiles, which the schema cannot see.
-  local cycle_values = {
-    agent = Agents.ORDER,
-    effort = require("vibing.core.constants.modes").EFFORT_VALUES,
-    process = { "oneshot", "duplex" },
-    permission_mode = require("vibing.core.constants.modes").PERMISSION_MODES,
-  }
-  for field, values in pairs(vim.tbl_get(opts, "chat", "frontmatter", "cycle") or {}) do
-    local allowed = cycle_values[field]
-    if allowed then
-      for _, value in ipairs(values) do
-        if not vim.tbl_contains(allowed, value) then
-          errors[#errors + 1] = "chat.frontmatter.cycle." .. field .. ": unknown value '" .. value .. "'"
-        end
-      end
-    end
-  end
+  -- `chat.frontmatter.cycle` is deliberately not validated against the backend list here: a value
+  -- this checkout does not offer is dropped by `frontmatter_cycler.restrict`, so one config can
+  -- name a backend that exists only on another branch, or one that has since been removed.
   if #errors > 0 then
     error("Invalid vibing configuration:\n" .. table.concat(errors, "\n"), 2)
   end
