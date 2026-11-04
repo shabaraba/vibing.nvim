@@ -16,7 +16,7 @@ M.FENCE = "vibing-question"
 function M.lines()
   return {
     "When you need the user to choose among options (single or multi-select), do not ask in free "
-      .. "text and do not use the native AskUserQuestion tool (it is unavailable here). Instead, end "
+      .. "text and do not use the native AskUserQuestion / question tool (it is unavailable here). Instead, end "
       .. "your reply with exactly one fenced code block whose info string is "
       .. M.FENCE
       .. ', containing JSON: {"questions": [{"question": "...", "multiSelect": false, "options": '

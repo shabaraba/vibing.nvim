@@ -1,8 +1,9 @@
 ---@diagnostic disable: undefined-field
---- The two per-backend model-discovery modules: what the CLI prints, turned into candidates.
---- Both parsers are pure, so the real output of each CLI is pinned here as a fixture.
+--- The per-backend model-discovery modules: what the CLI prints, turned into candidates.
+--- Each parser is pure, so the real output of each CLI is pinned here as a fixture.
 local Codex = require("vibing.infrastructure.adapter.models.codex")
 local Grok = require("vibing.infrastructure.adapter.models.grok")
+local CommandCode = require("vibing.infrastructure.adapter.models.commandcode")
 local Agents = require("vibing.core.constants.agents")
 
 --- Trimmed from `codex debug models` (codex-cli 0.157.1): one listed entry with a description, one
@@ -76,6 +77,45 @@ describe("codex model discovery", function()
   it("answers with no candidates rather than raising on output that is not the catalogue", function()
     assert.are.same({}, Codex.parse("not json at all"))
     assert.are.same({}, Codex.parse(vim.json.encode({ models = "nonsense" })))
+  end)
+end)
+
+describe("commandcode model discovery", function()
+  it("asks the CLI for its own catalogue", function()
+    assert.are.same({ "commandcode", "--list-models" }, CommandCode.command({}))
+    assert.are.same(
+      { "/opt/code", "--list-models" },
+      CommandCode.command({ ai = { agents = { commandcode = { path = "/opt/code" } } } })
+    )
+  end)
+
+  it("reads the id column of every section and skips the headings", function()
+    -- Trimmed from `commandcode --list-models` (1.88.2): a summary line, two section headings, a
+    -- `vendor/model` id, a bare `family-name` id, and a `:free` tier id. The `/` and the `:free`
+    -- suffix are both part of real ids, and a shape guard that drops either loses most of the
+    -- catalogue while still looking like it worked.
+    local stdout = table.concat({
+      "Available models  ·  95 models",
+      "",
+      "Open Source",
+      "",
+      "deepseek/deepseek-v4-flash             fast hybrid-attention reasoning (default)",
+      "reflection/beam:free                  FREE reasoning model for coding",
+      "",
+      "Anthropic",
+      "",
+      "claude-sonnet-5-5                      best combo of speed & intelligence (recommended)",
+      "",
+    }, "\n")
+
+    assert.are.same(
+      { "deepseek/deepseek-v4-flash", "reflection/beam:free", "claude-sonnet-5-5" },
+      values(CommandCode.parse(stdout))
+    )
+  end)
+
+  it("answers with no candidates when the CLI printed no list", function()
+    assert.are.same({}, CommandCode.parse("Available models  ·  0 models\n"))
   end)
 end)
 

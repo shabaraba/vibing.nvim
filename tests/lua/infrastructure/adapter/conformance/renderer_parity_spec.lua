@@ -28,6 +28,9 @@ local STREAMS = {
     { type = "tool_execution_start", toolCallId = "t1", toolName = "bash", args = { command = "ls" } },
     { type = "tool_execution_end", toolCallId = "t1", toolName = "bash", isError = false, result = { content = { { type = "text", text = "a.txt" } } } },
   },
+  opencode = {
+    { type = "tool_use", sessionID = "s", part = { id = "t1", tool = "shell", state = { input = { command = "ls" }, output = "a.txt", status = "completed" } } },
+  },
 }
 
 describe("conformance: tool rendering parity", function()

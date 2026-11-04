@@ -257,7 +257,7 @@ describe("adapter stream() options: stdin", function()
   -- stdin so they do not sit waiting on a terminal that isn't there. For pi it is not a precaution
   -- but a measured requirement: with stdin left open, `pi --mode json` never issues a request at
   -- all and produces no output, silently, until it is killed (Pi 0.87.1).
-  local STDIN_BY_BACKEND = { claude = nil, codex = "", copilot = "", grok = "", pi = "" }
+  local STDIN_BY_BACKEND = { claude = nil, codex = "", copilot = "", grok = "", opencode = "", commandcode = "", pi = "" }
 
   for _, backend in ipairs(helper.adapters()) do
     it("matches the documented stdin handling for " .. backend.name, function()

@@ -205,6 +205,38 @@ M.AGENTS = {
       { value = "grok-4.5", description = "Grok 4.5" },
     },
   },
+  opencode = {
+    id = "opencode",
+    adapter_module = "vibing.infrastructure.adapter.opencode_cli",
+    descriptor_module = "vibing.infrastructure.adapter.backends.opencode",
+    command_builder_module = "vibing.infrastructure.adapter.modules.opencode_command_builder",
+    export_name = "OpenCodeCLIAdapter",
+    description = "OpenCode CLI",
+    config_fields = {},
+    discovery_module = "vibing.infrastructure.adapter.models.opencode",
+    models = {
+      { value = "opencode/big-pickle", description = "OpenCode Big Pickle" },
+    },
+  },
+  commandcode = {
+    id = "commandcode",
+    adapter_module = "vibing.infrastructure.adapter.commandcode_cli",
+    descriptor_module = "vibing.infrastructure.adapter.backends.commandcode",
+    command_builder_module = "vibing.infrastructure.adapter.modules.commandcode_command_builder",
+    export_name = "CommandCodeCLIAdapter",
+    description = "Command Code CLI",
+    config_fields = {},
+    discovery_module = "vibing.infrastructure.adapter.models.commandcode",
+    -- `commandcode --list-models` に訊けなかったときだけ使う。CLI が返す値は上から順に
+    -- 実際のモデルidなので、ここに無いモデルを弾く用途には使わないこと。
+    models = {
+      { value = "claude-sonnet-5-5", description = "Claude Sonnet 5.5 (recommended)" },
+      { value = "deepseek/deepseek-v4-flash", description = "DeepSeek V4 Flash (fast, default)" },
+      { value = "deepseek/deepseek-v4-pro", description = "DeepSeek V4 Pro (deep reasoning)" },
+      { value = "moonshotai/kimi-k3.1-pro", description = "Kimi K3.1 Pro (1M context)" },
+      { value = "zai-org/glm-5.3", description = "GLM 5.3 (frontier coding)" },
+    },
+  },
   pi = {
     id = "pi",
     process_default = "duplex",
@@ -248,7 +280,7 @@ M.AGENTS = {
 
 ---列挙順。`pairs()` の順序は不定なので、ユーザーに見える一覧はすべてこれを経由する。
 ---@type string[]
-M.ORDER = { "claude", "codex", "copilot", "grok", "pi" }
+M.ORDER = { "claude", "codex", "copilot", "grok", "opencode", "commandcode", "pi" }
 
 ---未知・未指定のエージェントのフォールバック先
 ---@type string

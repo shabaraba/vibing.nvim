@@ -93,7 +93,7 @@ describe("conformance: request", function()
 
       it("references the installed hook on an ordinary call when its transport is argv-visible", function()
         local transport = descriptor.hook.transport
-        if transport == "project_dir" then
+        if transport == "project_dir" or transport == "env_config" then
           -- Discovered from the tree, so nothing to find in the argv.
           return
         end

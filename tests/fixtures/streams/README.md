@@ -1,6 +1,7 @@
 # Stream fixtures
 
-One directory per backend id (`claude/`, `codex/`, `copilot/`, `grok/`, `pi/`), each file a real capture
+One directory per backend id (`claude/`, `codex/`, `copilot/`, `grok/`, `opencode/`, `commandcode/`,
+`pi/`), each file a real capture
 of that CLI's stdout for one turn, one JSON line per line, exactly as the CLI wrote it. The
 conformance suite (`tests/lua/infrastructure/adapter/conformance/stream_fixtures_spec.lua`) replays
 every file here through the backend's decoder and the shared renderer and asserts the contracts of
@@ -12,13 +13,14 @@ CLIs (`handbook/architecture/cli-integration.md` says which version each was), a
 how that reading is kept from drifting. The trimmed shapes used by `renderer_parity_spec.lua` are
 derived from these; when a CLI changes its stream, the capture here is what shows it.
 
-| File                               | CLI     | Version | What it exercises                                          |
-| ---------------------------------- | ------- | ------- | ---------------------------------------------------------- |
-| `claude/subagent_forwarding.jsonl` | claude  | 2.1.x   | `--forward-subagent-text`: subagent text under a Task tool |
-| `codex/read_note_turn.jsonl`       | codex   | 0.154.0 | `command_execution` start/end pair, `agent_message` text   |
-| `copilot/read_note_turn.jsonl`     | copilot | 1.0.80  | `tool.execution_start`/`_complete` paired by `toolCallId`  |
-| `grok/text_turn.jsonl`             | grok    | 0.2.101 | thought/text deltas and the `end` event carrying sessionId |
-| `pi/tool_turn.jsonl`               | pi      | 0.87.1  | two model turns around one bash call; `agent_settled` end  |
+| File                               | CLI         | Version | What it exercises                                                                                                          |
+| ---------------------------------- | ----------- | ------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `claude/subagent_forwarding.jsonl` | claude      | 2.1.x   | `--forward-subagent-text`: subagent text under a Task tool                                                                 |
+| `codex/read_note_turn.jsonl`       | codex       | 0.154.0 | `command_execution` start/end pair, `agent_message` text                                                                   |
+| `copilot/read_note_turn.jsonl`     | copilot     | 1.0.80  | `tool.execution_start`/`_complete` paired by `toolCallId`                                                                  |
+| `grok/text_turn.jsonl`             | grok        | 0.2.101 | thought/text deltas and the `end` event carrying sessionId                                                                 |
+| `pi/tool_turn.jsonl`               | pi          | 0.87.1  | two model turns around one bash call; `agent_settled` end                                                                  |
+| `commandcode/read_note_turn.jsonl` | commandcode | 1.88.2  | `thinking_delta`/`text_delta`, a `tool_queued`/`tool_completed` pair, and a `tool_hook_blocked` closing the call it opened |
 
 Pi's capture is the one **trimmed** file here, and only by whole records: `--mode json` echoes the
 entire system prompt back as a `message_start`/`message_end` pair, which is kilobytes of Pi's own
