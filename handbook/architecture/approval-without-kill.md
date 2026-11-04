@@ -730,7 +730,8 @@ the spec, because "no timeout reported" and "an unsafe timeout" are indistinguis
 
 ## Measurements
 
-claude 2.1.236, copilot 1.0.83 (the 950s re-run: 1.0.85), macOS. Reproduce with
+claude 2.1.236, copilot 1.0.83 (the 950s re-run: 1.0.85), commandcode 1.88.2 (2026-11-04),
+macOS. Reproduce with
 `VIBING_PERF=1 tests/perf/hook_wait_ceiling.sh <backend> <block_sec> <configured_timeout_sec> [mode] [gate_preallowed]`.
 
 **Two of the rows below predate that script and were produced by an ad-hoc `.vibing/probe/hook.sh`,
@@ -750,12 +751,13 @@ at different numbers usually means two runs watched for different lengths of tim
 records _who stopped it_ next to each one. Read without that column, "claude 1090 / copilot 1700"
 says copilot is the more patient CLI, which is not something either run measured.
 
-| backend | blocked for | who stopped it                                            | ceiling      |
-| ------- | ----------- | --------------------------------------------------------- | ------------ |
-| claude  | **1090s**   | **we did** — SIGTERM from our own job stop, at 1090s      | not establd. |
-| copilot | **1700s**   | **nobody** — the hook completed its own 1700s budget      | not establd. |
-| codex   | —           | **not measured** (usage limit)                            | —            |
-| grok    | —           | **not measured** (not signed in on the measuring machine) | —            |
+| backend     | blocked for | who stopped it                                                       | ceiling      |
+| ----------- | ----------- | -------------------------------------------------------------------- | ------------ |
+| claude      | **1090s**   | **we did** — SIGTERM from our own job stop, at 1090s                 | not establd. |
+| copilot     | **1700s**   | **nobody** — the hook completed its own 1700s budget                 | not establd. |
+| commandcode | **1090s**   | **nobody** — the mod's `beforeToolCall` reached its own 1090s budget | not establd. |
+| codex       | —           | **not measured** (usage limit)                                       | —            |
+| grok        | —           | **not measured** (not signed in on the measuring machine)            | —            |
 
 Both runs were configured with a 1700s budget against an 1800s timeout. copilot's reached the end
 of it (`HOOK FINISHED NORMALLY after 1700s`); claude's was killed at 1090s when the harness was
@@ -929,12 +931,13 @@ reaches it on the next process rather than the next turn.
 
 Against the measured floors, with the default 900:
 
-| backend | measured floor | script deadline 930 inside it? |
-| ------- | -------------- | ------------------------------ |
-| claude  | 1090s          | yes                            |
-| copilot | 1700s          | yes                            |
-| codex   | not measured   | **no — feature stays off**     |
-| grok    | not measured   | **no — feature stays off**     |
+| backend     | measured floor | script deadline 930 inside it? |
+| ----------- | -------------- | ------------------------------ |
+| claude      | 1090s          | yes                            |
+| copilot     | 1700s          | yes                            |
+| commandcode | 1090s          | yes                            |
+| codex       | not measured   | **no — feature stays off**     |
+| grok        | not measured   | **no — feature stays off**     |
 
 "Not measured" is not "probably fine": those two keep today's `cancel_and_deny` behaviour until
 somebody runs `tests/perf/hook_wait_ceiling.sh` against them. The ordering itself is asserted for

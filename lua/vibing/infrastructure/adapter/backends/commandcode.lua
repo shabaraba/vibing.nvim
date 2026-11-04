@@ -51,7 +51,21 @@ local M = {
   -- transports load it (`--mod` works with `-p` and with `acp`), and `keep_in_bypass` keeps the
   -- git-snapshot baseline running in bypassPermissions — which matters more here than elsewhere,
   -- because the CLI is always in bypass so that the bridge can be the gate.
-  hook = { transport = "mod_file", dialect = "claude", keep_in_bypass = true },
+  --
+  -- `measured_wait_floor_sec` enables answering an approval **without killing the turn**, the same
+  -- behaviour every other waiting backend has. Measured 2026-11-04 against Command Code 1.88.2: a
+  -- mod's `beforeToolCall` was left blocking for **1090s and the CLI never cut it** (the probe set
+  -- no timeout of its own), and the tool ran afterwards. Command Code imposes no timeout of its own
+  -- on a mod hook (`dist/bundled/mod-builder/reference/hooks-and-events.md`), so the floor is the
+  -- longest we watched, not a ceiling — exactly the reading claude's 1090 carries. Reproduce with
+  -- `VIBING_PERF=1 tests/perf/hook_wait_ceiling.sh commandcode 1090` (`commandcode_turn_spec` and
+  -- the ordering spec pin the derived answer).
+  hook = {
+    transport = "mod_file",
+    dialect = "claude",
+    keep_in_bypass = true,
+    measured_wait_floor_sec = 1090,
+  },
 
   apply_env = CommandBuilder.apply_env,
 

@@ -2,6 +2,7 @@
 --- processes, turns and timers; this module is only the wire.
 --- @module vibing.infrastructure.adapter.modules.commandcode_duplex_protocol
 
+local NativeApproval = require("vibing.infrastructure.adapter.modules.commandcode_native_approval")
 local Process = require("vibing.infrastructure.adapter.modules.duplex_process")
 local TurnOutcome = require("vibing.infrastructure.adapter.modules.turn_outcome")
 
@@ -217,6 +218,19 @@ function M.process_line(record, line)
   end
 
   if msg.id ~= nil then
+    -- Command Code's own permission engine runs *before* the mod bridge and, for a call it would
+    -- gate, asks the client over ACP instead of deciding. Unanswered (or answered with an error)
+    -- the call fails as "Permission denied by the user." and the turn ends, so this request is the
+    -- one the client must handle — see `commandcode_native_approval.lua`.
+    if NativeApproval.handles(msg.method) then
+      local answered, notice = NativeApproval.handle(record, msg)
+      if not answered then
+        fail(record, "Could not answer a Command Code permission request.")
+      elseif notice then
+        render(record, { method = "vibing/requestDenied", params = { message = notice } })
+      end
+      return
+    end
     if
       not Process.write(record, {
         jsonrpc = "2.0",

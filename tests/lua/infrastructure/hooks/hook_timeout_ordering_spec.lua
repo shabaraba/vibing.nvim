@@ -216,10 +216,10 @@ describe("hook timeout ordering", function()
         codex = false,
         grok = false,
         opencode = false,
-        -- No `measured_wait_floor_sec` either: nobody has timed how long Command Code lets a
-        -- `beforeToolCall` mod hook block, and its bridge applies its own deadline rather than
-        -- relying on the CLI's, so the waiting path has never been exercised on it.
-        commandcode = false,
+        -- Measured 2026-11-04 (1.88.2): a `beforeToolCall` mod hook was left blocking 1090s and the
+        -- CLI never cut it, so an `ask` waits in place instead of killing the turn. `register_chat_bufnr`
+        -- was already true; this is the second half.
+        commandcode = true,
         pi = false,
       }
       for _, def in ipairs(Agents.list()) do

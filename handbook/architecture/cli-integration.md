@@ -403,6 +403,19 @@ and dialect from `hooks/transports.lua`; the five generators described below are
   renderer names a call by its kind; the permission path never sees that, because the mod bridge
   (above) forwards the CLI's real tool name.
 
+- **In `acp`, the engine's own gate asks the client, and `--yolo` does not lift it.** Command Code
+  runs its permission engine _before_ the mod bridge, and for a call it would gate it sends
+  `session/request_permission` over ACP rather than deciding (measured 1.88.2: `commandcode --mod
+<bridge> --yolo acp` still sends one for a shell command — the print-mode gate `--yolo` lifts is a
+  different one). A client that answers with a JSON-RPC error, which is what the protocol did before
+  `commandcode_native_approval.lua` existed, has the call marked `Permission denied by the user.`
+  and the turn ends. So the request is answered with the single-use `allow_once` option the CLI
+  offers, and the call then reaches `beforeToolCall` — which is still the authority, since a call
+  vibing's own gate denies is blocked there (the engine layer is not where a chat's permissions
+  live). `allow_always` is never selected: it would retire the engine gate for the rest of the chat.
+  This is grok's shape (`grok_native_approval.lua`) with the ordering reversed — grok's hook runs
+  first, Command Code's engine does.
+
 ## Asking a CLI Which Models It Has
 
 `agents.lua`'s per-backend `models` lists were hand-written, so they went stale on every CLI

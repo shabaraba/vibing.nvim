@@ -10,10 +10,13 @@
 #   VIBING_PERF=1 tests/perf/hook_wait_ceiling.sh claude 120 30 bypassPermissions
 #   # expiry with the CLI's own gate pre-set to allow, so the hook is the only decider
 #   VIBING_PERF=1 tests/perf/hook_wait_ceiling.sh claude 120 30 default yes
+#   # commandcode's hook is a mod (beforeToolCall), not a shell script: it blocks with no CLI-side
+#   # timeout, so only the block_sec argument matters and there is nobody to cut it but us.
+#   VIBING_PERF=1 tests/perf/hook_wait_ceiling.sh commandcode 1090
 #
 # **This spends real tokens, and it is slow by construction** -- the measurement *is* the waiting.
 # It is not part of `npm test` and cannot be: codex and grok need credentials this machine may not
-# have, so there is no configuration in which all four backends answer. It exists because
+# have, so there is no configuration in which every backend answers. It exists because
 # `permissions.approval_wait_sec` is a measured number, and the number is pinned to a CLI version:
 # re-run this after a CLI upgrade and update the table in
 # `handbook/architecture/cli-integration.md`.
@@ -36,7 +39,7 @@ if [ "${VIBING_PERF:-}" != "1" ]; then
   exit 0
 fi
 
-BACKEND="${1:?usage: hook_wait_ceiling.sh <claude|copilot|grok> [block_sec] [configured_timeout_sec]}"
+BACKEND="${1:?usage: hook_wait_ceiling.sh <claude|copilot|grok|commandcode> [block_sec] [configured_timeout_sec]}"
 BUDGET="${2:-1700}"
 # Two modes, and the second one is the only way to see the interesting half.
 #
@@ -141,6 +144,44 @@ run_copilot() {
     > "$OUT/copilot-stream.log" 2>&1
 }
 
+run_commandcode() {
+  # Command Code's hook is not a shell script but a TypeScript **mod** whose `beforeToolCall` may
+  # block. There is no CLI-side timeout to set here: Command Code imposes none of its own on a mod
+  # hook (measured, mod-builder docs), so the only deadline is the one vibing.nvim's bridge enforces
+  # (`VIBING_COMMANDCODE_HOOK_TIMEOUT_SEC`). This probe blocks with no timeout at all, so what the
+  # log measures is purely "how long will Command Code let the mod sit before it gives up" -- the
+  # ceiling the whole waiting feature lives under.
+  local mod="$OUT/commandcode-probe-mod.ts"
+  cat > "$mod" <<MOD_EOF
+import { appendFileSync } from 'node:fs';
+const LOG = '$LOG';
+const BUDGET = $BUDGET;
+function stamp(m: string): void {
+  appendFileSync(LOG, new Date().toISOString() + ' ' + m + '\n');
+}
+export default function (cmd: any): void {
+  cmd.hooks({
+    beforeToolCall: async ({ toolName }: { toolName: string }) => {
+      stamp('HOOK START tool=' + toolName + ' budget=' + BUDGET + 's');
+      let elapsed = 0;
+      while (elapsed < BUDGET) {
+        await new Promise((r) => setTimeout(r, 10000));
+        elapsed += 10;
+        stamp('alive ' + elapsed + 's');
+      }
+      stamp('HOOK REACHED ITS OWN BUDGET after ' + elapsed + 's without being cut (undefined = defer)');
+      return undefined;
+    },
+  });
+}
+MOD_EOF
+  # `--yolo` keeps Command Code's own gate out of the experiment (the mod runs *after* it), so
+  # whatever decides the outcome here is the blocking mod. Run from $OUT so the marker path in
+  # $PROMPT is absolute and the mod is discovered.
+  (cd "$OUT" && commandcode --mod "$mod" --yolo --output-format json -p "$PROMPT") \
+    > "$OUT/commandcode-stream.log" 2>&1
+}
+
 run_grok() {
   # Grok reads claude's hook schema but discovers `.grok/hooks/` only inside a **trusted git
   # repository**, so both are built here. GROK_HOME is redirected: writing into the real
@@ -166,6 +207,7 @@ case "$BACKEND" in
   claude) run_claude ;;
   copilot) run_copilot ;;
   grok) run_grok ;;
+  commandcode) run_commandcode ;;
   *) echo "unsupported backend: $BACKEND (codex has no measured path here yet)" >&2; exit 1 ;;
 esac
 stamp_outer "CLI EXIT code=$?"
