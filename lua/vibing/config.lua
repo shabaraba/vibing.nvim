@@ -33,6 +33,7 @@ local M = {}
 ---@class Vibing.ChatConfig
 ---@field language? string|{default?: string, chat?: string}
 ---@field storage {location: "project"|"user"|"custom", path: string}
+---@field frontmatter {cycle: table<string, string[]>} Field name to the values `]v` / `[v` walk
 ---@field context {auto_include: boolean, warn_tokens: number, cache_ttl_sec: number, compaction: {enabled: boolean, threshold_tokens: number, focus?: string}}
 ---@field daily_summary Vibing.DailySummaryConfig
 ---@class Vibing.DailySummaryConfig
@@ -94,6 +95,9 @@ M.defaults = {
   },
   chat = {
     storage = { location = "project", path = vim.fn.stdpath("data") .. "/vibing/chats" },
+    -- A field absent here cycles through every candidate completion offers; one present cycles
+    -- through the given values in the given order.
+    frontmatter = { cycle = {} },
     context = {
       auto_include = true,
       warn_tokens = Usage.DEFAULT_WARN_CONTEXT,
@@ -225,6 +229,7 @@ schema.chat.storage.path = nonempty
 schema.chat.daily_summary.save_dir = nonempty
 schema.chat.daily_summary.search_dirs = list(nonempty)
 schema.chat.daily_summary.file_finder_strategy = enum({ "auto", "fd", "find", "locate", "ripgrep" })
+schema.chat.frontmatter.cycle = map(list(nonempty))
 schema.chat.context.compaction.focus = "string"
 schema.ui.window.height = number(0)
 schema.ui.window.width = number(0)
@@ -435,6 +440,25 @@ function M.setup(opts)
     end
     if options.process == "duplex" and require(def.descriptor_module).process ~= "duplex" then
       errors[#errors + 1] = "ai.agents." .. id .. ".process: duplex is unsupported by this agent"
+    end
+  end
+  -- Values a user names for `]v` / `[v` that completion never offers would be unreachable, so they
+  -- are reported rather than silently ignored. `model` and `profile` are left out: their candidates
+  -- depend on this chat's agent and on the user's own profiles, which the schema cannot see.
+  local cycle_values = {
+    agent = Agents.ORDER,
+    effort = require("vibing.core.constants.modes").EFFORT_VALUES,
+    process = { "oneshot", "duplex" },
+    permission_mode = require("vibing.core.constants.modes").PERMISSION_MODES,
+  }
+  for field, values in pairs(vim.tbl_get(opts, "chat", "frontmatter", "cycle") or {}) do
+    local allowed = cycle_values[field]
+    if allowed then
+      for _, value in ipairs(values) do
+        if not vim.tbl_contains(allowed, value) then
+          errors[#errors + 1] = "chat.frontmatter.cycle." .. field .. ": unknown value '" .. value .. "'"
+        end
+      end
     end
   end
   if #errors > 0 then

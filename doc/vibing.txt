@@ -595,6 +595,24 @@ The `model` candidates are the ones for this chat's `agent`, the same as in
 completion. A value that is not in the list (or a field with no value yet)
 goes to the first candidate with `]v` and the last with `[v`.
 
+`chat.frontmatter.cycle` narrows what a field cycles through, as a list in the
+order you want the values to appear. A field left out keeps every candidate:
+
+>lua
+    require("vibing").setup({
+      chat = {
+        frontmatter = {
+          cycle = { agent = { "claude", "codex" } },
+        },
+      },
+    })
+<
+
+Values completion does not offer are ignored, so a list naming a removed
+backend or profile still cycles through the rest. An empty list takes the
+field out of the cycle: `]v` and `[v` do nothing on it. Only the two keys are
+affected — completion still offers every candidate.
+
 Folded output~
 
 A chat window opens on the answer: rendered tool calls and reasoning start

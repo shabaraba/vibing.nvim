@@ -7,6 +7,7 @@
 local cycler = require("vibing.presentation.chat.modules.frontmatter_cycler")
 local provider = require("vibing.infrastructure.completion.providers.frontmatter")
 local Agents = require("vibing.core.constants.agents")
+local Config = require("vibing.config")
 
 ---@param field string
 ---@return string[]
@@ -66,6 +67,7 @@ describe("frontmatter_cycler", function()
   end
 
   after_each(function()
+    Config.setup({})
     if buf and vim.api.nvim_buf_is_valid(buf) then
       vim.api.nvim_buf_delete(buf, { force = true })
     end
@@ -119,6 +121,36 @@ describe("frontmatter_cycler", function()
       assert.same(expected, cycler.enum_at(buf, 3).values)
       restore_clis()
     end)
+
+    it("cycles only the configured values, in the configured order", function()
+      Config.setup({ chat = { frontmatter = { cycle = { agent = { "pi", "claude" } } } } })
+      open({ "---", "agent: claude", "---", "" })
+
+      assert.same({ "pi", "claude" }, cycler.enum_at(buf, 2).values)
+    end)
+
+    it("drops a configured value completion does not offer", function()
+      -- `profile` is not one of the fields config validates, so an unknown name reaches the cycler.
+      -- Dropping it is what keeps a removed profile or backend from stopping the cycle.
+      Config.setup({ chat = { frontmatter = { cycle = { profile = { "reviewer", "nope", "default" } } } } })
+      open({ "---", "profile: default", "---", "" })
+
+      assert.same({ "reviewer", "default" }, cycler.enum_at(buf, 2).values)
+    end)
+
+    it("cycles nothing when the configured list is empty", function()
+      Config.setup({ chat = { frontmatter = { cycle = { effort = {} } } } })
+      open({ "---", "effort: low", "---", "" })
+
+      assert.is_nil(cycler.enum_at(buf, 2))
+    end)
+
+    it("leaves a field the config does not name on the full candidate list", function()
+      Config.setup({ chat = { frontmatter = { cycle = { agent = { "claude" } } } } })
+      open({ "---", "effort: low", "---", "" })
+
+      assert.same(candidates("effort"), cycler.enum_at(buf, 2).values)
+    end)
   end)
 
   describe("cycle", function()
@@ -138,6 +170,15 @@ describe("frontmatter_cycler", function()
 
       assert.is_true(cycler.cycle(buf, -1))
       assert.equals(values[1], value_of("effort"))
+    end)
+
+    it("wraps inside the configured values", function()
+      Config.setup({ chat = { frontmatter = { cycle = { agent = { "claude", "codex" } } } } })
+      open({ "---", "agent: codex", "---", "" })
+      cursor_on("agent")
+
+      assert.is_true(cycler.cycle(buf, 1))
+      assert.equals("claude", value_of("agent"))
     end)
 
     it("wraps at the end of the list", function()

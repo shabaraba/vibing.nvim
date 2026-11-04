@@ -14,7 +14,35 @@ local M = {}
 ---@class Vibing.FrontmatterEnumAtCursor
 ---@field field string フィールド名
 ---@field value string 現在の値（未設定なら空文字）
----@field values string[] 候補（補完と同じ順序）
+---@field values string[] 巡回する値。`chat.frontmatter.cycle`に指定があればその並び、
+---  無ければ補完候補と同じ並び
+
+---設定された巡回対象に絞る。フィールドが`chat.frontmatter.cycle`に無ければ全候補のまま。
+---
+---並びは設定のものを採る — 候補の並びは「バックエンド定義順」で、隣り合ってほしい値が
+---隣り合うとは限らない。候補に無い値は捨てる（バックエンドが消えたとき、古い設定が
+---巡回を止めないように）
+---@param field string
+---@param values string[]
+---@return string[]
+local function restrict(field, values)
+  local configured = vim.tbl_get(require("vibing.config").get(), "chat", "frontmatter", "cycle", field)
+  if not configured then
+    return values
+  end
+
+  local offered = {}
+  for _, value in ipairs(values) do
+    offered[value] = true
+  end
+  local out = {}
+  for _, value in ipairs(configured) do
+    if offered[value] then
+      table.insert(out, value)
+    end
+  end
+  return out
+end
 
 ---指定行がfrontmatter領域内のenumフィールドなら、その内容と候補を返す
 ---
@@ -42,6 +70,7 @@ function M.enum_at(buf, lnum)
   for _, item in ipairs(Source.get_candidates_sync(ctx)) do
     table.insert(values, item.word)
   end
+  values = restrict(ctx.field, values)
   if #values == 0 then
     return nil
   end
