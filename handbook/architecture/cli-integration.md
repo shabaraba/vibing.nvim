@@ -397,11 +397,24 @@ and dialect from `hooks/transports.lua`; the five generators described below are
   `session/set_config_option` asynchronously: a `session/prompt` written in the same tick reaches the
   agent while the option call is still in flight, the prompt marks the session busy, and **both**
   calls then fail with `A prompt is already running for this session` (measured, 1.88.2). The
-  protocol therefore chains model → mode → prompt, each on the previous reply — and skips the model
-  call entirely when `session/new`'s own `configOptions` already names it. ACP also carries **no
-  native tool name** on a `tool_call` (only a prose `title` and a coarse `kind`), so the duplex
-  renderer names a call by its kind; the permission path never sees that, because the mod bridge
-  (above) forwards the CLI's real tool name.
+  protocol therefore chains model → mode → effort → prompt, each on the previous reply — and skips the
+  model call entirely when `session/new`'s own `configOptions` already names it.
+
+  Effort is a `configId = "effort"` option on the same route (measured on 1.88.2), with two
+  CLI-side facts shaping the step. The offered set is **model-dependent** — a Claude model reports
+  default/low/medium/high/xhigh/max, DeepSeek V4 Flash reports off/high/max and rejects `low`
+  outright (`Unknown effort: low`) — so the value is checked against the set the session last
+  reported and a mismatch is skipped with a warning, not sent to fail the turn on the CLI's error.
+  And a **model switch resets the effort to `default` and swaps the set**, in the _model_ request's
+  reply, which is why the effort step re-reads that reply instead of deciding once up front. What
+  ACP cannot do is take an explicit effort back off: once one has been set, `default` disappears
+  from the offered set and sending it is rejected too (`Unknown effort: default`), so a chat's
+  `default` — "no override" — leaves the session's own value in force; clearing it costs the
+  process restart only an argv change buys.
+
+  ACP also carries **no native tool name** on a `tool_call` (only a prose `title` and a coarse
+  `kind`), so the duplex renderer names a call by its kind; the permission path never sees that,
+  because the mod bridge (above) forwards the CLI's real tool name.
 
 - **In `acp`, the engine's own gate asks the client, and `--yolo` does not lift it.** Command Code
   runs its permission engine _before_ the mod bridge, and for a call it would gate it sends

@@ -5,6 +5,7 @@
 local CommandBuilder = require("vibing.infrastructure.adapter.modules.commandcode_command_builder")
 local NativeApproval = require("vibing.infrastructure.adapter.modules.commandcode_native_approval")
 local Process = require("vibing.infrastructure.adapter.modules.duplex_process")
+local ReasoningEffort = require("vibing.infrastructure.adapter.modules.reasoning_effort")
 local TurnOutcome = require("vibing.infrastructure.adapter.modules.turn_outcome")
 
 --- The turn, the pool and JSON-RPC correlation are shared with codex's and grok's transports; what
@@ -102,6 +103,22 @@ local function acp_mode(mode)
   return nil
 end
 
+--- The option a session reply reported for one config id, if it reported one.
+---
+--- `session/new` / `session/load` and every `session/set_config_option` reply carry the same
+--- `configOptions` list, so the current value of any option is readable from any of them.
+--- @param result table
+--- @param id string
+--- @return table|nil
+local function config_option(result, id)
+  for _, option in ipairs((result or {}).configOptions or {}) do
+    if type(option) == "table" and option.id == id then
+      return option
+    end
+  end
+  return nil
+end
+
 --- The model a `session/new` / `session/load` reply says is already configured, if it says.
 ---
 --- The reply carries `configOptions` — the same list `session/set_config_option` answers with —
@@ -109,12 +126,34 @@ end
 --- @param result table
 --- @return string|nil
 local function current_model(result)
-  for _, option in ipairs(result.configOptions or {}) do
-    if type(option) == "table" and option.id == "model" then
-      return option.currentValue
-    end
+  local option = config_option(result, "model")
+  return option and option.currentValue or nil
+end
+
+--- What the session last said about its effort option: the value in force, and the levels the
+--- current model offers.
+---
+--- Cached from **every** reply the pipeline awaits, because both halves move where the *model*
+--- request answers: the offered set is model-dependent (measured on 1.88.2 — a Claude model offers
+--- default/low/medium/high/xhigh/max, DeepSeek V4 Flash off/high/max, and a Claude set's `low` is
+--- rejected there outright), and switching models resets the value to `default`. That reset is why
+--- the model step's callback runs this too, and why the effort step re-reads the cache rather
+--- than deciding once up front.
+---
+--- The offered levels are reduced to bare strings here: the CLI reports each as
+--- `{ value = "...", name = "..." }`, and both the membership test and the warning want the
+--- values.
+--- @param rpc table
+--- @param result table
+local function note_effort(rpc, result)
+  local option = config_option(result, "effort")
+  if not option then
+    return
   end
-  return nil
+  rpc.effort_offered = vim.tbl_map(function(entry)
+    return entry.value
+  end, option.options or {})
+  rpc.applied_effort = option.currentValue
 end
 
 --- The mode a `session/new` / `session/load` reply says is already active, if it says.
@@ -125,7 +164,56 @@ local function current_mode(result)
   return type(modes) == "table" and modes.currentModeId or nil
 end
 
---- Apply a changed model or mode to a reused session, then send the prompt.
+--- The step that hands the chat's effort to the session.
+---
+--- Compared and validated *inside* the step, because the model step ahead of it moves both facts
+--- this spelling depends on — a model switch resets the session's effort to `default` and swaps
+--- the offered set, in its own reply (measured on 1.88.2).
+---
+--- The offered set is the session's own answer and is model-dependent (a Claude model offers
+--- default/low/medium/high/xhigh/max, DeepSeek V4 Flash off/high/max), so a level vibing accepts
+--- but this model does not is skipped with a warning rather than sent, where the CLI's
+--- `Unknown effort` error would fail the turn. A session that never reported the option has none
+--- to set.
+--- @param record Vibing.DuplexProcess
+--- @param rpc table
+--- @param effort string
+--- @return fun(next: fun())
+local function effort_step(record, rpc, effort)
+  return function(next)
+    if effort == rpc.applied_effort then
+      next()
+      return
+    end
+    local offered = rpc.effort_offered or {}
+    if #offered == 0 or not vim.tbl_contains(offered, effort) then
+      require("vibing.core.utils.notify").warn(string.format(
+        "Ignoring effort %s: this session offers %s",
+        effort,
+        #offered > 0 and table.concat(offered, ", ") or "no effort levels"
+      ))
+      next()
+      return
+    end
+    if
+      not request(record, "session/set_config_option", {
+        sessionId = rpc.session_id,
+        configId = "effort",
+        value = effort,
+      }, function(reply)
+        note_effort(rpc, reply)
+        -- Trusted over the request the way the model step is; a reply without the option would
+        -- otherwise re-send the same value on every turn.
+        rpc.applied_effort = rpc.applied_effort or effort
+        next()
+      end)
+    then
+      return
+    end
+  end
+end
+
+--- Apply a changed model, mode or effort to the session, then send the prompt.
 ---
 --- A resident process keeps the configuration it was spawned with, and `session/new` is where this
 --- backend applied the previous turn's model and mode. Comparing against what the session last
@@ -133,17 +221,23 @@ end
 --- ignored. Each request is awaited: Command Code handles `session/set_config_option`
 --- asynchronously, and writing the prompt in the same tick makes both calls fail with "A prompt is
 --- already running for this session" (measured on 1.88.2).
+---
+--- Effort rides the same `session/set_config_option` route after the model (see `effort_step`);
+--- a chat's `default` resolves to nil and so sends nothing, which leaves a session that already
+--- had an explicit effort on it — once one has been set the CLI drops `default` from the offered
+--- set and rejects it back (`Unknown effort: default`, measured on 1.88.2).
 --- @param record Vibing.DuplexProcess
---- @param opts Vibing.AdapterOpts
+--- @param params Vibing.DuplexRunParams
 --- @param result table|nil the `session/new` / `session/load` reply, when there is one
 --- @param next_fn fun()
-local function apply_options(record, opts, result, next_fn)
-  opts = opts or {}
+local function apply_options(record, params, result, next_fn)
+  local opts = params.opts or {}
   local rpc = record._rpc
   if result then
     rpc.applied_model = current_model(result)
     rpc.applied_mode = current_mode(result)
   end
+  note_effort(rpc, result)
 
   local model = type(opts.model) == "string" and opts.model ~= "" and opts.model or nil
   local mode = acp_mode(opts.permission_mode) or "default"
@@ -157,6 +251,9 @@ local function apply_options(record, opts, result, next_fn)
           configId = "model",
           value = model,
         }, function(reply)
+          -- The effort cache too: this reply is the one that reports the model switch's effort
+          -- reset, so the effort step behind it decides on the post-switch value.
+          note_effort(rpc, reply)
           rpc.applied_model = current_model(reply) or model
           next()
         end)
@@ -179,6 +276,10 @@ local function apply_options(record, opts, result, next_fn)
         return
       end
     end)
+  end
+  local effort = ReasoningEffort.resolve(opts, params.config)
+  if effort then
+    table.insert(steps, effort_step(record, rpc, effort))
   end
 
   local function run(index)
@@ -214,7 +315,7 @@ function M.send_prompt(record, prompt, params)
   local hook_installed = params.hook_arg ~= nil
   if record._rpc and record._rpc.session_id then
     record._rpc.hook_installed = hook_installed
-    apply_options(record, params.opts, nil, function()
+    apply_options(record, params, nil, function()
       send_prompt_now(record, prompt)
     end)
     return true
@@ -243,7 +344,7 @@ function M.send_prompt(record, prompt, params)
       -- The id arrives in a reply, never in a notification, so the decoder is handed one.
       render(record, { method = "vibing/sessionStarted", params = { session_id = id } })
 
-      apply_options(record, params.opts, result, function()
+      apply_options(record, params, result, function()
         send_prompt_now(record, CommandBuilder.with_question_instructions(prompt))
       end)
     end)
