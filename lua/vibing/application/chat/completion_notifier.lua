@@ -471,6 +471,33 @@ local function seen_count(notice)
   return vim.tbl_count(notice.seen)
 end
 
+---frontmatter の `orchestrated_by` が指す、いま開いているチャット
+---
+---`edges` は one-shot で、最初の本当の停止で消える。そのあとユーザーが直接動かしたワーカーや
+---auto-resume が再開したワーカーは、購読者のいないターンを走らせ、そこで出た承認待ちの
+---届け先が無くなる。記録として残るのはこちら（`auto_resume.announce_gave_up` も同じ理由で
+---これに頼る）。開かれていない親は bufnr を持たないので落とす — ここで背景に開くと、
+---通知のために無関係なバッファを生やすことになる
+---@param bufnr number
+---@return number[]
+local function recorded_orchestrators(bufnr)
+  local chat_buf = require("vibing.presentation.chat.view").get_chat_buffer(bufnr)
+  if not chat_buf then
+    return {}
+  end
+
+  local parents = {}
+  local entries = require("vibing.application.chat.chat_locator").resolve_all(
+    chat_buf:get_frontmatter_list("orchestrated_by")
+  )
+  for _, entry in ipairs(entries) do
+    if entry.bufnr and entry.bufnr ~= bufnr then
+      table.insert(parents, entry.bufnr)
+    end
+  end
+  return parents
+end
+
 ---購読者に「このチャットは承認待ちで止まっている」を配る。**それ以外は何もしない**
 ---
 ---`process_done` の兄弟であって一部ではない。あちらの3分岐はどれも「ターンが終わった」に
@@ -488,12 +515,12 @@ end
 ---@param bufnr number 答えを待って止まっているチャット
 ---@param status "waiting_approval"|"asked_question" `chat_status` と同じ語彙
 local function deliver_stop_notice(bufnr, status)
-  local subscribers = edges[bufnr]
-  if not subscribers then
-    return
+  local recipients = vim.deepcopy(edges[bufnr] or {})
+  for _, parent in ipairs(recorded_orchestrators(bufnr)) do
+    recipients[parent] = true
   end
 
-  for from_bufnr in pairs(subscribers) do
+  for from_bufnr in pairs(recipients) do
     if vim.api.nvim_buf_is_valid(from_bufnr) then
       -- 語彙は `chat_status` と同じ文字列そのもの。`delivery_message` は
       -- `waiting_approval` を突き合わせて「代理で答えられるか」の案内を出し分けるので、
@@ -501,7 +528,7 @@ local function deliver_stop_notice(bufnr, status)
       MessageQueue.enqueue_notification(from_bufnr, bufnr, status)
     end
   end
-  for from_bufnr in pairs(subscribers) do
+  for from_bufnr in pairs(recipients) do
     drain(from_bufnr)
   end
 end
