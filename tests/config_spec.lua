@@ -162,9 +162,16 @@ describe("configuration redesign", function()
     end)
   end
 
+  it("ignores an agent this checkout does not register", function()
+    Config.setup({ ai = { agents = { not_installed = { process = "oneshot" } } } })
+    assert.is_nil(Config.get().ai.agents.not_installed)
+  end)
+
   it("keeps the configured frontmatter cycle lists per field", function()
-    Config.setup({ chat = { frontmatter = { cycle = { agent = { "codex", "claude" }, profile = { "focused" } } } } })
-    assert.same({ "codex", "claude" }, Config.get().chat.frontmatter.cycle.agent)
+    -- A value this checkout does not offer is kept: `frontmatter_cycler` drops it per field, so
+    -- one config can name a backend that only exists on another branch.
+    Config.setup({ chat = { frontmatter = { cycle = { agent = { "codex", "not-installed" }, profile = { "focused" } } } } })
+    assert.same({ "codex", "not-installed" }, Config.get().chat.frontmatter.cycle.agent)
     assert.same({ "focused" }, Config.get().chat.frontmatter.cycle.profile)
     assert.same({}, Config.defaults.chat.frontmatter.cycle)
   end)
@@ -200,7 +207,6 @@ describe("configuration redesign", function()
     { ai = { agents = { codex = { extensions = { profile_file = true } } } } },
     { ai = { agents = { claude = { env = { FOO = true } } } } },
     { automation = { limits = { resume = { max_retries = 0.5 } } } },
-    { chat = { frontmatter = { cycle = { agent = { "unknown" } } } } },
     { chat = { frontmatter = { cycle = { agent = { "" } } } } },
     { chat = { frontmatter = { cycle = { agent = "claude" } } } },
   }
