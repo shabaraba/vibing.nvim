@@ -65,7 +65,8 @@ local PAYLOADS = {
   -- rules match on (#564's `Bash(git push:*)` case).
   commandcode = {
     path = { tool_name = "edit_file", tool_input = { file_path = "lua/a.lua", old_string = "a", new_string = "b" } },
-    shell = { tool_name = "shell_command", tool_input = { command = "ls", args = {} } },
+    shell = { tool_name = "shell_command", tool_input = { command = "ls", args = { "-la", "/tmp" } } },
+    shell_expected = "ls -la /tmp",
   },
 }
 
@@ -79,10 +80,11 @@ end
 
 --- @param payload table
 --- @param vocabulary table?
-local function assert_shell_call(payload, vocabulary)
+--- @param expected string? the rebuilt command line; defaults to the fixtures' `ls`
+local function assert_shell_call(payload, vocabulary, expected)
   local name, input = permission.normalize_hook_input(vim.deepcopy(payload), vocabulary)
   assert.equals("Bash", name)
-  assert.equals("ls", input.command)
+  assert.equals(expected or "ls", input.command)
 end
 
 describe("conformance: hook payload normalisation", function()
@@ -100,7 +102,7 @@ describe("conformance: hook payload normalisation", function()
       end)
 
       it("brings a shell command to Bash with the command intact", function()
-        assert_shell_call(payloads.shell, descriptor.vocabulary)
+        assert_shell_call(payloads.shell, descriptor.vocabulary, payloads.shell_expected)
       end)
 
       -- A CLI that changed its payload shape is still read: an install pinned to the older version
@@ -108,7 +110,7 @@ describe("conformance: hook payload normalisation", function()
       if payloads.superseded then
         it("still reads the shape an older release of this CLI sent", function()
           assert_path_call(payloads.superseded.path, descriptor.vocabulary)
-          assert_shell_call(payloads.superseded.shell, descriptor.vocabulary)
+          assert_shell_call(payloads.superseded.shell, descriptor.vocabulary, payloads.superseded.shell_expected)
         end)
       end
     end)

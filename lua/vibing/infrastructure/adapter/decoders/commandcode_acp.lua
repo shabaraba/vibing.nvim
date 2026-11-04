@@ -94,20 +94,6 @@ by_update.tool_call_update = function(update, events)
   })
 end
 
---- The context window gauge (`used`/`size`), not the bill — token counts ride the `session/prompt`
---- reply, which the protocol folds in. Reported as `cli_info` so nothing is invented for tokens.
-by_update.usage_update = function(update, events)
-  if type(update.cost) == "table" and type(update.cost.amount) == "number" then
-    table.insert(events, { kind = "cli_info" })
-  end
-end
-
-by_update.available_commands_update = function(update, events)
-  if type(update.availableCommands) == "table" then
-    table.insert(events, { kind = "cli_info", tools = #update.availableCommands })
-  end
-end
-
 --- @param msg table one decoded JSON-RPC frame
 --- @param state table
 --- @return Vibing.CanonicalEvent[]

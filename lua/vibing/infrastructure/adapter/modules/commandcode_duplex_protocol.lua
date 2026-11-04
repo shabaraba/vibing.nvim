@@ -2,6 +2,7 @@
 --- processes, turns and timers; this module is only the wire.
 --- @module vibing.infrastructure.adapter.modules.commandcode_duplex_protocol
 
+local CommandBuilder = require("vibing.infrastructure.adapter.modules.commandcode_command_builder")
 local NativeApproval = require("vibing.infrastructure.adapter.modules.commandcode_native_approval")
 local Process = require("vibing.infrastructure.adapter.modules.duplex_process")
 local TurnOutcome = require("vibing.infrastructure.adapter.modules.turn_outcome")
@@ -116,6 +117,83 @@ local function current_model(result)
   return nil
 end
 
+--- The mode a `session/new` / `session/load` reply says is already active, if it says.
+--- @param result table
+--- @return string|nil
+local function current_mode(result)
+  local modes = result.modes
+  return type(modes) == "table" and modes.currentModeId or nil
+end
+
+--- Apply a changed model or mode to a reused session, then send the prompt.
+---
+--- A resident process keeps the configuration it was spawned with, and `session/new` is where this
+--- backend applied the previous turn's model and mode. Comparing against what the session last
+--- reported means a change between turns is sent before the prompt instead of being silently
+--- ignored. Each request is awaited: Command Code handles `session/set_config_option`
+--- asynchronously, and writing the prompt in the same tick makes both calls fail with "A prompt is
+--- already running for this session" (measured on 1.88.2).
+--- @param record Vibing.DuplexProcess
+--- @param opts Vibing.AdapterOpts
+--- @param result table|nil the `session/new` / `session/load` reply, when there is one
+--- @param next_fn fun()
+local function apply_options(record, opts, result, next_fn)
+  opts = opts or {}
+  local rpc = record._rpc
+  if result then
+    rpc.applied_model = current_model(result)
+    rpc.applied_mode = current_mode(result)
+  end
+
+  local model = type(opts.model) == "string" and opts.model ~= "" and opts.model or nil
+  local mode = acp_mode(opts.permission_mode) or "default"
+  local steps = {}
+
+  if model and model ~= rpc.applied_model then
+    table.insert(steps, function(next)
+      if
+        not request(record, "session/set_config_option", {
+          sessionId = rpc.session_id,
+          configId = "model",
+          value = model,
+        }, function(reply)
+          rpc.applied_model = current_model(reply) or model
+          next()
+        end)
+      then
+        return
+      end
+    end)
+  end
+  if mode ~= rpc.applied_mode then
+    table.insert(steps, function(next)
+      if
+        not request(record, "session/set_mode", {
+          sessionId = rpc.session_id,
+          modeId = mode,
+        }, function()
+          rpc.applied_mode = mode
+          next()
+        end)
+      then
+        return
+      end
+    end)
+  end
+
+  local function run(index)
+    local step = steps[index]
+    if not step then
+      next_fn()
+      return
+    end
+    step(function()
+      run(index + 1)
+    end)
+  end
+  run(1)
+end
+
 --- @param params Vibing.DuplexRunParams
 --- @return table session_params
 local function session_params(params)
@@ -130,10 +208,18 @@ end
 --- @param params Vibing.DuplexRunParams
 --- @return boolean sent
 function M.send_prompt(record, prompt, params)
+  -- The bridge is the real gate, so `commandcode_native_approval` may answer `allow_once` only
+  -- when this turn actually installed it. Set every turn: a later turn whose hook install failed
+  -- must not inherit the previous turn's answer.
+  local hook_installed = params.hook_arg ~= nil
   if record._rpc and record._rpc.session_id then
-    return send_prompt_now(record, prompt)
+    record._rpc.hook_installed = hook_installed
+    apply_options(record, params.opts, nil, function()
+      send_prompt_now(record, prompt)
+    end)
+    return true
   end
-  record._rpc = { seq = 0, pending = {} }
+  record._rpc = { seq = 0, pending = {}, hook_installed = hook_installed }
 
   return request(record, "initialize", {
     protocolVersion = 1,
@@ -157,43 +243,9 @@ function M.send_prompt(record, prompt, params)
       -- The id arrives in a reply, never in a notification, so the decoder is handed one.
       render(record, { method = "vibing/sessionStarted", params = { session_id = id } })
 
-      -- Model and mode via ACP, **each awaited before the next is written**.
-      --
-      -- Command Code handles `session/set_config_option` asynchronously: a `session/prompt` written
-      -- in the same tick reaches the agent while the option call is still in flight, the prompt
-      -- marks the session busy, and *both* calls then come back with "A prompt is already running
-      -- for this session" (measured on 1.88.2 — the calls are chained rather than fired together
-      -- for exactly this reason). An unsupported option would fail the turn through `Rpc.reply`,
-      -- so nothing speculative (an effort option, say) is sent here.
-      local opts = params.opts or {}
-      local model = type(opts.model) == "string" and opts.model ~= "" and opts.model or nil
-      local steps = {}
-
-      -- `session/new` answers with the running `configOptions` already, so the model is only set
-      -- when it differs — one fewer round trip, and one fewer chance to race.
-      if model and model ~= current_model(result) then
-        table.insert(steps, function(next)
-          request(record, "session/set_config_option", { sessionId = id, configId = "model", value = model }, next)
-        end)
-      end
-      local mode = acp_mode(opts.permission_mode)
-      if mode then
-        table.insert(steps, function(next)
-          request(record, "session/set_mode", { sessionId = id, modeId = mode }, next)
-        end)
-      end
-
-      local function run(index)
-        local step = steps[index]
-        if not step then
-          send_prompt_now(record, prompt)
-          return
-        end
-        step(function()
-          run(index + 1)
-        end)
-      end
-      run(1)
+      apply_options(record, params.opts, result, function()
+        send_prompt_now(record, CommandBuilder.with_question_instructions(prompt))
+      end)
     end)
   end)
 end

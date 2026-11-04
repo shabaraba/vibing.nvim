@@ -102,6 +102,24 @@ describe("plugin_contents", function()
       assert.is_nil(servers[1].command)
     end)
 
+    it("keeps request headers declared for a streamable HTTP server", function()
+      write_plugin({
+        [".claude-plugin/plugin.json"] = vim.json.encode({
+          name = "p",
+          mcpServers = {
+            remote = {
+              url = "https://example.test/mcp",
+              headers = { Authorization = "Bearer ${CLAUDE_PLUGIN_ROOT}" },
+            },
+          },
+        }),
+      })
+
+      local servers = PluginContents.mcp_servers(plugin_dir)
+
+      assert.same({ Authorization = "Bearer " .. plugin_dir }, servers[1].headers)
+    end)
+
     it("drops a server with neither command nor url", function()
       write_plugin({
         [".claude-plugin/plugin.json"] = vim.json.encode({

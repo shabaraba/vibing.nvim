@@ -34,8 +34,8 @@ describe("commandcode_native_approval", function()
     package.loaded[PROCESS] = nil
   end)
 
-  local function record()
-    return { job_id = 11, process_id = "p1" }
+  local function record(bridge)
+    return { job_id = 11, process_id = "p1", _rpc = { hook_installed = bridge ~= false } }
   end
 
   --- The four options Command Code 1.88.2 offers, verbatim and in its own order -- the session-wide
@@ -86,6 +86,20 @@ describe("commandcode_native_approval", function()
     -- Silent on the ordinary path: it reports a decision vibing's own gate already made and
     -- already rendered.
     assert.is_nil(notice)
+  end)
+
+  -- Without the mod bridge, Command Code's own gate is the only one left. Approving the call would
+  -- run it with no vibing.nvim check behind it, so the single-use option is not taken.
+  it("refuses rather than approving when the mod bridge is not installed", function()
+    local answered, notice = Approval.handle(record(false), request({ ALLOW_ONCE, REJECT_ONCE }))
+
+    assert.is_true(answered)
+    assert.same(
+      { jsonrpc = "2.0", id = 0, result = { outcome = { outcome = "selected", optionId = "reject_once" } } },
+      written[1].payload
+    )
+    assert.is_truthy(notice)
+    assert.is_truthy(notice:find("no vibing.nvim permission bridge", 1, true))
   end)
 
   it("answers on the process that asked", function()

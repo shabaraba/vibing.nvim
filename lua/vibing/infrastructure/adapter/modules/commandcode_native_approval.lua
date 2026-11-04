@@ -22,9 +22,13 @@
 --- being seen at all. Scoping to the single call keeps the mod bridge the only thing that
 --- accumulates permission.
 ---
+--- **And only when the bridge is installed for this turn.** If the mod could not be installed, the
+--- descriptor omits `--yolo` and the CLI's own gate is all that is left; answering `allow_once`
+--- would then run the call with no vibing.nvim check behind it. Such a turn is refused instead.
+---
 --- This is **not** the approval-without-kill path (#778/#861): nothing here waits for a human, so
---- `native_approval.measured_wait_floor_sec` is not required and is deliberately absent from the
---- Command Code descriptor.
+--- it needs no `measured_wait_floor_sec` of its own. The descriptor's floor belongs to the mod
+--- bridge's wait, not to this reply.
 --- @module vibing.infrastructure.adapter.modules.commandcode_native_approval
 
 local Process = require("vibing.infrastructure.adapter.modules.duplex_process")
@@ -67,7 +71,8 @@ end
 ---   from a deferred callback, and a second renderer here would be a second answer to that question.
 function M.handle(record, msg)
   local params = msg.params or {}
-  local allow = option_for(params, "allow_once")
+  local bridge = record._rpc and record._rpc.hook_installed == true
+  local allow = bridge and option_for(params, "allow_once") or nil
   if allow then
     local answered = Process.write(record, {
       jsonrpc = "2.0",
@@ -86,10 +91,9 @@ function M.handle(record, msg)
     return false, nil
   end
   local tool = (params.toolCall or {}).title or "a tool call"
-  return true,
-    "Command Code asked for permission to run "
-      .. tool
-      .. " and offered no single-use approval, so vibing.nvim refused it."
+  local reason = bridge and " and offered no single-use approval, so vibing.nvim refused it."
+    or "; this turn installed no vibing.nvim permission bridge, so it was refused."
+  return true, "Command Code asked for permission to run " .. tool .. reason
 end
 
 return M

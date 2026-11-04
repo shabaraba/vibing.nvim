@@ -75,6 +75,7 @@ GATE_PREALLOWED="${5:-no}"
 OUT="${VIBING_PERF_OUT:-$(mktemp -d)}"
 mkdir -p "$OUT"
 OUT="$(cd "$OUT" && pwd -P)"
+case "$OUT" in *\'*) echo "VIBING_PERF_OUT must not contain an apostrophe: $OUT" >&2; exit 1 ;; esac
 HOOK="$OUT/blocking-hook.sh"
 LOG="$OUT/hook-$BACKEND.log"
 : > "$LOG"
@@ -212,7 +213,9 @@ case "$BACKEND" in
 esac
 stamp_outer "CLI EXIT code=$?"
 
-if [ -f "$MARKER" ]; then
+if ! grep -q 'HOOK START' "$LOG"; then
+  stamp_outer "VERDICT: INVALID - the hook never started, so this run measured nothing"
+elif [ -f "$MARKER" ]; then
   stamp_outer "VERDICT: FAIL OPEN - the tool ran even though the hook never returned a decision"
 else
   stamp_outer "VERDICT: the tool did not run"

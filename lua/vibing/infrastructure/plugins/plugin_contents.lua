@@ -23,6 +23,7 @@ local M = {}
 --- @field args string[] arguments, for a stdio server
 --- @field env table<string, string> extra environment, for a stdio server
 --- @field url string|nil endpoint, for a streamable HTTP server
+--- @field headers table<string, string>|nil request headers, for a streamable HTTP server
 
 --- @class Vibing.PluginSkill
 --- @field name string frontmatter `name`, or the directory name when absent
@@ -154,6 +155,7 @@ function M.mcp_servers(plugin_dir)
           args = string_list(expanded.args),
           env = string_map(expanded.env),
           url = url,
+          headers = url and string_map(expanded.headers) or nil,
         })
       end
     end

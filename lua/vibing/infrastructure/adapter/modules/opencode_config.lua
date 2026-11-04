@@ -6,6 +6,7 @@ local PluginDirs = require("vibing.infrastructure.plugins.plugin_dirs")
 local PluginContents = require("vibing.infrastructure.plugins.plugin_contents")
 local SettingsGenerator = require("vibing.infrastructure.hooks.settings_generator")
 local AskUserQuestionInstructions = require("vibing.infrastructure.adapter.modules.ask_user_question_instructions")
+local ToolVocabulary = require("vibing.infrastructure.adapter.modules.opencode_tool_vocabulary")
 local InstanceKey = require("vibing.infrastructure.rpc.instance_key")
 local WaitBudget = require("vibing.infrastructure.hooks.wait_budget")
 
@@ -18,9 +19,9 @@ local function expand_root(value, root)
   return (value:gsub("%${CLAUDE_PLUGIN_ROOT}", root))
 end
 
-local function convert_server(server, plugin_dir, env)
+local function convert_server(server, plugin_dir)
   if server.url then
-    return { type = "remote", url = server.url, codemode = false }
+    return { type = "remote", url = server.url, headers = server.headers, codemode = false }
   end
   local command = server.command
   local args = {}
@@ -104,15 +105,17 @@ function M.apply(env, opts, config)
 
   -- MCP servers from plugin dirs (non-lightweight).
   local seen = {}
-  local self_dir = PluginDirs.self_plugin_dir and PluginDirs.self_plugin_dir() or nil
+  local names = {}
   for _, entry in ipairs(PluginDirs.resolve_entries(opts.cwd, config)) do
     for _, server in ipairs(PluginContents.mcp_servers(entry.path)) do
       if not seen[server.name] then
         seen[server.name] = true
-        cfg.mcp.servers[server.name] = convert_server(server, entry.path, env)
+        table.insert(names, server.name)
+        cfg.mcp.servers[server.name] = convert_server(server, entry.path)
       end
     end
   end
+  ToolVocabulary.set_mcp_servers(names)
 
   -- Permission rules.
   if not plugin_dir and not is_bypass then
@@ -143,9 +146,11 @@ function M.apply(env, opts, config)
   if f then
     f:write(table.concat(AskUserQuestionInstructions.lines(), "\n") .. "\n")
     f:close()
+  else
+    Notify.warn_once("opencode_instructions_write", "Could not write OpenCode instruction file: " .. instr_path)
   end
   cfg.instructions = cfg.instructions or {}
-  if not vim.tbl_contains(cfg.instructions, instr_path) then
+  if vim.fn.filereadable(instr_path) == 1 and not vim.tbl_contains(cfg.instructions, instr_path) then
     table.insert(cfg.instructions, instr_path)
   end
 

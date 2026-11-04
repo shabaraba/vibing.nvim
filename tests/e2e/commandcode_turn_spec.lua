@@ -41,7 +41,7 @@ describe("E2E: commandcode completes a turn through the shared adapter", functio
     helper.send_keys(nvim_instance, "<CR>")
 
     local reason
-    ok, reason = helper.wait_for_assistant_turns(nvim_instance, 1, TIMEOUTS.ASSISTANT_RESPONSE)
+    ok, reason = helper.wait_for_completed_turn(nvim_instance, 1, TIMEOUTS.ASSISTANT_RESPONSE)
     assert.is_true(ok, reason or "commandcode should answer without the turn failing")
   end)
 end)

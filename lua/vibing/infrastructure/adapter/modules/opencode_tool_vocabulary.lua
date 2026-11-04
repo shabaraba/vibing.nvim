@@ -5,6 +5,35 @@ local tools_constants = require("vibing.core.constants.tools")
 
 local M = {}
 
+--- Configured MCP server names, registered by `opencode_config` / `opencode_mcp_config` before the
+--- turn. OpenCode names an MCP tool `<server>_<tool>`, and a server name may itself contain `_`, so
+--- the split cannot be guessed from the tool name alone.
+--- @type table<string, boolean>
+local mcp_server_names = {}
+
+--- @param names string[]
+function M.set_mcp_servers(names)
+  mcp_server_names = {}
+  for _, name in ipairs(names or {}) do
+    if type(name) == "string" and name ~= "" then
+      mcp_server_names[name] = true
+    end
+  end
+end
+
+--- The longest configured server name that prefixes this tool name.
+--- @param native_tool_name string
+--- @return string|nil
+local function configured_server(native_tool_name)
+  local best
+  for server in pairs(mcp_server_names) do
+    if native_tool_name:sub(1, #server + 1) == server .. "_" and (not best or #server > #best) then
+      best = server
+    end
+  end
+  return best
+end
+
 local NATIVE_TO_CANONICAL = {
   shell = "Bash",
   read = "Read",
@@ -44,10 +73,13 @@ function M.to_canonical(native_tool_name)
   if tool then
     return "mcp__vibing-nvim__" .. tool
   end
-  local server, t = native_tool_name:match("^(.-)_(.+)$")
-  if server and t and not native_tool_name:match("^mcp__") then
-    -- Avoid mapping simple builtins without underscore? already handled. Map server_tool.
-    return "mcp__" .. server .. "__" .. t
+  local configured = configured_server(native_tool_name)
+  if configured then
+    return "mcp__" .. configured .. "__" .. native_tool_name:sub(#configured + 2)
+  end
+  local server, suffix = native_tool_name:match("^(.-)_(.+)$")
+  if server and suffix and not native_tool_name:match("^mcp__") then
+    return "mcp__" .. server .. "__" .. suffix
   end
   if tools_constants.VALID_TOOLS_MAP[native_tool_name] then
     return native_tool_name
@@ -115,22 +147,6 @@ function M.normalize_input(tool_input, tool_name)
     return tool_input
   end
   return normalized
-end
-
-function M.is_always_allowed(tool_name)
-  if type(tool_name) ~= "string" then
-    return false
-  end
-  if tool_name:lower():find("mcp__", 1, true) then
-    return false
-  end
-  if tools_constants.VALID_TOOLS_MAP[tool_name] or M.to_canonical(tool_name) then
-    return false
-  end
-  if tool_name:match("^opencode_") then
-    return true
-  end
-  return false
 end
 
 return M

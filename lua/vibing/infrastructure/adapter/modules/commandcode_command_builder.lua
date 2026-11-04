@@ -1,6 +1,8 @@
 --- Argv for the Command Code CLI.
 --- @module vibing.infrastructure.adapter.modules.commandcode_command_builder
 
+local AskUserQuestionInstructions = require("vibing.infrastructure.adapter.modules.ask_user_question_instructions")
+local ProcessModel = require("vibing.infrastructure.adapter.modules.process_model")
 local RequestBuilder = require("vibing.infrastructure.adapter.modules.request_builder")
 local SettingsGenerator = require("vibing.infrastructure.hooks.settings_generator")
 local WaitBudget = require("vibing.infrastructure.hooks.wait_budget")
@@ -58,8 +60,21 @@ function M.apply_env(env, opts, config)
   env.VIBING_COMMANDCODE_HOOK_TIMEOUT_SEC = tostring(WaitBudget.cli_timeout_sec())
 end
 
+--- The question-block guidance that on other backends travels in a system prompt.
+---
+--- Command Code has no system-prompt channel on either transport, so it has to ride in the prompt
+--- text. On duplex the protocol adds it when the session is created; here it covers oneshot.
+--- @param prompt string
+--- @return string
+function M.with_question_instructions(prompt)
+  return table.concat(AskUserQuestionInstructions.lines(), "\n") .. "\n\n" .. prompt
+end
+
 function M.build(prompt, opts, session_id, config, hook_arg)
   opts = opts or {}
+  if not opts.lightweight and opts._process_model ~= ProcessModel.DUPLEX then
+    prompt = M.with_question_instructions(prompt)
+  end
   return RequestBuilder.build(
     require("vibing.infrastructure.adapter.backends.commandcode").request,
     prompt,

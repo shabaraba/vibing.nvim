@@ -16,7 +16,7 @@
 local M = {}
 
 ---@class Vibing.HookSpec
----@field transport "settings_file"|"config_override"|"plugin_dir"|"project_dir"|"extension_file"
+---@field transport "settings_file"|"config_override"|"plugin_dir"|"project_dir"|"extension_file"|"env_config"|"mod_file"
 ---@field dialect? "claude"|"copilot" How the script phrases a decision; `pre-tool-use.sh`'s first
 ---  argument. Defaults to `claude`, which the other CLIs sharing its hook schema also read.
 ---@field keep_in_bypass? boolean Register the hook in bypassPermissions too. The permission handler
