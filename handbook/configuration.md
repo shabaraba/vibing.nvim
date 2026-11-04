@@ -137,6 +137,9 @@ require("vibing").setup({
       file_finder_strategy = "auto",
       search_dirs = {},
     },
+    frontmatter = {
+      cycle = {},
+    },
     storage = {
       location = "project",
       path = "/Users/t002451/.local/share/nvim/vibing/chats",
@@ -1451,6 +1454,20 @@ cycler asks the completion source, so a new backend or effort level is reachable
 a second edit. Outside a frontmatter enum line the keys do nothing; `mode` is one of the fields the
 completion source recognises but `providers/frontmatter.lua` defines no values for it, so neither
 completion nor the cycler offers anything there.
+
+`chat.frontmatter.cycle` narrows that list per field, in the order given; values completion does
+not offer are ignored, and an empty list takes the field out of the cycle. Only the two keys are
+affected, not completion:
+
+```lua
+chat = {
+  frontmatter = {
+    cycle = {
+      agent = { "claude", "codex" }, -- `]v` alternates between these two
+    },
+  },
+},
+```
 
 ## Diff
 
