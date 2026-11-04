@@ -17,7 +17,6 @@ local M = {}
 ---@class Vibing.FoldRegion
 ---@field srow integer First row of the region, 0-indexed
 ---@field erow integer Last row of the region, 0-indexed and inclusive
----@field kind string The node type, so only like merges with like
 
 ---The regions last derived for a buffer, in document order and non-overlapping.
 ---@type table<integer, Vibing.FoldRegion[]>
@@ -56,13 +55,12 @@ local function only_blank_between(bufnr, after, before)
   return true
 end
 
----Join runs of the same node type into one region each.
+---Join consecutive regions into one each.
 ---
 ---The renderer puts a blank line between consecutive tool calls, so a turn that ran ten of them in
 ---a row produced ten folds, each one line long and each carrying its own fold text. A run is one
----thing the reader is skipping past, so it collapses as one. Only like merges with like: reasoning
----that happens to sit against a tool call keeps its own fold rather than disappearing under the
----tool's first line.
+---thing the reader is skipping past, so it collapses as one. Prose between two regions keeps them
+---apart; reasoning and the tool call it led to do not, since the reader skips both in one go.
 ---@param bufnr integer
 ---@param found Vibing.FoldRegion[] In document order
 ---@return Vibing.FoldRegion[]
@@ -73,13 +71,12 @@ local function merge_runs(bufnr, found)
     local previous = merged[#merged]
     if
       previous
-      and previous.kind == region.kind
       and region.srow > previous.erow
       and only_blank_between(bufnr, previous.erow, region.srow)
     then
       previous.erow = region.erow
     else
-      merged[#merged + 1] = { srow = region.srow, erow = region.erow, kind = region.kind }
+      merged[#merged + 1] = { srow = region.srow, erow = region.erow }
     end
   end
 
@@ -120,7 +117,7 @@ local function capture_regions(bufnr)
     if end_col == 0 then
       end_row = end_row - 1
     end
-    found[#found + 1] = { srow = start_row, erow = end_row, kind = node:type() }
+    found[#found + 1] = { srow = start_row, erow = end_row }
   end
 
   return found
