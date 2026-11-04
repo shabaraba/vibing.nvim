@@ -172,7 +172,7 @@ describe("treesitter_fold.foldexpr", function()
     vim.api.nvim_buf_delete(bufnr, { force = true })
   end)
 
-  it("keeps reasoning out of the tool call it sits against", function()
+  it("joins reasoning into the fold of the tool call it led to", function()
     local lines = {
       "💭 a thought", -- 1
       "💭 and another", -- 2
@@ -184,8 +184,9 @@ describe("treesitter_fold.foldexpr", function()
     vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
     vim.api.nvim_set_current_buf(bufnr)
 
-    -- Merged, the whole thing would read as one tool call and the reasoning would be gone.
-    assert.same({ ">1", "1", "0", ">1", "1" }, {
+    -- A thought and the call it led to are one thing to skip past. What keeps two regions apart
+    -- is prose between them, not being of different node types.
+    assert.same({ ">1", "1", "1", "1", "1" }, {
       Fold.foldexpr(1),
       Fold.foldexpr(2),
       Fold.foldexpr(3),

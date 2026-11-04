@@ -1351,11 +1351,11 @@ A call whose argument runs to many lines — a `Bash` call carrying a whole scri
 Where it ends is the grammar's answer, not the fold module's: `handbook/features/chat-ui.md` →
 "Where a Rendered Tool Call Ends".
 
-Consecutive blocks of the same kind collapse as one fold rather than one each. The renderer puts a
-blank line between tool calls, so a turn that ran ten of them in a row produced ten folds, each one
-line long and each carrying its own fold text — noisier than the calls themselves. A run is one
-thing the reader is skipping past, so it collapses as one. Only like merges with like: reasoning
-sitting against a tool call keeps its own fold instead of disappearing under the tool's first line.
+Consecutive blocks collapse as one fold rather than one each. The renderer puts a blank line between
+tool calls, so a turn that ran ten of them in a row produced ten folds, each one line long and each
+carrying its own fold text — noisier than the calls themselves. A run is one thing the reader is
+skipping past, so it collapses as one, and reasoning merges with the tool call it led to for the same
+reason. Prose between two blocks is what keeps them apart.
 
 Whether a fold is drawn closed at all is `foldminlines`, counted in _screen_ lines. With `ui.wrap`
 on, a single long tool call wraps and therefore closes; a short one does not.
