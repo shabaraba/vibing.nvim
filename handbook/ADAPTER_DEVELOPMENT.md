@@ -101,8 +101,13 @@ return {
 
   -- What the `/` menu may offer for this backend. Omit it and the menu shows only vibing's own
   -- commands; never borrow another CLI's list.
+  --
+  -- `probe` asks the CLI for its own command list (bundled skills live in no file). Declare it only
+  -- after measuring that it starts no turn AND leaves no session behind: opencode, grok and
+  -- copilot answer over ACP but persist an empty session per `session/new`.
+  -- See handbook/architecture/plugin-and-commands.md → "Slash Command Discovery".
   skill_sources = {
-    probe = false,                                     -- only Claude has the probe protocol
+    probe = { protocol = "acp", args = { "acp" } },    -- or "claude_control" / "codex_skills"; omit if unmeasured
     dirs = { { path = ".claude/skills", source = "project" } },
     plugin_skills = true,                              -- if this CLI receives vibing's skills
   },

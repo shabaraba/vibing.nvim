@@ -199,8 +199,9 @@ fails without this, timing out on the second turn.
 
 Every adapter path used `vim.system`, which returns no writable channel. The only primitive that
 does is `jobstart` + `chansend`, and the only existing user of it was
-`completion/cli_command_list.lua` — which is where the line-assembly buffer, the `request_id`
-correlation and the idempotent finish latch in `duplex_process.lua` come from.
+`completion/cli_command_list.lua` (since moved onto the shared `completion/probes/line_job.lua`) —
+which is where the line-assembly buffer, the `request_id` correlation and the idempotent finish
+latch in `duplex_process.lua` come from.
 
 ### 3. `kill_tree`'s justification inverts, and it is still needed
 

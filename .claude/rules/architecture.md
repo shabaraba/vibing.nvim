@@ -75,9 +75,10 @@ over every registered descriptor.
 - **A backend name belongs in that backend's own module; shared code takes what it is handed.**
   `rpc/handlers/permission.lua` contains no backend name.
 - **The `/` menu offers only skills the current chat's backend declares.** Each descriptor's
-  `skill_sources` says whether to probe the CLI, which skill roots to scan, and whether vibing's
-  plugin skills are delivered; without it the menu shows only vibing's own commands. Claude's
-  probe is Claude's private protocol — never use its answer for another backend's chat.
+  `skill_sources` says how to probe the CLI (a `protocol`, as data), which skill roots to scan, and
+  whether vibing's plugin skills are delivered; without it the menu shows only vibing's own
+  commands. Each protocol is one CLI's own — never use one backend's answer for another's chat —
+  and a probe is declared only after measuring that it starts no turn and leaves no session behind.
 - **Every backend delivers vibing's background-process policy.**
   `adapter/modules/background_job_instructions.lua` is the one text; a backend puts it on the
   channel it has (system prompt, `developer_instructions`, `--rules`, instruction file, prompt
@@ -138,7 +139,7 @@ vibing.nvim's own Claude Code plugin is **not installed**: `cli_command_builder`
 - **`:VibingReloadCommands` clears `plugin_dirs` first**, before the provider caches — both
   re-resolve from it.
 - **Not passed on the lightweight path**, per `core/types.lua`.
-- **`TERMINAL_ONLY_COMMANDS` is a denylist, not an allowlist**: built-in skills live inside the
+- **`probe.hide` (claude's descriptor) is a denylist, not an allowlist**: built-in skills live inside the
   binary, and a stale allowlist would hide a new one.
 - **Command Code has no plugin directory; its skills and servers travel
   separately.** `commandcode_command_builder.skill_args` passes `<plugin>/skills` once per resolved

@@ -256,10 +256,17 @@ vibing MCP tools at all; its only other sources are the user's own `.mcp.json`,
 The `/` menu is built **per backend**, from the sources its descriptor declares in
 `skill_sources` (`completion/providers/skills.lua`). Three kinds exist:
 
-- **`probe`** — ask the CLI itself. `completion/cli_command_list.lua` spawns `claude` with
-  `--input-format stream-json`, writes one `control_request` line of subtype `initialize`, reads
-  the one-line `control_response`, and kills the process. Only Claude's private protocol is
-  implemented, so only its descriptor sets this.
+- **`probe`** — ask the CLI itself, by the protocol the descriptor names
+  (`completion/command_probe.lua` is the one place that turns the data into a process; the
+  process handling shared by all of them is `completion/probes/line_job.lua`):
+  - `claude_control` — `completion/cli_command_list.lua` spawns `claude` with
+    `--input-format stream-json`, writes one `control_request` line of subtype `initialize`, reads
+    the one-line `control_response`, and kills the process.
+  - `acp` — `probes/acp.lua` runs `initialize` then `session/new` and waits for the agent's
+    `available_commands_update`. `args` is the argv after the binary (`{ "acp" }` for Command
+    Code).
+  - `codex_skills` — `probes/codex_skills.lua` runs `initialize` then `skills/list` on
+    `codex app-server`.
 - **`dirs`** — skill roots that CLI reads (`.claude/skills`, `.agents/skills`, ...), scanned for
   `SKILL.md`.
 - **`plugin_skills`** — vibing's own plugin skills, which the backend receives as real slash
@@ -268,18 +275,53 @@ The `/` menu is built **per backend**, from the sources its descriptor declares 
 A descriptor with no `skill_sources` contributes no skills: the menu shows vibing's own commands
 and nothing else, rather than borrowing another CLI's list. That is the fix for a Claude-only
 entry (`/design`, a `.claude/skills` skill) appearing in a Command Code, Codex or Pi chat where
-nothing would run it. The provider caches per `agent + cwd`, because two chats can name different
-backends and a chat's `agent:` can change mid-session.
+nothing would run it. The probe's answer is cached **per agent**
+(`providers/command_probe_cache.lua`) and the item list per `agent + cwd`, because two chats can
+name different backends and a chat's `agent:` can change mid-session.
 
-The rest of this section is about the `probe` half.
+**Which backends declare a probe is a measurement, not a capability.** A probe runs on every
+Neovim start and on every directory change, so it must start no turn and leave nothing behind.
+Measured 2026-11-05:
+
+| Backend     | Protocol                 | Commands | Latency | Leaves a session behind?                       | Declared |
+| ----------- | ------------------------ | -------- | ------- | ---------------------------------------------- | -------- |
+| claude      | `claude_control`         | 96       | ~1.6s   | No                                             | Yes      |
+| codex       | `codex_skills` (0.166.0) | 141      | ~0.5s   | No (`skills/list` opens no thread)             | Yes      |
+| commandcode | `acp` (1.88.2)           | 33       | ~2.9s   | No                                             | Yes      |
+| opencode    | `acp` (2.2.5)            | 4        | ~1.8s   | **Yes** — an "Untitled session"                | No       |
+| grok        | `acp` (1.0.67)           | 74       | ~1.2s   | **Yes** — a directory under `~/.grok/sessions` | No       |
+| copilot     | `acp` (1.0.85)           | 58       | ~6.3s   | **Yes** — `~/.copilot/session-state/<id>`      | No       |
+
+`session/close` does not remove the opencode session, so there is no clean-up step that would make
+the other three safe. They can declare `probe = { protocol = "acp", args = { ... } }` the day
+that changes; the argv for grok is `agent --no-leader stdio` (without `stdio` it opens its pager
+UI and never answers), for opencode `acp`, for copilot `--acp`. Pi was not installed, so it is
+unmeasured.
+
+**What a probe cannot show.** Command Code's ACP `listCommands` drops every command whose source
+is `builtin` (`source !== "builtin"` in `dist/cli.mjs`), and `/goal` is one — it is a TUI
+supervisor (`createGoalMod` / `runGoalTurn`), not a skill — so it is absent from the menu even
+though the probe works. The bundled skills (`loop`, `design`, `skill-builder`, `mod-builder`,
+`agent-browser`, ...) are in the list and now appear. Measured on 1.88.2: `cmd -p '/goal ...'`
+reaches the model as the literal text `/goal ...` (no bootstrap message, no supervisor), because
+`runPrintMode` never passes `goalText` to the harness; over ACP `resolveCommand` answers only custom
+commands and skills, so `/goal` falls through to plain text the same way. Hiding it from the menu
+is therefore correct, not a gap. opencode and grok do advertise `goal`, which is the reason they
+stay worth revisiting.
+
+**Whose description wins.** `probe.authoritative` is set only for Claude, whose answer names
+plugin skills with a namespace and marks user and project ones. For the others the directory scan
+runs first (it knows where a skill lives) and the probe fills in what no directory holds. Codex
+reports a `scope` per skill (`repo`, `user`, `system`), carried to the menu as `source`.
 
 The point is that **built-in skills are inside the binary**. `/design`, `/dataviz`,
 `/code-review`, `/loop`, `/run` and the rest are backed by no file anywhere, so the filesystem
 scan this replaced could only ever offer a hand-written list — one in `skills.lua`, another in
 `bin/list-commands.ts` — and both went stale on every CLI release. What is hand-maintained now is
-`TERMINAL_ONLY_COMMANDS`, a **deny**list of commands that act on the interactive terminal session
-(`/color`, `/usage`, `/rename`, ...). The inversion is the whole gain: a stale allowlist hides a
-new skill, a stale denylist shows one extra entry.
+`skill_sources.probe.hide` in the Claude descriptor, a **deny**list of commands that act on the
+interactive terminal session (`/color`, `/usage`, `/rename`, ...). The inversion is the whole
+gain: a stale allowlist hides a new skill, a stale denylist shows one extra entry. The rest of this
+section is about the Claude protocol.
 
 **Measured against claude 2.1.231**, since none of the protocol is documented:
 
