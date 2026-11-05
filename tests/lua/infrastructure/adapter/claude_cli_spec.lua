@@ -168,4 +168,40 @@ describe("claude_cli environment", function()
       assert.equals("10000", env.BASH_MAX_OUTPUT_LENGTH)
     end)
   end)
+
+  it("lets a oneshot turn wait for the CLI's own approval only under the descriptor's measurement", function()
+    -- The prompt tool is an MCP call, so a oneshot turn reaches the native channel too; the gate
+    -- must still be the measured floor, not an unconditional yes.
+    local Descriptor = require("vibing.infrastructure.adapter.backends.claude")
+    local TurnRegistry = require("vibing.infrastructure.adapter.modules.turn_registry")
+    local original_native = Descriptor.native_approval
+    local waits = {}
+    for _, native in ipairs({ { measured_wait_floor_sec = 100000 }, false }) do
+      Descriptor.native_approval = native or nil
+      local ok, run = pcall(helper.run_stream, claude:new(vim.deepcopy(CONFIG)))
+      assert(ok, run)
+      table.insert(waits, TurnRegistry.get(run.turn_id).can_wait_for_native_approval)
+    end
+    Descriptor.native_approval = original_native
+
+    assert.same({ true, false }, waits)
+  end)
+
+  it("records on the oneshot process the prompt tool its argv names", function()
+    -- `permission_prompt.lua` refuses any process that does not carry this: it is the only proof
+    -- the caller is claude's gate rather than the model calling an auto-allowed MCP tool.
+    local PromptTool = require("vibing.infrastructure.adapter.modules.claude_permission_prompt")
+    local ProcessRegistry = require("vibing.infrastructure.adapter.modules.process_registry")
+    local name = "mcp__plugin_vibing-nvim_vibing-nvim__nvim_permission_prompt"
+    local original_tool_name = PromptTool.tool_name
+    PromptTool.tool_name = function()
+      return name
+    end
+    local ok, run = pcall(helper.run_stream, claude:new(vim.deepcopy(CONFIG)))
+    PromptTool.tool_name = original_tool_name
+    assert.is_true(ok, run)
+
+    assert.truthy(vim.tbl_contains(system.only_call().cmd, "--permission-prompt-tool"))
+    assert.equals(name, ProcessRegistry.get(run.process_id).permission_prompt_tool)
+  end)
 end)

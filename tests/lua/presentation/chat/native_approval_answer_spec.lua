@@ -49,6 +49,7 @@ describe("answering a Codex approval in the chat", function()
       request_id = request_id,
       chat_bufnr = chat_buf.buf,
       tool = "Codex command execution",
+      refusal = "decline",
       respond = function(decision)
         table.insert(decisions, decision)
       end,

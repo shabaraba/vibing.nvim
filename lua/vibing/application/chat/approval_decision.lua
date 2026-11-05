@@ -239,7 +239,7 @@ end
 ---
 --- Both registries are consulted here where `find_blocked` refuses to: the ids are **disjoint by
 --- construction** — a hook mints `<epoch>-<pid>-<random>`, a native one is
---- `codex-<process_id>-<rpc_id>` — so at most one can answer, and a caller holding only an id has
+--- `codex-<process_id>-<rpc_id>` or `prompt-<process_id>-<tool_use_id>` — so at most one can answer, and a caller holding only an id has
 --- nothing else to decide with. `find_blocked` has the prompt, and asking the prompt is strictly
 --- better than relying on that disjointness staying true.
 --- @param request_id string

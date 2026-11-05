@@ -21,6 +21,8 @@ local M = {}
 ---   draw its prompt (`hooks/transports.lua`). Per process rather than per turn because it names
 ---   the chat, and the chat is what the process serves for its whole life.
 --- @field adapter table backend adapter reference; the receiver of `cancel(process_id)`
+--- @field permission_prompt_tool? string The tool this process was spawned naming with
+---   `--permission-prompt-tool`. Per process because it is an argv element, fixed at spawn.
 --- @field active_turn_id? string The turn this process currently has open, or nil while it is idle.
 ---   **Written only by `turn_registry.open` / `close`.** It is the one link between the two
 ---   registries, and keeping the writer in one module is what stops it from drifting out of step

@@ -695,6 +695,23 @@ resumes the same thread with the new configuration.
 Both prompts can appear for one command, one after the other: vibing.nvim's
 gate asks first, and only a call it allows gets as far as Codex's sandbox.
 
+Claude's own permission prompts~
+
+Claude Code also asks a human about some calls itself, whatever
+`permissions.allow` and its own settings say. The case you will meet is an
+edit to a file inside a plugin directory vibing.nvim loads with
+`--plugin-dir` — `.vibing/plugins/<name>/` or the bundled plugin — which
+Claude Code treats as a sensitive file. With nobody to ask, the CLI would
+refuse the edit; vibing.nvim instead names its own MCP tool as the CLI's
+`--permission-prompt-tool` and shows the question in the chat.
+
+The prompt offers `allow_once` and `deny_once` and continues the turn that
+asked. Like Codex's sandbox approvals it grants nothing in
+`permissions.allow`: the next such edit asks again. It expires after
+`permissions.approval_wait_sec` like every other prompt, and answering it
+afterwards asks the agent to retry. The channel is on only while the bundled
+plugin is loaded and its MCP server has been built (`./build.sh`).
+
 Answering a question~
 
 When the agent asks you to choose between approaches, the question and its

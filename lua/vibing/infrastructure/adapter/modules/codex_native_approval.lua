@@ -170,15 +170,11 @@ function M.handle(record, msg)
     chat_bufnr = chat_bufnr,
     turn_id = turn_id,
     tool = tool,
+    refusal = Decisions.refusal(),
     respond = function(decision)
       reply(job_id, rpc_id, decision)
     end,
-    on_timeout = function(entry)
-      local chat_buf = require("vibing.presentation.chat.view").get_chat_buffer(entry.chat_bufnr)
-      if chat_buf and type(chat_buf.expire_approval) == "function" then
-        chat_buf:expire_approval(entry)
-      end
-    end,
+    on_timeout = require("vibing.infrastructure.rpc.pending_native_approvals").expire_in_chat,
   })
 
   -- No `vim.schedule`: this already runs on the main loop from the job's stdout callback, and a

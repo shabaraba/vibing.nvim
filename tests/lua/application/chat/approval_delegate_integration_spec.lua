@@ -155,7 +155,7 @@ describe("delegated approval, end to end", function()
   it("keeps a retry answer unspent while a native approval holds the turn open", function()
     local worker = open_chat()
     local Native = require("vibing.infrastructure.rpc.pending_native_approvals")
-    Native.open({ request_id = "native-open", chat_bufnr = worker.buf, respond = function() end })
+    Native.open({ request_id = "native-open", chat_bufnr = worker.buf, refusal = "decline", respond = function() end })
     worker:insert_approval_request(
       "Bash",
       { command = "echo retry" },

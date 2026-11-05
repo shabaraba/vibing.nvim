@@ -160,10 +160,32 @@ function M.can_wait_for_native_approval(native_approval)
   return measured_covers(native_approval and native_approval.measured_wait_floor_sec, M.native_approval_budget_sec())
 end
 
---- The environment entry the hook script reads. Merged into the CLI child's environment.
+--- The name the MCP server reads its `permission_prompt` RPC deadline out of. The server is a child
+--- of the CLI and inherits its environment, the same route `VIBING_NVIM_RPC_PORT` takes.
+M.PROMPT_TOOL_WAIT_VAR = "VIBING_PROMPT_TOOL_WAIT_SEC"
+
+--- How long claude lets an MCP tool send nothing before aborting it. Measured against a server that
+--- never answers (`approval-without-kill.md`), so it bounds the prompt tool from above and says
+--- nothing about whether a late answer is consumed — that is `native_approval.measured_wait_floor_sec`.
+M.MCP_TOOL_IDLE_CEILING_SEC = 1800
+
+--- How long the `--permission-prompt-tool` MCP call waits for Neovim before denying on its own.
+---
+--- The backstop for "Neovim never replied", the role `script_wait_sec` plays for the hook. Ordered
+--- after `native_approval_budget_sec`, so vibing's own limit always answers first, and below the
+--- 1800s claude allows an MCP tool to stay silent (`approval-without-kill.md` → "How long the CLI
+--- waits for an MCP tool"). `hook_timeout_ordering_spec.lua` holds both inequalities.
+--- @return number seconds
+function M.prompt_tool_wait_sec()
+  return M.native_approval_budget_sec() + M.SCRIPT_MARGIN_SEC
+end
+
+--- The environment entries the hook script and the MCP server read. Merged into the CLI child's
+--- environment.
 --- @param env table<string, string>
 function M.bind(env)
   env[M.MAX_WAIT_VAR] = tostring(M.script_wait_sec())
+  env[M.PROMPT_TOOL_WAIT_VAR] = tostring(M.prompt_tool_wait_sec())
 end
 
 return M

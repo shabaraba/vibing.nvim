@@ -9,6 +9,7 @@
 
 local tools_constants = require("vibing.core.constants.tools")
 local CliMcpConfig = require("vibing.infrastructure.adapter.modules.cli_mcp_config")
+local ClaudePermissionPrompt = require("vibing.infrastructure.adapter.modules.claude_permission_prompt")
 local CommonBuilder = require("vibing.infrastructure.adapter.modules.command_builder_common")
 local AskUserQuestionInstructions = require("vibing.infrastructure.adapter.modules.ask_user_question_instructions")
 local BackgroundJobInstructions = require("vibing.infrastructure.adapter.modules.background_job_instructions")
@@ -106,10 +107,16 @@ function M.permission_args(ctx)
     table.insert(cmd, table.concat(allow_tools, ","))
   end
 
-  local permissions_deny = opts.permissions_deny
-  if permissions_deny and type(permissions_deny) == "table" and #permissions_deny > 0 then
+  local deny_tools = type(opts.permissions_deny) == "table" and vim.deepcopy(opts.permissions_deny) or {}
+  -- One flag, not a second `--disallowedTools`: the prompt tool is hidden from the model the same way
+  -- a user's deny is, and the CLI still consults it (`claude_permission_prompt.lua`).
+  local prompt_tool = ClaudePermissionPrompt.tool_name(ctx)
+  if prompt_tool then
+    allow_additionally(deny_tools, { prompt_tool })
+  end
+  if #deny_tools > 0 then
     table.insert(cmd, "--disallowedTools")
-    table.insert(cmd, table.concat(permissions_deny, ","))
+    table.insert(cmd, table.concat(deny_tools, ","))
   end
 
   if opts.permission_mode then
@@ -144,6 +151,13 @@ function M.plugin_dir_args(ctx)
     table.insert(cmd, plugin_dir)
   end
   return cmd
+end
+
+--- `--permission-prompt-tool`, when the tool it names is known to exist this turn.
+--- @param ctx Vibing.RequestContext
+--- @return string[]
+function M.permission_prompt_args(ctx)
+  return ClaudePermissionPrompt.args(ctx)
 end
 
 --- `ai.agents.claude.mcp.inherit_cli_servers = false` only: empty otherwise, so the ordinary turn is untouched. It

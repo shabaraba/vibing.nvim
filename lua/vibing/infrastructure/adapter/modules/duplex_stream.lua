@@ -129,6 +129,8 @@ local function acquire(params, chat_key)
       chat_bufnr = descriptor.register_chat_bufnr and chat_key or nil,
       session_id = params.opts._session_id,
       adapter = params.adapter,
+      permission_prompt_tool = descriptor.permission_prompt_tool and descriptor.permission_prompt_tool(params.argv)
+        or nil,
     },
     on_line = Routing.line_router(chat_key, descriptor),
     on_stderr = Routing.stderr_router(chat_key),

@@ -11,6 +11,7 @@ import * as qflist from './qflist.js';
 import * as dap from './dap.js';
 import * as jobs from './jobs.js';
 import * as sessions from './sessions.js';
+import * as permission from './permission.js';
 
 export const handlers: Record<string, (args: any) => Promise<any>> = {
   nvim_session_search: sessions.handleSessionSearch,
@@ -74,4 +75,7 @@ export const handlers: Record<string, (args: any) => Promise<any>> = {
   nvim_job_list: jobs.handleJobList,
   nvim_job_stop: jobs.handleJobStop,
   nvim_job_wait: jobs.handleJobWait,
+
+  // The target of `--permission-prompt-tool`; called by the CLI, never by a model
+  nvim_permission_prompt: permission.handlePermissionPrompt,
 };

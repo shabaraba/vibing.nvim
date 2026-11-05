@@ -58,6 +58,9 @@ local PluginScaffold = require("vibing.infrastructure.plugins.scaffold")
 ---@field event_context_fields? fun(): table Extra fields on the event context (claude pre-creates
 ---  its token accumulator and `cliInfo` so mid-stream events always have somewhere to land).
 ---@field vocabulary? table Tool-name/payload normalisation handed to the permission handler.
+---@field permission_prompt_tool? fun(argv: string[]): string? The tool a built argv names as the
+---  CLI's own permission prompt, recorded on the process entry. Absent means no gate of this
+---  backend asks through `rpc/handlers/permission_prompt.lua`, so that handler refuses its calls.
 ---@field register_chat_bufnr? boolean Whether the turn carries this stream's chat buffer back, so
 ---  an approval waiting in place can draw into it (`hooks/transports.lua`).
 ---@field stdin? string What to hand the child on stdin; `""` closes it so a CLI that reads stdin
@@ -416,6 +419,7 @@ function M.define(descriptor)
       chat_bufnr = descriptor.register_chat_bufnr and opts.chat_bufnr or nil,
       session_id = opts._session_id,
       adapter = self,
+      permission_prompt_tool = descriptor.permission_prompt_tool and descriptor.permission_prompt_tool(cmd) or nil,
     }
     ProcessRegistry.register(process)
     TurnRegistry.open({
@@ -423,6 +427,11 @@ function M.define(descriptor)
       process = process,
       worktree_root = opts._worktree_root,
       on_approval_required = opts.on_approval_required,
+      -- The CLI's own approval channel is not only a resident one: claude's prompt tool is an MCP
+      -- call, which a oneshot turn makes as readily as a duplex one. Same gate as `duplex_turn.open`.
+      can_wait_for_native_approval = require("vibing.infrastructure.hooks.wait_budget").can_wait_for_native_approval(
+        descriptor.native_approval
+      ),
     })
     close_process = function()
       ProcessRegistry.unregister(ids.process_id)

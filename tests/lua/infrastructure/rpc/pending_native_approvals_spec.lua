@@ -22,6 +22,7 @@ describe("pending native approvals", function()
       request_id = request_id,
       chat_bufnr = 1,
       tool = "Codex command execution",
+      refusal = "decline",
       respond = function(decision)
         table.insert(decisions, decision)
       end,
@@ -64,6 +65,7 @@ describe("pending native approvals", function()
       PendingNative.open({
         request_id = "codex-p1-0",
         chat_bufnr = 1,
+        refusal = "decline",
         respond = function()
           error("the process is gone")
         end,
@@ -149,6 +151,23 @@ describe("pending native approvals", function()
       assert.equals(2, PendingNative.resolve_all("Neovim exited"))
       assert.same({ "decline" }, a)
       assert.same({ "decline" }, b)
+    end)
+
+    it("refuses each request in its own producer's word", function()
+      -- Two CLIs feed this registry and their vocabularies differ: codex declines, the claude
+      -- prompt tool denies. A sweep that knew only one word would answer the other in nonsense.
+      local codex = open("codex-p1-0", { chat_bufnr = 7 })
+      local claude = open("prompt-p2-toolu_1", { chat_bufnr = 7, refusal = { decision = "deny" } })
+
+      assert.equals(2, PendingNative.resolve_for_chat(7, "the chat went away"))
+      assert.same({ "decline" }, codex)
+      assert.same({ { decision = "deny" } }, claude)
+    end)
+
+    it("refuses to open an entry that has no refusal", function()
+      assert.has_error(function()
+        PendingNative.open({ request_id = "codex-p1-0", respond = function() end })
+      end)
     end)
 
     it("re-opening one id declines the first owner rather than replacing it silently", function()

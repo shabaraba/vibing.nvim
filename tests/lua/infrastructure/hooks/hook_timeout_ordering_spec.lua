@@ -139,6 +139,31 @@ describe("hook timeout ordering", function()
     end)
   end)
 
+  describe("the permission prompt tool's deadline", function()
+    it("lets vibing's own limit answer first", function()
+      assert.is_true(WaitBudget.approval_wait_sec() < WaitBudget.native_approval_budget_sec())
+      assert.is_true(WaitBudget.native_approval_budget_sec() < WaitBudget.prompt_tool_wait_sec())
+    end)
+
+    it("stays under claude's MCP idle ceiling whenever claude may wait at all", function()
+      -- Past the ceiling claude aborts the tool call, so a deadline beyond it would never be the one
+      -- that answers. The gate is what keeps it below: a configured wait large enough to push the
+      -- deadline past 1800 is also larger than the measured floor, which switches waiting off.
+      local claude = require("vibing.infrastructure.adapter.backends.claude")
+      local floor = claude.native_approval and claude.native_approval.measured_wait_floor_sec
+      assert.is_number(floor, "claude has no measured native approval floor")
+      assert.is_true(floor + WaitBudget.SCRIPT_MARGIN_SEC < WaitBudget.MCP_TOOL_IDLE_CEILING_SEC)
+      assert.is_true(WaitBudget.can_wait_for_native_approval(claude.native_approval))
+      assert.is_true(WaitBudget.prompt_tool_wait_sec() < WaitBudget.MCP_TOOL_IDLE_CEILING_SEC)
+    end)
+
+    it("reaches the MCP server through the same environment binding as the hook's", function()
+      local env = {}
+      WaitBudget.bind(env)
+      assert.equals(tostring(WaitBudget.prompt_tool_wait_sec()), env[WaitBudget.PROMPT_TOOL_WAIT_VAR])
+    end)
+  end)
+
   describe("which backends may wait for an approval", function()
     --- A descriptor carrying only the two fields the gate reads. `register_chat_bufnr` defaults to
     --- true here so each case below varies one thing; the flag has its own cases underneath.

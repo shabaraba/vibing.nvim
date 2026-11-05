@@ -11,6 +11,7 @@ local annotations = require("vibing.infrastructure.rpc.handlers.annotations")
 local message = require("vibing.infrastructure.rpc.handlers.message")
 local chat = require("vibing.infrastructure.rpc.handlers.chat")
 local permission = require("vibing.infrastructure.rpc.handlers.permission")
+local permission_prompt = require("vibing.infrastructure.rpc.handlers.permission_prompt")
 local rate_limit = require("vibing.infrastructure.rpc.handlers.rate_limit")
 local qflist = require("vibing.infrastructure.rpc.handlers.qflist")
 local dap = require("vibing.infrastructure.rpc.handlers.dap")
@@ -64,6 +65,7 @@ M.chat_conflicts = chat.chat_conflicts
 M.list_profiles = chat.list_profiles
 
 M.check_tool_permission = permission.check_tool_permission
+M.permission_prompt = permission_prompt.permission_prompt
 
 M.stop_failure = rate_limit.stop_failure
 
