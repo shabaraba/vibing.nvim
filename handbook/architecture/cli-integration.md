@@ -408,8 +408,8 @@ and dialect from `hooks/transports.lua`; the five generators described below are
   **A resumed turn goes through `--session`, not `--resume`.** Measured on 1.88.2 (and readable in
   `dist/cli.mjs`): `--resume <id>` resolves through `hasCommandSession`, which is scoped to the
   project directory of the cwd, so a chat whose `working_dir` moved — a worktree removed and
-  recreated under a new name, a chat switched to another worktree — fails with
-  `No session "<id>" found to resume.` and the session is discarded. `--session <id>` resolves
+  recreated under a new name, a chat switched to another worktree — failed with
+  `No session "<id>" found to resume.` and the session was discarded. `--session <id>` resolves
   against `listAllSessionsV3` (every project) and loads a transcript that lives elsewhere with
   `loadExternalPrintSession`, so the conversation follows the chat into the new directory while the
   turn itself runs there. Verified end to end: a session created in one directory, then resumed from

@@ -38,7 +38,15 @@ local M = {
       { kind = "args", "--no-session", when = "lightweight" },
       { kind = "model", flag = "--model", names = "native", unless = "duplex" },
       { kind = "effort", flag = "--effort", unless = "duplex" },
-      { kind = "resume", flag = "--resume", fork = "--fork-session", unless = "duplex" },
+      -- `--session`, not `--resume`: measured on 1.88.2, `--resume` resolves through
+      -- `hasCommandSession`, which is scoped to the project directory of the cwd — so resuming a
+      -- chat whose `working_dir` changed (a worktree removed and recreated, a chat moved between
+      -- worktrees) fails with `No session "<id>" found to resume.` and the session is thrown away.
+      -- `--session` resolves the id against `listAllSessionsV3` (every project) and, when the
+      -- transcript lives elsewhere, loads it with `loadExternalPrintSession` — the conversation
+      -- follows the chat into the new directory. It takes the same id, and `--fork-session` covers
+      -- it too (`dist/cli.mjs`).
+      { kind = "resume", flag = "--session", fork = "--fork-session", unless = "duplex" },
       { kind = "args", "acp", when = "duplex" },
       -- `-p` takes the prompt as its value and reads stdin when it is absent; on duplex the prompt
       -- travels in the ACP `session/prompt` request instead, so this part drops out.
