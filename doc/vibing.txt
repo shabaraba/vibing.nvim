@@ -870,8 +870,11 @@ A chat whose `agent:` is not `ai.chat.agent` does not inherit `ai.chat.model`.
 It starts on that backend's own default: `sonnet` for a Claude chat, `haiku`
 for its utility calls, and whatever the CLI chooses for the others. Change it
 with `ai.agents.<agent>.chat_model` and `ai.agents.<agent>.helper_model` (see
-|vibing-configuration|). An explicit `model:` in the frontmatter is never
-overridden.
+|vibing-configuration|).
+Changing `agent:` in a chat — by hand or with `]v` — rewrites `model:` to the
+new backend's default, since a Claude name on a Codex chat would only be
+discarded. Set `model:` afterwards, or with |/model|, to keep one of your own
+until the agent changes again.
 Codex duplex sends the resolved model and effort on each turn, so changing
 either setting does not restart the resident process; `default` restores the
 CLI or selected model's default after an earlier explicit override.
