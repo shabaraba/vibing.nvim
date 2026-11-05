@@ -42,6 +42,24 @@ describe("configuration redesign", function()
     assert.is_nil(Ai.resolve(Config.get(), "copilot").model)
   end)
 
+  it("uses per-backend model defaults for a chat on that backend", function()
+    Config.setup({
+      ai = {
+        chat = { agent = "claude", model = "chat-model" },
+        helpers = { agent = "codex" },
+        agents = {
+          claude = { chat_model = "opus", helper_model = "sonnet" },
+          codex = { chat_model = "gpt-6-sol", helper_model = "gpt-6-luna" },
+        },
+      },
+    })
+    local c = Config.get()
+    assert.same({ agent = "codex", model = "gpt-6-sol", effort = "default" }, Ai.resolve(c, "codex"))
+    assert.same({ agent = "codex", model = "gpt-6-luna", effort = "low" }, Ai.resolve(c, nil, true))
+    assert.same({ agent = "claude", model = "chat-model", effort = "default" }, Ai.resolve(c))
+    assert.is_nil(Ai.resolve(c, "grok").model)
+  end)
+
   it("merges objects and replaces lists, including empty lists", function()
     Config.setup({
       ui = { window = { position = "left" }, gradient = { colors = { "#123456", "#654321" } } },
@@ -196,6 +214,8 @@ describe("configuration redesign", function()
     { ai = { agents = { grok = { executable = "auto" } } } },
     { ai = { chat = { agent = "unknown" } } },
     { ai = { helpers = { model = "" } } },
+    { ai = { agents = { claude = { chat_model = "" } } } },
+    { ai = { agents = { claude = { helper_model = "" } } } },
     { ai = { agents = { codex = { settings = { sources = { "user" } } } } } },
     { ai = { agents = { copilot = { mcp = { inherit_cli_servers = false } } } } },
     { ai = { agents = { copilot = { process = "duplex" } } } },

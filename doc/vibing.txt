@@ -142,6 +142,7 @@ actually tend to change: >lua
         agents = {
           claude = { process = "oneshot", env = {} },
           codex = {
+            chat_model = "gpt-6-sol",   -- default for chats on this backend
             extensions = {
               approval_policy = "",
               profile_file = ".vibing/codex-permissions.toml",
@@ -865,6 +866,12 @@ CLI/model default. Available levels can depend on the selected model.
 In a Codex chat, `model: default` selects the CLI's configured model even when
 `ai.chat.model` is set. An omitted `model` still uses
 `ai.chat.model`.
+A chat whose `agent:` is not `ai.chat.agent` does not inherit `ai.chat.model`.
+It starts on that backend's own default: `sonnet` for a Claude chat, `haiku`
+for its utility calls, and whatever the CLI chooses for the others. Change it
+with `ai.agents.<agent>.chat_model` and `ai.agents.<agent>.helper_model` (see
+|vibing-configuration|). An explicit `model:` in the frontmatter is never
+overridden.
 Codex duplex sends the resolved model and effort on each turn, so changing
 either setting does not restart the resident process; `default` restores the
 CLI or selected model's default after an earlier explicit override.

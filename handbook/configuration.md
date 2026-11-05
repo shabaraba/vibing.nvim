@@ -256,6 +256,8 @@ ai = {
     },
     codex = {
       process = "oneshot",
+      chat_model = "gpt-6-sol",
+      helper_model = "gpt-6-luna",
       extensions = {
         approval_policy = "",
         auto_approve = false,
@@ -269,12 +271,20 @@ ai = {
 },
 ```
 
-All agents accept `path`, `process`, `env`, `settings`, `mcp` and `extensions`.
+All agents accept `path`, `process`, `chat_model`, `helper_model`, `env`, `settings`, `mcp` and
+`extensions`.
 Omit `path` to locate the executable on PATH. An explicit missing path fails; it never falls
 back to another executable. Grok additionally verifies the official xAI Grok Build CLI.
 `process = "duplex"` is supported by Claude, Codex, Grok and Pi; other agents reject it.
 Only Claude supports `settings.sources` and `mcp.inherit_cli_servers`; explicitly configuring
 these on another agent is an error. Native flags belong in `extensions`.
+
+`chat_model` and `helper_model` set the defaults a chat or utility call starts with on that
+backend. They matter when a chat selects a backend other than `ai.chat.agent` — the frontmatter
+`agent:` field or `/agent` — because `ai.chat.model` deliberately does not follow the chat across
+backends. Unset, the backend's own default applies: Claude's are `sonnet` / `haiku`, and the
+others leave the choice to the CLI. An explicit frontmatter `model:` always wins, and
+`ai.chat.model` / `ai.helpers.model` still apply to the configured agent.
 
 Old option locations are rejected with a migration hint. See
 [the migration map](configuration-redesign.md#旧設定からの対応表).
