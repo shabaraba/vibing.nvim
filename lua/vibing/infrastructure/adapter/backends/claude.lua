@@ -14,6 +14,16 @@ local M = {
   id = "claude",
   duplex = require("vibing.infrastructure.adapter.modules.claude_duplex_protocol"),
 
+  -- The probe reports built-ins, `.claude/skills` and the plugin skills it namespaced, so the
+  -- provider must not also scan plugin directories: those names would differ.
+  skill_sources = {
+    probe = true,
+    dirs = {
+      { path = ".claude/skills", source = "project" },
+      { path = "~/.claude/skills", source = "user" },
+    },
+  },
+
   features = {
     streaming = true,
     tools = true,

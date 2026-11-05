@@ -33,6 +33,8 @@ local AskUserQuestionInstructions =
   require("vibing.infrastructure.adapter.modules.ask_user_question_instructions")
 local BackgroundJobInstructions =
   require("vibing.infrastructure.adapter.modules.background_job_instructions")
+local PluginSkillInstructions =
+  require("vibing.infrastructure.adapter.modules.plugin_skill_instructions")
 
 local M = {}
 
@@ -125,18 +127,9 @@ end
 local function developer_instructions(skills, self_server, chat_bufnr)
   local lines = {}
 
-  if #skills > 0 then
-    table.insert(
-      lines,
-      "vibing.nvim has loaded plugin skills for this session. A skill is a set of local "
-        .. "instructions stored in a SKILL.md file. When a task matches a skill's description, "
-        .. "read that file with your shell (it is readable inside the sandbox) and follow it. "
-        .. "Available plugin skills:"
-    )
-    for _, item in ipairs(skills) do
-      table.insert(lines, string.format("- %s:%s: %s", item.plugin, item.skill.name, item.skill.description))
-      table.insert(lines, "  SKILL.md: " .. item.skill.path)
-    end
+  local skill_lines = PluginSkillInstructions.lines(skills)
+  if #skill_lines > 0 then
+    vim.list_extend(lines, skill_lines)
   end
 
   if self_server then

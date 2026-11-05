@@ -210,10 +210,12 @@ itself.
 
 Command Code reads no `plugin.json` and has no `--plugin-dir`, so nothing about a plugin's
 `agents/` reaches it and a plugin's **`mcpServers`** reaches it only on the duplex transport. Its
-**skills** reach it on both, through a flag of its own:
+**skills** reach it on both, by two different routes:
 
 ```bash
+# oneshot: a real slash command
 commandcode --skill <plugin>/skills -p ...
+# duplex: prompt text, because ACP ignores the flag
 ```
 
 `--skill` takes a skill directory or a directory of skills, is repeatable, and — like every other
@@ -222,11 +224,21 @@ own. `commandcode_command_builder.skill_args` emits one pair per resolved `plugi
 skips an entry with no `skills/` directory; a lightweight call gets none, the same rule
 `--plugin-dir` follows.
 
-Measured on 1.88.2: with `--skill agent-plugin/skills` the model listed `vibing-chat-recall`,
-`nvim-context` and the rest of the bundled skills as available, and the same flag was accepted
-ahead of `acp`. Two things this is _not_: installed skill discovery (`cmd skills add`) and
-`--mod`, which loads TypeScript extensions rather than instructions. Whether a project's own
-`.agents/skills` is scanned is Command Code's business and is unaffected — vibing.nvim adds to it.
+**The flag is print-mode only.** Measured on 1.88.2: `commandcode --skill <dir> acp` loads none of
+the named skills (a session asked to list its skills answers without them, and `/name` is not
+recognised), and passing the flag also drops the discovered project skills from the ACP
+`available_commands_update` list. So the descriptor wires `skill_args` for oneshot only, and the
+duplex protocol prepends `plugin_skill_instructions` — the same listing Codex uses, including the
+sentence that makes a leading `/<skill-name>` mean "read that SKILL.md". Measured over ACP: with
+the listing the model read the file and followed it; without it, it answered "isn't a command I
+recognize".
+
+The rest of the flag's behaviour on oneshot is unchanged: the model lists `vibing-chat-recall`,
+`nvim-context` and the rest of the bundled skills as available. Two things this is _not_:
+installed skill discovery (`cmd skills add`) and `--mod`, which loads TypeScript extensions
+rather than instructions. Whether a project's own `.agents/skills` is scanned is Command Code's
+business and is unaffected — vibing.nvim adds to it, and the completion provider reads those same
+roots (`skill_sources`).
 
 **MCP servers travel on the duplex transport only.** `commandcode acp` accepts a client-supplied
 `mcpServers` list on `session/new` (and on `session/load` / `session/resume`) and connects each
@@ -241,11 +253,25 @@ vibing MCP tools at all; its only other sources are the user's own `.mcp.json`,
 
 ## Slash Command Discovery
 
-The `/` menu's skills and built-in commands come from the CLI itself, asked once per working
-directory: `completion/cli_command_list.lua` spawns `claude` with `--input-format stream-json`,
-writes a single `control_request` line of subtype `initialize`, reads the one-line
-`control_response`, and kills the process. `completion/providers/skills.lua` shapes the answer
-into completion items and caches it.
+The `/` menu is built **per backend**, from the sources its descriptor declares in
+`skill_sources` (`completion/providers/skills.lua`). Three kinds exist:
+
+- **`probe`** — ask the CLI itself. `completion/cli_command_list.lua` spawns `claude` with
+  `--input-format stream-json`, writes one `control_request` line of subtype `initialize`, reads
+  the one-line `control_response`, and kills the process. Only Claude's private protocol is
+  implemented, so only its descriptor sets this.
+- **`dirs`** — skill roots that CLI reads (`.claude/skills`, `.agents/skills`, ...), scanned for
+  `SKILL.md`.
+- **`plugin_skills`** — vibing's own plugin skills, which the backend receives as real slash
+  commands or as prompt text (Claude reports them through the probe, so it leaves this off).
+
+A descriptor with no `skill_sources` contributes no skills: the menu shows vibing's own commands
+and nothing else, rather than borrowing another CLI's list. That is the fix for a Claude-only
+entry (`/design`, a `.claude/skills` skill) appearing in a Command Code, Codex or Pi chat where
+nothing would run it. The provider caches per `agent + cwd`, because two chats can name different
+backends and a chat's `agent:` can change mid-session.
+
+The rest of this section is about the `probe` half.
 
 The point is that **built-in skills are inside the binary**. `/design`, `/dataviz`,
 `/code-review`, `/loop`, `/run` and the rest are backed by no file anywhere, so the filesystem

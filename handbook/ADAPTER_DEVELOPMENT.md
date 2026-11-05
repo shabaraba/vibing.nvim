@@ -99,6 +99,14 @@ return {
   -- Hook: transport × dialect. Both must be names `hooks/transports.lua` knows.
   hook = { transport = "settings_file", dialect = "claude", keep_in_bypass = true },
 
+  -- What the `/` menu may offer for this backend. Omit it and the menu shows only vibing's own
+  -- commands; never borrow another CLI's list.
+  skill_sources = {
+    probe = false,                                     -- only Claude has the probe protocol
+    dirs = { { path = ".claude/skills", source = "project" } },
+    plugin_skills = true,                              -- if this CLI receives vibing's skills
+  },
+
   vocabulary = Vocabulary,
   -- Gates answering an approval without killing the CLI: that path names the chat through
   -- `turn.process.chat_bufnr`, which is filled in only when this is true, so `hook.measured_wait_floor_sec` does nothing on

@@ -1,13 +1,17 @@
 ---@class Vibing.SkillsProvider
----Provides skill candidates from .claude/skills directories
+---Skill candidates for the current chat's backend, from the sources its descriptor declares:
+---Claude's own command probe, that CLI's skill roots, and vibing's plugin skills where the
+---backend receives them.
 ---@module "vibing.infrastructure.completion.providers.skills"
 local M = {}
 
 local CliCommandList = require("vibing.infrastructure.completion.cli_command_list")
 local YamlFrontmatter = require("vibing.core.utils.yaml_frontmatter")
 
----@type Vibing.CompletionItem[]?
-local _cache = nil
+---Items per `agent + cwd`. A chat's `agent:` frontmatter can change mid-session, and two chats
+---can name different backends, so one list cannot serve them all.
+---@type table<string, Vibing.CompletionItem[]>
+local _cache = {}
 
 ---@type Vibing.CompletionItem[]?
 local _cli_cache = nil
@@ -112,6 +116,53 @@ end
 ---other reachable seam.
 M._parse_skill = parse_skill
 
+---The backend the current chat talks to, and the skill sources its descriptor declares.
+---
+---**This is what keeps the menu honest per backend.** The probe speaks one CLI's private
+---protocol (Claude's), so asking it for every chat would offer `/design` to a Codex chat that
+---cannot run it. A descriptor without `skill_sources` therefore contributes no skills at all —
+---only vibing's own commands — rather than another backend's list.
+---@return string agent
+---@return Vibing.SkillSources sources
+function M._sources()
+  local ok, View = pcall(require, "vibing.presentation.chat.view")
+  local chat = ok and View.get_current() or nil
+  local frontmatter = chat and chat:parse_frontmatter() or nil
+  local agent = require("vibing.core.constants.modes").resolve_agent(frontmatter, require("vibing.config").get())
+  return agent, M._sources_for(agent)
+end
+
+---A backend's declared sources, without asking which chat is current.
+---@param agent string
+---@return Vibing.SkillSources
+function M._sources_for(agent)
+  local Agents = require("vibing.core.constants.agents")
+  -- `get` falls back to the default backend, so an unknown id must be refused here rather than
+  -- inheriting another backend's list.
+  if not Agents.is_valid(agent) then
+    return {}
+  end
+  local ok, descriptor = pcall(require, Agents.get(agent).descriptor_module)
+  return (ok and descriptor.skill_sources) or {}
+end
+
+---`{path, source}` entries resolved against the editor's cwd.
+---@param dirs {path: string, source: "project"|"user"}[]|nil
+---@return {dir: string, source: "project"|"user"}[]
+local function resolve_dirs(dirs)
+  local cwd = vim.fn.getcwd(-1, -1)
+  local out = {}
+  for _, entry in ipairs(dirs or {}) do
+    local path = entry.path
+    if path:sub(1, 1) ~= "/" and not path:match("^~") then
+      path = cwd .. "/" .. path
+    end
+    local resolved = (vim.fn.fnamemodify(vim.fn.expand(path), ":p"):gsub("/$", ""))
+    table.insert(out, { dir = resolved, source = entry.source })
+  end
+  return out
+end
+
 ---Plugin directories vibing.nvim self-hosts via `--plugin-dir`. The CLI is asked for its command
 ---list with the very same flags a chat gets, so their skills are namespaced and reported by the
 ---CLI itself rather than being rediscovered here.
@@ -193,8 +244,9 @@ M._to_items = to_items
 
 ---Start the background probe of the CLI's command list.
 ---Sets _cli_cache when it answers and invalidates _cache.
-local function start_async_load()
-  if _loading or _cli_cache or vim.uv.now() < _retry_after then
+---@param sources Vibing.SkillSources
+local function start_async_load(sources)
+  if not sources.probe or _loading or _cli_cache or vim.uv.now() < _retry_after then
     return
   end
 
@@ -224,7 +276,7 @@ local function start_async_load()
       return
     end
     _cli_cache = to_items(commands)
-    _cache = nil
+    _cache = {}
   end)
 
   if not started then
@@ -247,41 +299,44 @@ local function invalidate_if_stale()
   _cli_cache_cwd = nil
   _loading = false
   _load_generation = _load_generation + 1
-  _cache = nil
+  _cache = {}
   -- A new directory is a different question, so it does not wait out the old one's cooldown.
   _retry_after = 0
 end
 
 ---Commands the CLI reports for this directory.
 ---Returns the cached answer immediately; starts the probe if there is none yet.
+---@param sources Vibing.SkillSources
 ---@return Vibing.CompletionItem[]
-local function get_cli_commands()
+local function get_cli_commands(sources)
+  if not sources.probe then
+    return {}
+  end
   if _cli_cache then
     return _cli_cache
   end
-  start_async_load()
+  start_async_load(sources)
   return {}
 end
 
----Scan skill directories
+---One completion item per skill this backend can be asked for.
+---@param sources Vibing.SkillSources
 ---@return Vibing.CompletionItem[]
-local function scan_skills()
+local function scan_skills(sources)
   local items = {}
 
   -- The CLI's own answer goes first, so its description and namespacing win the dedup below
   -- over the directory scan's -- the same skill, described the way the CLI describes it.
-  for _, skill in ipairs(get_cli_commands()) do
+  for _, skill in ipairs(get_cli_commands(sources)) do
     table.insert(items, skill)
   end
 
-  -- Scan local skill directories
-  local dirs = M.scan_directories()
-
-  for _, dir_info in ipairs(dirs) do
+  for _, dir_info in ipairs(resolve_dirs(sources.dirs)) do
     if vim.fn.isdirectory(dir_info.dir) == 1 then
-      local skill_dirs = vim.fn.glob(dir_info.dir .. "*/", false, true)
-      for _, skill_dir in ipairs(skill_dirs) do
-        local skill_file = skill_dir .. "SKILL.md"
+      -- Recursive: `~/.agents/skills` keeps installed skills under a `synced/<id>/<name>/`
+      -- directory, so one level would silently miss most of what Command Code lists.
+      local skill_files = vim.fn.glob(dir_info.dir .. "/**/SKILL.md", false, true)
+      for _, skill_file in ipairs(skill_files) do
         local skill = parse_skill(skill_file)
         if skill then
           table.insert(items, {
@@ -294,6 +349,27 @@ local function scan_skills()
             filterText = skill.name,
           })
         end
+      end
+    end
+  end
+
+  -- Plugin skills are only listed where the backend actually receives them. Claude's probe
+  -- already reports its namespaced copies, which is why its descriptor leaves this off.
+  if sources.plugin_skills then
+    local PluginDirs = require("vibing.infrastructure.plugins.plugin_dirs")
+    local PluginContents = require("vibing.infrastructure.plugins.plugin_contents")
+    local config = require("vibing.config").get()
+    for _, entry in ipairs(PluginDirs.resolve_entries(vim.fn.getcwd(-1, -1), config)) do
+      for _, skill in ipairs(PluginContents.skills(entry.path)) do
+        table.insert(items, {
+          word = skill.name,
+          label = "/" .. skill.name,
+          kind = "Skill",
+          description = skill.description,
+          detail = entry.name,
+          source = "plugin",
+          filterText = skill.name,
+        })
       end
     end
   end
@@ -315,26 +391,19 @@ local function scan_skills()
   return deduped
 end
 
----Define directories to scan for skills
----@return {dir: string, source: "project"|"user"}[]
-function M.scan_directories()
-  return {
-    { dir = vim.fn.getcwd(-1, -1) .. "/.claude/skills/", source = "project" },
-    { dir = vim.fn.expand("~/.claude/skills/"), source = "user" },
-  }
-end
-
----Get all skill candidates (cached)
+---Get all skill candidates for the current chat's backend (cached per agent + cwd)
 ---@return Vibing.CompletionItem[]
 function M.get_all()
   invalidate_if_stale()
-  if _cache then
-    return _cache
+  local agent, sources = M._sources()
+  local key = agent .. "\0" .. vim.fn.getcwd(-1, -1)
+  if _cache[key] then
+    return _cache[key]
   end
-  local items = scan_skills()
+  local items = scan_skills(sources)
   -- Only cache when the CLI probe is complete; avoid caching incomplete results
-  if not M.is_preloading() then
-    _cache = items
+  if not M.is_preloading(sources) then
+    _cache[key] = items
   end
   return items
 end
@@ -350,23 +419,30 @@ function M.peek_cli_commands()
   return _cli_cache or {}
 end
 
----Preload the CLI's command list in background (call at setup time to warm the cache)
+---Preload the current backend's command list in background (call at setup time to warm the cache)
 function M.preload()
   invalidate_if_stale()
-  start_async_load()
+  local _, sources = M._sources()
+  start_async_load(sources)
 end
 
 ---Check if the CLI's command list is still being fetched
----Returns true before the first probe answers; false once _cli_cache is populated
+---Returns false for a backend that has no probe, and true before the probe answers for one that
+---does.
+---@param sources Vibing.SkillSources|nil
 ---@return boolean
-function M.is_preloading()
+function M.is_preloading(sources)
+  sources = sources or select(2, M._sources())
+  if not sources.probe then
+    return false
+  end
   return _loading or _cli_cache == nil
 end
 
 ---Clear cache (call when skills change)
 function M.clear_cache()
   _load_generation = _load_generation + 1
-  _cache = nil
+  _cache = {}
   _cli_cache = nil
   _cli_cache_cwd = nil
   _loading = false

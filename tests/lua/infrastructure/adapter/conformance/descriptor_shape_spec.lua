@@ -61,6 +61,23 @@ describe("conformance: descriptor shape", function()
         end
       end)
 
+      it("keeps the completion provider's skill sources well formed", function()
+        -- What the `/` menu may offer is a descriptor fact, not a shared guess. A malformed entry
+        -- would silently offer a skill root the CLI never reads (or drop the only one it does).
+        local sources = descriptor.skill_sources
+        if sources == nil then
+          return
+        end
+        assert.is_true(
+          sources.probe == true or sources.plugin_skills == true or #(sources.dirs or {}) > 0,
+          def.id .. " declares skill_sources with nothing in them"
+        )
+        for _, dir in ipairs(sources.dirs or {}) do
+          assert.equals("string", type(dir.path), def.id .. " skill dir has no path")
+          assert.is_true(dir.source == "project" or dir.source == "user", def.id .. " skill dir has no source")
+        end
+      end)
+
       it("says out loud whether it registers chat_bufnr, rather than leaving it absent", function()
         -- Required explicitly, because an absent field and `false` mean the same thing to the code
         -- and very different things to a reader. This flag decides whether an approval may be

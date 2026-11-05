@@ -81,6 +81,17 @@ local PluginScaffold = require("vibing.infrastructure.plugins.scaffold")
 ---  means `oneshot` only. Defaults live in `ai.agents.<id>.process`; a chat can override them
 ---  through its own frontmatter (`process_model.lua`). Named `process`
 ---  rather than `transport` because `Vibing.HookSpec.transport` already owns that word.
+---@field skill_sources? Vibing.SkillSources Where the `/` menu finds this backend's skills.
+---  Absent means "vibing's own commands only": the completion provider shows nothing it has not
+---  measured this CLI loading, rather than Claude's list.
+
+---@class Vibing.SkillSources
+---@field probe? boolean Ask this CLI for its own command list. Only Claude's
+---  `control_request`/`initialize` protocol exists, so only it sets this.
+---@field dirs? {path: string, source: "project"|"user"}[] Skill directories this CLI reads. A
+---  relative path is resolved against the editor's cwd, `~` is expanded.
+---@field plugin_skills? boolean This backend receives vibing's plugin skills (through
+---  `--plugin-dir`, `--skill`, or the prompt listing), so they belong in the menu.
 
 local M = {}
 
