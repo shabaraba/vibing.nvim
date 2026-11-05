@@ -64,7 +64,8 @@ function M.create_new(opts)
   -- 呼び出し元が agent だけを選んだとき、model の既定は**その agent の**既定でなければならない。
   -- 既定 frontmatter は設定上の agent (`ai.chat.agent`) で解決済みなので、選ばれた agent で
   -- 解決し直す。`ai.chat.model` は設定上の agent にしか効かないため、そのままにすると
-  -- `sonnet` のような別バックエンドの名前が書かれ、実行時に捨てられる
+  -- `sonnet` のような別バックエンドの名前が書かれ、実行時に捨てられる。`effort` は
+  -- バックエンド非依存なので、選ばれた agent でもそのまま引き継ぐ
   if provided.agent and not provided.model then
     frontmatter.model = require("vibing.core.utils.ai_config").resolve(config, provided.agent).model
   end

@@ -74,44 +74,18 @@ describe("agent_model_sync", function()
 
     assert.equals("sonnet", model())
   end)
-end)
 
-describe("agent_model_sync wiring", function()
-  local bufnr
+  it("follows an agent edit made in a chat buffer", function()
+    open({ "---", "vibing.nvim: true", "agent: claude", "model: sonnet", "---", "", "# Vibing Chat" })
+    vim.api.nvim_set_current_buf(buf)
+    require("vibing.presentation.chat.view")._apply_chat_buffer_settings(buf)
 
-  before_each(function()
-    require("vibing").setup({
-      ai = {
-        chat = { agent = "claude" },
-        agents = { codex = { chat_model = "gpt-6-sol" } },
-      },
-    })
-    bufnr = vim.api.nvim_create_buf(false, true)
-    vim.api.nvim_buf_set_lines(
-      bufnr,
-      0,
-      -1,
-      false,
-      { "---", "vibing.nvim: true", "agent: claude", "model: sonnet", "---", "", "# Vibing Chat" }
-    )
-    vim.api.nvim_set_current_buf(bufnr)
-    require("vibing.presentation.chat.view")._apply_chat_buffer_settings(bufnr)
-  end)
-
-  after_each(function()
-    if vim.api.nvim_buf_is_valid(bufnr) then
-      vim.api.nvim_buf_delete(bufnr, { force = true })
-    end
-    require("vibing.config").setup({})
-  end)
-
-  it("follows an agent edit made in the chat buffer", function()
-    handler.update_field(bufnr, "agent", "codex", false)
+    handler.update_field(buf, "agent", "codex", false)
     vim.cmd("doautocmd <nomodeline> TextChanged")
     vim.wait(500, function()
-      return handler.parse(bufnr).model == "gpt-6-sol"
+      return handler.parse(buf).model == "gpt-6-sol"
     end)
 
-    assert.equals("gpt-6-sol", handler.parse(bufnr).model)
+    assert.equals("gpt-6-sol", handler.parse(buf).model)
   end)
 end)
