@@ -393,6 +393,22 @@ and dialect from `hooks/transports.lua`; the five generators described below are
   line, so `commandcode_tool_vocabulary.normalize_input` rebuilds it — without that a
   `Bash(git push:*)` rule would see only `git`.
 
+  **A resumed turn goes through `--session`, not `--resume`.** Measured on 1.88.2 (and readable in
+  `dist/cli.mjs`): `--resume <id>` resolves through `hasCommandSession`, which is scoped to the
+  project directory of the cwd, so a chat whose `working_dir` moved — a worktree removed and
+  recreated under a new name, a chat switched to another worktree — failed with
+  `No session "<id>" found to resume.` and the session was discarded. `--session <id>` resolves
+  against `listAllSessionsV3` (every project) and loads a transcript that lives elsewhere with
+  `loadExternalPrintSession`, so the conversation follows the chat into the new directory while the
+  turn itself runs there. Verified end to end: a session created in one directory, then resumed from
+  another with `--session <id>`, answered out of its prior turn; `--resume <id>` on the same pair
+  produced exactly the error above. `--fork-session` accepts `--session` as well. An id that exists
+  nowhere still fails with its own message, which `is_session_error` treats like any other session
+  loss: `--session "<id>" is neither an existing .jsonl transcript nor a known session-id prefix.`
+  The `acp` transport is **not** covered by this: `bindAgentSession` chdirs the CLI to the cwd the
+  request names and a resident process is bound to one (`This cmd acp process serves <cwd>`), so a
+  `session/load` across a `working_dir` change cannot find the session either. That path is opt-in.
+
 - **`commandcode acp` needs its session options awaited, not raced.** Command Code handles
   `session/set_config_option` asynchronously: a `session/prompt` written in the same tick reaches the
   agent while the option call is still in flight, the prompt marks the session busy, and **both**
