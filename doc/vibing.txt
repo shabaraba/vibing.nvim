@@ -1010,7 +1010,8 @@ Switching the other way does not shrink what the chat has already loaded.
 so a chat on an expensive model can hand implementation to a cheaper model or
 another CLI in a chat of its own, without switching its own model and losing
 its prompt cache. An unknown value fails the call instead of falling back to
-the default model.
+the default model. Given only `agent`, the chat starts on that backend's
+default (`ai.agents.<agent>.chat_model`), not on `ai.chat.model`.
 
 `orchestrated` and `orchestrated_by` record which chat drove which. They are
 written when one chat creates or messages another through the vibing-nvim MCP
