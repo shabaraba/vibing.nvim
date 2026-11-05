@@ -272,22 +272,21 @@ describe("vibing.application.daily_summary.collector", function()
       end)
 
       it("should fallback to default when search_dirs is empty array", function()
-        local config = {
-          chat = {},
-        }
+        local test_dir = vim.fn.tempname() .. "/test-empty-search-dirs"
+        vim.fn.mkdir(test_dir, "p")
 
-        local result = collector.get_search_directories(true, config)
-
-        -- Get expected default behavior
-        local expected_defaults = collector.get_search_directories(true, {
-          chat = {},
+        local result = collector.get_search_directories(true, {
+          chat = { daily_summary = { search_dirs = {} }, storage = { path = test_dir } },
         })
 
+        -- An empty list must be treated as unconfigured, so the default branch runs and adds
+        -- `storage.path`. Comparing two whole results against this checkout would also compare
+        -- its `.vibing/chat`, which other spec files create while plenary runs them in parallel.
         assert.is_table(result)
-        assert.is_table(expected_defaults)
+        assert.is_true(vim.tbl_contains(result, test_dir))
 
-        -- Empty array should produce same result as nil/unconfigured
-        assert.same(result, expected_defaults, "Empty search_dirs should fallback to default directories")
+        -- Cleanup
+        vim.fn.delete(test_dir, "rf")
       end)
     end)
   end)
