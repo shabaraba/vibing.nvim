@@ -261,6 +261,23 @@ kinds.extra = function(cmd, part, ctx)
   end
 end
 
+--- The executable a spec launches: `ai.agents.<id>.path` when configured, else the PATH lookup.
+--- Raises when either is unusable.
+--- @param spec Vibing.RequestSpec
+--- @param id string|nil agent id the `path` override is read from
+--- @param config Vibing.Config
+--- @return string
+function M.binary_path(spec, id, config)
+  local path = id and vim.tbl_get(config, "ai", "agents", id, "path")
+  if path then
+    path = vim.fn.expand(path)
+  end
+  if path and vim.fn.executable(path) == 0 then
+    error("ai.agents." .. id .. ".path is not executable: " .. path)
+  end
+  return (path and not spec.binary.resolve) and path or resolver_for(spec).resolve(config)
+end
+
 --- Build the argv.
 --- @param spec Vibing.RequestSpec
 --- @param prompt string
@@ -273,19 +290,11 @@ function M.build(spec, prompt, opts, session_id, config, hook_arg)
   opts = opts or {}
   config = config or {}
 
-  local binary = resolver_for(spec)
   local id = opts._agent_id or spec.agent_id
   if id then
     opts = vim.tbl_extend("force", {}, opts, { _agent_id = id })
   end
-  local path = id and vim.tbl_get(config, "ai", "agents", id, "path")
-  if path then
-    path = vim.fn.expand(path)
-  end
-  if path and vim.fn.executable(path) == 0 then
-    error("ai.agents." .. id .. ".path is not executable: " .. path)
-  end
-  local cmd = { (path and not spec.binary.resolve) and path or binary.resolve(config) }
+  local cmd = { M.binary_path(spec, id, config) }
   local ctx = { prompt = prompt, opts = opts, session_id = session_id, config = config, hook_arg = hook_arg, cmd = cmd }
 
   for _, part in ipairs(spec.parts) do
