@@ -1,5 +1,8 @@
 --- Ask the Claude CLI which slash commands it would offer, and spend no tokens doing it.
 ---
+--- Claude-only: the protocol below is Claude's private control channel, so the provider asks it
+--- for a Claude chat and never for another backend (see each descriptor's `skill_sources`).
+---
 --- Built-in skills (`/design`, `/dataviz`, `/code-review`, ...) live inside the `claude` binary,
 --- so no filesystem scan can find them. They used to be a hand-written list in two places, which
 --- went stale on every CLI release. The CLI answers a `control_request` of subtype `initialize`

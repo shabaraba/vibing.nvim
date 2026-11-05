@@ -20,6 +20,12 @@ local M = {
   process = "duplex",
   duplex = require("vibing.infrastructure.adapter.modules.codex_duplex_protocol"),
 
+  -- Plugin skills are delivered in `developer_instructions` (there is no skill root to add), with
+  -- the leading `/name` fallback `plugin_skill_instructions` states. Codex's own skill roots are
+  -- not scanned: their slash behaviour is a separate question, and listing them here would offer
+  -- entries no measured command channel backs.
+  skill_sources = { plugin_skills = true },
+
   features = {
     streaming = true,
     tools = true,

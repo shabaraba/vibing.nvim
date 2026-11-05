@@ -95,21 +95,23 @@ end
 ---
 --- `tool` is false on oneshot: that transport registers no MCP server at all
 --- (`commandcode_mcp_config` is only read for `session/new`), so the background-job policy must
---- not name a tool the model cannot call.
+--- not name a tool the model cannot call. `skills` is the plugin-skill listing and is only
+--- supplied on duplex: oneshot gets those as real slash commands through `--skill`.
 --- @param prompt string
---- @param tool boolean whether this transport registers the bundled MCP server
+--- @param opts {tool: boolean, skills: string[]|nil}
 --- @return string
-function M.with_instructions(prompt, tool)
+function M.with_instructions(prompt, opts)
   local lines = {}
   vim.list_extend(lines, AskUserQuestionInstructions.lines())
-  vim.list_extend(lines, BackgroundJobInstructions.lines(tool))
+  vim.list_extend(lines, BackgroundJobInstructions.lines(opts.tool))
+  vim.list_extend(lines, opts.skills or {})
   return table.concat(lines, "\n") .. "\n\n" .. prompt
 end
 
 function M.build(prompt, opts, session_id, config, hook_arg)
   opts = opts or {}
   if not opts.lightweight and opts._process_model ~= ProcessModel.DUPLEX then
-    prompt = M.with_instructions(prompt, false)
+    prompt = M.with_instructions(prompt, { tool = false })
   end
   return RequestBuilder.build(
     require("vibing.infrastructure.adapter.backends.commandcode").request,

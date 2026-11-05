@@ -75,6 +75,29 @@ describe("skills provider frontmatter", function()
   end)
 end)
 
+describe("skills provider sources", function()
+  it("gives each backend only the sources its descriptor declares", function()
+    -- The probe speaks Claude's private protocol. Asking it for a Codex chat offered /design to a
+    -- CLI that cannot run it, so only the descriptor that owns that protocol declares it.
+    assert.is_true(Skills._sources_for("claude").probe)
+    assert.is_nil(Skills._sources_for("codex").probe)
+    assert.is_nil(Skills._sources_for("commandcode").probe)
+  end)
+
+  it("lists plugin skills only where the backend receives them", function()
+    assert.is_true(Skills._sources_for("codex").plugin_skills)
+    assert.is_true(Skills._sources_for("commandcode").plugin_skills)
+    -- Claude's probe already reports its namespaced copies, so scanning them here would list the
+    -- same skill twice under two names.
+    assert.is_nil(Skills._sources_for("claude").plugin_skills)
+  end)
+
+  it("contributes nothing for a backend that declares no sources", function()
+    assert.same({}, Skills._sources_for("pi"))
+    assert.same({}, Skills._sources_for("not-a-backend"))
+  end)
+end)
+
 describe("skills provider CLI command list", function()
   ---@param commands table[]
   ---@return table<string, Vibing.CompletionItem>

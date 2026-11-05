@@ -14,6 +14,17 @@ local M = {
   process = "duplex",
   duplex = require("vibing.infrastructure.adapter.modules.commandcode_duplex_protocol"),
 
+  -- Command Code scans the `.agents/skills` roots and advertises them as slash commands on ACP
+  -- (measured on 1.88.2). Plugin skills arrive through `--skill` on oneshot and as prompt text on
+  -- duplex, so both transports can invoke them by name.
+  skill_sources = {
+    dirs = {
+      { path = ".agents/skills", source = "project" },
+      { path = "~/.agents/skills", source = "user" },
+    },
+    plugin_skills = true,
+  },
+
   features = {
     streaming = true,
     tools = true,
@@ -33,7 +44,11 @@ local M = {
       -- (measured on 1.88.2).
       { kind = "hook_arg", flag = "--mod", when = "hook_arg", unless = "lightweight" },
       { kind = "extra", fn = CommandBuilder.permission_args, unless = "lightweight" },
-      { kind = "extra", fn = CommandBuilder.skill_args, unless = "lightweight" },
+      -- `--skill` is a print-mode flag: measured on 1.88.2, `commandcode --skill <dir> acp` loads
+      -- none of the named skills, and the flag also drops the discovered project skills from the
+      -- ACP command list. Duplex delivers them as prompt text instead (`with_instructions`), the
+      -- same shape Codex uses.
+      { kind = "extra", fn = CommandBuilder.skill_args, unless = { "lightweight", "duplex" } },
       { kind = "args", "--output-format", "json", unless = "duplex" },
       { kind = "args", "--no-session", when = "lightweight" },
       { kind = "model", flag = "--model", names = "native", unless = "duplex" },

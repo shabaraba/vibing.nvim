@@ -61,6 +61,9 @@ One adapter, driven by a descriptor per backend (ADR 009). Adding a backend is
 - `modules/background_job_instructions.lua` - The background-process policy every backend
   delivers (foreground vs. `nvim_job_start` vs. refuse), with the tool-naming variant chosen by
   whether the bundled MCP server is reachable
+- `modules/plugin_skill_instructions.lua` - The plugin-skill listing for channels that can only
+  describe skills (Codex's developer instructions, Command Code's ACP prompt), including the
+  sentence that makes a leading `/<skill-name>` mean "read that SKILL.md"
 - `modules/session_manager.lua` - CLI sessions, keyed by the **process** that holds one open
 - `modules/process_registry.lua` - Live CLI processes, keyed by **process**. Holds what outlives a
   turn: the session the process has open on `--resume`, the chat it serves, the adapter that can

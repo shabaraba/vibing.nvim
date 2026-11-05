@@ -5,6 +5,7 @@
 local CommandBuilder = require("vibing.infrastructure.adapter.modules.commandcode_command_builder")
 local McpConfig = require("vibing.infrastructure.adapter.modules.commandcode_mcp_config")
 local NativeApproval = require("vibing.infrastructure.adapter.modules.commandcode_native_approval")
+local PluginSkillInstructions = require("vibing.infrastructure.adapter.modules.plugin_skill_instructions")
 local Process = require("vibing.infrastructure.adapter.modules.duplex_process")
 local ReasoningEffort = require("vibing.infrastructure.adapter.modules.reasoning_effort")
 local TurnOutcome = require("vibing.infrastructure.adapter.modules.turn_outcome")
@@ -349,7 +350,12 @@ function M.send_prompt(record, prompt, params)
       render(record, { method = "vibing/sessionStarted", params = { session_id = id } })
 
       apply_options(record, params, result, function()
-        send_prompt_now(record, CommandBuilder.with_instructions(prompt, self_server ~= nil))
+        send_prompt_now(record, CommandBuilder.with_instructions(prompt, {
+          tool = self_server ~= nil,
+          -- `--skill` does not reach ACP (measured on 1.88.2), so the resident transport gets the
+          -- skills as prompt text. Once per session, which is where the other two blocks go.
+          skills = PluginSkillInstructions.lines(PluginSkillInstructions.collect(params.opts.cwd, params.config)),
+        }))
       end)
     end)
   end)

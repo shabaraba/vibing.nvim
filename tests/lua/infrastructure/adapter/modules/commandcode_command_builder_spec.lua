@@ -77,20 +77,31 @@ describe("commandcode_command_builder", function()
       assert.same({}, skill_paths(cmd))
     end)
 
-    it("rides on both transports", function()
+    it("is oneshot-only, because ACP ignores it", function()
+      -- Measured on 1.88.2: `commandcode --skill <dir> acp` loads none of the named skills (the
+      -- model reports them as absent) and drops discovered project skills from the ACP command
+      -- list. Duplex gets them as prompt text instead (`plugin_skill_instructions`).
       local oneshot = skill_paths(Builder.build("hi", {}, "sess-1", {}, nil))
       local duplex = skill_paths(Builder.build("hi", { _process_model = "duplex" }, "sess-1", {}, nil))
       assert.equals(1, #oneshot)
-      assert.same(oneshot, duplex)
-    end)
-
-    it("lands ahead of the acp subcommand", function()
-      -- `commandcode acp` takes no options of its own; a flag after it is not parsed.
-      local cmd = Builder.build("hi", { _process_model = "duplex" }, "sess-1", {}, nil)
-      local acp = vim.fn.index(cmd, "acp")
-      local skill = vim.fn.index(cmd, "--skill")
-      assert.is_true(skill > -1 and skill < acp, "expected --skill before acp in " .. vim.inspect(cmd))
+      assert.same({}, duplex)
     end)
   end)
 
+  describe("with_instructions", function()
+    it("puts the session blocks, including the skill listing, before the prompt", function()
+      local text = Builder.with_instructions("the prompt", { tool = false, skills = { "SKILL-LISTING" } })
+
+      assert.is_true(vim.endswith(text, "the prompt"))
+      assert.is_truthy(text:find("SKILL-LISTING", 1, true))
+      assert.is_truthy(text:find("vibing-question", 1, true))
+    end)
+
+    it("omits the listing on oneshot, where --skill is the delivery", function()
+      local text = Builder.with_instructions("the prompt", { tool = false })
+
+      assert.is_nil(text:find("SKILL-LISTING", 1, true))
+      assert.is_true(vim.endswith(text, "the prompt"))
+    end)
+  end)
 end)

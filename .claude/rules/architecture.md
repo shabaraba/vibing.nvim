@@ -74,6 +74,10 @@ over every registered descriptor.
   files come from the descriptor's `on_project_open` / `on_setup` / `clear_caches`.
 - **A backend name belongs in that backend's own module; shared code takes what it is handed.**
   `rpc/handlers/permission.lua` contains no backend name.
+- **The `/` menu offers only skills the current chat's backend declares.** Each descriptor's
+  `skill_sources` says whether to probe the CLI, which skill roots to scan, and whether vibing's
+  plugin skills are delivered; without it the menu shows only vibing's own commands. Claude's
+  probe is Claude's private protocol — never use its answer for another backend's chat.
 - **Every backend delivers vibing's background-process policy.**
   `adapter/modules/background_job_instructions.lua` is the one text; a backend puts it on the
   channel it has (system prompt, `developer_instructions`, `--rules`, instruction file, prompt
