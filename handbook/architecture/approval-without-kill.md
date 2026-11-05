@@ -1243,8 +1243,11 @@ list. That is one meaning of an approval per channel, not a second implementatio
 - **An unresolved name kills the turn.** `mcp__nope__approve` was accepted at startup, a turn with
   no consultation completed, and a turn that needed one exited 1 with `MCP tool … (passed via
 --permission-prompt-tool) not found`. Hence `claude_permission_prompt.lua` passes the flag only
-  when the bundled plugin is loaded and `mcp-server/dist/index.js` exists, under the prefix this
-  turn's MCP registration produces.
+  when the bundled plugin is loaded and both `mcp-server/dist/index.js` and
+  `mcp-server/dist/handlers/permission.js` exist, under the prefix this turn's MCP registration
+  produces. `index.js` alone was the first version's check, and it passed against a build from
+  before the tool existed: a chat started between the Lua change and the next `./build.sh` died
+  with exit 1 on its first `Grep` consultation.
 - `--allowedTools` and `--disallowedTools` are variadic: a prompt placed after them on argv is read
   as a tool name. The perf script pipes the prompt on stdin for that reason.
 
