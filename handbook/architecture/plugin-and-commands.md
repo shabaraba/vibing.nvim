@@ -212,7 +212,7 @@ Command Code reads no `plugin.json` and has no `--plugin-dir`, so nothing about 
 `agents/` reaches it and a plugin's **`mcpServers`** reaches it only on the duplex transport. Its
 **skills** reach it on both, through a flag of its own:
 
-```
+```bash
 commandcode --skill <plugin>/skills -p ...
 ```
 
