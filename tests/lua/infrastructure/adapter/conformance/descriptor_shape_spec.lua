@@ -69,9 +69,17 @@ describe("conformance: descriptor shape", function()
           return
         end
         assert.is_true(
-          sources.probe == true or sources.plugin_skills == true or #(sources.dirs or {}) > 0,
+          sources.probe ~= nil or sources.plugin_skills == true or #(sources.dirs or {}) > 0,
           def.id .. " declares skill_sources with nothing in them"
         )
+        if sources.probe ~= nil then
+          -- A bare `true` was the old shape; it names no protocol, so nothing could run it.
+          assert.equals("table", type(sources.probe), def.id .. " probe must name its protocol")
+          assert.is_true(
+            require("vibing.infrastructure.completion.command_probe").is_known(sources.probe.protocol),
+            def.id .. " probe names an unknown protocol: " .. tostring(sources.probe.protocol)
+          )
+        end
         for _, dir in ipairs(sources.dirs or {}) do
           assert.equals("string", type(dir.path), def.id .. " skill dir has no path")
           assert.is_true(dir.source == "project" or dir.source == "user", def.id .. " skill dir has no source")

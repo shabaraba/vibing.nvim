@@ -17,7 +17,13 @@ local M = {
   -- Command Code scans the `.agents/skills` roots and advertises them as slash commands on ACP
   -- (measured on 1.88.2). Plugin skills arrive through `--skill` on oneshot and as prompt text on
   -- duplex, so both transports can invoke them by name.
+  --
+  -- The probe adds what no directory holds: the skills bundled inside the binary (`loop`, `design`,
+  -- `skill-builder`, ...). Measured 2026-11-05 on 1.88.2: `session/new` starts no turn and writes
+  -- no session file. Built-in TUI commands such as `/goal` are filtered out of that list by the CLI
+  -- itself (`source !== "builtin"`), so they cannot be offered from here.
   skill_sources = {
+    probe = { protocol = "acp", args = { "acp" } },
     dirs = {
       { path = ".agents/skills", source = "project" },
       { path = "~/.agents/skills", source = "user" },
