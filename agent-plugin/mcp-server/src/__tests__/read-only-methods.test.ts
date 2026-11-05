@@ -67,6 +67,7 @@ const STATE_CHANGING_METHODS = [
   'job_start',
   'job_stop',
   'load_buffer',
+  'permission_prompt',
   'send_message',
   'set_cursor_position',
   'set_qflist',

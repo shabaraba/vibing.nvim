@@ -288,6 +288,23 @@ describe("duplex transport", function()
       assert.is_true(ok, err)
     end)
 
+    it("records on the process the prompt tool its argv names, which is what the handler trusts", function()
+      local PromptTool = require("vibing.infrastructure.adapter.modules.claude_permission_prompt")
+      local original_tool_name = PromptTool.tool_name
+      PromptTool.tool_name = function()
+        return "mcp__plugin_vibing-nvim_vibing-nvim__nvim_permission_prompt"
+      end
+      local ok, turn = pcall(send, "hi")
+      PromptTool.tool_name = original_tool_name
+      assert.is_true(ok, turn)
+
+      assert.truthy(vim.tbl_contains(jobs.only_call().argv, "--permission-prompt-tool"))
+      assert.equals(
+        "mcp__plugin_vibing-nvim_vibing-nvim__nvim_permission_prompt",
+        ProcessRegistry.get(turn.process_id).permission_prompt_tool
+      )
+    end)
+
     it("ends on the result line, with the process still alive and registered", function()
       local turn = send("hi")
       local call = jobs.only_call()

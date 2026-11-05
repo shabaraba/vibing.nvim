@@ -53,7 +53,7 @@ end
 function M.consume(chat_buf, pending, approval)
   local option = chosen(pending, approval and approval.action)
   if not option then
-    return nil, string.format("invalid Codex decision: %s", tostring(approval and approval.action))
+    return nil, string.format("this prompt offered no decision named %s", tostring(approval and approval.action))
   end
 
   local tool = pending.tool

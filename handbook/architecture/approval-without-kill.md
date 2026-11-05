@@ -1202,6 +1202,90 @@ struct carries `permissions`, `scope` and `strict_auto_review`, i.e. a grant bei
 answering it with `{decision=...}` would be inventing a protocol. It could not be triggered in any
 probe, so there is nothing measured to build the real UI against.
 
+## Claude's own permission prompts
+
+Claude Code asks a human about some calls itself, and in `-p` that ask is a refusal. The case that
+motivated this: an edit to `.vibing/plugins/design-rationale/skills/write/references/paragraph.md`
+was refused with `Claude requested permissions to edit … which is a sensitive file.` — every
+directory vibing passes as `--plugin-dir` is one, and so is `.claude/`. vibing.nvim's own gate had
+already said `defer`; the refusal came after it.
+
+### What does not pass it, measured
+
+claude 2.1.309, haiku, `acceptEdits`, one `Edit` per cell:
+
+| cell                                                                | result        |
+| ------------------------------------------------------------------- | ------------- |
+| the same file, no `--plugin-dir`                                    | ran           |
+| inside a `--plugin-dir` directory                                   | refused       |
+| settings allow `Edit(.vibing/plugins/p/**)`, `/`-anchored, absolute | refused       |
+| PreToolUse hook `allow` (hook confirmed called)                     | refused       |
+| `--permission-mode bypassPermissions`                               | ran           |
+| `--permission-prompt-tool` answering `allow`                        | ran           |
+| `.claude/rules/r.md`, without / with the prompt tool                | refused / ran |
+
+So the only narrow route is the prompt tool, and that is what `nvim_permission_prompt` is.
+
+### Why this is not #789's rejected design
+
+Issue #789 measured the same flag and rejected it **as the route vibing's `ask` takes**: the gate answers
+ahead of the consultation for anything its allowlist or classifier passes, so `permissions.ask`
+would be outvoted. Here the hook still decides first (measured: the hook saw `Edit` before the
+consultation), and the consultation only receives what the gate would otherwise refuse with nobody
+to ask. The prompt is `kind = "native"`, the codex route of #861, so answering it changes no vibing
+list. That is one meaning of an approval per channel, not a second implementation of the hook's.
+
+### Protocol facts the implementation leans on
+
+- **The consultation runs no PreToolUse hook**, and **a tool in `--disallowedTools` is still
+  consulted**. So the name is listed there and the model cannot call it.
+- **`--allowedTools Edit` does not suppress the consultation** for a sensitive file.
+- **An unresolved name kills the turn.** `mcp__nope__approve` was accepted at startup, a turn with
+  no consultation completed, and a turn that needed one exited 1 with `MCP tool … (passed via
+--permission-prompt-tool) not found`. Hence `claude_permission_prompt.lua` passes the flag only
+  when the bundled plugin is loaded and `mcp-server/dist/index.js` exists, under the prefix this
+  turn's MCP registration produces.
+- `--allowedTools` and `--disallowedTools` are variadic: a prompt placed after them on argv is read
+  as a tool name. The perf script pipes the prompt on stdin for that reason.
+
+### Its own measurement
+
+`native_approval.measured_wait_floor_sec = 960` on the claude descriptor, measured 2026-11-05
+against claude 2.1.309 with `tests/perf/permission_prompt_tool_answer_after_delay.sh`. The control
+answered at 0s; the arm answered at 960s (`approval_wait_sec` 900 + `NATIVE_APPROVAL_MARGIN_SEC`
+60), and the edit ran. Raw logs: `.vibing/probe/permission-prompt-tool-delay/`.
+
+The MCP side waits `prompt_tool_wait_sec()` (960 + 30 = 990s), handed over as
+`VIBING_PROMPT_TOOL_WAIT_SEC`, and denies on its own past it. That stays under the 1800s MCP idle
+ceiling whenever the gate is open, which `hook_timeout_ordering_spec.lua` holds.
+
+### What the review found the first version trusted
+
+Three defects, found by `/code-review` and fixed before the first commit. Each came from treating
+this channel as if vibing had built its input, which is true of codex's native requests and false
+here.
+
+- **The model could call the tool.** `--disallowedTools` hides it only where the flag is passed;
+  on codex, grok or a claude turn past its floor it is an auto-allowed vibing MCP tool. A call
+  would draw a real-looking prompt, and an `allow` would come back as consent no gate asked for.
+  The handler now refuses any process whose entry does not carry `permission_prompt_tool`, which
+  both transports read off the argv they spawned with (`descriptor.permission_prompt_tool`).
+- **`scope_tool` was the caller's.** `approval_delegate` takes a native prompt's
+  `input.scope_tool` as the tool a delegated scope is checked against. Forwarded unchanged, a tool
+  call could name `Read` and be approved under a `Read` scope.
+- **`details` was the caller's.** The renderer runs `ipairs` over it; a string threw inside the
+  draw while the request stayed registered, so the chat showed nothing and waited out the limit.
+
+`rpc/permission_prompt_request.lua` now copies `command`, `file_path`, `pattern` and `url` as
+strings and writes `details` itself: the edit body (`old_string`, `new_string`, `content`), capped
+at 24 lines per field, with `<!--` broken so a body cannot carry a `vibing:req` answer marker into
+the unsent section. The first version also showed only `File:` for an edit, which is not enough to
+judge one.
+
+Two findings were left as they are. Each consultation opens a prompt with only `allow_once` /
+`deny_once`, because the CLI asks again per call and a session grant has nowhere to live. And a
+call that both matches `permissions.ask` and is a sensitive file is asked twice, once by each gate.
+
 ## How this was measured wrong twice
 
 Both mistakes produced a plausible verdict rather than an error, which is the only reason they were

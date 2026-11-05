@@ -45,15 +45,19 @@ end
 --- Whether ordinary turns should still load the MCP servers the user configured outside
 --- vibing.nvim. Absent config reads as `true`, so a hand-built config table keeps today's
 --- behaviour.
+---
+--- Public because it also decides which name vibing's own tools arrive under: the plugin form
+--- while this is true, the bare `mcp__vibing-nvim__` form once `args` re-registers the server.
 --- @param config Vibing.Config
 --- @return boolean
-local function user_servers_enabled(config)
+function M.user_servers_enabled(config)
   local mcp = vim.tbl_get(config, "ai", "agents", "claude", "mcp")
   if type(mcp) ~= "table" then
     return true
   end
   return mcp.inherit_cli_servers ~= false
 end
+local user_servers_enabled = M.user_servers_enabled
 
 --- The argv fragment for one non-lightweight claude invocation.
 ---

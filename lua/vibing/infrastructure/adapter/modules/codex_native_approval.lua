@@ -170,6 +170,7 @@ function M.handle(record, msg)
     chat_bufnr = chat_bufnr,
     turn_id = turn_id,
     tool = tool,
+    refusal = Decisions.refusal(),
     respond = function(decision)
       reply(job_id, rpc_id, decision)
     end,

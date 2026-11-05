@@ -11,6 +11,7 @@ import { qflistTools } from './qflist.js';
 import { dapTools } from './dap.js';
 import { jobTools } from './jobs.js';
 import { sessionTools } from './sessions.js';
+import { permissionTools } from './permission.js';
 
 export const allTools = [
   ...bufferTools,
@@ -26,4 +27,5 @@ export const allTools = [
   ...dapTools,
   ...jobTools,
   ...sessionTools,
+  ...permissionTools,
 ];

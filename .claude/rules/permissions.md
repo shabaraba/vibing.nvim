@@ -103,6 +103,33 @@ as a new turn (#778). The mechanism, the measurements and the two limits they we
   `handbook/architecture/approval-without-kill.md` → "The duplicate-send guard swallowed every
   answer, on both routes".
 
+## Claude's Own Permission Prompts
+
+`--permission-prompt-tool` names vibing's `nvim_permission_prompt` MCP tool, so a question claude's
+gate would refuse with nobody to ask (an edit inside a `--plugin-dir` directory or `.claude/` is a
+"sensitive file") becomes a prompt in the chat. `handbook/architecture/approval-without-kill.md` →
+"Claude's own permission prompts".
+
+- **It answers the CLI's question, never vibing's.** The prompt is `kind = "native"`, the same
+  route as codex's own approvals, so answering it touches no allow/deny list. It must not become
+  the path vibing's `ask` takes: the gate answers ahead of it for anything its allowlist or
+  classifier passes, which is why #789 rejected it as a hook replacement.
+- **The flag is passed only when the tool it names exists.** An unresolved name fails the turn
+  with exit 1 at the first consultation, not just that call. `claude_permission_prompt.lua` checks
+  the bundled plugin is loaded, its server is built, and the prefix matches this turn's MCP
+  registration.
+- **The same name goes into `--disallowedTools`.** The gate still consults a disallowed tool
+  (measured), and the model cannot call it.
+- **A call that names no registered process is refused, never guessed — and so is one from a
+  process whose argv did not pass the flag.** Everywhere the flag is withheld (other backends,
+  claude past its measured floor) the tool is an auto-allowed vibing MCP tool, so its only caller
+  is the model drawing a prompt no gate asked for. The process entry's `permission_prompt_tool`,
+  read back off the argv, is the proof.
+- **The prompt draws a copy of the input, never the CLI's payload.** A native prompt's `input` is
+  trusted as vibing's own: `approval_delegate` reads `scope_tool` from it and the renderer iterates
+  `details`. `rpc/permission_prompt_request.lua` copies only string fields and writes `details`
+  itself.
+
 ## Asking a Question
 
 A multiple-choice question is **not** waited for. The model ends its reply with a

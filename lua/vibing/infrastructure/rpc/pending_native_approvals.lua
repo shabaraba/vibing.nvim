@@ -1,12 +1,18 @@
---- The Codex app-server approval requests that are waiting for a human to answer (#861).
+--- A CLI's **own** approval requests that are waiting for a human to answer (#861).
 ---
 --- The third sibling of `pending_approvals.lua` and `pending_questions.lua`, written out rather
 --- than factored out — that is the shape #788 chose when the second channel arrived, and the three
 --- differ in exactly the part a shared core would have to be parameterised on anyway: **what is
 --- being withheld**. An approval withholds a `<request_id>.res` file a shell hook polls; a question
---- withholds the reply to an MCP tool call; this one withholds the **JSON-RPC response to a request
---- the resident CLI sent us**, which is why `respond` is required here as it is next door and
---- absent in the first.
+--- withholds the reply to an MCP tool call; this one withholds **the answer to a question the CLI's
+--- own gate asked**, which is why `respond` is required here as it is next door and absent in the
+--- first.
+---
+--- Two producers, one meaning. Codex sends the question as a JSON-RPC request on a resident
+--- `app-server` (`codex_native_approval.lua`); claude sends it as an MCP call to the tool named by
+--- `--permission-prompt-tool` (`rpc/handlers/permission_prompt.lua`). Each entry carries its own
+--- `refusal`, because the word for "nobody chose" is the producer's vocabulary and the exits below
+--- must not have to know which producer they are answering.
 ---
 --- Four ways out, as in both siblings:
 ---
@@ -25,8 +31,6 @@
 --- un-run, tells the model, and the turn completes normally (codex-cli 0.160.1).
 --- @module vibing.infrastructure.rpc.pending_native_approvals
 
-local Decisions = require("vibing.infrastructure.adapter.modules.codex_native_decisions")
-
 local M = {}
 
 --- The word a chat's prompt carries to say it belongs to **this** channel.
@@ -42,8 +46,10 @@ M.KIND = "native"
 --- @field chat_bufnr number|nil the chat whose prompt answers it
 --- @field turn_id string|nil the turn the request belongs to
 --- @field tool string|nil what was asked about, for the timeout message
---- @field respond fun(decision: any) writes the JSON-RPC response. Called at most once; `resolve`
+--- @field respond fun(decision: any) delivers the answer to the CLI. Called at most once; `resolve`
 ---   is what enforces that.
+--- @field refusal any the decision every exit that is not a human answer sends
+---   (`codex_native_decisions.refusal()`, `permission_prompt.REFUSAL`)
 --- @field opened_at number `vim.loop.now()` when the request started waiting
 --- @field on_timeout fun(entry: Vibing.PendingNativeApproval)|nil what to do besides declining.
 ---   **It must not kill anything** — concurrent requests share one turn.
@@ -83,7 +89,7 @@ end
 --- it goes to a process that may have died at any point during the wait; a failed write still drops
 --- the entry, since nobody is listening.
 --- @param request_id string
---- @param decision any the payload for `{ decision = ... }`, as codex offered it
+--- @param decision any the decision as its producer offered it
 --- @return boolean answered
 function M.resolve(request_id, decision)
   local entry = pending[request_id]
@@ -96,11 +102,22 @@ function M.resolve(request_id, decision)
   local ok, err = pcall(entry.respond, decision)
   if not ok then
     vim.notify(
-      string.format("[vibing] could not answer the waiting Codex approval %s: %s", request_id, tostring(err)),
+      string.format("[vibing] could not answer the waiting native approval %s: %s", request_id, tostring(err)),
       vim.log.levels.WARN
     )
   end
   return true
+end
+
+--- Answer one waiting request with its producer's own word for "nobody chose".
+--- @param request_id string
+--- @return boolean answered
+local function refuse(request_id)
+  local entry = pending[request_id]
+  if not entry then
+    return false
+  end
+  return M.resolve(request_id, entry.refusal)
 end
 
 --- Start withholding a response, and arm the limit that guarantees it will not be withheld forever.
@@ -108,11 +125,12 @@ end
 --- @return Vibing.PendingNativeApproval
 function M.open(entry)
   assert(type(entry.request_id) == "string" and entry.request_id ~= "", "a pending approval needs a request_id")
-  assert(type(entry.respond) == "function", "a pending Codex approval needs a way to reply")
+  assert(type(entry.respond) == "function", "a pending native approval needs a way to reply")
+  assert(entry.refusal ~= nil, "a pending native approval needs a refusal for the exits nobody chose")
 
   -- Re-opening one id would leave two owners of one response. The id carries the process id, so it
   -- should not happen; decline the old one rather than quietly replacing it.
-  M.resolve(entry.request_id, Decisions.refusal())
+  refuse(entry.request_id)
 
   entry.opened_at = vim.loop.now()
   pending[entry.request_id] = entry
@@ -141,7 +159,7 @@ function M.expire(request_id)
     return false
   end
 
-  M.resolve(request_id, Decisions.refusal())
+  refuse(request_id)
 
   if entry.on_timeout then
     local ok, err = pcall(entry.on_timeout, entry)
@@ -202,14 +220,14 @@ end
 ---
 --- The `reason` the shared exit hands over is accepted and dropped: codex's response carries a
 --- decision and nothing else, so there is nowhere to put a sentence. Declining rather than
---- cancelling is the choice, and `codex_native_decisions.refusal` is where it is made.
+--- cancelling is the choice, and each entry's `refusal` is where its producer made it.
 --- @param chat_bufnr number
 --- @param _reason string|nil
 --- @return number answered
 function M.resolve_for_chat(chat_bufnr, _reason)
   local answered = 0
   for _, entry in ipairs(M.list_for_chat(chat_bufnr)) do
-    if M.resolve(entry.request_id, Decisions.refusal()) then
+    if refuse(entry.request_id) then
       answered = answered + 1
     end
   end
@@ -223,7 +241,7 @@ end
 function M.resolve_all(_reason)
   local answered = 0
   for _, request_id in ipairs(vim.tbl_keys(pending)) do
-    if M.resolve(request_id, Decisions.refusal()) then
+    if refuse(request_id) then
       answered = answered + 1
     end
   end

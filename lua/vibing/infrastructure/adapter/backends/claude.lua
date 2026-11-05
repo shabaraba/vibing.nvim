@@ -47,6 +47,7 @@ local M = {
       -- A chat profile that names its built-in tools (`core/constants/profiles.lua`).
       { kind = "extra", fn = CLICommandBuilder.profile_tool_args, unless = "lightweight" },
       { kind = "extra", fn = CLICommandBuilder.permission_args, unless = "lightweight" },
+      { kind = "extra", fn = CLICommandBuilder.permission_prompt_args, unless = "lightweight" },
       { kind = "hook_arg", flag = "--settings", unless = "lightweight" },
       -- Without this the CLI swallows everything a subagent says and only its final tool_result
       -- surfaces. Opt-in because it makes long delegated turns much noisier.
@@ -88,6 +89,12 @@ local M = {
     keep_in_bypass = true,
     measured_wait_floor_sec = 1090,
   },
+
+  -- The `--permission-prompt-tool` channel (`claude_permission_prompt.lua`), timed on its own: a
+  -- prompt-tool MCP call answered 960s late was still acted on and the edit ran (claude 2.1.309,
+  -- `tests/perf/permission_prompt_tool_answer_after_delay.sh`). A floor, like the hook's.
+  native_approval = { measured_wait_floor_sec = 960 },
+  permission_prompt_tool = require("vibing.infrastructure.adapter.modules.claude_permission_prompt").named_in,
 
   seeds_project_plugins = true,
 
