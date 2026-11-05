@@ -172,6 +172,17 @@ describe("frontmatter_cycler", function()
       assert.equals(values[1], value_of("effort"))
     end)
 
+    it("moves model to the default of the agent it lands on", function()
+      Config.setup({ ai = { agents = { codex = { chat_model = "gpt-6-sol" } } } })
+      open({ "---", "agent: claude", "model: sonnet", "---", "" })
+      cursor_on("agent")
+
+      assert.is_true(cycler.cycle(buf, 1))
+
+      assert.equals("codex", value_of("agent"))
+      assert.equals("gpt-6-sol", value_of("model"))
+    end)
+
     it("wraps inside the configured values", function()
       Config.setup({ chat = { frontmatter = { cycle = { agent = { "claude", "codex" } } } } })
       open({ "---", "agent: codex", "---", "" })

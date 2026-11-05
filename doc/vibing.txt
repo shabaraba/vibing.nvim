@@ -142,6 +142,7 @@ actually tend to change: >lua
         agents = {
           claude = { process = "oneshot", env = {} },
           codex = {
+            chat_model = "gpt-6-sol",   -- default for chats on this backend
             extensions = {
               approval_policy = "",
               profile_file = ".vibing/codex-permissions.toml",
@@ -865,6 +866,15 @@ CLI/model default. Available levels can depend on the selected model.
 In a Codex chat, `model: default` selects the CLI's configured model even when
 `ai.chat.model` is set. An omitted `model` still uses
 `ai.chat.model`.
+A chat whose `agent:` is not `ai.chat.agent` does not inherit `ai.chat.model`.
+It starts on that backend's own default: `sonnet` for a Claude chat, `haiku`
+for its utility calls, and whatever the CLI chooses for the others. Change it
+with `ai.agents.<agent>.chat_model` and `ai.agents.<agent>.helper_model` (see
+|vibing-configuration|).
+Changing `agent:` in a chat — by hand or with `]v` — rewrites `model:` to the
+new backend's default, since a Claude name on a Codex chat would only be
+discarded. Set `model:` afterwards, or with |/model|, to keep one of your own
+until the agent changes again.
 Codex duplex sends the resolved model and effort on each turn, so changing
 either setting does not restart the resident process; `default` restores the
 CLI or selected model's default after an earlier explicit override.
@@ -1003,7 +1013,8 @@ Switching the other way does not shrink what the chat has already loaded.
 so a chat on an expensive model can hand implementation to a cheaper model or
 another CLI in a chat of its own, without switching its own model and losing
 its prompt cache. An unknown value fails the call instead of falling back to
-the default model.
+the default model. Given only `agent`, the chat starts on that backend's
+default (`ai.agents.<agent>.chat_model`), not on `ai.chat.model`.
 
 `orchestrated` and `orchestrated_by` record which chat drove which. They are
 written when one chat creates or messages another through the vibing-nvim MCP

@@ -60,6 +60,29 @@ describe("chat use_case.create_new", function()
 
     assert.equals("high", session.frontmatter.effort)
   end)
+
+  it("resolves the default model for the agent the caller selected", function()
+    require("vibing").setup({
+      ai = {
+        chat = { agent = "claude" },
+        agents = { codex = { chat_model = "gpt-6-sol" } },
+      },
+    })
+
+    local session = use_case.create_new({ frontmatter = { agent = "codex" } })
+
+    assert.equals("gpt-6-sol", session.frontmatter.model)
+  end)
+
+  it("keeps an explicit model over the selected agent's default", function()
+    require("vibing").setup({
+      ai = { agents = { codex = { chat_model = "gpt-6-sol" } } },
+    })
+
+    local session = use_case.create_new({ frontmatter = { agent = "codex", model = "gpt-6-luna" } })
+
+    assert.equals("gpt-6-luna", session.frontmatter.model)
+  end)
 end)
 
 describe("chat use_case.generate_and_insert_summary", function()

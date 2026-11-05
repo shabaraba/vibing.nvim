@@ -14,11 +14,14 @@ function M.resolve(config, agent_id, helpers)
   local id = agent_id or configured_agent
   local def = Agents.get(id)
   local matches = id == configured_agent
+  -- `ai.agents.<id>.chat_model` / `helper_model` override the backend's own default. The purpose
+  -- still wins over it when the configured agent matches, so `ai.chat.model` is unchanged.
+  local options = (ai.agents or {})[def.id] or {}
   local default_model
   if helpers then
-    default_model = def.helper_model
+    default_model = options.helper_model or def.helper_model
   else
-    default_model = def.chat_model
+    default_model = options.chat_model or def.chat_model
   end
   return {
     agent = def.id,

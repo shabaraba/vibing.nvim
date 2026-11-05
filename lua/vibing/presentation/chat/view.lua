@@ -276,6 +276,9 @@ function M._apply_chat_buffer_settings(bufnr)
     end)
   end
 
+  -- `agent:` を書き換えたら `model:` をそのバックエンドの既定へ追従させる
+  require("vibing.presentation.chat.modules.agent_model_sync").watch(bufnr)
+
   -- ウィンドウローカル設定（wrap・fold）の適用
   local ok_ui, ui_utils = pcall(require, "vibing.core.utils.ui")
   if ok_ui then

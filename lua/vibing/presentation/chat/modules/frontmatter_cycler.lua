@@ -128,6 +128,12 @@ function M.cycle(buf, direction)
     return false
   end
 
+  -- `TextChanged` はAPIからの書き換えでは発火しない（実測）。`agent` の巡回だけは、利用者が
+  -- 手で書き換えたときと同じ結果になるよう明示的に `model` を追従させる
+  if found.field == "agent" then
+    require("vibing.presentation.chat.modules.agent_model_sync").sync(buf)
+  end
+
   follow_field(win, buf, found.field)
   return true
 end

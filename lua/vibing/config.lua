@@ -21,6 +21,8 @@ local M = {}
 ---@class Vibing.AgentOptions
 ---@field path? string Executable path; absent means PATH lookup.
 ---@field process? "oneshot"|"duplex"
+---@field chat_model? string Default model for chats on this backend
+---@field helper_model? string Default model for helpers on this backend
 ---@field env? table<string, string|number>
 ---@field settings? table
 ---@field mcp? table
@@ -271,6 +273,8 @@ for _, def in ipairs(Agents.list()) do
   local common = schema.ai.agents[def.id]
   common.path = nonempty
   common.process = enum({ "oneshot", "duplex" })
+  common.chat_model = nonempty
+  common.helper_model = nonempty
   common.env = map(environment)
   common.settings = { sources = list(enum({ "user", "project", "local" })) }
   common.mcp = { inherit_cli_servers = "boolean" }
