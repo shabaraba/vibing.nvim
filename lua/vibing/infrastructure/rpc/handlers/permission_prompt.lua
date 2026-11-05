@@ -19,6 +19,7 @@
 --- @module vibing.infrastructure.rpc.handlers.permission_prompt
 
 local HookScope = require("vibing.infrastructure.rpc.hook_scope")
+local Identity = require("vibing.core.utils.identity")
 local NativeApprovals = require("vibing.infrastructure.rpc.pending_native_approvals")
 
 local M = {}
@@ -55,9 +56,9 @@ M.OPTIONS = {
 --- @param tool_use_id string|nil
 --- @return string
 function M.request_id(process_id, tool_use_id)
-  local suffix = type(tool_use_id) == "string" and tool_use_id:gsub("[^%w_]", "") or ""
+  local suffix = type(tool_use_id) == "string" and tool_use_id:gsub(Identity.HOOK_SAFE_CLASS, "") or ""
   if suffix == "" then
-    suffix = string.format("%d", vim.loop.hrtime())
+    suffix = Identity.new_request_id()
   end
   return string.format("prompt-%s-%s", process_id, suffix)
 end
@@ -66,14 +67,6 @@ end
 --- @return table
 local function refused(message)
   return { decision = "deny", message = message }
-end
-
---- @param entry Vibing.PendingNativeApproval
-local function on_timeout(entry)
-  local chat_buf = require("vibing.presentation.chat.view").get_chat_buffer(entry.chat_bufnr)
-  if chat_buf and type(chat_buf.expire_approval) == "function" then
-    chat_buf:expire_approval(entry)
-  end
 end
 
 --- @param params {process_id: string?, tool_name: string?, input: table?, tool_use_id: string?}|nil
@@ -115,7 +108,7 @@ function M.permission_prompt(params, respond)
     tool = tool,
     refusal = M.REFUSAL,
     respond = respond,
-    on_timeout = on_timeout,
+    on_timeout = NativeApprovals.expire_in_chat,
   })
 
   local ok, err = pcall(turn.on_approval_required, tool, input, M.OPTIONS, request_id, true, M.KIND)

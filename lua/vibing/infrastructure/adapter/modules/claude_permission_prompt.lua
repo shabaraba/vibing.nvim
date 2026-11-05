@@ -19,6 +19,7 @@
 
 local CliMcpConfig = require("vibing.infrastructure.adapter.modules.cli_mcp_config")
 local PluginDirs = require("vibing.infrastructure.plugins.plugin_dirs")
+local Tools = require("vibing.core.constants.tools")
 
 local M = {}
 
@@ -26,18 +27,14 @@ M.TOOL = "nvim_permission_prompt"
 
 local FLAG = "--permission-prompt-tool"
 
-local PLUGIN_PREFIX = "mcp__plugin_vibing-nvim_vibing-nvim__"
-local BARE_PREFIX = "mcp__vibing-nvim__"
+--- Taken from the list `tools_spec.lua` checks against `plugin.json`, so a rename fails a test here
+--- instead of naming a tool that does not resolve.
+local BARE_PREFIX = (Tools.VIBING_NVIM_MCP_TOOL_PATTERNS[1]):gsub("%*$", "")
+local PLUGIN_PREFIX = (Tools.VIBING_NVIM_MCP_TOOL_PATTERNS[2]):gsub("%*$", "")
 
 --- `index.js` alone is not enough: a build from before the tool existed has one too, and passing the
 --- flag against it is the dead turn this module exists to prevent.
 local BUILT_FILES = { "mcp-server/dist/index.js", "mcp-server/dist/handlers/permission.js" }
-
---- @param path string
---- @return string
-local function normalize(path)
-  return (vim.fn.fnamemodify(path, ":p"):gsub("/$", ""))
-end
 
 --- @param ctx Vibing.RequestContext
 --- @return boolean
@@ -46,8 +43,7 @@ local function bundled_server_present(ctx)
   if not own then
     return false
   end
-  local loaded = vim.tbl_map(normalize, PluginDirs.resolve(ctx.opts.cwd, ctx.config))
-  if not vim.tbl_contains(loaded, own) then
+  if not vim.tbl_contains(PluginDirs.resolve(ctx.opts.cwd, ctx.config), own) then
     return false
   end
   for _, file in ipairs(BUILT_FILES) do

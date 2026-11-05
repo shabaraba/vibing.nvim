@@ -120,6 +120,15 @@ local function refuse(request_id)
   return M.resolve(request_id, entry.refusal)
 end
 
+--- The `on_timeout` every producer passes: mark the chat's copy of the prompt expired.
+--- @param entry Vibing.PendingNativeApproval
+function M.expire_in_chat(entry)
+  local chat_buf = require("vibing.presentation.chat.view").get_chat_buffer(entry.chat_bufnr)
+  if chat_buf and type(chat_buf.expire_approval) == "function" then
+    chat_buf:expire_approval(entry)
+  end
+end
+
 --- Start withholding a response, and arm the limit that guarantees it will not be withheld forever.
 --- @param entry Vibing.PendingNativeApproval
 --- @return Vibing.PendingNativeApproval

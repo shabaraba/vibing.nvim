@@ -57,7 +57,6 @@ function M.user_servers_enabled(config)
   end
   return mcp.inherit_cli_servers ~= false
 end
-local user_servers_enabled = M.user_servers_enabled
 
 --- The argv fragment for one non-lightweight claude invocation.
 ---
@@ -71,7 +70,7 @@ local user_servers_enabled = M.user_servers_enabled
 --- @param config Vibing.Config
 --- @return string[]
 function M.args(cwd, config)
-  if user_servers_enabled(config) then
+  if M.user_servers_enabled(config) then
     return {}
   end
 
