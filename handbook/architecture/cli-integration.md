@@ -203,7 +203,9 @@ and dialect from `hooks/transports.lua`; the five generators described below are
   conventions — which include asking a multiple-choice question, since that is a `vibing-question`
   block in the reply rather than a tool (`features/chat-ui.md` → AskUserQuestion Support). Codex
   reaches the server through `codex_plugin_config` (`plugin-and-commands.md` → "Codex") and
-  registers `chat_bufnr` for the waiting approval route.
+  registers `chat_bufnr` for the waiting approval route. Command Code depends on the transport:
+  its duplex session gets the server in `session/new`, and its oneshot `-p` has no per-run
+  route at all (`plugin-and-commands.md` → "Command Code").
 
 - **Grok's hooks need a git repository.** `grok_settings_generator.lua` writes
   `<cwd>/.grok/hooks/` and marks the cwd trusted in `<$GROK_HOME|~/.grok>/trusted_folders.toml`,
@@ -369,8 +371,18 @@ and dialect from `hooks/transports.lua`; the five generators described below are
 - **Command Code's bridge is a generated mod, and the CLI runs in bypass underneath it.**
   Command Code reads Claude-shaped hooks from `.commandcode/settings.json` and
   `settings.local.json`, but it has **no `--settings` flag, no config-content environment and no
-  plugin directory** — and both files it does read belong to the user. The one per-run extension
-  point is `--mod <path>` (`hooks/commandcode_settings_generator.lua`): a TypeScript file whose
+  plugin directory** — and both files it does read belong to the user. A plugin's **skills still
+  travel**, through `--skill <plugin>/skills` (`commandcode_command_builder.skill_args`): the flag
+  takes a skill directory or a directory of skills, is repeatable, and is accepted ahead of the
+  `acp` subcommand (measured on 1.88.2 — the model reported the bundled skill names as available).
+  The `mcpServers` half travels only on the duplex transport: `session/new` (and `session/load` /
+  `session/resume`) take the client's server list and the CLI connects it — `connectEditorMcpServers`
+  in 1.88.2's bundle — so `commandcode_mcp_config` builds the bundled `vibing-nvim` server (and each
+  plugin's) into that request. The oneshot `-p` transport has no per-run MCP flag: the CLI's only
+  other sources are `.mcp.json` / `~/.commandcode/mcp.json` / `~/.commandcode/projects/<slug>/mcp.json`,
+  which are the user's own.
+  The one per-run extension point is `--mod <path>`
+  (`hooks/commandcode_settings_generator.lua`): a TypeScript file whose
   `cmd.hooks({beforeToolCall})` may block a tool, generated into
   `<cwd>/.vibing/commandcode-mod/` and spawned against the same `bin/hooks/pre-tool-use.sh` and the
   same `claude` dialect as every other backend. It loads in **both** transports — under `-p` and
@@ -392,6 +404,22 @@ and dialect from `hooks/transports.lua`; the five generators described below are
   project. Its **shell call splits across `command` and `args`** rather than arriving as one command
   line, so `commandcode_tool_vocabulary.normalize_input` rebuilds it — without that a
   `Bash(git push:*)` rule would see only `git`.
+
+  **A resumed turn goes through `--session`, not `--resume`.** Measured on 1.88.2 (and readable in
+  `dist/cli.mjs`): `--resume <id>` resolves through `hasCommandSession`, which is scoped to the
+  project directory of the cwd, so a chat whose `working_dir` moved — a worktree removed and
+  recreated under a new name, a chat switched to another worktree — fails with
+  `No session "<id>" found to resume.` and the session is discarded. `--session <id>` resolves
+  against `listAllSessionsV3` (every project) and loads a transcript that lives elsewhere with
+  `loadExternalPrintSession`, so the conversation follows the chat into the new directory while the
+  turn itself runs there. Verified end to end: a session created in one directory, then resumed from
+  another with `--session <id>`, answered out of its prior turn; `--resume <id>` on the same pair
+  produced exactly the error above. `--fork-session` accepts `--session` as well. An id that exists
+  nowhere still fails with its own message, which `is_session_error` treats like any other session
+  loss: `--session "<id>" is neither an existing .jsonl transcript nor a known session-id prefix.`
+  The `acp` transport is **not** covered by this: `bindAgentSession` chdirs the CLI to the cwd the
+  request names and a resident process is bound to one (`This cmd acp process serves <cwd>`), so a
+  `session/load` across a `working_dir` change cannot find the session either. That path is opt-in.
 
 - **`commandcode acp` needs its session options awaited, not raced.** Command Code handles
   `session/set_config_option` asynchronously: a `session/prompt` written in the same tick reaches the

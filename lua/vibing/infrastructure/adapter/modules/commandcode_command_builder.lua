@@ -44,6 +44,33 @@ function M.permission_args(ctx)
   return { "--yolo" }
 end
 
+--- The plugin skills, one `--skill` per plugin that has a `skills/` directory.
+---
+--- **Command Code has no plugin directory** -- it reads no `plugin.json` and has no
+--- `--plugin-dir` -- but it does have `--skill <path>`, which takes a skill directory or a
+--- directory of skills. Passing each resolved plugin's `skills/` is the skill half of what
+--- `--plugin-dir` does elsewhere; the `mcpServers` half travels in the duplex `session/new`
+--- request instead (`commandcode_mcp_config`), and on the oneshot transport not at all.
+--- Measured on 1.88.2: the flag is accepted
+--- ahead of the `acp` subcommand, and the model reports the bundled skill names as available.
+---
+--- Not on the lightweight path, for the same reason `cli_command_builder.plugin_dir_args` skips
+--- it there: skill descriptions cost prompt tokens and a utility call has no tools to invoke them
+--- with.
+--- @param ctx Vibing.RequestContext
+--- @return string[]
+function M.skill_args(ctx)
+  local args = {}
+  for _, plugin_dir in ipairs(require("vibing.infrastructure.plugins.plugin_dirs").resolve(ctx.opts.cwd, ctx.config)) do
+    local skills_dir = plugin_dir .. "/skills"
+    if vim.fn.isdirectory(skills_dir) == 1 then
+      table.insert(args, "--skill")
+      table.insert(args, skills_dir)
+    end
+  end
+  return args
+end
+
 --- The environment the generated mod bridge reads.
 ---
 --- The bridge is TypeScript loaded into the CLI process, so it cannot call back into this Neovim for

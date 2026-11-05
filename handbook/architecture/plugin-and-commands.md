@@ -206,6 +206,39 @@ degrades silently: the skills vanish from the prompt, or MCP calls start being c
 silent-ignore of `--plugin-dir` has the same shape, and is why `plugin_dirs` checks manifests
 itself.
 
+## Command Code: `--skill` Without a Plugin Directory
+
+Command Code reads no `plugin.json` and has no `--plugin-dir`, so nothing about a plugin's
+`agents/` reaches it and a plugin's **`mcpServers`** reaches it only on the duplex transport. Its
+**skills** reach it on both, through a flag of its own:
+
+```
+commandcode --skill <plugin>/skills -p ...
+```
+
+`--skill` takes a skill directory or a directory of skills, is repeatable, and — like every other
+global flag — has to come **before** the `acp` subcommand, since `acp` parses no options of its
+own. `commandcode_command_builder.skill_args` emits one pair per resolved `plugin_dirs` entry and
+skips an entry with no `skills/` directory; a lightweight call gets none, the same rule
+`--plugin-dir` follows.
+
+Measured on 1.88.2: with `--skill agent-plugin/skills` the model listed `vibing-chat-recall`,
+`nvim-context` and the rest of the bundled skills as available, and the same flag was accepted
+ahead of `acp`. Two things this is _not_: installed skill discovery (`cmd skills add`) and
+`--mod`, which loads TypeScript extensions rather than instructions. Whether a project's own
+`.agents/skills` is scanned is Command Code's business and is unaffected — vibing.nvim adds to it.
+
+**MCP servers travel on the duplex transport only.** `commandcode acp` accepts a client-supplied
+`mcpServers` list on `session/new` (and on `session/load` / `session/resume`) and connects each
+entry through `connectEditorMcpServers`, so `commandcode_mcp_config` puts the bundled
+`vibing-nvim` server — the `nvim_*` tools every other backend gets — into that request. The entry
+shape is the CLI's own: `{name, command, args, env = [{name, value}]}` for stdio, `{name, url,
+headers = [{name, value}]}` for HTTP (an entry with `type = "sse"` is skipped; HTTP is the default
+when `type` is absent), and a server whose name Command Code already configures is skipped with a
+log line. There is **no per-run MCP flag on the oneshot `-p` transport**, so a oneshot chat has no
+vibing MCP tools at all; its only other sources are the user's own `.mcp.json`,
+`~/.commandcode/mcp.json` and `~/.commandcode/projects/<slug>/mcp.json`.
+
 ## Slash Command Discovery
 
 The `/` menu's skills and built-in commands come from the CLI itself, asked once per working

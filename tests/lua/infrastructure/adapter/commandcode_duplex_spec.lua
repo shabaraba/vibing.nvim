@@ -117,6 +117,36 @@ describe("Command Code duplex ACP", function()
     end, frames(call)))
   end
 
+  it("offers the bundled vibing-nvim server on session/new", function()
+    -- Command Code has no `--plugin-dir`, so the session request is the only route its MCP
+    -- servers travel. The CLI connects whatever the client sends here.
+    require("vibing.infrastructure.plugins.plugin_dirs").clear_cache()
+    local with_plugins = Adapter:new({
+      ai = { chat = { agent = "commandcode" }, agents = { commandcode = { process = "duplex" } } },
+    })
+
+    with_plugins:stream("hello", { chat_bufnr = CHAT, permissions_allow = {} }, function() end, function() end)
+    local call = jobs.only_call()
+    assert.equals("initialize", last(call).method)
+    reply(call, { protocolVersion = 1 })
+
+    local session_new
+    for _, frame in ipairs(frames(call)) do
+      if frame.method == "session/new" then
+        session_new = frame
+      end
+    end
+    assert.is_not_nil(session_new)
+    local by_name = {}
+    for _, server in ipairs(session_new.params.mcpServers) do
+      by_name[server.name] = server
+    end
+    local own = by_name["vibing-nvim"]
+    assert.is_not_nil(own, "expected the bundled server in " .. vim.inspect(session_new.params.mcpServers))
+    assert.equals("sh", own.command)
+    assert.is_truthy(table.concat(own.args, " "):find("mcp%-server/bin/run%.sh$"))
+  end)
+
   it("sends only the prompt when the session already reports the wanted options", function()
     send({ model = "deepseek/deepseek-v4-flash", effort = "high" })
     local call = jobs.only_call()

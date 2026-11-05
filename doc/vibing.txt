@@ -1080,9 +1080,11 @@ commandcode                                               *vibing-commandcode*
     vibing.nvim runs it in bypass and the generated PreToolUse bridge in
     `.vibing/commandcode-mod/` is the permission gate, as it is for Pi.
     `permissions.allow` / `deny` / `ask` apply as on any other backend;
-    `plan` mode maps to Command Code's own `--plan`. vibing.nvim's MCP server
-    (`nvim_*` tools, the choice-list prompt) is not injected for this backend
-    yet.
+    `plan` mode maps to Command Code's own `--plan`. vibing.nvim's bundled
+    skills travel with Command Code's own `--skill`. On the duplex transport
+    vibing.nvim's MCP server (`nvim_*` tools, the choice-list prompt) is
+    offered to the session too, so those tools work there; the oneshot `-p`
+    transport has no per-run MCP flag and gets none.
 
 pi                                                              *vibing-pi*
     Runs Pi in resident RPC mode (`pi --mode rpc`) by default. Multiple
