@@ -29,6 +29,7 @@ end
 local GATE_FLAGS = {
   "--settings",
   "--plugin-dir",
+  "--skill",
   "--dangerously-bypass-hook-trust",
   "--allowedTools",
   "--disallowedTools",

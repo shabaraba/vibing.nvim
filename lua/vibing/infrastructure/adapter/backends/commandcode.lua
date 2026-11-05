@@ -33,6 +33,7 @@ local M = {
       -- (measured on 1.88.2).
       { kind = "hook_arg", flag = "--mod", when = "hook_arg", unless = "lightweight" },
       { kind = "extra", fn = CommandBuilder.permission_args, unless = "lightweight" },
+      { kind = "extra", fn = CommandBuilder.skill_args, unless = "lightweight" },
       { kind = "args", "--output-format", "json", unless = "duplex" },
       { kind = "args", "--no-session", when = "lightweight" },
       { kind = "model", flag = "--model", names = "native", unless = "duplex" },

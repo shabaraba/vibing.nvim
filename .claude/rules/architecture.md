@@ -130,6 +130,12 @@ vibing.nvim's own Claude Code plugin is **not installed**: `cli_command_builder`
 - **Not passed on the lightweight path**, per `core/types.lua`.
 - **`TERMINAL_ONLY_COMMANDS` is a denylist, not an allowlist**: built-in skills live inside the
   binary, and a stale allowlist would hide a new one.
+- **Command Code has no plugin directory; its skills and servers travel
+  separately.** `commandcode_command_builder.skill_args` passes `<plugin>/skills` once per resolved
+  directory with `--skill` (a plugin without one is skipped), before the `acp` subcommand. On the
+  duplex transport `commandcode_mcp_config` builds the session's `mcpServers` — that is the only
+  route to the CLI's MCP, since there is no `--plugin-dir` and no per-run MCP flag; the oneshot
+  `-p` transport therefore has no vibing MCP tools. Neither is on the lightweight path.
 - **Codex loads the same list, in two halves.** Codex 0.153 has no per-run plugin flag, so
   `adapter/modules/codex_plugin_config.lua` turns each plugin's `mcpServers` into
   `-c mcp_servers.<name>.*` overrides (`default_tools_approval_mode="approve"`, or headless exec

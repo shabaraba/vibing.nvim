@@ -3,6 +3,7 @@
 --- @module vibing.infrastructure.adapter.modules.commandcode_duplex_protocol
 
 local CommandBuilder = require("vibing.infrastructure.adapter.modules.commandcode_command_builder")
+local McpConfig = require("vibing.infrastructure.adapter.modules.commandcode_mcp_config")
 local NativeApproval = require("vibing.infrastructure.adapter.modules.commandcode_native_approval")
 local Process = require("vibing.infrastructure.adapter.modules.duplex_process")
 local ReasoningEffort = require("vibing.infrastructure.adapter.modules.reasoning_effort")
@@ -299,9 +300,10 @@ end
 --- @return table session_params
 local function session_params(params)
   -- `mcpServers` is required by `session/new` — omitting it is an `Invalid params` error naming the
-  -- field, not a default — so an empty list is passed. vibing's own MCP server is not injected for
-  -- this backend yet.
-  return { cwd = params.cwd, mcpServers = {} }
+  -- field, not a default — so the list is always present, empty on a lightweight call. Command Code
+  -- has no `--plugin-dir`, so this is the only route by which the bundled `vibing-nvim` server (and
+  -- each plugin's `mcpServers`) reaches the CLI: it connects what the client sends.
+  return { cwd = params.cwd, mcpServers = McpConfig.resolve(params).servers }
 end
 
 --- @param record Vibing.DuplexProcess
