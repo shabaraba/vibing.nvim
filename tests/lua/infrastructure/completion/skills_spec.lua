@@ -76,12 +76,26 @@ describe("skills provider frontmatter", function()
 end)
 
 describe("skills provider sources", function()
-  it("gives each backend only the sources its descriptor declares", function()
-    -- The probe speaks Claude's private protocol. Asking it for a Codex chat offered /design to a
-    -- CLI that cannot run it, so only the descriptor that owns that protocol declares it.
-    assert.is_true(Skills._sources_for("claude").probe)
-    assert.is_nil(Skills._sources_for("codex").probe)
-    assert.is_nil(Skills._sources_for("commandcode").probe)
+  it("gives each backend only the probe its descriptor declares", function()
+    -- Each probe speaks one CLI's own protocol. Asking Claude's for a Codex chat offered /design
+    -- to a CLI that cannot run it, so a backend gets the protocol its descriptor names and no other.
+    assert.equals("claude_control", Skills._sources_for("claude").probe.protocol)
+    assert.equals("codex_skills", Skills._sources_for("codex").probe.protocol)
+    assert.equals("acp", Skills._sources_for("commandcode").probe.protocol)
+  end)
+
+  it("leaves a backend without a measured, side-effect-free probe alone", function()
+    -- opencode, grok and copilot all answer over ACP, but each persists an empty session for every
+    -- `session/new` (measured 2026-11-05), so probing them would fill the user's session list.
+    for _, agent in ipairs({ "opencode", "grok", "copilot", "pi" }) do
+      assert.is_nil(Skills._sources_for(agent).probe, agent .. " must not declare a probe")
+    end
+  end)
+
+  it("lets only the claude probe's answer outrank a directory scan", function()
+    assert.is_true(Skills._sources_for("claude").probe.authoritative)
+    assert.is_falsy(Skills._sources_for("codex").probe.authoritative)
+    assert.is_falsy(Skills._sources_for("commandcode").probe.authoritative)
   end)
 
   it("lists plugin skills only where the backend receives them", function()
@@ -103,7 +117,7 @@ describe("skills provider CLI command list", function()
   ---@return table<string, Vibing.CompletionItem>
   local function by_word(commands)
     local indexed = {}
-    for _, item in ipairs(Skills._to_items(commands)) do
+    for _, item in ipairs(Skills._to_items(commands, Skills._sources_for("claude").probe.hide)) do
       indexed[item.word] = item
     end
     return indexed
@@ -146,6 +160,26 @@ describe("skills provider CLI command list", function()
     assert.are.equal("vibing-nvim", items["vibing-nvim:vibing-code-tour"].detail)
     assert.are.equal("user", items["android-dev"].source)
     assert.are.equal("project", items["self-testing"].source)
+  end)
+
+  it("hides only what the descriptor names, so another backend's list is untouched", function()
+    local commands = { { name = "color" }, { name = "goal" } }
+
+    assert.equals(1, #Skills._to_items(commands, { "color" }))
+    assert.equals(2, #Skills._to_items(commands, {}))
+    assert.equals(2, #Skills._to_items(commands))
+  end)
+
+  it("takes the source a probe reports, but a namespace still means plugin", function()
+    local items = Skills._to_items({
+      { name = "imagegen", source = "bundled" },
+      { name = "docx", source = "user" },
+      { name = "anthropic-skills:pdf", source = "user" },
+    })
+
+    assert.equals("bundled", items[1].source)
+    assert.equals("user", items[2].source)
+    assert.equals("plugin", items[3].source)
   end)
 
   it("ignores an entry with no usable name instead of listing a blank one", function()

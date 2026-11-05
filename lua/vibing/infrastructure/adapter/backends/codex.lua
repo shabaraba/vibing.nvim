@@ -24,7 +24,13 @@ local M = {
   -- the leading `/name` fallback `plugin_skill_instructions` states. Codex's own skill roots are
   -- not scanned: their slash behaviour is a separate question, and listing them here would offer
   -- entries no measured command channel backs.
-  skill_sources = { plugin_skills = true },
+  -- `skills/list` on the app-server reports repo, user and system (bundled) skills for the cwd.
+  -- Vibing's plugin skills reach codex as `developer_instructions` text, which that list cannot
+  -- see, so they are still added separately.
+  skill_sources = {
+    plugin_skills = true,
+    probe = { protocol = "codex_skills", args = { "app-server" } },
+  },
 
   features = {
     streaming = true,

@@ -88,9 +88,18 @@ local PluginScaffold = require("vibing.infrastructure.plugins.scaffold")
 ---  Absent means "vibing's own commands only": the completion provider shows nothing it has not
 ---  measured this CLI loading, rather than Claude's list.
 
+---@class Vibing.CommandProbe
+---@field protocol "claude_control"|"acp"|"codex_skills" How the CLI is asked (`completion/command_probe.lua`).
+---@field args? string[] argv after the binary, for the protocols that start their own process.
+---@field authoritative? boolean The CLI describes its own skills better than a directory scan can
+---  (it namespaces plugin skills and marks user/project ones), so its answer wins the dedup.
+---  Otherwise the scans win and the probe only fills in what they cannot find: bundled skills.
+---@field hide? string[] Commands the CLI lists that only act on its interactive terminal.
+
 ---@class Vibing.SkillSources
----@field probe? boolean Ask this CLI for its own command list. Only Claude's
----  `control_request`/`initialize` protocol exists, so only it sets this.
+---@field probe? Vibing.CommandProbe Ask this CLI for its own command list. Declared only where the
+---  probe was measured to start no turn and leave no session behind: opencode, grok and copilot
+---  answer over ACP but persist an empty session per probe, so they do not set it.
 ---@field dirs? {path: string, source: "project"|"user"}[] Skill directories this CLI reads. A
 ---  relative path is resolved against the editor's cwd, `~` is expanded.
 ---@field plugin_skills? boolean This backend receives vibing's plugin skills (through

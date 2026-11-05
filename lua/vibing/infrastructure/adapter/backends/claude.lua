@@ -16,8 +16,37 @@ local M = {
 
   -- The probe reports built-ins, `.claude/skills` and the plugin skills it namespaced, so the
   -- provider must not also scan plugin directories: those names would differ.
+  --
+  -- `hide` is a denylist, not an allowlist: when the CLI grows a command nobody here has heard of,
+  -- a stale allowlist hides it (which is how `/design`, `/dataviz` and `/code-review` went missing)
+  -- while a stale denylist merely shows one extra entry. These act on the interactive terminal
+  -- session and can do nothing from a chat buffer.
   skill_sources = {
-    probe = true,
+    probe = {
+      protocol = "claude_control",
+      authoritative = true,
+      hide = {
+        "agents",
+        "auto-mode-setup",
+        "autocompact",
+        "color",
+        "config",
+        "extra-usage",
+        "fast",
+        "heapdump",
+        "import",
+        "insights",
+        "list-agents",
+        "mcp",
+        "recap",
+        "reload-skills",
+        "rename",
+        "team-onboarding",
+        "usage",
+        "usage-credits",
+        "workflow-launch-exec",
+      },
+    },
     dirs = {
       { path = ".claude/skills", source = "project" },
       { path = "~/.claude/skills", source = "user" },

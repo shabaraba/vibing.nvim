@@ -39,6 +39,8 @@ end
 ---Setup completion for a specific buffer
 ---@param buf number Buffer number
 function M.setup_buffer(buf)
+  pcall(require("vibing.infrastructure.completion.providers.skills").preload_buffer, buf)
+
   local has_cmp, cmp = pcall(require, "cmp")
 
   if not has_cmp then

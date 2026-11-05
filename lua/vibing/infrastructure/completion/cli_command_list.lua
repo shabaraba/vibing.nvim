@@ -21,6 +21,7 @@
 
 local CommandBuilder = require("vibing.infrastructure.adapter.modules.cli_command_builder")
 local CommonBuilder = require("vibing.infrastructure.adapter.modules.command_builder_common")
+local LineJob = require("vibing.infrastructure.completion.probes.line_job")
 
 local M = {}
 
@@ -29,20 +30,16 @@ local REQUEST_ID = "vibing-list-commands"
 local binary_path =
   CommonBuilder.binary_resolver("claude", "Claude CLI not found in PATH. Please install Claude Code CLI.")
 
---- Long enough for a cold start of a ~300MB binary on a busy machine; short enough that a CLI
---- which never answers does not pin the job for the rest of the session.
-local DEFAULT_TIMEOUT_MS = 15000
-
 --- @class Vibing.CliCommand
 --- @field name string
 --- @field description string?
+--- @field source "project"|"user"|"bundled"? set by a probe that knows where the command came from
 
---- Pull the command list out of one stdout line, or nil when the line is not our answer.
---- @param line string
+--- Pull the command list out of one decoded stdout line, or nil when the line is not our answer.
+--- @param decoded table
 --- @return Vibing.CliCommand[]?
-local function extract_commands(line)
-  local ok, decoded = pcall(vim.json.decode, line)
-  if not ok or type(decoded) ~= "table" or decoded.type ~= "control_response" then
+local function extract_commands(decoded)
+  if decoded.type ~= "control_response" then
     return nil
   end
 
@@ -101,67 +98,24 @@ function M.fetch(opts, callback)
     return false
   end
 
-  local answered = false
-  local job_id = nil
-  local pending = { "" }
-
-  local function finish(commands)
-    if answered then
-      return
-    end
-    answered = true
-    if job_id then
-      pcall(vim.fn.jobstop, job_id)
-    end
-    callback(commands)
-  end
-
-  job_id = vim.fn.jobstart(argv, {
+  return LineJob.run({
+    argv = argv,
     cwd = opts.cwd,
-    on_stdout = function(_, data)
-      if answered or type(data) ~= "table" or #data == 0 then
-        return
-      end
-      -- data[1] continues the partial line left by the previous call; the answer is a single
-      -- ~24KB line, so it always arrives split across several of them.
-      pending[#pending] = pending[#pending] .. (data[1] or "")
-      for i = 2, #data do
-        table.insert(pending, data[i])
-      end
-
-      -- Every complete line is tried rather than only the first: anything the CLI decides to
-      -- print ahead of the response would otherwise be read as the response and discard it.
-      for i = 1, #pending - 1 do
-        local commands = extract_commands(pending[i])
-        if commands then
-          finish(commands)
-          return
-        end
+    timeout_ms = opts.timeout_ms,
+    start = function(send)
+      send({
+        type = "control_request",
+        request_id = REQUEST_ID,
+        request = { subtype = "initialize" },
+      })
+    end,
+    on_message = function(message, _, finish)
+      local commands = extract_commands(message)
+      if commands then
+        finish(commands)
       end
     end,
-    on_exit = vim.schedule_wrap(function()
-      finish(nil)
-    end),
-  })
-
-  if type(job_id) ~= "number" or job_id <= 0 then
-    job_id = nil
-    return false
-  end
-
-  vim.fn.chansend(job_id, vim.json.encode({
-    type = "control_request",
-    request_id = REQUEST_ID,
-    request = { subtype = "initialize" },
-  }) .. "\n")
-
-  vim.defer_fn(function()
-    if not answered and job_id then
-      pcall(vim.fn.jobstop, job_id)
-    end
-  end, opts.timeout_ms or DEFAULT_TIMEOUT_MS)
-
-  return true
+  }, callback)
 end
 
 return M
