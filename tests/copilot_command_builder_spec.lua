@@ -50,6 +50,20 @@ describe("copilot_command_builder", function()
   end)
 
   describe("build", function()
+    --- The prompt without the background-process policy `build` prepends, so these cases can keep
+    --- asserting the exact text they are about.
+    --- @param text string
+    --- @return string
+    local function without_policy(text)
+      local BackgroundJobs = require("vibing.infrastructure.adapter.modules.background_job_instructions")
+      local policy = table.concat(BackgroundJobs.lines(false), "\n") .. "\n\n"
+      local at = text:find(policy, 1, true)
+      if not at then
+        return text
+      end
+      return (text:sub(1, at - 1) .. text:sub(at + #policy))
+    end
+
     it("emits the base flags with the prompt last", function()
       local cmd = Builder.build("hello", {}, nil, {})
       assert.are.equal("/usr/local/bin/copilot", cmd[1])
@@ -58,7 +72,7 @@ describe("copilot_command_builder", function()
       assert.are.equal("on", value_after(cmd, "--stream"))
       assert.is_true(contains(cmd, "--no-color"))
       assert.are.equal("-p", cmd[#cmd - 1])
-      assert.are.equal("hello", cmd[#cmd])
+      assert.are.equal("hello", without_policy(cmd[#cmd]))
     end)
 
     it("adds --resume when a session id is given", function()
@@ -153,26 +167,26 @@ describe("copilot_command_builder", function()
 
     it("prefixes context files for a new session", function()
       local cmd = Builder.build("hi", { context = { "@file:lua/init.lua" } }, nil, {})
-      assert.are.equal("Context file: lua/init.lua\n\nhi", cmd[#cmd])
+      assert.are.equal("Context file: lua/init.lua\n\nhi", without_policy(cmd[#cmd]))
     end)
 
     it("omits the context prefix when resuming", function()
       local cmd = Builder.build("hi", { context = { "@file:lua/init.lua" } }, "sess-1", {})
-      assert.are.equal("hi", cmd[#cmd])
+      assert.are.equal("hi", without_policy(cmd[#cmd]))
     end)
 
     it("prefixes a language instruction", function()
       local cmd = Builder.build("hi", {
         language = "ja",
       }, nil, {})
-      assert.are.equal("Always respond in Japanese (ja).\n\nhi", cmd[#cmd])
+      assert.are.equal("Always respond in Japanese (ja).\n\nhi", without_policy(cmd[#cmd]))
     end)
 
     it("skips the language instruction for en", function()
       local cmd = Builder.build("hi", {
         language = "en",
       }, nil, {})
-      assert.are.equal("hi", cmd[#cmd])
+      assert.are.equal("hi", without_policy(cmd[#cmd]))
     end)
 
     -- binary_cache_spec covers the caching contract for every backend; what is copilot's own is
