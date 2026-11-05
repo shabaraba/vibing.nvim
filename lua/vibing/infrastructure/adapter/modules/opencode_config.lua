@@ -149,7 +149,7 @@ function M.apply(env, opts, config)
   -- background-process policy.
   local instructions = {}
   vim.list_extend(instructions, AskUserQuestionInstructions.lines())
-  vim.list_extend(instructions, BackgroundJobInstructions.lines({ tool = tool }))
+  vim.list_extend(instructions, BackgroundJobInstructions.lines(tool))
   local vibing_dir = (opts.cwd or vim.fn.getcwd()) .. "/.vibing"
   local instr_path = vibing_dir .. "/" .. InstanceKey.name("opencode-instructions-", ".md")
   local Fs = require("vibing.core.utils.fs")

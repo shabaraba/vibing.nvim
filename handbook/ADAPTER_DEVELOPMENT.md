@@ -174,10 +174,11 @@ native permission gate, so this classification does not override its sandbox or 
   reply-block protocol in `adapter/modules/ask_user_question_instructions.lua`, without an MCP tool.
 - **The background-process policy is not optional.** Deliver
   `adapter/modules/background_job_instructions.lua` on whatever channel the CLI has; the
-  conformance suite fails a descriptor that drops it. Pass `tool = true` only when this transport
-  registers the bundled server (Claude, Codex, OpenCode, Command Code duplex, Grok duplex); every
-  other path takes the no-tool wording, which is how a CLI without `nvim_job_start` refuses
-  instead of registering a watcher in its own process.
+  conformance suite fails a descriptor that drops it. Pass `tool = true` when this transport
+  registers the bundled server — always on Claude, and on OpenCode, Codex, Command Code duplex and
+  Grok duplex once their plugin resolution actually found it. Every other path takes the no-tool
+  wording, which is how a CLI without `nvim_job_start` refuses instead of registering a watcher in
+  its own process.
 
 ## Per-backend options
 

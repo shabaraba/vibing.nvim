@@ -153,45 +153,32 @@ describe("conformance: request", function()
       end)
 
       it("carries the background-process policy somewhere the model reads", function()
-        -- Where it goes differs -- Claude's system prompt, Codex's developer_instructions, Grok's
-        -- --rules, OpenCode's instruction file, the prompt prefix of the rest -- so this asks only
-        -- that it is *there*. A backend added without the policy silently lets the model register
-        -- a watcher in the CLI process, where vibing.nvim's next reclaim loses it; that is the
-        -- failure the shared module exists to prevent, and no per-backend spec would notice.
-        local BackgroundJobs = require("vibing.infrastructure.adapter.modules.background_job_instructions")
-        local cmd = descriptor.build("hi", {}, "sess-1", config, nil)
-        local haystack = { table.concat(cmd, "\n") }
+        -- Where it goes differs: Claude's system prompt, Codex's developer_instructions, Grok's
+        -- --rules, OpenCode's instruction file, the prompt prefix of the rest. A backend that
+        -- drops it lets the model register a watcher in the CLI process, where vibing.nvim's next
+        -- reclaim loses it — the failure the shared module exists to prevent.
+        local marker = require("vibing.infrastructure.adapter.modules.background_job_instructions").MARKER
+        local parts = { table.concat(descriptor.build("hi", {}, "sess-1", config, nil), "\n") }
 
+        -- OpenCode is the one channel that is a file, pointed at by the env config. `apply_env`
+        -- is pcall'd because several backends resolve binaries or hooks there, none of which this
+        -- contract is about.
         if descriptor.apply_env then
           local dir = vim.fn.tempname()
           vim.fn.mkdir(dir, "p")
           local env = {}
-          -- pcall: several backends resolve binaries or hooks here, none of which this contract is
-          -- about, and a backend whose channel is its argv has nothing to contribute either way.
           if pcall(descriptor.apply_env, env, { cwd = dir }, config) then
-            for _, value in pairs(env) do
-              table.insert(haystack, tostring(value))
-            end
-            -- OpenCode's channel is a file an env-var config points at.
-            local raw = env.OPENCODE_CONFIG_CONTENT
-            local decoded_ok, decoded = false, nil
-            if type(raw) == "string" then
-              decoded_ok, decoded = pcall(vim.json.decode, raw)
-            end
-            if decoded_ok and type(decoded) == "table" then
-              for _, path in ipairs(decoded.instructions or {}) do
-                local read_ok, lines = pcall(vim.fn.readfile, path)
-                if read_ok then
-                  table.insert(haystack, table.concat(lines, "\n"))
-                end
-              end
+            local decoded_ok, cfg = pcall(vim.json.decode, env.OPENCODE_CONFIG_CONTENT or "")
+            for _, path in ipairs(decoded_ok and type(cfg) == "table" and cfg.instructions or {}) do
+              local read_ok, lines = pcall(vim.fn.readfile, path)
+              table.insert(parts, read_ok and table.concat(lines, "\n") or "")
             end
           end
           vim.fn.delete(dir, "rf")
         end
 
         assert.is_true(
-          table.concat(haystack, "\n"):find(BackgroundJobs.MARKER, 1, true) ~= nil,
+          table.concat(parts, "\n"):find(marker, 1, true) ~= nil,
           def.id .. " drops the background-process policy"
         )
       end)

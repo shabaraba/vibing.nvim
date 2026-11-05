@@ -121,7 +121,7 @@ end
 --- @param skills {plugin: string, skill: Vibing.PluginSkill}[]
 --- @param self_server string|nil registered name of the bundled server, nil when it is not loaded
 --- @param chat_bufnr number|nil stable identity of the current chat buffer
---- @return string|nil
+--- @return string
 local function developer_instructions(skills, self_server, chat_bufnr)
   local lines = {}
 
@@ -163,7 +163,7 @@ local function developer_instructions(skills, self_server, chat_bufnr)
   if #lines > 0 then
     table.insert(lines, "")
   end
-  vim.list_extend(lines, BackgroundJobInstructions.lines({ tool = self_server ~= nil }))
+  vim.list_extend(lines, BackgroundJobInstructions.lines(self_server ~= nil))
 
   -- Not tied to the bundled server — a question is a block in the reply, not a tool call — so it
   -- is present on every ordinary call. `-c` replaces a `developer_instructions` the user set in
@@ -234,13 +234,14 @@ function M.args(cwd, config, chat_bufnr)
   end
 
   local args = vim.deepcopy(resolved.args)
-  local instructions = developer_instructions(resolved.skills, resolved.self_server, chat_bufnr)
-  if instructions then
-    -- One override, one flag: `-c` replaces a `developer_instructions` the user set in their own
-    -- config.toml for the duration of the run. Accepted -- codex offers no additive form
-    -- (`additional_developer_instructions` is rejected under `--strict-config`).
-    override(args, "developer_instructions", Toml.string(instructions))
-  end
+  -- One override, one flag: `-c` replaces a `developer_instructions` the user set in their own
+  -- config.toml for the duration of the run. Accepted -- codex offers no additive form
+  -- (`additional_developer_instructions` is rejected under `--strict-config`).
+  override(
+    args,
+    "developer_instructions",
+    Toml.string(developer_instructions(resolved.skills, resolved.self_server, chat_bufnr))
+  )
 
   return args
 end

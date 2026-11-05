@@ -97,19 +97,19 @@ end
 --- (`commandcode_mcp_config` is only read for `session/new`), so the background-job policy must
 --- not name a tool the model cannot call.
 --- @param prompt string
---- @param opts {tool: boolean}|nil
+--- @param tool boolean whether this transport registers the bundled MCP server
 --- @return string
-function M.with_instructions(prompt, opts)
+function M.with_instructions(prompt, tool)
   local lines = {}
   vim.list_extend(lines, AskUserQuestionInstructions.lines())
-  vim.list_extend(lines, BackgroundJobInstructions.lines({ tool = opts and opts.tool }))
+  vim.list_extend(lines, BackgroundJobInstructions.lines(tool))
   return table.concat(lines, "\n") .. "\n\n" .. prompt
 end
 
 function M.build(prompt, opts, session_id, config, hook_arg)
   opts = opts or {}
   if not opts.lightweight and opts._process_model ~= ProcessModel.DUPLEX then
-    prompt = M.with_instructions(prompt, { tool = false })
+    prompt = M.with_instructions(prompt, false)
   end
   return RequestBuilder.build(
     require("vibing.infrastructure.adapter.backends.commandcode").request,

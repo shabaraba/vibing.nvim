@@ -165,7 +165,7 @@ function M.build(prompt, opts, session_id, config, extension_path)
   -- Pi's MCP configuration is its own; vibing.nvim registers no server with it, so the policy is
   -- the no-tool variant. `--no-context-files` on a lightweight call means that path stays clean.
   if not (opts and opts.lightweight) then
-    prompt = BackgroundJobInstructions.prefix(prompt, { tool = false })
+    prompt = BackgroundJobInstructions.prefix(prompt, false)
   end
   return RequestBuilder.build(
     require("vibing.infrastructure.adapter.backends.pi").request,

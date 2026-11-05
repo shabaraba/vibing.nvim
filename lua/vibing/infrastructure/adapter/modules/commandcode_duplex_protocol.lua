@@ -349,7 +349,7 @@ function M.send_prompt(record, prompt, params)
       render(record, { method = "vibing/sessionStarted", params = { session_id = id } })
 
       apply_options(record, params, result, function()
-        send_prompt_now(record, CommandBuilder.with_instructions(prompt, { tool = self_server ~= nil }))
+        send_prompt_now(record, CommandBuilder.with_instructions(prompt, self_server ~= nil))
       end)
     end)
   end)

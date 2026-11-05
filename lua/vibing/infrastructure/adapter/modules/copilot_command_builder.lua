@@ -106,7 +106,7 @@ function M.build(prompt, opts, session_id, config, plugin_dir)
   -- copilot receives no vibing-nvim MCP server (vibing generates only the hook plugin for it), so
   -- the policy is the no-tool variant: it must refuse rather than substitute shell backgrounding.
   if not (opts and opts.lightweight) then
-    prompt = BackgroundJobInstructions.prefix(prompt, { tool = false })
+    prompt = BackgroundJobInstructions.prefix(prompt, false)
   end
   return RequestBuilder.build(
     require("vibing.infrastructure.adapter.backends.copilot").request,

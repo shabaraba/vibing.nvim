@@ -50,7 +50,7 @@ function M.send_prompt(record, prompt, _params)
   -- The oneshot path gets this from the prompt argv; the resident protocol is Pi's default
   -- transport, so the same policy has to travel here or duplex chats — the ordinary case — would
   -- be the only ones not told it.
-  prompt = BackgroundJobInstructions.prefix(prompt, { tool = false })
+  prompt = BackgroundJobInstructions.prefix(prompt, false)
   record._pi_rpc = record._pi_rpc or { seq = 0, pending = {} }
   local rpc = record._pi_rpc
   rpc.interrupted = false
