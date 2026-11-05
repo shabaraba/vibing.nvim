@@ -31,6 +31,8 @@ local Toml = require("vibing.core.utils.toml")
 local Notify = require("vibing.core.utils.notify")
 local AskUserQuestionInstructions =
   require("vibing.infrastructure.adapter.modules.ask_user_question_instructions")
+local BackgroundJobInstructions =
+  require("vibing.infrastructure.adapter.modules.background_job_instructions")
 
 local M = {}
 
@@ -119,7 +121,7 @@ end
 --- @param skills {plugin: string, skill: Vibing.PluginSkill}[]
 --- @param self_server string|nil registered name of the bundled server, nil when it is not loaded
 --- @param chat_bufnr number|nil stable identity of the current chat buffer
---- @return string|nil
+--- @return string
 local function developer_instructions(skills, self_server, chat_bufnr)
   local lines = {}
 
@@ -153,31 +155,26 @@ local function developer_instructions(skills, self_server, chat_bufnr)
         mcp_prefix
       )
     )
-    table.insert(
-      lines,
-      "When starting a development server, watcher, long-running script, or any process intended "
-        .. "to outlive the current model turn, you MUST use the vibing-nvim nvim_job_start MCP tool. "
-        .. "Do not use shell backgrounding such as &, nohup, or setsid for these processes. Use "
-        .. "nvim_job_status, nvim_job_wait, and nvim_job_stop to manage them. nvim_job_start follows "
-        .. "the same permission rules as Bash. If nvim_job_start is unavailable, say so instead of "
-        .. "silently substituting shell backgrounding."
-    )
   end
 
-  -- Not tied to the bundled server — a question is a block in the reply, not a tool call — but it
-  -- rides only on an override that is being written anyway: with no plugin at all this module
-  -- returns no argv, and the user's own `developer_instructions` stays untouched.
+  -- Always emitted, with or without the bundled server: the policy itself is what stops a
+  -- watcher from being registered in the CLI process, and the no-tool wording is how a backend
+  -- without `nvim_job_start` refuses instead of substituting shell backgrounding.
   if #lines > 0 then
-    vim.list_extend(lines, AskUserQuestionInstructions.lines())
+    table.insert(lines, "")
   end
+  vim.list_extend(lines, BackgroundJobInstructions.lines(self_server ~= nil))
+
+  -- Not tied to the bundled server — a question is a block in the reply, not a tool call — so it
+  -- is present on every ordinary call. `-c` replaces a `developer_instructions` the user set in
+  -- their own config.toml for this run; codex has no additive form, and the policy above is worth
+  -- that trade.
+  vim.list_extend(lines, AskUserQuestionInstructions.lines())
   if self_server then
     -- With the bundled server: the orchestration tools take this as `from_bufnr`.
     vim.list_extend(lines, AskUserQuestionInstructions.chat_buffer_lines(chat_bufnr))
   end
 
-  if #lines == 0 then
-    return nil
-  end
   return table.concat(lines, "\n")
 end
 
@@ -237,13 +234,14 @@ function M.args(cwd, config, chat_bufnr)
   end
 
   local args = vim.deepcopy(resolved.args)
-  local instructions = developer_instructions(resolved.skills, resolved.self_server, chat_bufnr)
-  if instructions then
-    -- One override, one flag: `-c` replaces a `developer_instructions` the user set in their own
-    -- config.toml for the duration of the run. Accepted -- codex offers no additive form
-    -- (`additional_developer_instructions` is rejected under `--strict-config`).
-    override(args, "developer_instructions", Toml.string(instructions))
-  end
+  -- One override, one flag: `-c` replaces a `developer_instructions` the user set in their own
+  -- config.toml for the duration of the run. Accepted -- codex offers no additive form
+  -- (`additional_developer_instructions` is rejected under `--strict-config`).
+  override(
+    args,
+    "developer_instructions",
+    Toml.string(developer_instructions(resolved.skills, resolved.self_server, chat_bufnr))
+  )
 
   return args
 end

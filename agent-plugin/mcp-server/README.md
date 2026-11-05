@@ -249,8 +249,11 @@ Both tools read local CLI logs directly and work without Neovim RPC. They honor
 ### Background Jobs
 
 - **nvim_job_start** - Start an argv command as a Neovim-owned process that survives the current
-  Claude/Codex CLI turn. Use this for development servers, watchers, and long scripts instead of
-  shell `&`, `nohup`, or `setsid`
+  model turn. Use it for a process that must outlive the turn (development server, watcher,
+  `--watch` runner, log tailer, queue worker), not for a step of the turn itself. Do not use shell
+  `&`, `nohup`, `setsid` or `disown`, and do not register it with the CLI's own background-task
+  or monitor mechanism: that registry lives in the CLI process, which vibing.nvim replaces
+  between turns and reclaims after an idle period
   - `command` (required): Executable followed by arguments, e.g. `["npm", "run", "dev"]`
   - `from_bufnr` (required): Calling chat buffer to notify when the job exits
   - `name` / `cwd` / `env` (optional): Display name, working directory inside the calling Git
@@ -268,10 +271,12 @@ Full logs and metadata are kept under `<git-root>/.vibing/jobs/`. With notificat
 completed job is delivered to the originating chat as a new `## Notice` turn once that chat is
 idle.
 
-Claude and Codex receive a per-session instruction requiring `nvim_job_start` for work that must
-outlive a turn. As a deterministic fallback, vibing.nvim's PreToolUse hook rejects Bash native
-background mode and shell detachment (`&`, `nohup`, `setsid`, or `disown`) while MCP integration
-is enabled, and directs the agent back to `nvim_job_start`.
+Every backend receives the same per-session policy
+(`adapter/modules/background_job_instructions.lua`) on whichever instruction channel it has, and
+names `nvim_job_start` only where the bundled server is reachable; the others are told to refuse
+instead of substituting. As a deterministic fallback, vibing.nvim's PreToolUse hook rejects Bash
+native background mode and shell detachment (`&`, `nohup`, `setsid`, or `disown`) while MCP
+integration is enabled, and directs the agent back to `nvim_job_start`.
 
 ### Highlighting
 

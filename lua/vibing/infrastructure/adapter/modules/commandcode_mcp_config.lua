@@ -73,6 +73,7 @@ end
 
 --- @class Vibing.CommandCodeMcpResolution
 --- @field servers table[] the `mcpServers` list `session/new` takes
+--- @field self_server string|nil registered name of the **bundled** server, nil when it is not
 
 --- Every server the loaded plugins declare, in plugin-directory order.
 ---
@@ -90,16 +91,23 @@ function M.resolve(params)
     return { servers = {} }
   end
 
-  local seen, out = {}, {}
+  -- Matched **by path, not by name**, for the reason `grok_mcp_config` states: with
+  -- `integrations.plugins.self = false` a project plugin may carry the name `vibing-nvim`, and
+  -- the prompt would then name a tool that the bundled server alone provides.
+  local self_dir = PluginDirs.self_plugin_dir()
+  local seen, out, self_server = {}, {}, nil
   for _, dir in ipairs(PluginDirs.resolve(params.opts and params.opts.cwd, params.config)) do
     for _, server in ipairs(PluginContents.mcp_servers(dir)) do
       if not seen[server.name] then
         seen[server.name] = true
         table.insert(out, spec(server, params.env))
+        if dir == self_dir and not self_server then
+          self_server = server.name
+        end
       end
     end
   end
-  return { servers = out }
+  return { servers = out, self_server = self_server }
 end
 
 return M

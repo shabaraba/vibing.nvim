@@ -143,16 +143,26 @@ sessions: they do not change frontmatter or send a CLI request automatically.
 
 ## Background Jobs
 
-`nvim_job_start({ command, from_bufnr, name?, cwd?, env?, notify?, ready_pattern?,
-ready_timeout_ms? })` starts a process owned by Neovim,
-not by the short-lived `claude -p` / `codex exec` process. Use it for development servers,
-watchers, and scripts that must continue after the current model turn ends; shell backgrounding
-with `&`, `nohup`, or `setsid` remains tied to the CLI process tree and can be killed when that
-turn closes. `command` is an argv array rather than a shell string, and `cwd` must stay within the
-calling CLI's Git root.
+**The criterion is the turn, not the command.** A step of this turn — a test, a build, a one-off
+check — stays in the foreground and is waited on. A process that must still be running after the
+turn ends (development server, file watcher, `--watch` runner, log tailer, queue worker) belongs
+to `nvim_job_start`. Two substitutes are wrong for the second case, and for different reasons:
+shell backgrounding with `&`, `nohup`, `setsid` or `disown` stays tied to the CLI process tree,
+and the CLI's **own** background-task or monitor registry lives inside that process, which
+vibing.nvim replaces between turns on the oneshot transport and reclaims after an idle period (or
+an argv change) on the resident one — so the registration disappears and the process is usually
+killed with it. The policy is delivered to every backend on whichever instruction channel it has
+(`adapter/modules/background_job_instructions.lua`); a backend that cannot reach the bundled
+server gets the no-tool wording instead of a tool name, and says so rather than substituting.
 
-For non-lightweight Claude and Codex turns, the system/developer prompt requires this tool for
-such processes. While MCP integration is enabled, the PreToolUse hook also rejects Bash's native
+`nvim_job_start({ command, from_bufnr, name?, cwd?, env?, notify?, ready_pattern?,
+ready_timeout_ms? })` starts a process owned by Neovim, not by the short-lived `claude -p` /
+`codex exec` process. `command` is an argv array rather than a shell string, and `cwd` must stay
+within the calling CLI's Git root.
+
+For every non-lightweight turn, the backend's instruction channel requires this tool for such
+processes; where the bundled server is unreachable it says the process cannot be started here.
+While MCP integration is enabled, the PreToolUse hook also rejects Bash's native
 `run_in_background` option and unambiguous shell detachment with `&`, `nohup`, `setsid`, or
 `disown`, returning guidance to retry with `nvim_job_start`.
 

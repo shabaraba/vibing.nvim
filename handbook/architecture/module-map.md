@@ -56,8 +56,11 @@ One adapter, driven by a descriptor per backend (ADR 009). Adding a backend is
 - `models/<id>.lua` - One backend's `command(config)` and `parse(stdout)`. Only codex
   (`codex debug models`) and grok (`grok models`) have one: claude's `--model` takes an alias the
   CLI resolves to the latest model itself, and the copilot CLI cannot list its models at all
-- `modules/ask_user_question_instructions.lua` - Shared Claude/Codex choice-list tool instruction
-  and stable chat-buffer identity line
+- `modules/ask_user_question_instructions.lua` - Shared choice-list reply-block instruction and
+  stable chat-buffer identity line, delivered to every backend
+- `modules/background_job_instructions.lua` - The background-process policy every backend
+  delivers (foreground vs. `nvim_job_start` vs. refuse), with the tool-naming variant chosen by
+  whether the bundled MCP server is reachable
 - `modules/session_manager.lua` - CLI sessions, keyed by the **process** that holds one open
 - `modules/process_registry.lua` - Live CLI processes, keyed by **process**. Holds what outlives a
   turn: the session the process has open on `--resume`, the chat it serves, the adapter that can

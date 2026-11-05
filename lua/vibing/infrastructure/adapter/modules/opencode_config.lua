@@ -6,6 +6,7 @@ local PluginDirs = require("vibing.infrastructure.plugins.plugin_dirs")
 local PluginContents = require("vibing.infrastructure.plugins.plugin_contents")
 local SettingsGenerator = require("vibing.infrastructure.hooks.settings_generator")
 local AskUserQuestionInstructions = require("vibing.infrastructure.adapter.modules.ask_user_question_instructions")
+local BackgroundJobInstructions = require("vibing.infrastructure.adapter.modules.background_job_instructions")
 local ToolVocabulary = require("vibing.infrastructure.adapter.modules.opencode_tool_vocabulary")
 local InstanceKey = require("vibing.infrastructure.rpc.instance_key")
 local WaitBudget = require("vibing.infrastructure.hooks.wait_budget")
@@ -103,15 +104,22 @@ function M.apply(env, opts, config)
     table.insert(cfg.plugins, plugin_dir)
   end
 
-  -- MCP servers from plugin dirs (non-lightweight).
+  -- MCP servers from plugin dirs (non-lightweight). The bundled plugin's presence also decides
+  -- whether the instruction file may name `nvim_job_start`: naming a tool the model cannot call
+  -- is the failure `handbook/ADAPTER_DEVELOPMENT.md` forbids.
   local seen = {}
   local names = {}
+  local self_dir = PluginDirs.self_plugin_dir()
+  local tool = false
   for _, entry in ipairs(PluginDirs.resolve_entries(opts.cwd, config)) do
     for _, server in ipairs(PluginContents.mcp_servers(entry.path)) do
       if not seen[server.name] then
         seen[server.name] = true
         table.insert(names, server.name)
         cfg.mcp.servers[server.name] = convert_server(server, entry.path)
+        if entry.path == self_dir then
+          tool = true
+        end
       end
     end
   end
@@ -137,14 +145,18 @@ function M.apply(env, opts, config)
     table.insert(cfg.permissions, { action = "execute", resource = "*", effect = "deny" })
   end
 
-  -- Generate instruction file with AskUserQuestion instructions.
+  -- Generate the instruction file: the question-block protocol every backend gets, plus the
+  -- background-process policy.
+  local instructions = {}
+  vim.list_extend(instructions, AskUserQuestionInstructions.lines())
+  vim.list_extend(instructions, BackgroundJobInstructions.lines(tool))
   local vibing_dir = (opts.cwd or vim.fn.getcwd()) .. "/.vibing"
   local instr_path = vibing_dir .. "/" .. InstanceKey.name("opencode-instructions-", ".md")
   local Fs = require("vibing.core.utils.fs")
   Fs.ensure_dir(vibing_dir)
   local f = io.open(instr_path, "w")
   if f then
-    f:write(table.concat(AskUserQuestionInstructions.lines(), "\n") .. "\n")
+    f:write(table.concat(instructions, "\n") .. "\n")
     f:close()
   else
     Notify.warn_once("opencode_instructions_write", "Could not write OpenCode instruction file: " .. instr_path)

@@ -152,6 +152,37 @@ describe("conformance: request", function()
         assert.is_true(found, def.id .. " drops the language instruction")
       end)
 
+      it("carries the background-process policy somewhere the model reads", function()
+        -- Where it goes differs: Claude's system prompt, Codex's developer_instructions, Grok's
+        -- --rules, OpenCode's instruction file, the prompt prefix of the rest. A backend that
+        -- drops it lets the model register a watcher in the CLI process, where vibing.nvim's next
+        -- reclaim loses it — the failure the shared module exists to prevent.
+        local marker = require("vibing.infrastructure.adapter.modules.background_job_instructions").MARKER
+        local parts = { table.concat(descriptor.build("hi", {}, "sess-1", config, nil), "\n") }
+
+        -- OpenCode is the one channel that is a file, pointed at by the env config. `apply_env`
+        -- is pcall'd because several backends resolve binaries or hooks there, none of which this
+        -- contract is about.
+        if descriptor.apply_env then
+          local dir = vim.fn.tempname()
+          vim.fn.mkdir(dir, "p")
+          local env = {}
+          if pcall(descriptor.apply_env, env, { cwd = dir }, config) then
+            local decoded_ok, cfg = pcall(vim.json.decode, env.OPENCODE_CONFIG_CONTENT or "")
+            for _, path in ipairs(decoded_ok and type(cfg) == "table" and cfg.instructions or {}) do
+              local read_ok, lines = pcall(vim.fn.readfile, path)
+              table.insert(parts, read_ok and table.concat(lines, "\n") or "")
+            end
+          end
+          vim.fn.delete(dir, "rf")
+        end
+
+        assert.is_true(
+          table.concat(parts, "\n"):find(marker, 1, true) ~= nil,
+          def.id .. " drops the background-process policy"
+        )
+      end)
+
       it("keeps the hook wanted-rules and the request in agreement in bypassPermissions", function()
         -- A backend that drops the hook in bypass must not then reference a hook_arg either.
         if not Transports.wanted(descriptor.hook, { permission_mode = "bypassPermissions" }) then

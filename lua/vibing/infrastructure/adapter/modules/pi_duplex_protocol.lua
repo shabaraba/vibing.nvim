@@ -3,6 +3,7 @@
 --- https://github.com/earendil-works/pi/blob/main/packages/coding-agent/src/modes/rpc/rpc-types.ts
 --- Prompt replies acknowledge acceptance;
 --- agent_settled ends the run after tools, retries and compaction have finished.
+local BackgroundJobInstructions = require("vibing.infrastructure.adapter.modules.background_job_instructions")
 local Process = require("vibing.infrastructure.adapter.modules.duplex_process")
 local Processor = require("vibing.infrastructure.adapter.modules.pi_event_processor")
 local Routing = require("vibing.infrastructure.adapter.modules.duplex_routing")
@@ -46,6 +47,10 @@ local function request(record, command, fields, callback)
 end
 
 function M.send_prompt(record, prompt, _params)
+  -- The oneshot path gets this from the prompt argv; the resident protocol is Pi's default
+  -- transport, so the same policy has to travel here or duplex chats — the ordinary case — would
+  -- be the only ones not told it.
+  prompt = BackgroundJobInstructions.prefix(prompt, false)
   record._pi_rpc = record._pi_rpc or { seq = 0, pending = {} }
   local rpc = record._pi_rpc
   rpc.interrupted = false

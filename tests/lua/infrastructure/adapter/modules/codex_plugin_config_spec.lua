@@ -239,13 +239,17 @@ describe("codex_plugin_config", function()
     end)
   end)
 
-  it("is empty when no plugin applies", function()
+  it("carries only the background-job policy when no plugin applies", function()
     local args = CodexPluginConfig.args(nil, {
       integrations = {
         plugins = { self = false, project_dir = false },
       },
     })
-    assert.same({}, args)
+    local instructions = override(args, "developer_instructions")
+
+    assert.is_nil(override(args, "mcp_servers.vibing-nvim.command"))
+    assert.is_truthy(instructions:find("vibing.nvim's rule for long-running processes", 1, true))
+    assert.is_nil(instructions:find("chat buffer number:", 1, true))
   end)
 
   -- `args` runs on every non-lightweight codex request, and building it is synchronous file I/O
@@ -284,7 +288,9 @@ describe("codex_plugin_config", function()
     })
 
     assert.is_not_nil(override(with_plugins, "mcp_servers.a.command"))
-    assert.same({}, without)
+    assert.is_nil(override(without, "mcp_servers.a.command"))
+    -- The policy itself does not depend on the plugin list, so it is never dropped.
+    assert.is_truthy(override(without, "developer_instructions"):find("vibing.nvim's rule", 1, true))
   end)
 
   it("hands each caller its own copy, so mutating the argv cannot poison the memo", function()

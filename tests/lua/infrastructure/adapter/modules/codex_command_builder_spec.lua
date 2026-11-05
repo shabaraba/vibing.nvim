@@ -714,14 +714,20 @@ describe("codex_command_builder", function()
       assert.is_nil(table.concat(config_overrides(cmd), "\n"):find("Current vibing.nvim chat buffer number:", 1, true))
     end)
 
-    it("loads none of it when integrations.plugins.self is off and no project plugin exists", function()
+    it("loads no plugin material when integrations.plugins.self is off and no project plugin exists", function()
       local cmd = codex_command_builder.build("hello", {}, nil, {
         integrations = {
           plugins = { self = false, project_dir = false },
         },
       }, nil)
       assert.is_false(has_override(cmd, "mcp_servers."))
-      assert.is_false(has_override(cmd, "developer_instructions="))
+      -- The background-job policy is not plugin material: it is emitted either way, and without
+      -- the bundled server it takes the no-tool wording so the model refuses rather than
+      -- registering a watcher in the CLI process.
+      assert.is_true(has_override(cmd, "developer_instructions="))
+      local instructions = table.concat(config_overrides(cmd), "\n")
+      assert.is_truthy(instructions:find("vibing.nvim's rule for long-running processes", 1, true))
+      assert.is_nil(instructions:find("nvim_job_start", 1, true))
     end)
 
     it("keeps the prompt as the last argument", function()
