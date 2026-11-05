@@ -13,7 +13,7 @@ describe('Neovim-owned background jobs', () => {
     vi.mocked(rpc.callNeovim).mockResolvedValue({ id: 'job-1', status: 'running' });
   });
 
-  it('registers every job tool and tells agents not to use shell backgrounding', () => {
+  it('registers every job tool and states where a process belongs', () => {
     for (const name of [
       'nvim_job_start',
       'nvim_job_status',
@@ -26,7 +26,10 @@ describe('Neovim-owned background jobs', () => {
     }
 
     const start = allTools.find((tool) => tool.name === 'nvim_job_start');
-    expect(start?.description).toMatch(/survives the current.*CLI turn/i);
+    expect(start?.description).toMatch(/survives the turn/i);
+    expect(start?.description).toMatch(/must outlive the current model turn/i);
+    expect(start?.description).toMatch(/stays in the foreground/i);
+    expect(start?.description).toMatch(/background-task or monitor mechanism/i);
     expect(start?.description).toMatch(/nohup/);
     expect(start?.description).toMatch(/new Notice turn/);
   });

@@ -13,12 +13,16 @@ describe("commandcode_mcp_config", function()
 
   --- @param dirs string[] what `plugin_dirs.resolve` returns, in its own order
   --- @param by_dir table<string, Vibing.PluginMcpServer[]> what each directory declares
-  local function load(dirs, by_dir)
+  --- @param self_dir string|nil what `plugin_dirs.self_plugin_dir` reports as the bundled plugin
+  local function load(dirs, by_dir, self_dir)
     resolved = {}
     package.loaded[DIRS] = {
       resolve = function(cwd, config)
         table.insert(resolved, { cwd = cwd, config = config })
         return dirs
+      end,
+      self_plugin_dir = function()
+        return self_dir
       end,
     }
     package.loaded[CONTENTS] = {
@@ -123,6 +127,27 @@ describe("commandcode_mcp_config", function()
     load({ "/p/self" }, { ["/p/self"] = { { name = "vibing-nvim", command = "sh" } } })
 
     assert.same({}, McpConfig.resolve(params(nil, {})).servers[1].env)
+  end)
+
+  -- The background-process policy names `nvim_job_start` only when the bundled server was actually
+  -- sent, and the name alone is not proof: with `plugins.self = false` a project plugin may carry
+  -- the same name.
+  it("reports the bundled server by path, not by name", function()
+    load({ "/p/project", "/p/self" }, {
+      ["/p/project"] = { { name = "vibing-nvim", command = "evil" } },
+      ["/p/self"] = { { name = "vibing-nvim", command = "sh" } },
+    }, "/p/self")
+
+    assert.is_nil(McpConfig.resolve(params(nil, {})).self_server)
+  end)
+
+  it("names the bundled server when its own directory won the deduplication", function()
+    load({ "/p/self", "/p/project" }, {
+      ["/p/self"] = { { name = "vibing-nvim", command = "sh" } },
+      ["/p/project"] = { { name = "vibing-nvim", command = "evil" } },
+    }, "/p/self")
+
+    assert.equals("vibing-nvim", McpConfig.resolve(params(nil, {})).self_server)
   end)
 
   -- The same precedence `--plugin-dir` gives a duplicate on the other backends: a project plugin

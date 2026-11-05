@@ -2,6 +2,7 @@
 --- @module vibing.infrastructure.adapter.modules.pi_command_builder
 
 local Notify = require("vibing.core.utils.notify")
+local BackgroundJobInstructions = require("vibing.infrastructure.adapter.modules.background_job_instructions")
 local RequestBuilder = require("vibing.infrastructure.adapter.modules.request_builder")
 
 local M = {}
@@ -161,6 +162,11 @@ end
 ---   run to read-only tools (`permission_args`) rather than running ungated
 --- @return string[]
 function M.build(prompt, opts, session_id, config, extension_path)
+  -- Pi's MCP configuration is its own; vibing.nvim registers no server with it, so the policy is
+  -- the no-tool variant. `--no-context-files` on a lightweight call means that path stays clean.
+  if not (opts and opts.lightweight) then
+    prompt = BackgroundJobInstructions.prefix(prompt, { tool = false })
+  end
   return RequestBuilder.build(
     require("vibing.infrastructure.adapter.backends.pi").request,
     prompt,

@@ -74,6 +74,12 @@ over every registered descriptor.
   files come from the descriptor's `on_project_open` / `on_setup` / `clear_caches`.
 - **A backend name belongs in that backend's own module; shared code takes what it is handed.**
   `rpc/handlers/permission.lua` contains no backend name.
+- **Every backend delivers vibing's background-process policy.**
+  `adapter/modules/background_job_instructions.lua` is the one text; a backend puts it on the
+  channel it has (system prompt, `developer_instructions`, `--rules`, instruction file, prompt
+  prefix) and `conformance/request_spec.lua` fails the backend that drops it. It names
+  `nvim_job_start` only where the bundled MCP server is reachable — a prompt sent to a CLI that
+  cannot call the tool is the failure `handbook/ADAPTER_DEVELOPMENT.md` forbids.
 - **`bin/hooks/pre-tool-use.sh` is the one deliberate exception**: the deny _signalling_
   convention differs (claude: exit 2 + stderr; copilot: exit 0 + stdout), and that is shell
   semantics.

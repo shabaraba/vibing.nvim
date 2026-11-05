@@ -298,12 +298,14 @@ end
 
 --- @param params Vibing.DuplexRunParams
 --- @return table session_params
+--- @return string|nil self_server the bundled server's registered name, for the instructions
 local function session_params(params)
   -- `mcpServers` is required by `session/new` — omitting it is an `Invalid params` error naming the
   -- field, not a default — so the list is always present, empty on a lightweight call. Command Code
   -- has no `--plugin-dir`, so this is the only route by which the bundled `vibing-nvim` server (and
   -- each plugin's `mcpServers`) reaches the CLI: it connects what the client sends.
-  return { cwd = params.cwd, mcpServers = McpConfig.resolve(params).servers }
+  local mcp = McpConfig.resolve(params)
+  return { cwd = params.cwd, mcpServers = mcp.servers }, mcp.self_server
 end
 
 --- @param record Vibing.DuplexProcess
@@ -330,7 +332,7 @@ function M.send_prompt(record, prompt, params)
   }, function()
     local session = params.opts._session_id
     local method = session and "session/load" or "session/new"
-    local new_params = session_params(params)
+    local new_params, self_server = session_params(params)
     if session then
       new_params.sessionId = session
     end
@@ -347,7 +349,7 @@ function M.send_prompt(record, prompt, params)
       render(record, { method = "vibing/sessionStarted", params = { session_id = id } })
 
       apply_options(record, params, result, function()
-        send_prompt_now(record, CommandBuilder.with_question_instructions(prompt))
+        send_prompt_now(record, CommandBuilder.with_instructions(prompt, { tool = self_server ~= nil }))
       end)
     end)
   end)

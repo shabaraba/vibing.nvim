@@ -167,7 +167,9 @@ describe("pi_command_builder", function()
     it("runs pi in json mode with the prompt behind a -- terminator", function()
       local argv = Builder.build("hello", {}, nil, CONFIG, "/x.js")
       assert.equals("json", value_after(argv, "--mode"))
-      assert.equals("hello", argv[#argv])
+      -- The prompt carries vibing's background-process policy as a prefix, so it ends with the
+      -- caller's text rather than equalling it.
+      assert.is_truthy(vim.endswith(argv[#argv], "hello"))
       assert.equals("--", argv[#argv - 1])
     end)
 

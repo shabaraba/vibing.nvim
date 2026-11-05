@@ -11,6 +11,7 @@ local tools_constants = require("vibing.core.constants.tools")
 local CliMcpConfig = require("vibing.infrastructure.adapter.modules.cli_mcp_config")
 local CommonBuilder = require("vibing.infrastructure.adapter.modules.command_builder_common")
 local AskUserQuestionInstructions = require("vibing.infrastructure.adapter.modules.ask_user_question_instructions")
+local BackgroundJobInstructions = require("vibing.infrastructure.adapter.modules.background_job_instructions")
 local PluginDirs = require("vibing.infrastructure.plugins.plugin_dirs")
 local worktree_constants = require("vibing.core.constants.worktree")
 local Profiles = require("vibing.core.constants.profiles")
@@ -215,14 +216,11 @@ function M.system_prompt_args(ctx)
         .. "server) or mcp__plugin_<marketplace>_vibing-nvim__<tool> (a Claude Code plugin) — search "
         .. "for a tool name ending in the specific tool you need if the plain prefix isn't available."
     )
-    table.insert(
+    vim.list_extend(
       system_prompt_lines,
-      "When starting a development server, watcher, long-running script, or any process intended "
-        .. "to outlive the current model turn, you MUST use the vibing-nvim nvim_job_start MCP tool. "
-        .. "Do not use shell backgrounding such as &, nohup, or setsid for these processes. Use "
-        .. "nvim_job_status, nvim_job_wait, and nvim_job_stop to manage them. nvim_job_start follows "
-        .. "the same permission rules as Bash. If nvim_job_start is unavailable, say so instead of "
-        .. "silently substituting shell backgrounding."
+      BackgroundJobInstructions.lines({
+        tool = BackgroundJobInstructions.reachable(ctx.opts.cwd, ctx.config),
+      })
     )
     vim.list_extend(system_prompt_lines, AskUserQuestionInstructions.lines())
     vim.list_extend(system_prompt_lines, AskUserQuestionInstructions.chat_buffer_lines(opts.chat_bufnr))

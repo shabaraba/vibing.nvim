@@ -2,6 +2,7 @@
 --- @module vibing.infrastructure.adapter.modules.commandcode_command_builder
 
 local AskUserQuestionInstructions = require("vibing.infrastructure.adapter.modules.ask_user_question_instructions")
+local BackgroundJobInstructions = require("vibing.infrastructure.adapter.modules.background_job_instructions")
 local ProcessModel = require("vibing.infrastructure.adapter.modules.process_model")
 local RequestBuilder = require("vibing.infrastructure.adapter.modules.request_builder")
 local SettingsGenerator = require("vibing.infrastructure.hooks.settings_generator")
@@ -87,20 +88,28 @@ function M.apply_env(env, opts, config)
   env.VIBING_COMMANDCODE_HOOK_TIMEOUT_SEC = tostring(WaitBudget.cli_timeout_sec())
 end
 
---- The question-block guidance that on other backends travels in a system prompt.
+--- The session-level guidance that on other backends travels in a system prompt.
 ---
 --- Command Code has no system-prompt channel on either transport, so it has to ride in the prompt
 --- text. On duplex the protocol adds it when the session is created; here it covers oneshot.
+---
+--- `tool` is false on oneshot: that transport registers no MCP server at all
+--- (`commandcode_mcp_config` is only read for `session/new`), so the background-job policy must
+--- not name a tool the model cannot call.
 --- @param prompt string
+--- @param opts {tool: boolean}|nil
 --- @return string
-function M.with_question_instructions(prompt)
-  return table.concat(AskUserQuestionInstructions.lines(), "\n") .. "\n\n" .. prompt
+function M.with_instructions(prompt, opts)
+  local lines = {}
+  vim.list_extend(lines, AskUserQuestionInstructions.lines())
+  vim.list_extend(lines, BackgroundJobInstructions.lines({ tool = opts and opts.tool }))
+  return table.concat(lines, "\n") .. "\n\n" .. prompt
 end
 
 function M.build(prompt, opts, session_id, config, hook_arg)
   opts = opts or {}
   if not opts.lightweight and opts._process_model ~= ProcessModel.DUPLEX then
-    prompt = M.with_question_instructions(prompt)
+    prompt = M.with_instructions(prompt, { tool = false })
   end
   return RequestBuilder.build(
     require("vibing.infrastructure.adapter.backends.commandcode").request,

@@ -7,6 +7,7 @@
 --- @module vibing.infrastructure.adapter.modules.copilot_command_builder
 
 local RequestBuilder = require("vibing.infrastructure.adapter.modules.request_builder")
+local BackgroundJobInstructions = require("vibing.infrastructure.adapter.modules.background_job_instructions")
 
 local M = {}
 
@@ -102,6 +103,11 @@ end
 --- @param plugin_dir? string Generated hook plugin directory to load with --plugin-dir
 --- @return string[] Command array for vim.system()
 function M.build(prompt, opts, session_id, config, plugin_dir)
+  -- copilot receives no vibing-nvim MCP server (vibing generates only the hook plugin for it), so
+  -- the policy is the no-tool variant: it must refuse rather than substitute shell backgrounding.
+  if not (opts and opts.lightweight) then
+    prompt = BackgroundJobInstructions.prefix(prompt, { tool = false })
+  end
   return RequestBuilder.build(
     require("vibing.infrastructure.adapter.backends.copilot").request,
     prompt,

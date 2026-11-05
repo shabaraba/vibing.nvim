@@ -16,11 +16,16 @@ export const jobTools = [
   {
     name: 'nvim_job_start',
     description:
-      'Start a long-running command as a Neovim-owned process, so it survives the current ' +
-      'Claude/Codex CLI turn. Use this instead of Bash backgrounding (`&`, `nohup`, `setsid`) ' +
-      'for development servers, watchers, and long scripts. The command is an argv array and is ' +
-      'not interpreted by a shell. Completion normally reaches from_bufnr as a new Notice turn; ' +
-      'the passive policy only appends it to the chat.',
+      'Start a process that must outlive the current model turn: a development server, a file ' +
+      'watcher, a --watch test runner, a log tailer, a queue worker. vibing.nvim owns it, so it ' +
+      'survives the turn. Do not use shell backgrounding (`&`, `nohup`, `setsid`, `disown`) and ' +
+      'do not register such a process with the CLI’s own background-task or monitor mechanism: ' +
+      'that registry lives in the CLI process, which vibing.nvim replaces between turns and ' +
+      'reclaims after an idle period, so the registration is lost and the process is usually ' +
+      'killed with it. An ordinary step of this turn (a test, a build, a one-off check) stays in ' +
+      'the foreground instead. The command is an argv array and is not interpreted by a shell. ' +
+      'Completion normally reaches from_bufnr as a new Notice turn; the passive policy only ' +
+      'appends it to the chat.',
     inputSchema: {
       type: 'object' as const,
       properties: withRpcPort({

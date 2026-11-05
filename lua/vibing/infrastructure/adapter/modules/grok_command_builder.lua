@@ -11,6 +11,7 @@ local RequestBuilder = require("vibing.infrastructure.adapter.modules.request_bu
 local GrokLightweight = require("vibing.infrastructure.adapter.modules.grok_lightweight")
 local worktree_constants = require("vibing.core.constants.worktree")
 local AskUserQuestionInstructions = require("vibing.infrastructure.adapter.modules.ask_user_question_instructions")
+local BackgroundJobInstructions = require("vibing.infrastructure.adapter.modules.background_job_instructions")
 
 local M = {}
 
@@ -149,17 +150,22 @@ end
 
 --- What goes into `--rules`, Grok's equivalent of a system prompt.
 ---
---- Deliberately much smaller than the Claude adapter's block: Grok reaches no vibing-nvim MCP
---- server, so instructing it to call `nvim_highlight_range` would name a tool it cannot invoke.
---- Only the backend-agnostic conventions go here — which now includes asking a multiple-choice
---- question, since that is a block in the reply rather than a tool call.
+--- Deliberately much smaller than the Claude adapter's block: the oneshot transport reaches no
+--- vibing-nvim MCP server, so instructing it to call `nvim_highlight_range` would name a tool it
+--- cannot invoke. Only backend-agnostic conventions go here — the question block, which is a
+--- reply block rather than a tool call, and the background-process policy, whose `tool` argument
+--- is what keeps the oneshot wording free of `nvim_job_start` (duplex registers the server and
+--- passes true).
 --- @param opts Vibing.AdapterOpts
 --- @param config Vibing.Config
+--- @param tool boolean whether this transport registers the bundled MCP server (duplex does,
+---   oneshot does not), so the background-job policy can name `nvim_job_start` only when the
+---   model can actually call it
 --- @return string|nil rules `nil` when there is nothing to say, so the caller omits the flag —
 ---   grok reads an empty `--rules` as a rule rather than as silence. `nil` rather than `""`
 ---   matches `CommonBuilder.language_instruction` and makes the omission impossible to drop:
 ---   `table.insert(cmd, nil)` raises where an empty string would sail through.
-local function build_rules(opts, config)
+local function build_rules(opts, config, tool)
   local lines = {}
 
   local language_instruction = CommonBuilder.language_instruction(opts, config)
@@ -178,6 +184,7 @@ local function build_rules(opts, config)
         .. "<branch-name>/ at the repository root."
     )
     vim.list_extend(lines, AskUserQuestionInstructions.lines())
+    vim.list_extend(lines, BackgroundJobInstructions.lines({ tool = tool }))
   end
 
   if #lines == 0 then
@@ -215,7 +222,7 @@ M.BINARY = {
 function M.rules_text(opts, config, self_server)
   opts = opts or {}
   local lines = {}
-  local shared = build_rules(opts, config or {})
+  local shared = build_rules(opts, config or {}, self_server ~= nil)
   if shared then
     table.insert(lines, shared)
   end
@@ -234,7 +241,7 @@ end
 --- @param ctx Vibing.RequestContext
 --- @return string[]
 function M.rules_args(ctx)
-  local rules = build_rules(ctx.opts, ctx.config)
+  local rules = build_rules(ctx.opts, ctx.config, false)
   if rules then
     return { "--rules", rules }
   end
