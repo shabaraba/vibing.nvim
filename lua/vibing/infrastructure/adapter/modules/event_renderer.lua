@@ -108,13 +108,12 @@ local function input_summary(tool_name, tool_input)
     return table.concat(tool_input.file_paths, ", ")
   end
 
-  return tool_input.command
-    or tool_input.file_path
-    or tool_input.notebook_path
-    or tool_input.pattern
-    or tool_input.query
-    or tool_input.url
-    or ""
+  for _, key in ipairs({ "command", "file_path", "notebook_path", "pattern", "query", "url" }) do
+    if type(tool_input[key]) == "string" then
+      return tool_input[key]
+    end
+  end
+  return ""
 end
 
 --- Mark the lines of an argument that spans several of them.
