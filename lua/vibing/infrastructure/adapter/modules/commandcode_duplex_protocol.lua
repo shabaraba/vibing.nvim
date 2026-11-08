@@ -34,24 +34,30 @@ local M = {}
 --- @param result table
 local function finish_turn(record, result)
   local Routing = require("vibing.infrastructure.adapter.modules.duplex_routing")
+  local rpc = record._rpc
+
+  -- Worked out before the turn is looked up: the reply's totals are cumulative for the process, so
+  -- one that finds no turn must still move the baseline or the next turn is charged for it too.
+  local usage_record
+  if type(result.usage) == "table" then
+    usage_record, rpc.usage_totals =
+      require("vibing.infrastructure.adapter.modules.commandcode_turn_usage").turn_record(
+        rpc.usage_totals,
+        result.usage,
+        rpc.context_used
+      )
+  end
+
   local turn = Routing.turn_of(record)
   if not turn then
     return
   end
   local content = table.concat(turn.context.output, "")
 
-  if type(result.usage) == "table" then
-    local usage = result.usage
+  if usage_record then
     local TokenUsage = require("vibing.core.utils.token_usage")
-    local cached = tonumber(usage.cachedReadTokens) or 0
     turn.context.tokenUsage = turn.context.tokenUsage or TokenUsage.new()
-    TokenUsage.record(turn.context.tokenUsage, {
-      -- `inputTokens` includes the cached read (measured: `totalTokens == inputTokens +
-      -- outputTokens`), so the cached share is subtracted the way the one records do.
-      input_tokens = math.max(0, (tonumber(usage.inputTokens) or 0) - cached),
-      cache_read_input_tokens = cached,
-      cache_creation_input_tokens = tonumber(usage.cachedWriteTokens) or 0,
-    }, false)
+    TokenUsage.record(turn.context.tokenUsage, usage_record, false)
   end
 
   if result.stopReason == "cancelled" then
@@ -74,6 +80,9 @@ end
 --- @param prompt string
 --- @return boolean sent
 local function send_prompt_now(record, prompt)
+  -- A `usage_update` that arrived while no turn was open (a `session/load` replay, or one that
+  -- trailed the last reply) describes a turn that is not this one.
+  record._rpc.context_used = nil
   -- Opens `commandcode_acp` to session updates. Catch-up from `session/load` is dropped until this.
   render(record, { method = "vibing/promptStarted" })
   return request(record, "session/prompt", {
@@ -361,6 +370,19 @@ function M.send_prompt(record, prompt, params)
   end)
 end
 
+--- Keep the window the CLI says is in use, for the reply that ends this turn.
+---
+--- Read here rather than in the decoder: the number is wanted by `finish_turn`, which runs on the
+--- reply, and a decoder's events carry no way to the process the turn belongs to.
+--- @param record Vibing.DuplexProcess
+--- @param msg table
+local function note_context_used(record, msg)
+  local update = type(msg.params) == "table" and msg.params.update
+  if msg.method == "session/update" and type(update) == "table" and update.sessionUpdate == "usage_update" then
+    record._rpc.context_used = tonumber(update.used)
+  end
+end
+
 --- One decoded line from the resident agent.
 ---
 --- Takes **no context**: a handshake failure, a deferred `session/new` reply and a locally-built
@@ -414,6 +436,7 @@ function M.process_line(record, line)
   end
 
   if msg.method then
+    note_context_used(record, msg)
     render(record, msg)
   end
 end
