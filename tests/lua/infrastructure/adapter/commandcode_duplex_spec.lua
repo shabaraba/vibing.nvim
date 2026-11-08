@@ -223,4 +223,88 @@ describe("Command Code duplex ACP", function()
     assert.equals("session/prompt", last(call).method)
     assert.same({ "model", "effort" }, config_writes(call))
   end)
+
+  describe("token usage", function()
+    --- What the CLI reports as the window in use, ahead of the reply that ends the turn.
+    local function usage_update(call, used)
+      jobs.emit(call, {
+        vim.json.encode({
+          jsonrpc = "2.0",
+          method = "session/update",
+          params = {
+            sessionId = "session-1",
+            update = { sessionUpdate = "usage_update", used = used, size = 1000000 },
+          },
+        }),
+      })
+    end
+
+    --- The reply's `usage` is a running total for the process, which is the point of these specs.
+    local function end_turn_with_totals(call, total, cached)
+      reply(call, {
+        stopReason = "end_turn",
+        usage = { totalTokens = total + 4, inputTokens = total, cachedReadTokens = cached, cachedWriteTokens = 0 },
+      })
+    end
+
+    local function context_of(result)
+      return result.responses[1]._token_usage.context
+    end
+
+    --- A first turn that reported a window of 18725 on a reply totalling 18717, on a fresh process.
+    --- @return table call
+    local function first_turn()
+      local first = send({ model = "deepseek/deepseek-v4-flash", effort = "high" })
+      local call = jobs.only_call()
+      open_session(call, deepseek_options())
+      usage_update(call, 18725)
+      end_turn_with_totals(call, 18717, 6144)
+      assert.equals(18725, context_of(first))
+      return call
+    end
+
+    it("reports the window in use, not the running total the reply carries", function()
+      local call = first_turn()
+
+      local second = send({})
+      assert.equals("session/prompt", last(call).method)
+      usage_update(call, 18741)
+      end_turn_with_totals(call, 37450, 24832)
+      assert.equals(18741, context_of(second))
+    end)
+
+    it("falls back to the turn's own share when a turn reports no window", function()
+      local call = first_turn()
+
+      -- No `usage_update` this turn: the earlier 18725 must not be reused for it.
+      local second = send({})
+      end_turn_with_totals(call, 37450, 24832)
+      assert.equals(18733, context_of(second))
+    end)
+
+    it("ignores a window reported while no turn was open", function()
+      local call = first_turn()
+
+      usage_update(call, 999999)
+
+      local second = send({})
+      end_turn_with_totals(call, 37450, 24832)
+      assert.equals(18733, context_of(second))
+    end)
+
+    it("does not charge a turn nobody was waiting for to the next one", function()
+      local call = first_turn()
+
+      -- The turn is gone by the time its reply lands; the totals it carries are still the
+      -- process's, so the baseline has to move or the turn after it is billed for this one.
+      local second = send({})
+      local _, record = Pool.find_by_process_id(second.process)
+      record._turn = nil
+      end_turn_with_totals(call, 37450, 24832)
+
+      local third = send({})
+      end_turn_with_totals(call, 56199, 43520)
+      assert.equals(18749, context_of(third))
+    end)
+  end)
 end)
