@@ -100,6 +100,68 @@ describe("send_message", function()
       assert.same({ "focused", "default" }, captured)
       vim.api.nvim_buf_delete(buf, { force = true })
     end)
+
+    -- The renderer hands every chunk over from inside a `vim.schedule`, and the adapter reports the
+    -- turn's end from the line that follows the last chunk. A chunk that takes one more hop than the
+    -- response lands under `### Tokens` and the next `## User`, and the question block is looked for
+    -- before the reply has finished arriving.
+    it("writes the last chunk of the reply before handling the turn's end", function()
+      local buf = vim.api.nvim_create_buf(false, true)
+      vim.api.nvim_buf_set_name(buf, vim.fn.tempname() .. ".md")
+      local order = {}
+
+      local callbacks = {
+        get_bufnr = function()
+          return buf
+        end,
+        get_session_id = function()
+          return "test-session"
+        end,
+        parse_frontmatter = function()
+          return {}
+        end,
+        extract_conversation = function()
+          return {}
+        end,
+        update_filename_from_message = function(_) end,
+        start_response = function() end,
+        get_session_allow = function()
+          return {}
+        end,
+        get_session_deny = function()
+          return {}
+        end,
+        add_user_section = function() end,
+        clear_sending = function() end,
+        update_session_id = function(_) end,
+        append_chunk = function(chunk)
+          table.insert(order, chunk)
+        end,
+        take_question_block = function()
+          table.insert(order, "<turn end>")
+        end,
+      }
+      local adapter = {
+        supports = function(_, feature)
+          return feature == "streaming"
+        end,
+        stream = function(_, _, _, on_chunk, on_done)
+          vim.schedule(function()
+            on_chunk("tail of the reply")
+          end)
+          on_done({ content = "ok" })
+          return "turn-1", "process-1"
+        end,
+      }
+
+      SendMessage.execute(adapter, callbacks, "hello", {})
+      vim.wait(1000, function()
+        return vim.tbl_contains(order, "<turn end>") and vim.tbl_contains(order, "tail of the reply")
+      end)
+
+      assert.same({ "tail of the reply", "<turn end>" }, order)
+      vim.api.nvim_buf_delete(buf, { force = true })
+    end)
   end)
 
   describe("_handle_response", function()
