@@ -270,10 +270,12 @@ function M.execute(adapter, callbacks, message, config)
   end
 
   if adapter:supports("streaming") then
+    -- チャンクはここで `vim.schedule` しない。渡してくる `event_renderer` の `emit` が既に
+    -- `vim.schedule` の中から呼んでいる。もう1段重ねると、1段で届くターンの終わり（下の
+    -- `_handle_response`）と Stop hook の記録（`on_stop_blocked`）に追い越され、返答の末尾が
+    -- `### Tokens` と次の `## User` の下に書かれ、質問ブロックも書き終わる前に探される
     local turn_id, process_id = adapter:stream(formatted_prompt, opts, function(chunk, chunk_turn_id)
-      vim.schedule(function()
-        callbacks.append_chunk(chunk, chunk_turn_id)
-      end)
+      callbacks.append_chunk(chunk, chunk_turn_id)
     end, function(response)
       vim.schedule(function()
         M._handle_response(response, callbacks, adapter, config, modified_file_paths, message)
