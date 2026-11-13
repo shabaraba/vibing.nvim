@@ -1205,6 +1205,9 @@ function ChatBuffer:send_message(opts)
   -- 印はヘッダーに保存されるため、再読込や予約後の送信でもこの境界を維持する。
   local question_answer = ConversationExtractor.is_question_answer(self.buf)
   ConversationExtractor.commit_user_message(self.buf)
+  -- プロンプトを描いたセクションは、いま送った。残すと、期限切れの承認に答えて始まったターンが
+  -- 最後に書いた質問ブロックを `take_question_block` が拾わない
+  self._prompts_rendered_unsent = false
 
   local commands = require("vibing.application.chat.commands")
   if not question_answer and commands.is_command(message) then

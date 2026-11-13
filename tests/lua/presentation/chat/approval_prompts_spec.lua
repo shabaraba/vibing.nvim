@@ -557,6 +557,37 @@ describe("several approval prompts at once", function()
       assert.is_truthy(vim.tbl_contains(chat_buf:get_session_allow(), "Bash:once"))
       assert.is_nil(chat_buf:get_pending_approval("req-1"), "the prompt is spent, not left for a second answer")
     end)
+
+    -- The section the prompt was drawn in is sent with the answer, so nothing drawn is left unsent.
+    -- Still believing otherwise, the retried turn refused the question block it ended on.
+    it("takes a question block the retried turn ends on", function()
+      local vibing = require("vibing")
+      local original_get_adapter = vibing.get_adapter
+      vibing.get_adapter = function()
+        return {
+          supports = function(_, feature)
+            return feature == "streaming"
+          end,
+          stream = function()
+            return "turn-retry", "process-retry"
+          end,
+        }
+      end
+      local chat_buf = chat_with({ { tool = "Bash", request_id = "req-1" } })
+      chat_buf:mark_approval_expired("req-1")
+
+      local ok, sent = pcall(type_and_send, chat_buf, {
+        "1. allow_once - Allow this execution only <!-- vibing:req=req-1 -->",
+      })
+      vibing.get_adapter = original_get_adapter
+      assert.is_true(ok, tostring(sent))
+      assert.is_true(sent)
+
+      chat_buf:append_chunk('```vibing-question\n{"questions": [{"question": "Next?", "options": [{"label": "A"}]}]}\n```\n')
+      chat_buf:_flush_chunks()
+
+      assert.is_true(chat_buf:take_question_block())
+    end)
   end)
 
   describe("output while a prompt is open", function()
