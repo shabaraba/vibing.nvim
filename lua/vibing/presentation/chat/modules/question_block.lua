@@ -86,7 +86,8 @@ local function decode(body)
   if not ok then
     return nil
   end
-  return (M.validate(value))
+  local questions = M.validate(value)
+  return questions
 end
 
 --- Find a question block that ends the given lines.

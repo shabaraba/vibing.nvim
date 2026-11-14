@@ -355,7 +355,10 @@ function M.define(descriptor)
       -- a cancelled, stalled, timed-out or failed turn must draw nothing, since the user is not
       -- being asked anything any more (`turn_outcome.lua`).
       local queued_prompts = TurnRegistry.take_prompts(ids.turn_id)
-      if not (response.error or response._cancelled or response._stalled or response._session_corrupted) then
+      local finished = not (
+        response.error or response._cancelled or response._stalled or response._session_corrupted
+      )
+      if finished then
         response._queued_prompts = queued_prompts
       end
       -- Turn first: `close` clears the process entry's `active_turn_id`, and unregistering the

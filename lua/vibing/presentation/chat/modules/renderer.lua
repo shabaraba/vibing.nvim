@@ -420,19 +420,19 @@ function M.addUserSection(buf, win, pendingChoices, pendingApprovals, initial_me
 
   if modelApprovals and #modelApprovals > 0 then
     local ApprovalParser = require("vibing.presentation.chat.modules.approval_parser")
-    local lines = {}
+    local confirmationLines = {}
 
     for _, approval in ipairs(modelApprovals) do
-      table.insert(lines, ApprovalParser.CONFIRMATION_HEADER)
-      table.insert(lines, "")
+      table.insert(confirmationLines, ApprovalParser.CONFIRMATION_HEADER)
+      table.insert(confirmationLines, "")
       -- Indented, so `strip_prompt_lines` counts every reason line as part of this block without
       -- having to know any of its words.
       for _, line in ipairs(vim.split(approval.reason or "", "\n", { plain = true })) do
-        table.insert(lines, "   " .. line)
+        table.insert(confirmationLines, "   " .. line)
       end
 
       if approval.tool and approval.tool ~= "" then
-        table.insert(lines, "Tool: " .. tostring(approval.tool))
+        table.insert(confirmationLines, "Tool: " .. tostring(approval.tool))
       end
       if approval.input then
         for _, field in ipairs({
@@ -442,20 +442,20 @@ function M.addUserSection(buf, win, pendingChoices, pendingApprovals, initial_me
           { key = "url", label = "URL" },
         }) do
           if type(approval.input[field.key]) == "string" then
-            table.insert(lines, field.label .. ": " .. approval.input[field.key])
+            table.insert(confirmationLines, field.label .. ": " .. approval.input[field.key])
           end
         end
         for _, line in ipairs(approval.input.details or {}) do
-          table.insert(lines, "   " .. tostring(line))
+          table.insert(confirmationLines, "   " .. tostring(line))
         end
       end
 
-      table.insert(lines, "")
+      table.insert(confirmationLines, "")
     end
 
     local currentLines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
     local insertPos = #currentLines
-    vim.api.nvim_buf_set_lines(buf, insertPos, insertPos, false, flatten_lines(lines))
+    vim.api.nvim_buf_set_lines(buf, insertPos, insertPos, false, flatten_lines(confirmationLines))
   end
 
   if win and vim.api.nvim_win_is_valid(win) and vim.api.nvim_win_get_buf(win) == buf then

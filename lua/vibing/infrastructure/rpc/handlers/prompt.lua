@@ -29,15 +29,15 @@ local M = {}
 --- The cap `AskUserQuestion` had, from its one definition next to the parser. More than this in one
 --- call is refused rather than truncated: a question nobody was shown is worse than a call the
 --- model can correct.
-M.MAX_QUESTIONS = QuestionBlock.MAX_QUESTIONS
+local MAX_QUESTIONS = QuestionBlock.MAX_QUESTIONS
 
 --- What the model may put in a confirmation, bounded so one call cannot fill the chat.
-M.MAX_DETAIL_LINES = 12
-M.MAX_LINE_CHARS = 500
+local MAX_DETAIL_LINES = 12
+local MAX_LINE_CHARS = 500
 
 --- What every successful call returns. The model must not go on working: the prompt is drawn when
 --- the turn ends, so continuing only delays it.
-M.QUEUED_MESSAGE = "Queued. Nothing is shown to the user until this turn ends — end your turn now "
+local QUEUED_MESSAGE = "Queued. Nothing is shown to the user until this turn ends — end your turn now "
   .. "and do not wait for an answer or repeat the request."
 
 --- @param message string
@@ -73,7 +73,7 @@ end
 --- @return string
 local function clean_line(text)
   local line = vim.trim(text:gsub("[\r\n]+", " "))
-  line = line:sub(1, M.MAX_LINE_CHARS)
+  line = line:sub(1, MAX_LINE_CHARS)
   return (line:gsub("<!%-%-", "<! --"))
 end
 
@@ -98,7 +98,7 @@ local function clean_input(input)
       if type(line) == "string" then
         table.insert(details, clean_line(line))
       end
-      if #details >= M.MAX_DETAIL_LINES then
+      if #details >= MAX_DETAIL_LINES then
         break
       end
     end
@@ -122,12 +122,12 @@ function M.ask_question(params)
   if not questions then
     return refused("vibing.nvim did not queue this question: " .. tostring(invalid) .. ".")
   end
-  if #questions > M.MAX_QUESTIONS then
+  if #questions > MAX_QUESTIONS then
     return refused(
       string.format(
         "vibing.nvim did not queue this question: at most %d questions fit in one call, and %d "
           .. "were sent.",
-        M.MAX_QUESTIONS,
+        MAX_QUESTIONS,
         #questions
       )
     )
@@ -136,7 +136,7 @@ function M.ask_question(params)
   if not TurnRegistry.push_prompt(turn.turn_id, { kind = "question", questions = questions }) then
     return refused("vibing.nvim's turn ended before this question was queued, so nothing is shown.")
   end
-  return { ok = true, message = M.QUEUED_MESSAGE }
+  return { ok = true, message = QUEUED_MESSAGE }
 end
 
 --- Ask the user to confirm something the model is about to do.
@@ -159,8 +159,8 @@ function M.request_approval(params)
   end
 
   local reason_lines = {}
-  for line in (params.reason .. "\n"):gmatch("([^\n]*)\n") do
-    if #reason_lines >= M.MAX_DETAIL_LINES then
+  for _, line in ipairs(vim.split(params.reason, "\n", { plain = true })) do
+    if #reason_lines >= MAX_DETAIL_LINES then
       break
     end
     table.insert(reason_lines, clean_line(line))
@@ -178,7 +178,7 @@ function M.request_approval(params)
   if not TurnRegistry.push_prompt(turn.turn_id, entry) then
     return refused("vibing.nvim's turn ended before this confirmation was queued, so nothing is shown.")
   end
-  return { ok = true, message = M.QUEUED_MESSAGE }
+  return { ok = true, message = QUEUED_MESSAGE }
 end
 
 return M
