@@ -113,6 +113,33 @@
   defaults to `true`: it spends no tokens, and a warning about a change you cannot otherwise see is
   useless if it is off until you ask for it. Set it to `false` to stop the warning and its probe.
 
+## 6.2.0 (2026-11-14)
+
+## What's Changed
+* fix(duplex): show turns the CLI starts by itself after a background subagent finishes by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/935
+* feat: add OpenCode and Command Code CLI backends by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/937
+* feat(chat): configure the values ]v and [v cycle through by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/938
+* fix(config): ignore entries this checkout does not register by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/939
+* fix(fold): merge reasoning and tool calls into one fold by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/940
+* feat(commandcode): apply effort to the resident ACP session by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/941
+* fix(orchestration): notify recorded orchestrators when a worker waits for approval by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/942
+* fix(commandcode): resume with --session so a moved working_dir keeps the chat by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/944
+* feat(commandcode): load vibing's plugin skills and MCP server by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/945
+* feat(config): let each backend set its default model by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/943
+* feat(prompts): tell every backend where a long-running process belongs by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/946
+* feat(completion): offer each backend the skills it actually runs by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/947
+* feat(permissions): answer claude's own permission prompts from the chat by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/948
+* feat(completion): show the skills each CLI reports in the slash menu by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/950
+* fix(chat): ignore non-string tool input when building the call header by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/953
+* fix(commandcode): report the real context window for duplex turns by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/954
+* chore(deps-dev): bump @types/node from 26.6.5 to 26.6.6 in /agent-plugin/mcp-server in the minor-and-patch group by @dependabot[bot] in https://github.com/shabaraba/vibing.nvim/pull/952
+* chore(deps-dev): bump the minor-and-patch group with 2 updates by @dependabot[bot] in https://github.com/shabaraba/vibing.nvim/pull/951
+* fix(chat): write the reply's last chunk before handling the turn's end by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/955
+* docs(architecture): explore a resident HTTP MCP server and queued question/approval tools by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/958
+
+
+**Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v6.1.0...v6.2.0
+
 ## 6.1.0 (2026-10-31)
 
 ## What's Changed
