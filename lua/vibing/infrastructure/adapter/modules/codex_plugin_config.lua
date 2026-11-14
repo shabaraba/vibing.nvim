@@ -103,7 +103,11 @@ local function append_server(args, server, forward_rpc_port)
       -- `env_vars` names a host-process variable for codex to copy into the MCP subprocess.
       -- The name is fixed, so changing Neovim's actual port changes only the process environment,
       -- not argv, tool definitions, or any model-visible prompt prefix.
-      override(args, prefix .. ".env_vars", Toml.string_array({ RpcEnvironment.PORT_VAR }))
+      --
+      -- `VIBING_PROCESS_ID` rides with it because a tool that draws into the calling chat
+      -- (`nvim_ask_question`, `nvim_request_approval`) resolves which turn called it through that
+      -- id (`rpc/hook_scope.lua`). The value is fixed at spawn, exactly like the port.
+      override(args, prefix .. ".env_vars", Toml.string_array({ RpcEnvironment.PORT_VAR, "VIBING_PROCESS_ID" }))
     end
   else
     override(args, prefix .. ".url", Toml.string(server.url))
@@ -158,11 +162,11 @@ local function developer_instructions(skills, self_server, chat_bufnr)
   end
   vim.list_extend(lines, BackgroundJobInstructions.lines(self_server ~= nil))
 
-  -- Not tied to the bundled server — a question is a block in the reply, not a tool call — so it
-  -- is present on every ordinary call. `-c` replaces a `developer_instructions` the user set in
-  -- their own config.toml for this run; codex has no additive form, and the policy above is worth
-  -- that trade.
-  vim.list_extend(lines, AskUserQuestionInstructions.lines())
+  -- Present on every ordinary call. `-c` replaces a `developer_instructions` the user set in their
+  -- own config.toml for this run; codex has no additive form, and the policy above is worth that
+  -- trade. With the bundled server the tools are named; without it the fenced block stays, since a
+  -- prompt naming a tool codex cannot call is the failure `handbook/ADAPTER_DEVELOPMENT.md` forbids.
+  vim.list_extend(lines, AskUserQuestionInstructions.lines(self_server ~= nil))
   if self_server then
     -- With the bundled server: the orchestration tools take this as `from_bufnr`.
     vim.list_extend(lines, AskUserQuestionInstructions.chat_buffer_lines(chat_bufnr))

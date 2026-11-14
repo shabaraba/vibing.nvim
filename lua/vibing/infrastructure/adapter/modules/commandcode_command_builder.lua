@@ -102,7 +102,7 @@ end
 --- @return string
 function M.with_instructions(prompt, opts)
   local lines = {}
-  vim.list_extend(lines, AskUserQuestionInstructions.lines())
+  vim.list_extend(lines, AskUserQuestionInstructions.lines(opts.tool))
   vim.list_extend(lines, BackgroundJobInstructions.lines(opts.tool))
   vim.list_extend(lines, opts.skills or {})
   return table.concat(lines, "\n") .. "\n\n" .. prompt

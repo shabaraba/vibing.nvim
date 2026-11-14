@@ -396,31 +396,45 @@ Single-select questions render as a numbered list (`1. 2. 3.`); multi-select que
 bullet list (`- - -`). The user deletes unwanted options with standard Vim commands (`dd`, etc.)
 and sends the remainder with `<CR>`.
 
-**Implementation: a block in the reply, not a tool.** Every backend's prompt
-(`adapter/modules/ask_user_question_instructions.lua`) tells the model to end its reply with one
-fenced block whose info string is `vibing-question`, holding
-`{"questions": [{"question", "multiSelect", "options": [{"label", "description"}]}]}`, and to stop.
-When the turn succeeds, `send_message.lua` calls `ChatBuffer:take_question_block`, which asks
+**Implementation: a queued tool, with the block as fallback.** Where the backend's transport
+registers the bundled MCP server, `adapter/modules/ask_user_question_instructions.lua` tells the
+model to call `nvim_ask_question` and then end its turn. The RPC handler
+(`rpc/handlers/prompt.lua`) validates the arguments against the same schema the parser uses,
+queues the entry on the current turn (`turn_registry.push_prompt`) and returns at once.
+`cli_adapter.finish` takes the queue before `TurnRegistry.close` and carries it on the response;
+`send_message._handle_response` calls `ChatBuffer:render_queued_prompts` at the same point it calls
+`take_question_block`. Both routes end in `insert_choices`, so the rendering below is unchanged.
+
+Where the server is unreachable (Copilot, Pi, and the oneshot half of Grok and Command Code) the
+instruction still asks for one fenced block whose info string is `vibing-question`, holding
+`{"questions": [{"question", "multiSelect", "options": [{"label", "description"}]}]}`. When the
+turn succeeds, `send_message.lua` calls `ChatBuffer:take_question_block`, which asks
 `presentation/chat/modules/question_block.lua` for a block that ends the reply, takes it out of the
 transcript (otherwise the question shows twice, once as JSON) and stages it with `insert_choices`.
 The turn's closing `add_user_section` draws the choices; the user's `<CR>` is the next turn.
 
-**Why it stopped being a tool.** `nvim_ask_user_question` (#788) held its MCP reply open until the
-human answered, which needed a withheld-reply registry with four exits, a measured ceiling on how
-late an answer is still consumed (960s on claude), an exemption from every "this chat is
-responding" guard, and a rule for which of two blocked questions an answer belonged to. All of it
-bought one thing over ending the turn: the CLI process surviving while the human thinks. Once
-duplex became the default the resident process survives between turns anyway, and the prompt cache
-is server-side either way, so the cost bought nothing. A block also reaches Grok, which never could
-call the MCP tool. The tool's design history is `handbook/superpowers/specs/2026-07-10-ask-user-question-mcp-tool-design.md`.
+**Why the tool came back.** `nvim_ask_user_question` (#788) held its MCP reply open until the human
+answered, which needed a withheld-reply registry with four exits, a measured ceiling on how late an
+answer is still consumed (960s on claude), and an exemption from every "this chat is responding"
+guard. The queued form keeps what actually mattered — a schema check before anything is drawn, and
+a call that cannot be lost to trailing text — without holding the turn. The block failed in
+practice when another instruction made the model append something after the closing fence (a
+`Sources:` list after web searches): `find_trailing` then saw no question at all, and the JSON
+stayed in the transcript as text. Design record:
+`handbook/architecture/queued-prompt-tools.md`; the old held-tool design is
+`handbook/superpowers/specs/2026-07-10-ask-user-question-mcp-tool-design.md`.
 
-**Only the last thing written counts.** `find_trailing` accepts nothing but blank lines after the
-closing fence and refuses when a later fence closes the reply, so a quoted example of the format
-never becomes a live prompt. That is also why the block is taken **before** `### Tokens` and
-`### Modified Files` are appended under the reply.
+**Only the fallback block depends on the last thing written.** `find_trailing` accepts nothing but
+blank lines after the closing fence and refuses when a later fence closes the reply, so a quoted
+example of the format never becomes a live prompt. The block is taken **before** `### Tokens` and
+`### Modified Files` are appended under the reply, for the same reason. The queue does not read the
+transcript at all, which is why it is not subject to either condition.
 
-**The chat reports `asked_question` until its next send** (`insert_choices` sets `_stop_reason`).
-It is idle, so an orchestrator answers with an ordinary delivery.
+**The chat reports `asked_question` until its next send** (`insert_choices` sets `_stop_reason`;
+a queued confirmation sets the same value). It is idle, so an orchestrator answers with an ordinary
+delivery. A confirmation is deliberately **not** `waiting_approval`: that would send an
+orchestrator to `nvim_chat_answer_approval`, which has no registry entry to answer.
 
 Native `AskUserQuestion` is unavailable in headless `claude -p` mode and opaque to vibing.nvim, so
-the PreToolUse hook denies it — without killing the turn — with a reason that names the block.
+the PreToolUse hook denies it — without killing the turn — with a reason that names the queued tool
+where it is reachable, and the fallback block otherwise.

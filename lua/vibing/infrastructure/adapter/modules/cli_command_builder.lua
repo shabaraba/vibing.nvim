@@ -231,7 +231,7 @@ function M.system_prompt_args(ctx)
         .. "for a tool name ending in the specific tool you need if the plain prefix isn't available."
     )
     vim.list_extend(system_prompt_lines, BackgroundJobInstructions.lines(true))
-    vim.list_extend(system_prompt_lines, AskUserQuestionInstructions.lines())
+    vim.list_extend(system_prompt_lines, AskUserQuestionInstructions.lines(true))
     vim.list_extend(system_prompt_lines, AskUserQuestionInstructions.chat_buffer_lines(opts.chat_bufnr))
     table.insert(
       system_prompt_lines,

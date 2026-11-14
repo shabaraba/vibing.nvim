@@ -19,6 +19,7 @@ local Fs = require("vibing.core.utils.fs")
 ---@field add_user_section fun() ユーザーセクションを追加
 ---@field get_bufnr fun(): number バッファ番号を取得
 ---@field take_question_block fun(): boolean ターン本文の末尾の質問ブロックを選択肢に変える（`question_block.lua`）
+---@field render_queued_prompts fun(queued: table[]?): boolean ターン中に積まれた `nvim_ask_question` / `nvim_request_approval` を描く
 ---@field mark_stop_attempt fun() Stop hook に止められた地点を覚える（`take_question_block` が読む）
 ---@field insert_choices fun(questions: table) 質問の選択肢を挿入
 ---@field set_pending_user_text fun(text: string, section: table?) 次のユーザーセクションに差し込む本文と見出しを保存
@@ -416,6 +417,12 @@ function M._handle_response(response, callbacks, adapter, config, modified_file_
     -- 質問ブロックは「ターンが最後に書いたもの」としてしか認めない（`question_block.lua`）
     if callbacks.take_question_block then
       pcall(callbacks.take_question_block)
+    end
+    -- ツール形の質問・確認要求は、本文の末尾を見るブロック経路とは別に、ターンの終わりに
+    -- キューを流して描く。ここも `### Tokens` / `### Modified Files` より前。ブロックが
+    -- 残っていても `insert_choices` を上書きするので、両方あるときはツール呼び出しが勝つ
+    if callbacks.render_queued_prompts then
+      pcall(callbacks.render_queued_prompts, response._queued_prompts)
     end
   else
     -- リミット以外のエラーで終わったターンも、未送信Userセクションは消費済み。予約

@@ -21,7 +21,11 @@ local Fs = require("vibing.core.utils.fs")
 ---@field _chunk_parts string[] 未フラッシュのチャンク片。連結は流すときに1回だけ行う
 ---@field _chunk_timer any チャンクフラッシュ用のタイマー
 ---@field _pending_choices Vibing.PendingChoiceEntry[]? 次の `add_user_section` で描く質問。
----  ターンの最後に書かれた質問ブロック（`take_question_block`）から作られ、描いたら捨てる
+---  ターンの最後に書かれた質問ブロック（`take_question_block`）か、`nvim_ask_question` の
+---  キュー（`render_queued_prompts`）から作られ、描いたら捨てる
+---@field _pending_model_approvals Vibing.QueuedPrompt[]? `nvim_request_approval` が積んだ
+---  確認要求。承認レジストリには載らない（次のメッセージが答えになるだけ）ので、
+---  `insert_approval_request` とは別に持つ。描いたら捨てる
 ---@field _pending_approvals table[]? add_user_section()後に挿入する承認要求UI。**複数**
 ---  なのは、CLIが1ターンに複数のPreToolUseフックを並列に起動するから（実測: claudeで3本が
 ---  0.54秒差で立ち上がり、全体が重なる）。表示順に並べる
@@ -67,6 +71,7 @@ function ChatBuffer:new(config)
   instance._chunk_parts = {}
   instance._chunk_timer = nil
   instance._pending_choices = nil
+  instance._pending_model_approvals = nil
   instance._pending_approvals = {}
   instance._current_turn_id = nil
   instance._current_process_id = nil
@@ -1262,6 +1267,9 @@ function ChatBuffer:send_message(opts)
     take_question_block = function()
       return self:take_question_block()
     end,
+    render_queued_prompts = function(queued)
+      return self:render_queued_prompts(queued)
+    end,
     mark_stop_attempt = function()
       return self:mark_stop_attempt()
     end,
@@ -1443,18 +1451,24 @@ function ChatBuffer:add_user_section()
     self._pending_choices,
     self._pending_approvals,
     self._pending_user_text,
-    header
+    header,
+    self._pending_model_approvals
   )
 
-  -- 質問の選択肢は1回描いたら捨てる。答えは次のターンの本文なので、描いたものを覚えておく
-  -- 理由が無い（`question_block.lua`）
+  -- 描いたかどうかは捨てる前に決める。下は保留の中身ではなく「何を描いたか」の印
+  local drew_model_approvals = #(self._pending_model_approvals or {}) > 0
+
+  -- 質問の選択肢とモデル発の確認要求は1回描いたら捨てる。答えは次のターンの本文なので、
+  -- 描いたものを覚えておく理由が無い（`question_block.lua`）。未回答のまま `<CR>` されたとき
+  -- プロンプト行を送り返さないのは `ApprovalParser.strip_prompt_lines` が行から直接行う
   self:_clear_pending_choices()
+  self._pending_model_approvals = nil
   self._pending_user_text = nil
   self._pending_user_section = nil
   -- 「いま末尾の未送信セクションにプロンプトが描いてある」。ターンの途中で描けるように
   -- なった以上（#778、#788）、ターンの終わりがもう一度描くと**同じものが2つ**出る。どちらの
   -- プロンプトに答えられるのかは見た目では区別がつかない
-  self._prompts_rendered_unsent = #(self._pending_approvals or {}) > 0
+  self._prompts_rendered_unsent = #(self._pending_approvals or {}) > 0 or drew_model_approvals
   -- NOTE: Don't clear _pending_approvals here!
   -- They need to persist until the user answers, and each one is dropped individually by
   -- `approval_decision.consume` when its own answer is spent.
@@ -1595,6 +1609,49 @@ end
 function ChatBuffer:insert_choices(questions)
   self._pending_choices = { { questions = questions } }
   self._stop_reason = "asked_question"
+end
+
+---ターン中に `nvim_ask_question` / `nvim_request_approval` が積んだプロンプトを、次の
+---`add_user_section` で描くために保存する
+---
+---**キューはターンの終わりに一度だけ流す**（`cli_adapter.finish` が `TurnRegistry.take_prompts`
+---で応答へ載せ、`send_message._handle_response` が `take_question_block` と同じ地点で呼ぶ）。
+---だから本文を読まない — 末尾に何が書かれたかに関係なく、質問は失われない。
+---
+---質問は1セクションにまとめる（`choice_lines` は先頭エントリの中身を全部描くので、複数コール分を
+---1件の質問リストにする）。上限は `question_block.MAX_QUESTIONS` で、ツール1コールあたりの上限と
+---同じ値。溢れた分は捨てるのではなく `insert_choices` が描ける範囲に切る — 選択肢として描かれない
+---質問をここで黙って増やしても、ユーザーには見えないため
+---@param queued Vibing.QueuedPrompt[]?
+---@return boolean rendered
+function ChatBuffer:render_queued_prompts(queued)
+  if type(queued) ~= "table" or #queued == 0 then
+    return false
+  end
+  self:_flush_chunks()
+
+  local questions, approvals = {}, {}
+  for _, entry in ipairs(queued) do
+    if entry.kind == "question" and type(entry.questions) == "table" then
+      vim.list_extend(questions, entry.questions)
+    elseif entry.kind == "approval" and type(entry.reason) == "string" then
+      table.insert(approvals, entry)
+    end
+  end
+
+  if #questions > 0 then
+    self:insert_choices(vim.list_slice(questions, 1, QuestionBlock.MAX_QUESTIONS))
+  end
+  if #approvals > 0 then
+    self._pending_model_approvals = approvals
+    -- **`asked_question`, not `waiting_approval`.** これは承認レジストリに載らない — 答えるのは
+    -- 次のメッセージなので、`nvim_chat_answer_approval` では答えられない。`waiting_approval` を
+    -- 名乗るとオーケストレーターがその道具を呼び、失敗したうえで「ユーザーしか解けない」と
+    -- 報告する。`asked_question` は「読んで nvim_chat_send_message で答える」という正しい行動を指す
+    self._stop_reason = "asked_question"
+  end
+
+  return #questions > 0 or #approvals > 0
 end
 
 ---保存してある選択肢を捨てる

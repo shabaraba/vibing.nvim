@@ -8,7 +8,6 @@
 --- 採点し始めると、モデルの言い回しが変わるたびに落ちるテストになる。
 local Harness = require("vibing.testing.eval_harness")
 local Worktree = require("vibing.core.constants.worktree")
-local QuestionBlock = require("vibing.presentation.chat.modules.question_block")
 
 --- from_bufnr のタスクで system prompt に載せる chat_bufnr。実在しないバッファ番号でよく、
 --- 「system promptに書かれた番号をそのまま写したか」だけを見るための固定値
@@ -41,20 +40,22 @@ end
 ---@type Vibing.Eval.Task[]
 return {
   {
-    id = "ask_user_question/ends_with_a_question_block",
-    description = "選択肢を出す場面では本文の末尾に vibing-question ブロックを書いてターンを終える"
+    id = "ask_user_question/uses_the_queued_tool",
+    description = "選択肢を出す場面では nvim_ask_question を呼んでターンを終える"
       .. "（自由文や native AskUserQuestion に落ちない）",
     prompt = "I need to pick a database for this project: PostgreSQL, MySQL, or SQLite. "
       .. "Ask me which one I want. Do not decide for me.",
-    -- 本文を読むが、言い回しは採点しない。見るのはチャットが選択肢に変えるのと同じパーサが
-    -- ブロックを見つけるかどうかだけで、これは機械可読な出力の契約である
+    -- 本文ではなくツール呼び出しを見る。言い回しは採点しない — これは機械可読な契約である
     check = function(record)
       if Harness.find_tool_call(record, "AskUserQuestion") then
         return false, "used the native AskUserQuestion, which is unreachable in headless -p mode"
       end
-      local questions = QuestionBlock.find_trailing(vim.split(record.text or "", "\n", { plain = true }))
-      if not questions then
-        return false, "did not end the reply with a parseable vibing-question block"
+      local input = Harness.find_mcp_call(record, "nvim_ask_question")
+      if not input then
+        return false, "did not call nvim_ask_question"
+      end
+      if type(input.questions) ~= "table" or #input.questions == 0 then
+        return false, "called nvim_ask_question with no questions"
       end
       return true
     end,

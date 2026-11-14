@@ -94,12 +94,17 @@ describe("codex_plugin_config", function()
         override(args, "mcp_servers.vibing-nvim.args")
       )
       assert.equals('{ VIBING_RPC_TIMEOUT = "30000" }', override(args, "mcp_servers.vibing-nvim.env"))
-      assert.equals('["VIBING_NVIM_RPC_PORT"]', override(args, "mcp_servers.vibing-nvim.env_vars"))
+      -- The process id rides with the port: a tool that draws into the calling chat resolves its
+      -- turn through it (`rpc/hook_scope.lua`).
+      assert.equals(
+        '["VIBING_NVIM_RPC_PORT", "VIBING_PROCESS_ID"]',
+        override(args, "mcp_servers.vibing-nvim.env_vars")
+      )
     end)
 
     -- Only the first of its servers is named in the developer message, but every one of them
-    -- talks to this Neovim, so every one has to be handed the port.
-    it("forwards the port to every server it declares, not only the first", function()
+    -- talks to this Neovim, so every one has to be handed the port and the process id.
+    it("forwards the binding to every server it declares, not only the first", function()
       local root = write_plugin("bundled-stub", {
         name = "bundled-stub",
         mcpServers = {
@@ -117,8 +122,9 @@ describe("codex_plugin_config", function()
         },
       })
 
-      assert.equals('["VIBING_NVIM_RPC_PORT"]', override(args, "mcp_servers.vibing-nvim.env_vars"))
-      assert.equals('["VIBING_NVIM_RPC_PORT"]', override(args, "mcp_servers.vibing-nvim-lsp.env_vars"))
+      local expected = '["VIBING_NVIM_RPC_PORT", "VIBING_PROCESS_ID"]'
+      assert.equals(expected, override(args, "mcp_servers.vibing-nvim.env_vars"))
+      assert.equals(expected, override(args, "mcp_servers.vibing-nvim-lsp.env_vars"))
     end)
 
     -- Headless `codex exec` cancels an MCP call at its own approval prompt (openai/codex#24135);
@@ -142,10 +148,12 @@ describe("codex_plugin_config", function()
       assert.is_nil(instructions:find("rpc_port for this turn", 1, true))
     end)
 
-    it("tells the model to ask with a vibing-question block, and names this chat buffer", function()
+    it("names the queued prompt tools, and this chat buffer", function()
       local instructions = override(CodexPluginConfig.args(nil, config, 12), "developer_instructions")
 
-      assert.is_truthy(instructions:find("vibing-question", 1, true))
+      assert.is_truthy(instructions:find("nvim_ask_question", 1, true))
+      assert.is_truthy(instructions:find("nvim_request_approval", 1, true))
+      assert.is_nil(instructions:find("vibing-question", 1, true))
       assert.is_nil(instructions:find("nvim_ask_user_question", 1, true))
       assert.is_truthy(instructions:find("Current vibing.nvim chat buffer number: 12", 1, true))
     end)

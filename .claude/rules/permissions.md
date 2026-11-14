@@ -132,30 +132,47 @@ gate would refuse with nobody to ask (an edit inside a `--plugin-dir` directory 
 
 ## Asking a Question
 
-A multiple-choice question is **not** waited for. The model ends its reply with a
-` ```vibing-question ` block and stops; `ChatBuffer:take_question_block` turns it into choices in
-the next unsent section, and the answer is the next turn's message.
-`presentation/chat/modules/question_block.lua`; rationale:
+A multiple-choice question is **not** waited for. The model calls `nvim_ask_question` and stops; the
+call queues an entry on the current turn and returns at once. Where the bundled MCP server is
+unreachable it ends its reply with a ` ```vibing-question ` block instead. Either way
+`send_message.lua` drains it at the turn's end, draws one block of choices in the next unsent
+section, and the answer is the next turn's message. `rpc/handlers/prompt.lua`,
+`ChatBuffer:render_queued_prompts`, rationale:
 `handbook/architecture/approval-without-kill.md` → "Questions as reply blocks".
 
+- **The queue is keyed by the turn and travels on the response.** `turn_registry.push_prompt`
+  fails once the turn is closed, and `cli_adapter.finish` takes the queue **before** `close` —
+  a turn that was cancelled or failed draws nothing.
+- **A call that names no registered process is refused, never guessed.** `hook_scope.of`
+  resolves the process id; both the sole-open guess (no id) and an id that matches nothing are
+  refusals. `nvim_request_approval` goes through the same gate.
+- **`nvim_request_approval` is not the tool-permission gate.** It queues a confirmation, the next
+  message is the answer, and it grants nothing. The waiting hook approval (#778) and claude's
+  `nvim_permission_prompt` stay the gate: a gated call has to be held at the moment the CLI makes
+  it, which a tool that returns immediately cannot do.
 - **Question-answer sections never dispatch local slash commands.** Their header carries
   `question-answer`, preserved across reload and send. Generated section headers in choices are
   quoted so they cannot hide the answer section's marker.
-
-- **Only the last thing a turn wrote is a question.** `find_trailing` accepts nothing but blank
-  lines after the closing fence, and refuses when a later fence closes the reply. Looking further
-  back draws a live prompt out of a quoted example. The one other place a turn ended is where a
-  Stop hook refused to let it (`stop_blocked`, recorded by `ChatBuffer:mark_stop_attempt`), so a
-  block followed only by what the hook made the model write is still taken, and that text stays.
-- **The block is looked for before anything is appended under the reply** — `send_message.lua`
-  calls `take_question_block` ahead of `### Tokens` and `### Modified Files`, which would otherwise
-  make the block no longer the last thing written.
+- **Only the fallback block depends on the end of the reply.** `find_trailing` accepts nothing but
+  blank lines after the closing fence, and refuses when a later fence closes the reply. Looking
+  further back draws a live prompt out of a quoted example. The one other place a turn ended is
+  where a Stop hook refused to let it (`stop_blocked`, recorded by
+  `ChatBuffer:mark_stop_attempt`), so a block followed only by what the hook made the model write
+  is still taken, and that text stays.
+- **Both routes are drained before anything is appended under the reply** — `send_message.lua`
+  reads the queue and calls `take_question_block` ahead of `### Tokens` and `### Modified Files`.
+  A queued question wins over a block in the same turn.
 - **The fence name has one definition**, `ask_user_question_instructions.FENCE`, read by both the
-  instruction every backend is given and the parser.
+  fallback instruction and the parser. The tool names live in that module too.
+- **The tool is named only where the bundled MCP server is reachable**, by the same `tool`
+  predicate the background-job policy uses. A prompt naming a tool the CLI cannot call is the
+  failure `handbook/ADAPTER_DEVELOPMENT.md` forbids.
 - **The `Current vibing.nvim chat buffer number` line is not part of the question protocol** and
   must stay in the claude and codex prompts: the orchestration skills pass it as `from_bufnr` and
   `vibing-chat-recall` finds the chat by it.
-- **A chat that asked reports `asked_question` until its next send**, through `_stop_reason`; it is
-  idle, so an orchestrator answers it with an ordinary delivery.
+- **A chat that asked reports `asked_question` until its next send**, through `_stop_reason`. A
+  queued confirmation reports the same, **not** `waiting_approval`: it is not in the approval
+  registry, so the answer is an ordinary delivery, and `nvim_chat_answer_approval` cannot answer
+  it. Either way the chat is idle, so an orchestrator answers it with a message.
 - **Native `AskUserQuestion` is denied without killing anything**, with a reason that names the
-  block — a step the model can take itself.
+  tool where it is reachable and the fallback block otherwise — a step the model can take itself.

@@ -215,6 +215,13 @@ describe("send_message", function()
         take_question_block = function()
           table.insert(appended, "<question block taken>")
         end,
+        render_queued_prompts = function(queued)
+          -- The callback runs on every successful turn; only a turn that actually queued
+          -- something may change `appended`, or the ordering assertions below shift.
+          if queued then
+            table.insert(appended, "<queued prompts rendered>")
+          end
+        end,
         clear_sending = function() end,
         get_bufnr = function()
           return buf
@@ -347,6 +354,30 @@ describe("send_message", function()
         local _, appended = handle_turn({ error = "boom" })
 
         assert.is_false(vim.tbl_contains(appended, "<question block taken>"))
+      end)
+    end)
+
+    describe("the queue the prompt tools filled", function()
+      -- `nvim_ask_question` / `nvim_request_approval` queue on the turn; `cli_adapter.finish`
+      -- carries the queue on the response, because it takes it before closing the turn entry.
+
+      it("is rendered on a turn that succeeded", function()
+        local _, appended = handle_turn({ content = "ok", _queued_prompts = { { kind = "question" } } })
+
+        assert.is_true(vim.tbl_contains(appended, "<queued prompts rendered>"))
+      end)
+
+      it("is rendered before anything is appended after the reply", function()
+        local _, appended = handle_turn({ content = "ok", _queued_prompts = { { kind = "question" } } })
+
+        assert.equals("<question block taken>", appended[1], vim.inspect(appended))
+        assert.equals("<queued prompts rendered>", appended[2], vim.inspect(appended))
+      end)
+
+      it("is not rendered on a turn that failed", function()
+        local _, appended = handle_turn({ error = "boom", _queued_prompts = { { kind = "question" } } })
+
+        assert.is_false(vim.tbl_contains(appended, "<queued prompts rendered>"))
       end)
     end)
 

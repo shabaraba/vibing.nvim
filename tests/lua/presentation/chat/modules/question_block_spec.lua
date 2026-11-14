@@ -68,10 +68,16 @@ describe("question_block.find_trailing", function()
     assert.is_nil(QuestionBlock.find_trailing(reply({ "```vibing-question", unlabeled, "```" })))
   end)
 
-  it("uses the same fence name it tells the model to write", function()
+  it("uses the same fence name the fallback instruction tells the model to write", function()
     local Instructions = require("vibing.infrastructure.adapter.modules.ask_user_question_instructions")
 
     assert.equals(Instructions.FENCE, QuestionBlock.FENCE)
-    assert.is_truthy(table.concat(Instructions.lines(), "\n"):find(QuestionBlock.FENCE, 1, true))
+    local fallback = table.concat(Instructions.lines(false), "\n")
+    assert.is_truthy(fallback:find(QuestionBlock.FENCE, 1, true))
+    -- Where the bundled server is reachable the tool is the route, and the fence is not named.
+    local tool = table.concat(Instructions.lines(true), "\n")
+    assert.is_truthy(tool:find(Instructions.ASK_TOOL, 1, true))
+    assert.is_truthy(tool:find(Instructions.APPROVAL_TOOL, 1, true))
+    assert.is_nil(tool:find(QuestionBlock.FENCE, 1, true))
   end)
 end)

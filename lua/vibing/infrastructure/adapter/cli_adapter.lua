@@ -288,6 +288,15 @@ function M.define(descriptor)
 
     local env = vim.fn.environ()
     require("vibing.infrastructure.adapter.modules.agent_environment").apply(env, self.config, opts, descriptor.id)
+    -- The process, not the turn: an environment variable is fixed when the child is spawned, so a
+    -- resident process (#774) could not carry a per-turn value here even in principle. The hook
+    -- names this and `rpc/hook_scope.lua` resolves the turn in-editor, which is what keeps
+    -- concurrent chats from cross-wiring each other's approval UI.
+    --
+    -- Bound **before** `apply_env` because a backend that describes its MCP server in the
+    -- environment copies the value into that description at that moment (opencode's inline
+    -- config). Re-asserted after, so `apply_env` still cannot override a `VIBING_*` value.
+    env.VIBING_PROCESS_ID = ids.process_id
     -- Backend edits first, so a variable the user declared reads exactly like one they exported:
     -- the `VIBING_*` binding below still overwrites it.
     if descriptor.apply_env then
@@ -296,10 +305,6 @@ function M.define(descriptor)
     -- The CLI forwards this environment to the MCP servers it starts, so the numeric port stays
     -- out of the cached prompt (#730).
     RpcEnvironment.bind(env)
-    -- The process, not the turn: an environment variable is fixed when the child is spawned, so a
-    -- resident process (#774) could not carry a per-turn value here even in principle. The hook
-    -- names this and `rpc/hook_scope.lua` resolves the turn in-editor, which is what keeps
-    -- concurrent chats from cross-wiring each other's approval UI.
     env.VIBING_PROCESS_ID = ids.process_id
 
     -- The permission handler stays ignorant of which backend it is serving; it just calls whatever
@@ -342,6 +347,17 @@ function M.define(descriptor)
         return
       end
       completed = true
+      -- Taken before `close`, because the queue lives on the turn entry and `close` drops it. The
+      -- chat drains it at the same place it reads a trailing question block (`send_message.lua`),
+      -- which runs after this returns — hence travelling on the response.
+      --
+      -- Taken unconditionally so the entry is emptied, but handed on only for a turn that finished:
+      -- a cancelled, stalled, timed-out or failed turn must draw nothing, since the user is not
+      -- being asked anything any more (`turn_outcome.lua`).
+      local queued_prompts = TurnRegistry.take_prompts(ids.turn_id)
+      if not (response.error or response._cancelled or response._stalled or response._session_corrupted) then
+        response._queued_prompts = queued_prompts
+      end
       -- Turn first: `close` clears the process entry's `active_turn_id`, and unregistering the
       -- process first would leave nothing for it to clear it on.
       TurnRegistry.close(ids.turn_id)

@@ -80,6 +80,10 @@ end
 ---「剥がれずに残る行」か「ユーザーの本文を巻き込む条件」のどちらかが黙って生まれる
 M.PROMPT_HEADER = "⚠️  Tool approval required"
 
+---`nvim_request_approval` が描くブロックの見出し。フック承認とは別物であることを見た目でも
+---分ける — こちらは次のメッセージが答えになるだけで、ツール実行の許可ではない
+M.CONFIRMATION_HEADER = "⚠️  The model asks you to confirm"
+
 ---ブロックの終端。レンダラーは保留が何件あっても**最後に1回だけ**これを書く
 M.INSTRUCTION_LINE = "Delete every option line except the one you want, then press <CR>."
 
@@ -98,6 +102,7 @@ local FIELD_PREFIXES = { "Tool: ", "Command: ", "File: ", "Pattern: ", "URL: " }
 ---@return boolean
 local function opens_block(line)
   return line == M.PROMPT_HEADER
+    or line == M.CONFIRMATION_HEADER
     or vim.startswith(line, M.EXPIRED_NOTICE_PREFIX)
     or vim.startswith(line, M.REFUSAL_PREFIX)
     or line:match(MARKER_PATTERN) ~= nil
