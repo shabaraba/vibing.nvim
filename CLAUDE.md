@@ -55,6 +55,7 @@ If you add a paragraph to `.claude/rules/` explaining _why_, it is in the wrong 
 | `architecture/chat-lineage.md`          | Concurrency, fork, handoff, subagent chat                |
 | `architecture/orchestration.md`         | Notification state machine, queue, tree operations       |
 | `architecture/session-persistence.md`   | The `working_dir` git-root boundary                      |
+| `architecture/resident-mcp-server.md`   | HTTP MCP: identity headers per CLI, restart, 3 shapes    |
 | `features/usage-limits.md`              | Auto-resume, scheduled requests, retry budget            |
 | `features/chat-ui.md`                   | Subagent output, timestamps, AskUserQuestion             |
 | `features/editor-integration.md`        | Code Tour, nvim-dap analysis                             |
