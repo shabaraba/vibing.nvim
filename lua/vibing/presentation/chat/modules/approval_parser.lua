@@ -106,6 +106,18 @@ M.REFUSAL_PREFIX = "⚠️  That answer was not applied."
 ---`Command: ...` と書いても巻き込まない
 local FIELD_PREFIXES = { "Tool: ", "Command: ", "File: ", "Pattern: ", "URL: " }
 
+---`Tool: ` などの詳細行か
+---@param line string
+---@return boolean
+local function is_field_line(line)
+  for _, prefix in ipairs(FIELD_PREFIXES) do
+    if vim.startswith(line, prefix) then
+      return true
+    end
+  end
+  return false
+end
+
 ---ここから下がプロンプトの一部でありうる、という行
 ---@param line string
 ---@return boolean
@@ -129,12 +141,7 @@ local function continues_block(line)
   if vim.startswith(line, "   ") then
     return true
   end
-  for _, prefix in ipairs(FIELD_PREFIXES) do
-    if vim.startswith(line, prefix) then
-      return true
-    end
-  end
-  return false
+  return is_field_line(line)
 end
 
 ---描かれた承認プロンプトの行だけを落とし、ユーザーが打った本文は残す。
@@ -185,6 +192,54 @@ function M.strip_prompt_lines(lines)
   end
 
   return kept, removed
+end
+
+---この行はモデル発の確認要求が描いた選択肢か
+---@param line string
+---@return boolean
+local function is_confirmation_option(line)
+  for index, label in ipairs(M.CONFIRMATION_OPTIONS) do
+    if line == index .. ". " .. label then
+      return true
+    end
+  end
+  return false
+end
+
+---モデル発の確認要求（`nvim_request_approval`）が描いた足場を、モデルに渡す本文から落とす。
+---
+---**バッファには要るが、答えではない行**が3種類ある: 見出し、字下げした理由、人間向けの案内
+---（`CONFIRMATION_INSTRUCTION`）。これをそのまま送ると、モデルは「人間に宛てた指示」を
+---ユーザーの発言として読む。残すのは、ユーザーが消さずに残した選択肢行と、その下に打った本文だけ。
+---
+---`strip_prompt_lines` を流用しない。あちらは `INSTRUCTION_LINE` で閉じ、選択肢行を「本文」として
+---残す — フック承認では選択肢行こそが答えで、案内文は捨てる。ここでは選択肢行を残し、
+---案内文を捨てるので、閉じ方の規則が違う。
+---@param lines string[]
+---@return string[]
+function M.strip_confirmation_scaffolding(lines)
+  local kept = {}
+  local in_block = false
+
+  for _, line in ipairs(lines) do
+    if line == M.CONFIRMATION_HEADER then
+      in_block = true
+    elseif not in_block then
+      table.insert(kept, line)
+    elseif line == M.CONFIRMATION_INSTRUCTION then
+      in_block = false
+    elseif is_confirmation_option(line) then
+      table.insert(kept, line)
+    elseif line == "" or vim.startswith(line, "   ") or is_field_line(line) then
+      -- 描いた足場。落とす
+    else
+      -- 描いた行ではない＝ブロックはここで終わっている。以降はユーザーの本文として残す
+      in_block = false
+      table.insert(kept, line)
+    end
+  end
+
+  return kept
 end
 
 ---承認レスポンスかどうかを判定

@@ -434,7 +434,10 @@ A model-raised confirmation (`nvim_request_approval`) draws the same kind of blo
 heading, and, when it is the only one in the turn, an advisory `1. Proceed` / `2. Do not proceed`
 list. Those are plain text: the line the user keeps is the answer, and nothing is granted. The
 gate's `allow_once` / `deny_once` vocabulary is deliberately not used, because an advisory answer
-must not be mistaken for a permission decision.
+must not be mistaken for a permission decision. The header, reason and human-directed instruction
+are stripped from the message the model receives (`strip_confirmation_scaffolding`), so only the
+kept line and anything the user typed reach it — the question path sends its question text back,
+but there the text is what the user is answering.
 
 **The chat reports `asked_question` until its next send** (`insert_choices` sets `_stop_reason`;
 a queued confirmation sets the same value). It is idle, so an orchestrator answers with an ordinary

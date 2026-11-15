@@ -110,6 +110,42 @@ describe("ChatBuffer:render_queued_prompts", function()
     assert.is_nil(buffer:find("1. Proceed", 1, true), buffer)
   end)
 
+  ---@param chat_buf Vibing.ChatBuffer
+  ---@param text string
+  ---@return boolean
+  local function delete_line(chat_buf, text)
+    for index, line in ipairs(vim.api.nvim_buf_get_lines(chat_buf.buf, 0, -1, false)) do
+      if line == text then
+        vim.api.nvim_buf_set_lines(chat_buf.buf, index - 1, index, false, {})
+        return true
+      end
+    end
+    return false
+  end
+
+  it("sends only the kept option, not the block's scaffolding", function()
+    local chat_buf = chat()
+    chat_buf:render_queued_prompts({ { kind = "approval", reason = "Delete build/?" } })
+    chat_buf:add_user_section()
+
+    assert.is_true(delete_line(chat_buf, "2. Do not proceed"))
+
+    -- The header, the reason and the human-directed instruction are UI, not the answer.
+    assert.equals("1. Proceed", chat_buf:extract_user_message())
+  end)
+
+  it("keeps what the user typed under the confirmation", function()
+    local chat_buf = chat()
+    chat_buf:render_queued_prompts({ { kind = "approval", reason = "Delete build/?" } })
+    chat_buf:add_user_section()
+
+    assert.is_true(delete_line(chat_buf, "2. Do not proceed"))
+    local count = vim.api.nvim_buf_line_count(chat_buf.buf)
+    vim.api.nvim_buf_set_lines(chat_buf.buf, count, count, false, { "Ship it." })
+
+    assert.equals("1. Proceed\n\nShip it.", chat_buf:extract_user_message())
+  end)
+
   it("strips an unanswered confirmation out of the user's next message", function()
     local chat_buf = chat()
     chat_buf:render_queued_prompts({ { kind = "approval", reason = "Delete build/?" } })

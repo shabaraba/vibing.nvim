@@ -719,9 +719,20 @@ function ChatBuffer:extract_conversation()
 end
 
 ---ユーザーメッセージを抽出（最後の## Userセクション）
+---
+---**描かれた確認要求の足場は落とす。** 見出し・理由・案内文は人間が読むためのもので、答えでは
+---ない。ここで落とすのは、`<CR>` の経路だけでなく予約送信や下書き判定も同じ本文を見るため
+---（`ApprovalParser.strip_confirmation_scaffolding`）
 ---@return string?
 function ChatBuffer:extract_user_message()
-  return ConversationExtractor.extract_user_message(self.buf)
+  local message = ConversationExtractor.extract_user_message(self.buf)
+  if not message then
+    return nil
+  end
+
+  local kept = ApprovalParser.strip_confirmation_scaffolding(vim.split(message, "\n", { plain = true }))
+  local answer = vim.trim(table.concat(kept, "\n"))
+  return answer ~= "" and answer or nil
 end
 
 ---送信の直前に割り込んでよいメッセージか

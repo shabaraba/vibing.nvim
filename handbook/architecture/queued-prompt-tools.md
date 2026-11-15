@@ -24,7 +24,10 @@ Status: **implemented.** A question and a model-raised approval request are tool
   and does not feed the tool-permission gate. The vocabulary is not `allow_once` / `deny_once`,
   which belongs to the gate and would make an advisory answer indistinguishable from one. The
   options are drawn only when the turn queued a single confirmation — two would make the remaining
-  `1. Proceed` ambiguous.
+  `1. Proceed` ambiguous. The drawn header, reason and human-directed instruction are UI, not an
+  answer, so `ChatBuffer:extract_user_message` strips them
+  (`approval_parser.strip_confirmation_scaffolding`) and the model receives only the kept line and
+  any text the user typed.
 
 ## Decision
 
