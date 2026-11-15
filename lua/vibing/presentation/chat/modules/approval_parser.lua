@@ -84,6 +84,15 @@ M.PROMPT_HEADER = "⚠️  Tool approval required"
 ---分ける — こちらは次のメッセージが答えになるだけで、ツール実行の許可ではない
 M.CONFIRMATION_HEADER = "⚠️  The model asks you to confirm"
 
+---助言の確認要求に添える選択肢。**権限アクションではない** — `allow_once` などの語彙を使うと
+---ツール権限ゲートの答えと見分けがつかなくなるので、ただの文にする。残った行が次のメッセージに
+---なり、モデルはそれを読むだけ
+M.CONFIRMATION_OPTIONS = { "Proceed", "Do not proceed" }
+
+---選択肢の下の案内。質問ブロックには無い行なのは、こちらは「1行だけ残す」ことが答えの作り方
+---だから（質問は自由文で答えることもできる）
+M.CONFIRMATION_INSTRUCTION = "Delete the line you do not want, then press <CR>."
+
 ---ブロックの終端。レンダラーは保留が何件あっても**最後に1回だけ**これを書く
 M.INSTRUCTION_LINE = "Delete every option line except the one you want, then press <CR>."
 

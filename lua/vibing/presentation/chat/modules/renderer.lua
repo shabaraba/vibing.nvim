@@ -450,6 +450,16 @@ function M.addUserSection(buf, win, pendingChoices, pendingApprovals, initial_me
         end
       end
 
+      -- One choice list and one instruction, only when this is unambiguous. Two confirmations in
+      -- one turn would draw two identical `1. Proceed` lines, and the remaining line would no
+      -- longer say which one was confirmed — the text block above it does.
+      if #modelApprovals == 1 then
+        for index, label in ipairs(ApprovalParser.CONFIRMATION_OPTIONS) do
+          table.insert(confirmationLines, index .. ". " .. label)
+        end
+        table.insert(confirmationLines, "")
+        table.insert(confirmationLines, ApprovalParser.CONFIRMATION_INSTRUCTION)
+      end
       table.insert(confirmationLines, "")
     end
 

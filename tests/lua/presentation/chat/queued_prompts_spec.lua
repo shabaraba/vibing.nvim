@@ -89,6 +89,25 @@ describe("ChatBuffer:render_queued_prompts", function()
     assert.is_truthy(buffer:find("I am about to delete build/.", 1, true), buffer)
     assert.is_truthy(buffer:find("Command: rm -rf build", 1, true), buffer)
     assert.is_truthy(buffer:find("in the repository root", 1, true), buffer)
+    -- Advisory options, not permission actions: the line the user keeps is the answer.
+    assert.is_truthy(buffer:find("1. Proceed", 1, true), buffer)
+    assert.is_truthy(buffer:find("2. Do not proceed", 1, true), buffer)
+    assert.is_truthy(buffer:find(ApprovalParser.CONFIRMATION_INSTRUCTION, 1, true), buffer)
+  end)
+
+  it("omits the options when more than one confirmation would make them ambiguous", function()
+    local chat_buf = chat()
+
+    chat_buf:render_queued_prompts({
+      { kind = "approval", reason = "Delete build/?" },
+      { kind = "approval", reason = "Delete dist/?" },
+    })
+    chat_buf:add_user_section()
+
+    local buffer = text(chat_buf)
+    assert.is_truthy(buffer:find("Delete build/?", 1, true), buffer)
+    assert.is_truthy(buffer:find("Delete dist/?", 1, true), buffer)
+    assert.is_nil(buffer:find("1. Proceed", 1, true), buffer)
   end)
 
   it("strips an unanswered confirmation out of the user's next message", function()
@@ -97,9 +116,12 @@ describe("ChatBuffer:render_queued_prompts", function()
     chat_buf:add_user_section()
 
     local kept = ApprovalParser.strip_prompt_lines(vim.api.nvim_buf_get_lines(chat_buf.buf, 0, -1, false))
+    local remaining = table.concat(kept, "\n")
 
-    assert.is_nil(table.concat(kept, "\n"):find(ApprovalParser.CONFIRMATION_HEADER, 1, true))
-    assert.is_nil(table.concat(kept, "\n"):find("Delete build/?", 1, true))
+    assert.is_nil(remaining:find(ApprovalParser.CONFIRMATION_HEADER, 1, true))
+    assert.is_nil(remaining:find("Delete build/?", 1, true))
+    -- The option lines are the answer, so stripping the block must leave them alone.
+    assert.is_truthy(remaining:find("1. Proceed", 1, true), remaining)
   end)
 
   it("does not redraw what it already drew", function()

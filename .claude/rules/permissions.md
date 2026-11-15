@@ -147,9 +147,11 @@ section, and the answer is the next turn's message. `rpc/handlers/prompt.lua`,
   resolves the process id; both the sole-open guess (no id) and an id that matches nothing are
   refusals. `nvim_request_approval` goes through the same gate.
 - **`nvim_request_approval` is not the tool-permission gate.** It queues a confirmation, the next
-  message is the answer, and it grants nothing. The waiting hook approval (#778) and claude's
-  `nvim_permission_prompt` stay the gate: a gated call has to be held at the moment the CLI makes
-  it, which a tool that returns immediately cannot do.
+  message is the answer, and it grants nothing. It draws advisory `Proceed` / `Do not proceed`
+  lines (`approval_parser.CONFIRMATION_OPTIONS`); the line the user keeps is the answer, so the
+  vocabulary is deliberately **not** `allow_once` / `deny_once`. The waiting hook approval (#778)
+  and claude's `nvim_permission_prompt` stay the gate: a gated call has to be held at the moment
+  the CLI makes it, which a tool that returns immediately cannot do.
 - **Question-answer sections never dispatch local slash commands.** Their header carries
   `question-answer`, preserved across reload and send. Generated section headers in choices are
   quoted so they cannot hide the answer section's marker.

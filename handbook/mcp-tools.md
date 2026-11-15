@@ -101,7 +101,8 @@ Prefix each with whichever form matches how the server was registered (see above
   `nvim_request_approval` (a confirmation the model asks for before work it is about to do).
   **Neither call waits**: each queues an entry on the calling turn and returns, and the chat draws
   it when the turn ends; the answer is the next message. `nvim_request_approval` is not the
-  tool-permission gate and grants nothing. Where this server is unreachable the model is told to
+  tool-permission gate and grants nothing: it draws advisory `Proceed` / `Do not proceed` lines.
+  Where this server is unreachable the model is told to
   end its reply with a `vibing-question` block instead
   (`handbook/features/chat-ui.md`, `handbook/architecture/queued-prompt-tools.md`)
 - **Instances**: `nvim_list_instances`

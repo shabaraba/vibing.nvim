@@ -73,9 +73,10 @@ export const promptTools: Tool[] = [
     description:
       'Ask the user to confirm something you are about to do (for example, deleting files). ' +
       'The call does NOT wait: it queues the request and returns immediately. End your turn right ' +
-      'after it; vibing.nvim shows the confirmation with your reply, and the next message is the ' +
-      'answer. This is NOT the tool-permission gate and does not authorise a later tool call — a ' +
-      'gated call still has to pass the usual approval.',
+      'after it; vibing.nvim shows the confirmation with your reply, offering "Proceed" / ' +
+      '"Do not proceed" lines, and the next message is the answer. This is NOT the tool-permission ' +
+      'gate and does not authorise a later tool call — a gated call still has to pass the usual ' +
+      'approval.',
     inputSchema: {
       type: 'object' as const,
       properties: withRpcPort({
