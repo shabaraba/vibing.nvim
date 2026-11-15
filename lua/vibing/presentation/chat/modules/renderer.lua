@@ -297,7 +297,12 @@ end
 ---@param header string? Section header to use instead of the plain unsent `## User` one.
 ---  Delivered chat-to-chat messages pass their own (`## Request` / `## Report` / `## Notice`);
 ---  it must still be an unsent header, since `commit_user_message` is what stamps it at send
-function M.addUserSection(buf, win, pendingChoices, pendingApprovals, initial_message, header)
+---@param modelApprovals Vibing.QueuedPrompt[]? Confirmations the model raised with
+---  `nvim_request_approval` during the turn, drawn as a text block. They are not tool approvals:
+---  there is no option list and no registry, and the next message is simply the answer. Every line
+---  is one `ApprovalParser.strip_prompt_lines` recognises, so an unanswered block is never sent
+---  back as the user's own text.
+function M.addUserSection(buf, win, pendingChoices, pendingApprovals, initial_message, header, modelApprovals)
   local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
 
   while #lines > 0 and lines[#lines] == "" do
@@ -411,6 +416,56 @@ function M.addUserSection(buf, win, pendingChoices, pendingApprovals, initial_me
     local currentLines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
     local insertPos = #currentLines
     vim.api.nvim_buf_set_lines(buf, insertPos, insertPos, false, flatten_lines(approvalLines))
+  end
+
+  if modelApprovals and #modelApprovals > 0 then
+    local ApprovalParser = require("vibing.presentation.chat.modules.approval_parser")
+    local confirmationLines = {}
+
+    for _, approval in ipairs(modelApprovals) do
+      table.insert(confirmationLines, ApprovalParser.CONFIRMATION_HEADER)
+      table.insert(confirmationLines, "")
+      -- Indented, so `strip_prompt_lines` counts every reason line as part of this block without
+      -- having to know any of its words.
+      for _, line in ipairs(vim.split(approval.reason or "", "\n", { plain = true })) do
+        table.insert(confirmationLines, "   " .. line)
+      end
+
+      if approval.tool and approval.tool ~= "" then
+        table.insert(confirmationLines, "Tool: " .. tostring(approval.tool))
+      end
+      if approval.input then
+        for _, field in ipairs({
+          { key = "command", label = "Command" },
+          { key = "file_path", label = "File" },
+          { key = "pattern", label = "Pattern" },
+          { key = "url", label = "URL" },
+        }) do
+          if type(approval.input[field.key]) == "string" then
+            table.insert(confirmationLines, field.label .. ": " .. approval.input[field.key])
+          end
+        end
+        for _, line in ipairs(approval.input.details or {}) do
+          table.insert(confirmationLines, "   " .. tostring(line))
+        end
+      end
+
+      -- One choice list and one instruction, only when this is unambiguous. Two confirmations in
+      -- one turn would draw two identical `1. Proceed` lines, and the remaining line would no
+      -- longer say which one was confirmed — the text block above it does.
+      if #modelApprovals == 1 then
+        for index, label in ipairs(ApprovalParser.CONFIRMATION_OPTIONS) do
+          table.insert(confirmationLines, index .. ". " .. label)
+        end
+        table.insert(confirmationLines, "")
+        table.insert(confirmationLines, ApprovalParser.CONFIRMATION_INSTRUCTION)
+      end
+      table.insert(confirmationLines, "")
+    end
+
+    local currentLines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+    local insertPos = #currentLines
+    vim.api.nvim_buf_set_lines(buf, insertPos, insertPos, false, flatten_lines(confirmationLines))
   end
 
   if win and vim.api.nvim_win_is_valid(win) and vim.api.nvim_win_get_buf(win) == buf then

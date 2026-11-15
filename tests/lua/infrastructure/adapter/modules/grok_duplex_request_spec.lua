@@ -164,19 +164,22 @@ describe("grok duplex request", function()
   end)
 
   describe("the instructions each transport carries", function()
-    it("carries the question-block instruction on both transports", function()
+    it("names the queued tools on duplex and keeps the block as the oneshot fallback", function()
       local rules_flag = GrokCommandBuilder.rules_args({ opts = { cwd = "/repo" }, config = CONFIG })
       assert.is_not_nil(table.concat(rules_flag, "\n"):find("vibing-question", 1, true))
 
       local duplex_text = GrokCommandBuilder.rules_text({ cwd = "/repo", chat_bufnr = 7 }, CONFIG, "vibing-nvim")
-      assert.is_not_nil(duplex_text:find("vibing-question", 1, true))
+      assert.is_not_nil(duplex_text:find("nvim_ask_question", 1, true))
+      assert.is_not_nil(duplex_text:find("nvim_request_approval", 1, true))
+      assert.is_nil(duplex_text:find("vibing-question", 1, true))
     end)
 
     -- The same test one level in: the name comes from the bundled server's own manifest, so with
     -- `agent.plugins.self = false` there is no server and the tool must not be named at all.
-    it("says nothing about the tool when the bundled server is not loaded", function()
+    it("falls back to the block when the bundled server is not loaded", function()
       local text = GrokCommandBuilder.rules_text({ cwd = "/repo", chat_bufnr = 7 }, CONFIG, nil)
-      assert.is_nil(text:find("nvim_ask_user_question", 1, true))
+      assert.is_nil(text:find("nvim_ask_question", 1, true))
+      assert.is_not_nil(text:find("vibing-question", 1, true))
       assert.is_nil(text:find("Current vibing.nvim chat buffer number", 1, true))
     end)
 
@@ -184,7 +187,7 @@ describe("grok duplex request", function()
       local renamed = GrokCommandBuilder.rules_text({ cwd = "/repo", chat_bufnr = 7 }, CONFIG, "renamed-server")
       local normal = GrokCommandBuilder.rules_text({ cwd = "/repo", chat_bufnr = 7 }, CONFIG, "vibing-nvim")
       assert.equals(normal, renamed)
-      assert.is_not_nil(renamed:find("vibing-question", 1, true))
+      assert.is_not_nil(renamed:find("nvim_ask_question", 1, true))
       assert.is_nil(renamed:find("nvim_ask_user_question", 1, true))
     end)
 

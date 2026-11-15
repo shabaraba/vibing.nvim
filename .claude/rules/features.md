@@ -64,9 +64,12 @@ Read the linked file before changing that path.
 
 `handbook/features/chat-ui.md`; the invariants are in `permissions.md` → "Asking a Question".
 
-- **A question is a block the model writes, not a tool call**, so it reaches every backend, Grok
-  included. `on_approval_required` still may not add an inner `vim.schedule` (#649): it is already
-  on the main thread when `permission.lua` calls it.
+- **A question and a model-raised confirmation are queued tool calls.** `nvim_ask_question` /
+  `nvim_request_approval` validate, append to the turn's queue and return at once; the chat draws
+  them when the turn ends. Nothing is held open. The `vibing-question` block remains the fallback
+  where the bundled MCP server is unreachable (Copilot, Pi, and the oneshot half of Grok and
+  Command Code). `on_approval_required` still may not add an inner `vim.schedule` (#649): it is
+  already on the main thread when `permission.lua` calls it.
 
 ## Message Timestamps and Delivered Sections
 

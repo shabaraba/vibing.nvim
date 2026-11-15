@@ -1,8 +1,9 @@
--- E2E Tests: a multiple-choice question asked as a block at the end of the reply
--- The model is told (system prompt) to end its turn with a ```vibing-question block; vibing.nvim
--- turns that block into an editable choice list in the next unsent section
--- (`presentation/chat/modules/question_block.lua`). Native AskUserQuestion is unavailable in
--- headless `claude -p` mode, and the old `nvim_ask_user_question` MCP tool is gone.
+-- E2E Tests: a multiple-choice question asked through the queued tool
+-- The model is told (system prompt) to call `nvim_ask_question` and end its turn; the call queues
+-- an entry on the turn, and vibing.nvim draws it as an editable choice list in the next unsent
+-- section when the turn ends (`rpc/handlers/prompt.lua` → `send_message.lua`). Native
+-- AskUserQuestion is unavailable in headless `claude -p` mode. The `vibing-question` fenced block
+-- is still accepted as the fallback, but it is no longer what these backends are told to write.
 local helper = require("vibing.testing.e2e_helper")
 
 -- tests/e2e is swept by `test:lua` too, and some of these specs send a real request to the CLI.

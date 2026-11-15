@@ -268,4 +268,37 @@ describe("turn_registry", function()
       assert.equals(0, TurnRegistry.total_subagent_count())
     end)
   end)
+
+  describe("queued prompts", function()
+    it("keeps entries in call order and empties the queue when taken", function()
+      start("a")
+
+      assert.is_true(TurnRegistry.push_prompt("a-turn", { kind = "question" }))
+      assert.is_true(TurnRegistry.push_prompt("a-turn", { kind = "approval" }))
+
+      local queued = TurnRegistry.take_prompts("a-turn")
+      assert.equals(2, #queued)
+      assert.equals("question", queued[1].kind)
+      assert.equals("approval", queued[2].kind)
+      -- Taking twice is harmless: the second call has nothing left to hand out.
+      assert.same({}, TurnRegistry.take_prompts("a-turn"))
+    end)
+
+    it("refuses a turn that is no longer open", function()
+      start("a")
+      TurnRegistry.close("a-turn")
+
+      assert.is_false(TurnRegistry.push_prompt("a-turn", { kind = "question" }))
+      assert.same({}, TurnRegistry.take_prompts("a-turn"))
+    end)
+
+    it("drops a turn's queue with the turn, so nothing is drawn for it later", function()
+      start("a")
+      TurnRegistry.push_prompt("a-turn", { kind = "question" })
+
+      TurnRegistry.close("a-turn")
+
+      assert.same({}, TurnRegistry.take_prompts("a-turn"))
+    end)
+  end)
 end)

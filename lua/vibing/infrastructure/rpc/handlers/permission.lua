@@ -482,13 +482,17 @@ function M.check_tool_permission(params)
 
   -- Native AskUserQuestion is unavailable in headless `claude -p` mode and opaque to us (the CLI
   -- executes it internally). Should a CLI ever offer it, refuse it **without killing anything** and
-  -- point the model at the block it was told to write: a question is the last thing a turn writes
-  -- (`question_block.lua`), and ending the turn that way is a step the model can take itself, so
-  -- there is nothing to rescue by tearing the process down.
+  -- point the model at the route that chat was actually told to use. Which route that is depends on
+  -- the transport: the bundled MCP server names `nvim_ask_question`, and a backend that cannot
+  -- reach it still has the trailing block (`ask_user_question_instructions.lua`). Both are steps
+  -- the model can take itself, so there is nothing to rescue by tearing the process down.
   if tool_name == "AskUserQuestion" then
     local reason = "The question tool (AskUserQuestion) is unavailable in vibing.nvim. To ask the user to "
-      .. "choose, end your reply with a ```" .. AskUserQuestionInstructions.FENCE .. " block as your "
-      .. "system prompt describes, and stop."
+      .. "choose, call the "
+      .. AskUserQuestionInstructions.ASK_TOOL
+      .. " tool if this session has it; otherwise end your reply with a ```"
+      .. AskUserQuestionInstructions.FENCE
+      .. " block. Either way, stop after asking."
     write_hook_response(request_id, "deny", reason)
     return { status = "denied", reason = reason }
   end

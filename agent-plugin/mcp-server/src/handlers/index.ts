@@ -12,6 +12,7 @@ import * as dap from './dap.js';
 import * as jobs from './jobs.js';
 import * as sessions from './sessions.js';
 import * as permission from './permission.js';
+import * as prompts from './prompts.js';
 
 export const handlers: Record<string, (args: any) => Promise<any>> = {
   nvim_session_search: sessions.handleSessionSearch,
@@ -78,4 +79,8 @@ export const handlers: Record<string, (args: any) => Promise<any>> = {
 
   // The target of `--permission-prompt-tool`; called by the CLI, never by a model
   nvim_permission_prompt: permission.handlePermissionPrompt,
+
+  // Prompts the model raises as queued tool calls; the call returns before the user answers
+  nvim_ask_question: prompts.handleAskQuestion,
+  nvim_request_approval: prompts.handleRequestApproval,
 };

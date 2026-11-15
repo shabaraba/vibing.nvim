@@ -188,10 +188,14 @@ describe("cli_command_builder", function()
       assert.equals(before[before_idx + 1], after[after_idx + 1])
     end)
 
-    it("tells the model to ask by ending its reply with a vibing-question block", function()
+    it("tells the model to ask with the queued tool rather than a trailing block", function()
+      -- Claude reaches the bundled MCP server on both transports, so the instruction names the
+      -- tools. A block written anyway is still parsed, but it is no longer the route.
       local cmd = cli_command_builder.build("hello", {}, nil, {}, nil)
       local prompt_text = cmd[find_flag(cmd, "--append-system-prompt") + 1]
-      assert.is_truthy(prompt_text:find("vibing-question", 1, true))
+      assert.is_truthy(prompt_text:find("nvim_ask_question", 1, true))
+      assert.is_truthy(prompt_text:find("nvim_request_approval", 1, true))
+      assert.is_nil(prompt_text:find("vibing-question", 1, true))
       assert.is_nil(prompt_text:find("nvim_ask_user_question", 1, true))
     end)
 
@@ -273,7 +277,7 @@ describe("cli_command_builder", function()
       })
       assert.is_truthy(worker:find(".vibing/worktrees/", 1, true))
       assert.is_truthy(worker:find("MUST use the vibing-nvim nvim_job_start", 1, true))
-      assert.is_truthy(worker:find("vibing-question", 1, true))
+      assert.is_truthy(worker:find("nvim_ask_question", 1, true))
       -- The report protocol is the one line a worker is guaranteed to be told (#706)
       assert.is_truthy(worker:find(".vibing/chat/orchestrator.md", 1, true))
       assert.is_truthy(worker:find("nvim_chat_send_message", 1, true))

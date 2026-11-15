@@ -1,4 +1,9 @@
---- A multiple-choice question the model asks by writing it, not by calling a tool.
+--- A multiple-choice question written at the end of a reply: the fallback route, parsed here.
+---
+--- Where a backend's transport registers the bundled MCP server the model is told to call
+--- `nvim_ask_question` instead, and this parser never sees a block. This module remains for the
+--- backends that cannot reach that server (Copilot, Pi, and the oneshot half of Grok and Command
+--- Code), and for a model that writes a block anyway. Both routes end in `insert_choices`.
 ---
 --- The model ends its turn with one fenced block:
 ---
@@ -10,17 +15,12 @@
 --- and vibing.nvim draws the choices into the next unsent `## User` section, where the user
 --- answers with ordinary editing. The answer is the next turn's message.
 ---
---- **Why not a tool call.** The `nvim_ask_user_question` MCP tool held its reply open until the
---- human answered, which needed a withheld-reply registry, a measured ceiling on how late an MCP
---- answer is still consumed, and an exemption from every "this chat is responding" guard. All of
---- that bought one thing over ending the turn: a CLI process that stays alive while the human
---- thinks. A resident process (duplex, the default) already stays alive between turns, and the
---- prompt cache is server-side either way, so the tool's cost no longer bought anything. A block
---- in the text also reaches every backend, Grok included, which never could reach the MCP tool.
----
 --- **The block is recognised only as the last thing the turn wrote.** A question asked mid-turn and
 --- then followed by more work is not a question the turn stopped on, and a block quoted inside an
---- earlier part of the answer (an example, a code review) must not be drawn as a live prompt.
+--- earlier part of the answer (an example, a code review) must not be drawn as a live prompt. That
+--- condition is the route's weakness and the reason the tool is preferred: an unrelated instruction
+--- that makes the model append something afterwards loses the question
+--- (`handbook/architecture/queued-prompt-tools.md`).
 --- @module vibing.presentation.chat.modules.question_block
 
 local M = {}
@@ -28,10 +28,15 @@ local M = {}
 --- The fence's info string, defined next to the instruction that asks for it.
 M.FENCE = require("vibing.infrastructure.adapter.modules.ask_user_question_instructions").FENCE
 
+--- How many questions one request may carry. The cap `AskUserQuestion` had, kept for the tool and
+--- the merged queue alike: they are drawn as one block, and a question nobody was shown is worse
+--- than a call the model can correct.
+M.MAX_QUESTIONS = 4
+
 --- Whether one question entry has the shape the renderer can draw.
 --- @param q any
 --- @return boolean
-local function is_question(q)
+function M.is_question(q)
   if type(q) ~= "table" or type(q.options) ~= "table" or #q.options == 0 then
     return false
   end
@@ -43,27 +48,45 @@ local function is_question(q)
   return q.question == nil or type(q.question) == "string"
 end
 
+--- Validate a question list, whether it arrived as JSON in a block body or as a tool argument.
+---
+--- **The one definition of what a question is**, shared by the fence parser and the
+--- `nvim_ask_question` tool handler. A block that fails this stays in the transcript as the model
+--- wrote it, and a tool call that fails it is refused before anything is drawn.
+--- @param value any `{"questions": [...]}`, a bare question list, or a decoded block body
+--- @return table[]? questions
+--- @return string? error human-readable reason the value is not a question list
+function M.validate(value)
+  if type(value) ~= "table" then
+    return nil, "questions must be a list"
+  end
+  local questions = value.questions or value
+  if type(questions) ~= "table" or #questions == 0 then
+    return nil, "questions must be a non-empty list"
+  end
+  for index, q in ipairs(questions) do
+    if not M.is_question(q) then
+      return nil, string.format(
+        "question %d needs an options list, and every option needs a non-empty label",
+        index
+      )
+    end
+  end
+  return questions
+end
+
 --- Decode a block body into the question list, or nil when it is not one.
 ---
 --- Accepts the documented `{"questions": [...]}` and a bare array, since both are what a model
---- writes when told "a list of questions". Anything else is not a question: the block stays in the
---- transcript as the model wrote it, which is the visible failure, rather than a guessed prompt.
+--- writes when told "a list of questions".
 --- @param body string
 --- @return table[]?
 local function decode(body)
   local ok, value = pcall(vim.json.decode, body, { luanil = { object = true, array = true } })
-  if not ok or type(value) ~= "table" then
+  if not ok then
     return nil
   end
-  local questions = value.questions or value
-  if type(questions) ~= "table" or #questions == 0 then
-    return nil
-  end
-  for _, q in ipairs(questions) do
-    if not is_question(q) then
-      return nil
-    end
-  end
+  local questions = M.validate(value)
   return questions
 end
 

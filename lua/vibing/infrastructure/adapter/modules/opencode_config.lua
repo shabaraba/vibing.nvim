@@ -20,7 +20,7 @@ local function expand_root(value, root)
   return (value:gsub("%${CLAUDE_PLUGIN_ROOT}", root))
 end
 
-local function convert_server(server, plugin_dir)
+local function convert_server(server, plugin_dir, process_env)
   if server.url then
     return { type = "remote", url = server.url, headers = server.headers, codemode = false }
   end
@@ -37,6 +37,12 @@ local function convert_server(server, plugin_dir)
   if port then
     environment.VIBING_NVIM_RPC_PORT = tostring(port)
     environment.VIBING_NVIM_CONTEXT = "true"
+  end
+  -- The id that resolves a tool call back to the turn that made it (`rpc/hook_scope.lua`). The
+  -- adapter binds it into the child environment before `apply` runs, so it can be copied here the
+  -- same way the port is.
+  if process_env and process_env.VIBING_PROCESS_ID then
+    environment.VIBING_PROCESS_ID = process_env.VIBING_PROCESS_ID
   end
   return {
     type = "local",
@@ -116,7 +122,7 @@ function M.apply(env, opts, config)
       if not seen[server.name] then
         seen[server.name] = true
         table.insert(names, server.name)
-        cfg.mcp.servers[server.name] = convert_server(server, entry.path)
+        cfg.mcp.servers[server.name] = convert_server(server, entry.path, env)
         if entry.path == self_dir then
           tool = true
         end
@@ -148,7 +154,7 @@ function M.apply(env, opts, config)
   -- Generate the instruction file: the question-block protocol every backend gets, plus the
   -- background-process policy.
   local instructions = {}
-  vim.list_extend(instructions, AskUserQuestionInstructions.lines())
+  vim.list_extend(instructions, AskUserQuestionInstructions.lines(tool))
   vim.list_extend(instructions, BackgroundJobInstructions.lines(tool))
   local vibing_dir = (opts.cwd or vim.fn.getcwd()) .. "/.vibing"
   local instr_path = vibing_dir .. "/" .. InstanceKey.name("opencode-instructions-", ".md")

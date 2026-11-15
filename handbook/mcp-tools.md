@@ -96,8 +96,15 @@ Prefix each with whichever form matches how the server was registered (see above
 - **Highlighting**: `nvim_highlight_range`, `nvim_clear_highlight`
 - **Annotations**: `nvim_annotate`, `nvim_clear_annotations`
 - **Chat**: `nvim_chat_send_message`, `nvim_chat_create`, `nvim_chat_answer_approval`,
-  `nvim_chat_list`, `nvim_chat_conflicts`. A multiple-choice question is not a tool: the model ends
-  its reply with a `vibing-question` block (`handbook/features/chat-ui.md`)
+  `nvim_chat_list`, `nvim_chat_conflicts`
+- **Queued prompts**: `nvim_ask_question` (a multiple-choice question) and
+  `nvim_request_approval` (a confirmation the model asks for before work it is about to do).
+  **Neither call waits**: each queues an entry on the calling turn and returns, and the chat draws
+  it when the turn ends; the answer is the next message. `nvim_request_approval` is not the
+  tool-permission gate and grants nothing: it draws advisory `Proceed` / `Do not proceed` lines.
+  Where this server is unreachable the model is told to
+  end its reply with a `vibing-question` block instead
+  (`handbook/features/chat-ui.md`, `handbook/architecture/queued-prompt-tools.md`)
 - **Instances**: `nvim_list_instances`
 - **External sessions**: `nvim_session_search`, `nvim_session_read` (local JSONL logs;
   independent of Neovim RPC)

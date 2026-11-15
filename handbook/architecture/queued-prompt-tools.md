@@ -1,9 +1,33 @@
 # Queued Prompts as MCP Tools: Question and Approval-Required
 
-Status: **decided, not implemented.** The decision is that a question and an approval request the
-model raises are tools of the bundled `vibing-nvim` MCP server, and that the tool never waits.
-This records the shape, why the `vibing-question` block is being given up as the primary route, and
-what has to be settled before building it.
+Status: **implemented.** A question and a model-raised approval request are tools of the bundled
+`vibing-nvim` MCP server, and neither tool waits. This records the shape, why the
+`vibing-question` block was given up as the primary route, and what changed on the way in.
+
+## What was built
+
+- `nvim_ask_question` and `nvim_request_approval` in `agent-plugin/mcp-server/src/tools/prompts.ts`,
+  handlers in `src/handlers/prompts.ts`, RPC methods `ask_question` / `request_approval` in
+  `lua/vibing/infrastructure/rpc/handlers/prompt.lua`.
+- The queue lives on `Vibing.TurnEntry` (`turn_registry.push_prompt` / `take_prompts`).
+- **The drain point moved one step earlier than this page first proposed.** `TurnRegistry.close`
+  runs inside `cli_adapter.finish`, before `send_message._handle_response`, so the entry is already
+  gone when the chat layer runs. `finish` takes the queue before `close` and carries it on
+  `response._queued_prompts`; `_handle_response` renders it at the same place it calls
+  `take_question_block`.
+- **Every backend whose transport registers the bundled server forwards `VIBING_PROCESS_ID`**:
+  claude by inheritance; codex through `mcp_servers.<name>.env_vars`; grok, opencode and commandcode
+  by adding it to their ACP `BOUND_VARS` (opencode's inline oneshot config copies it from the child
+  environment). Copilot and Pi have no bundled server and keep the fallback block.
+- `nvim_request_approval` is **advisory only**, as decided below: it draws a confirmation block
+  with `Proceed` / `Do not proceed` lines, and the next message is the answer. It records no grant
+  and does not feed the tool-permission gate. The vocabulary is not `allow_once` / `deny_once`,
+  which belongs to the gate and would make an advisory answer indistinguishable from one. The
+  options are drawn only when the turn queued a single confirmation — two would make the remaining
+  `1. Proceed` ambiguous. The drawn header, reason and human-directed instruction are UI, not an
+  answer, so `ChatBuffer:extract_user_message` strips them
+  (`approval_parser.strip_confirmation_scaffolding`) and the model receives only the kept line and
+  any text the user typed.
 
 ## Decision
 
@@ -49,8 +73,10 @@ text, and its arguments are checked against a schema before anything is drawn.
   approval prompt rendering), so what the user sees does not change.
 - **Several calls in one turn are merged**: questions into one section with the same cap
   `AskUserQuestion` had (four), approvals as separate prompts, both in call order.
-- **The chat reports `asked_question` or `waiting_approval` until its next send**, through the same
-  `_stop_reason` path, so an orchestrator answers it as it answers a block today.
+- **The chat reports `asked_question` until its next send**, through the same `_stop_reason` path.
+  A queued confirmation reports that too rather than `waiting_approval`: it is not in the approval
+  registry, so `nvim_chat_answer_approval` cannot answer it and the answer is an ordinary message.
+  An orchestrator answers both as it answers a block today.
 
 ## What "approval required" means here
 
@@ -65,34 +91,43 @@ approval is also to be honoured as a grant for a later tool call, and how, is no
 ## Who can call it
 
 The tool needs to know which chat it was called from, and that arrives as `VIBING_PROCESS_ID` in
-the MCP server's environment. Measured on 2026-11-14: claude's plugin MCP server inherits it. Read
-from the code and not run: codex, grok, commandcode and opencode forward only the RPC port and
-`VIBING_NVIM_CONTEXT` to their MCP subprocess, so the id does not reach it.
+the MCP server's environment. Measured on 2026-11-14: claude's plugin MCP server inherits it. At
+that time codex, grok, commandcode and opencode forwarded only the RPC port and
+`VIBING_NVIM_CONTEXT` to their MCP subprocess, so the id did not reach them — this change adds it
+to each forwarding list.
 
-- **First step: claude only.** The instruction names the tool only where the id reaches the
-  server, the same rule the background-process policy follows for `nvim_job_start`; every other
-  backend keeps the fenced block.
-- **Reaching the others** is a side effect of moving to an HTTP MCP server, where the id travels in
-  a header and not in the subprocess environment. That route was measured for claude, codex
-  (`exec` and `app-server`) and commandcode: `handbook/architecture/resident-mcp-server.md`.
+- **The instruction names the tool only where the id reaches the server**, the same rule the
+  background-process policy follows for `nvim_job_start`. The first step was claude only; the
+  implementation forwards `VIBING_PROCESS_ID` on every transport that registers the bundled server,
+  so those backends name the tool too. Copilot and Pi never had the server and keep the block.
+- **Reaching the others** in the end needed no HTTP MCP server: each backend's server registration
+  can forward one more variable by name (`env_vars`, the ACP `BOUND_VARS`, or, for opencode's
+  inline config, a copy from the child environment). The HTTP route remains the cleaner fix for
+  identity and is still the one measured in `handbook/architecture/resident-mcp-server.md`.
 
-## Invariants that change when this is built
+## Invariants that changed
 
-This change only records the decision; none of the rules below is edited here.
-
-- `permissions.md` → "Asking a Question": "only the last thing a turn wrote is a question" applies
-  to the fallback block alone. The line about native `AskUserQuestion` being denied with a reason
-  that names the block has to name the tool where the tool is reachable.
-- `features.md` → "AskUserQuestion": "a question is a block the model writes, not a tool call" is
-  reversed for a backend that can reach the tool.
+- `permissions.md` → "Asking a Question": "only the last thing a turn wrote is a question" now
+  applies to the fallback block alone, and the native-`AskUserQuestion` denial names the tool where
+  it is reachable.
+- `features.md` → "AskUserQuestion": a question and a model-raised confirmation are queued tool
+  calls; the block is the fallback.
 - `approval-without-kill.md` → "Questions as reply blocks": the reason given there for dropping the
-  tool was the cost of holding the turn open. A queued tool holds nothing, so that cost is not
+  held tool was the cost of holding the turn open. A queued tool holds nothing, so that cost is not
   reintroduced.
-- `mcp-integration.md`: the tool prefix and `VIBING_NVIM_MCP_TOOL_PATTERNS` need the new names.
+- `mcp-integration.md`: the patterns are server-prefix wildcards, so the new names need no literal
+  there; they do need `VIBING_PROCESS_ID` forwarded to the server's subprocess.
 
-## Not decided
+## Settled while implementing
 
-- The tool names, and whether one tool with a `kind` argument is better than two.
+- Two tools rather than one with a `kind` argument: the approval carries fields a question does not
+  (`reason`, `tool`, `input`), and one schema with conditional requirements reads worse to a model.
+- A turn that queued a question **and** wrote a fallback block: the queued question is drawn, and
+  `take_question_block` still strips the block out of the reply. Both routes lead to
+  `insert_choices`, and the queue runs last.
+
+## Still not decided
+
 - A call after the model has already written a `vibing-question` block in the same turn: which
   wins, and what happens to the block's text in the transcript.
 - A subagent calling the tool: it shares its parent's process id, so the entry would land in the

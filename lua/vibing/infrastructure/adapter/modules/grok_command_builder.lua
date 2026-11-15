@@ -183,7 +183,7 @@ local function build_rules(opts, config, tool)
         .. worktree_constants.DIR
         .. "<branch-name>/ at the repository root."
     )
-    vim.list_extend(lines, AskUserQuestionInstructions.lines())
+    vim.list_extend(lines, AskUserQuestionInstructions.lines(tool))
     vim.list_extend(lines, BackgroundJobInstructions.lines(tool))
   end
 

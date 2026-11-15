@@ -22,7 +22,10 @@ local M = {}
 --- to explicitly. Taken from the env the adapter already built, so there is one source for the
 --- value and `rpc_port` still never appears in a prompt or a tool call (#730).
 --- @type string[]
-local BOUND_VARS = { RpcEnvironment.PORT_VAR, "VIBING_NVIM_CONTEXT" }
+--- `VIBING_PROCESS_ID` is part of the binding: a tool that draws into the calling chat
+--- (`nvim_ask_question`, `nvim_request_approval`) resolves its turn through that id, and the server
+--- is what receives the call.
+local BOUND_VARS = { RpcEnvironment.PORT_VAR, "VIBING_NVIM_CONTEXT", "VIBING_PROCESS_ID" }
 
 --- ACP wants `env` as a list of `{ name, value }`, not a map.
 --- @param declared table<string, string>

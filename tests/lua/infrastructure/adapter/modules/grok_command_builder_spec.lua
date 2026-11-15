@@ -154,14 +154,15 @@ describe("grok_command_builder", function()
       local cmd = grok_command_builder.build("hello", { chat_bufnr = 12 }, nil, {})
       local rules_text = cmd[find_flag(cmd, "--rules") + 1]
 
+      assert.is_nil(rules_text:find("nvim_ask_question", 1, true))
       assert.is_nil(rules_text:find("nvim_ask_user_question", 1, true))
       assert.is_nil(rules_text:find("mcp__vibing%-nvim__"))
       assert.is_nil(rules_text:find("Current vibing.nvim chat buffer", 1, true))
     end)
 
-    it("still tells Grok how to ask a multiple-choice question", function()
-      -- A question is a block in the reply, not a tool call, so the one backend that could never
-      -- reach `nvim_ask_user_question` gets the feature too.
+    it("still tells the oneshot transport how to ask a multiple-choice question", function()
+      -- Oneshot grok registers no MCP server, so it keeps the fenced-block fallback rather than
+      -- naming a tool it cannot call.
       local cmd = grok_command_builder.build("hello", {}, nil, {})
       local rules_text = cmd[find_flag(cmd, "--rules") + 1]
 

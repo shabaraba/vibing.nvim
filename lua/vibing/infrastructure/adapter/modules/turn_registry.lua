@@ -42,6 +42,17 @@ local M = {}
 --- @field subagent_count? number Task/Agent tool calls this turn has launched and not yet gotten a
 ---   tool_result for. Set to 0 by `M.open`; mutated only through `M.increment_subagent_count` /
 ---   `M.decrement_subagent_count`.
+--- @field queued_prompts? Vibing.QueuedPrompt[] Prompts the model raised through the
+---   `nvim_ask_question` / `nvim_request_approval` tools during this turn, in call order. They are
+---   drained once, when the turn ends (`M.take_prompts`), so a turn that is cancelled or fails
+---   takes them with it. Nothing is drawn for a turn that did not finish.
+
+--- @class Vibing.QueuedPrompt
+--- @field kind "question"|"approval"
+--- @field questions? table[] question entries, for `kind = "question"` (`question_block.validate`)
+--- @field reason? string what the model wants confirmed, for `kind = "approval"`
+--- @field tool? string the tool the confirmation is about, when it named one
+--- @field input? table only the fields the renderer draws (`prompt.lua` sanitises it)
 
 --- Keyed by turn id so concurrent chat buffers each resolve to their own turn instead of one
 --- buffer's PreToolUse hook silently grabbing another buffer's callbacks.
@@ -155,6 +166,41 @@ function M.find_other_writing_in(worktree_root, exclude_turn_id)
     end
   end
   return nil
+end
+
+--- Queue a prompt the model raised during this turn.
+---
+--- The turn is the key because a cancelled or failed turn must take its queue with it: a prompt
+--- drawn for a turn that never finished would show the user a question nothing is waiting on.
+--- Returns false when the turn is already gone, which is how a call that raced the turn's end is
+--- refused rather than drawn into whichever chat happens to be streaming.
+--- @param turn_id string|nil
+--- @param entry Vibing.QueuedPrompt
+--- @return boolean queued
+function M.push_prompt(turn_id, entry)
+  local turn = M.get(turn_id)
+  if not turn then
+    return false
+  end
+  turn.queued_prompts = turn.queued_prompts or {}
+  table.insert(turn.queued_prompts, entry)
+  return true
+end
+
+--- Take this turn's queued prompts, oldest first, and empty the queue.
+---
+--- Called on the way out of a turn, before `close` drops the entry (`cli_adapter.lua`). Safe to
+--- call twice: the second call returns an empty list.
+--- @param turn_id string|nil
+--- @return Vibing.QueuedPrompt[]
+function M.take_prompts(turn_id)
+  local turn = M.get(turn_id)
+  if not turn or not turn.queued_prompts then
+    return {}
+  end
+  local queued = turn.queued_prompts
+  turn.queued_prompts = nil
+  return queued
 end
 
 --- Record a Task/Agent tool_use starting in this turn's own transcript (never one nested inside a

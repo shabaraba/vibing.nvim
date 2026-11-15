@@ -1415,6 +1415,12 @@ already survives between turns and the prompt cache is server-side, so holding t
 open no longer justified the registry and sending exceptions. Questions now end a reply in a
 `vibing-question` block; the user's answer starts the next turn.
 
+**The tool came back as a queued call, not a held one**
+(`handbook/architecture/queued-prompt-tools.md`). `nvim_ask_question` / `nvim_request_approval`
+validate, append to the turn's queue and return; the chat draws them when the turn ends. So the
+cost this section rejected — a turn held open while the human thinks — is not reintroduced. The
+block remains the fallback for a backend that cannot reach the bundled MCP server.
+
 Generated questions and their answers are data, even when they begin with `/permission` or another
 slash command. The rendered answer section keeps a `question-answer` header marker through reload
 and submission. Local command dispatch skips that section; generated header-shaped lines are

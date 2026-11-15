@@ -19,7 +19,13 @@ The tool catalogue, the orchestration tools, annotations and background LSP anal
   `-c mcp_servers.vibing-nvim.*` instead, so the plain form is what that backend sees.
 - **`VIBING_NVIM_MCP_TOOL_PATTERNS` (`core/constants/tools.lua`) is hand-maintained**, because
   `--allowedTools` accepts nothing but literals. A stale entry does not break chats — the hook's
-  suffix match is what decides — which is why a dead one went unnoticed for so long.
+  suffix match is what decides — which is why a dead one went unnoticed for so long. The patterns
+  are server-prefix wildcards, so a newly added tool (`nvim_ask_question`,
+  `nvim_request_approval`) needs no literal here.
+- **`VIBING_PROCESS_ID` reaches every bundled MCP subprocess.** `permission_prompt` and the queued
+  prompt tools resolve the calling turn through it (`rpc/hook_scope.lua`), so a backend's MCP
+  config must forward it: claude inherits it, codex lists it in `env_vars`, and the ACP backends
+  add it to their `BOUND_VARS`.
 - **Every RPC request carries the session token.** `callNeovim` reads `token` from the comm
   directory (`VIBING_HOOK_COMM_DIR`, or `/tmp/vibing-hook-<port>/token`) and sends it on the
   request. The value stays out of tool schemas, prompts, and the env whitelist that forwards
